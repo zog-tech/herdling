@@ -41,7 +41,7 @@ jest.mock("expo-secure-store", () => {
   };
 });
 
-import { ExecTransport, getHostConn, startConnections, stopConnections } from "./connection";
+import { ExecTransport, getHostConn, retryNow, startConnections, stopConnections } from "./connection";
 import { useHosts } from "./store";
 
 const HELLO = { host: "box", os: "macos", zogsshd: "0.1.0", herdr_ok: true };
@@ -320,4 +320,59 @@ test("foreground_pings_at_once_and_background_stops_pings", async () => {
   jest.advanceTimersByTime(1_000);
   await flush();
   expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+});
+
+test("retry_now_connects_immediately_from_backoff", async () => {
+  addHost("SHA256:abc");
+  mockSsh.connect.mockRejectedValueOnce(new Error("refused"));
+  startConnections();
+  await flush();
+  const before = getHostConn("h1");
+  expect(before).toMatchObject({ status: "offline", error: "refused" });
+  const n = retryNow("h1");
+  expect(n).toBe(before.attempt + 1);
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+  expect(getHostConn("h1")).toMatchObject({ status: "online", attempt: n });
+  // The backoff timer was cancelled.
+  jest.advanceTimersByTime(5000);
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+});
+
+test("retry_now_on_online_host_reconnects_with_fresh_hello", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  const first = getHostConn("h1");
+  expect(first.status).toBe("online");
+  const n = retryNow("h1")!;
+  // Right after the call the old hello is not offered as the new result.
+  expect(getHostConn("h1")).toMatchObject({ status: "connecting", attempt: n });
+  await flush();
+  const second = getHostConn("h1");
+  expect(second).toMatchObject({ status: "online", attempt: n });
+  expect(second.rpc).not.toBe(first.rpc);
+  expect(second.hello).toEqual(HELLO);
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+});
+
+test("retry_now_after_mismatch_retries_once", async () => {
+  addHost("SHA256:old");
+  mockSsh.connect.mockRejectedValue(Object.assign(new Error("host key differs"), { code: "host_key_mismatch" }));
+  startConnections();
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(1);
+  retryNow("h1");
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+  expect(getHostConn("h1").error).toMatch(/^Host key changed/);
+  jest.advanceTimersByTime(60_000);
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+});
+
+test("retry_now_unknown_host_returns_undefined", () => {
+  startConnections();
+  expect(retryNow("nope")).toBeUndefined();
 });

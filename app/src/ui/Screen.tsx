@@ -4,11 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, space } from "@/theme/tokens";
 
-/**
- * Scrolling page on the app background. Pass `top` when no navigation header covers the status bar
- * (the tab headers do, the add-host modal does not).
- */
-export function Screen({ children, top }: { children: ReactNode; top?: boolean }) {
+/** Scrolling page on the app background. Navigation headers cover the top safe area. */
+export function Screen({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
@@ -16,7 +13,7 @@ export function Screen({ children, top }: { children: ReactNode; top?: boolean }
       contentContainerStyle={{
         padding: space.lg,
         gap: space.lg,
-        paddingTop: space.lg + (top ? insets.top : 0),
+        paddingTop: space.lg,
         paddingBottom: space.lg + insets.bottom,
       }}
       contentInsetAdjustmentBehavior="automatic"

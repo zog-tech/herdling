@@ -12,7 +12,7 @@ import { Field } from "@/ui/Field";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
-import { useHostConn } from "./connection";
+import { retryNow, useHostConn } from "./connection";
 import { DEFAULT_COMMAND, useHosts, type Host } from "./store";
 
 function CopyBlock({ title, text }: { title: string; text: string }) {
@@ -42,7 +42,7 @@ function CopyBlock({ title, text }: { title: string; text: string }) {
 /** Message for a failed connection. */
 function errorMessage(error: string): string {
   return error.startsWith("Host key changed")
-    ? "Host key changed — remove and re-add this host"
+    ? "Host key changed. Remove and re-add this host."
     : error;
 }
 
@@ -57,7 +57,8 @@ export function HostForm({ host }: { host?: Host }) {
   const [command, setCommand] = useState(host?.command ?? DEFAULT_COMMAND);
   const [publicKey, setPublicKey] = useState<string>();
   const [keyError, setKeyError] = useState<string>();
-  const [tested, setTested] = useState(false);
+  /** Attempt number of the last Test press. Results of earlier attempts are ignored. */
+  const [testAttempt, setTestAttempt] = useState<number>();
   const conn = useHostConn(savedId ?? "");
 
   useEffect(() => {
@@ -90,9 +91,11 @@ export function HostForm({ host }: { host?: Host }) {
     return created.id;
   };
 
-  const waiting = tested && conn.status === "connecting";
-  const hello = tested && conn.status === "online" ? conn.hello : undefined;
-  const error = tested && conn.status === "offline" && conn.error ? errorMessage(conn.error) : undefined;
+  const tested = testAttempt !== undefined;
+  const fresh = tested && conn.attempt >= testAttempt;
+  const waiting = tested && (!fresh || conn.status === "connecting");
+  const hello = fresh && conn.status === "online" ? conn.hello : undefined;
+  const error = fresh && conn.status === "offline" && conn.error ? errorMessage(conn.error) : undefined;
 
   return (
     <Screen>
@@ -117,7 +120,7 @@ export function HostForm({ host }: { host?: Host }) {
         </Text>
         {publicKey ? (
           <>
-            <CopyBlock title="Command" text={authorizedKeysCommand(publicKey)} />
+            <CopyBlock title="Command" text={authorizedKeysCommand(publicKey, command)} />
             <CopyBlock title="Public key" text={publicKey} />
           </>
         ) : keyError ? (
@@ -158,8 +161,8 @@ export function HostForm({ host }: { host?: Host }) {
           loading={waiting}
           disabled={!valid}
           onPress={() => {
-            save();
-            setTested(true);
+            const id = save();
+            setTestAttempt(retryNow(id) ?? 0);
           }}
         />
         <Button

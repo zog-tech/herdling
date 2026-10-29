@@ -13,6 +13,8 @@ export type HostConn = {
   rpc?: RpcClient;
   hello?: Hello;
   error?: string;
+  /** Number of connection attempts started for this host. A caller that wants a fresh result compares it. */
+  attempt: number;
 };
 
 /** Seconds to wait before retry number n (1-based); the last value repeats. */
@@ -20,7 +22,7 @@ const BACKOFF_S = [1, 2, 4, 8, 16, 30];
 /** While in the foreground and online, ping this often; a ping that takes longer than the timeout counts as a drop. */
 const PING_EVERY_MS = 15_000;
 const PING_TIMEOUT_MS = 5_000;
-const OFFLINE: HostConn = { status: "offline" };
+const OFFLINE: HostConn = { status: "offline", attempt: 0 };
 
 type ChannelEvent =
   | { kind: "data"; channelId: string; data: string }
@@ -149,6 +151,7 @@ export function getHostConn(hostId: string): HostConn {
 /** One saved host: connects, opens the rpc channel, says hello and retries with backoff. */
 class HostConnection {
   private generation = 0;
+  private attemptNo = 0;
   private failures = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private rpc?: RpcClient;
@@ -225,6 +228,14 @@ class HostConnection {
     });
   }
 
+  /** Reset backoff and the key-mismatch latch, then reconnect now. Returns the new attempt number. */
+  retryNow(): number {
+    this.blocked = false;
+    this.failures = 0;
+    this.connectNow();
+    return this.attemptNo;
+  }
+
   connectNow(): void {
     if (this.stopped) return;
     this.teardown();
@@ -234,7 +245,7 @@ class HostConnection {
   private async attempt(gen: number): Promise<void> {
     const host = this.host;
     const prev = getHostConn(host.id);
-    setConn(host.id, { status: "connecting", lastSeen: prev.lastSeen, hello: prev.hello });
+    setConn(host.id, { status: "connecting", lastSeen: prev.lastSeen, hello: prev.hello, attempt: ++this.attemptNo });
     try {
       const { fingerprint } = await ssh.connect(host.id, {
         host: host.address,
@@ -266,7 +277,7 @@ class HostConnection {
       const hello = await rpc.call<Hello>("hello");
       if (gen !== this.generation) return;
       this.failures = 0;
-      setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello });
+      setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
       if (this.foreground) this.startPings();
     } catch (e) {
       if (gen !== this.generation) return;
@@ -275,7 +286,7 @@ class HostConnection {
       const message = errorText(e);
       if (code === "host_key_mismatch") {
         this.blocked = true;
-        setConn(host.id, { status: "offline", error: `Host key changed: ${message}` });
+        setConn(host.id, { status: "offline", error: `Host key changed: ${message}`, attempt: this.attemptNo });
         return;
       }
       this.fail(message);
@@ -284,7 +295,7 @@ class HostConnection {
 
   private fail(error: string): void {
     const prev = getHostConn(this.id);
-    setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error });
+    setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error, attempt: this.attemptNo });
     const delay = BACKOFF_S[Math.min(this.failures, BACKOFF_S.length - 1)];
     this.failures++;
     this.timer = setTimeout(() => this.connectNow(), delay * 1000);
@@ -394,6 +405,14 @@ export function startConnections(): void {
 
   const sub = ssh.addListener("onDisconnect", (e) => state.conns.get(e.hostId)?.dropped(e.reason));
   state.cleanup.push(() => sub.remove());
+}
+
+/**
+ * Reconnects a saved host now, even when it is online, in backoff or blocked by a key mismatch.
+ * Returns the number of the new attempt (`HostConn.attempt`), or undefined when the host is unknown.
+ */
+export function retryNow(hostId: string): number | undefined {
+  return running?.conns.get(hostId)?.retryNow();
 }
 
 /** Stops all connections and listeners. */
