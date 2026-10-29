@@ -1,10 +1,10 @@
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { ChevronRight, Folder, FolderOpen, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
 
 import { AGENT_KINDS, DEFAULT_KIND, PRIMARY_KIND_COUNT } from "@/herdr/agentKinds";
-import { startSession } from "@/herdr/startSession";
+import { startSession, workspaceExists } from "@/herdr/startSession";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
@@ -150,6 +150,7 @@ function FolderPicker({ hostId, onPick }: { hostId: string; onPick: (path: strin
 
 export default function NewSessionScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const hosts = useHosts((s) => s.hosts);
   const onlineKey = useOnlineHostKey(hosts.map((h) => h.id));
   const online = useMemo(() => hosts.filter((h) => onlineKey.split(",").includes(h.id)), [hosts, onlineKey]);
@@ -175,16 +176,22 @@ export default function NewSessionScreen() {
   useEffect(() => setNewWorkspace(false), [cwd]);
 
   const busy = progress !== undefined;
+  // Swiping the sheet away mid-start would leave a half-started session behind.
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !busy });
+  }, [navigation, busy]);
   const start = useCallback(async () => {
     if (!rpc || !hostId || !cwd) return;
     setError(undefined);
     setProgress("Creating workspace…");
     try {
+      // The snapshot can lag: fall back to a new workspace when the old one is gone.
+      const reuse = existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
       const { paneId } = await startSession(rpc, {
         cwd,
         kind,
         prompt,
-        workspaceId: existing && !newWorkspace ? existing.workspace_id : undefined,
+        workspaceId: reuse && existing ? existing.workspace_id : undefined,
         onProgress: setProgress,
       });
       router.replace(`/session/${hostId}/${paneId}` as never);

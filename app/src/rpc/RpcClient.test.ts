@@ -73,6 +73,24 @@ describe("RpcClient", () => {
     t.receive({ id: t.sent[0].id, result: 1 });
   });
 
+  it("call_timeout_override_applies_to_that_call_only", async () => {
+    jest.useFakeTimers();
+    const t = new FakeTransport();
+    const c = new RpcClient(t, { timeoutMs: 1000 });
+    const long = c.call("slow", {}, 5000);
+    const short = c.call("quick");
+    const shortAssertion = expect(short).rejects.toMatchObject({ code: "timeout" });
+    jest.advanceTimersByTime(1000);
+    await shortAssertion;
+    // the long call is still pending after the default timeout
+    t.receive({ id: t.sent[0].id, result: "late but fine" });
+    await expect(long).resolves.toBe("late but fine");
+    const longer = c.call("slow2", {}, 5000);
+    const longerAssertion = expect(longer).rejects.toMatchObject({ code: "timeout", message: expect.stringContaining("5000ms") });
+    jest.advanceTimersByTime(5000);
+    await longerAssertion;
+  });
+
   it("stream_routes_events_by_stream_id", async () => {
     const t = new FakeTransport();
     const c = new RpcClient(t);

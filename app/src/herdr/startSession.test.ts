@@ -1,4 +1,4 @@
-import { startSession } from "./startSession";
+import { agentName, startSession } from "./startSession";
 
 function fakeRpc() {
   const calls: { method: string; params: any; timeoutMs?: number }[] = [];
@@ -21,9 +21,9 @@ describe("startSession", () => {
     expect(r).toEqual({ paneId: "w1:p1" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create", "agent.start", "agent.prompt"]);
     expect(rpc.calls[0].params).toEqual({ cwd: "/home/sam/proj", label: "proj", focus: false });
-    expect(rpc.calls[1].params).toEqual({ name: "proj", kind: "claude", pane_id: "w1:p1" });
+    expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "claude", pane_id: "w1:p1" });
     expect(rpc.calls[1].timeoutMs).toBeGreaterThan(30_000);
-    expect(rpc.calls[2].params).toEqual({ target: "proj", text: "hi" });
+    expect(rpc.calls[2].params).toEqual({ target: "w1:p1", text: "hi" });
     expect(progress).toEqual(["Creating workspace…", "Starting claude…", "Sending prompt…"]);
   });
 
@@ -32,7 +32,7 @@ describe("startSession", () => {
     await startSession(rpc, { cwd: "/home/sam/proj/", kind: "codex", workspaceId: "w9" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start"]);
     expect(rpc.calls[0].params).toEqual({ workspace_id: "w9", cwd: "/home/sam/proj/", focus: false });
-    expect(rpc.calls[1].params).toEqual({ name: "proj", kind: "codex", pane_id: "w1:p1" });
+    expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "codex", pane_id: "w1:p1" });
   });
 
   it("skips_prompt_when_empty", async () => {
@@ -94,5 +94,33 @@ describe("startSession", () => {
     await expect(done).resolves.toEqual({ paneId: "w1:p1" });
     expect(n).toBe(4);
     jest.useRealTimers();
+  });
+
+  it("same_basename_gets_distinct_names_and_prompts_by_pane_id", async () => {
+    const starts: any[] = [];
+    const prompts: any[] = [];
+    let n = 0;
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        if (p.method === "workspace.create" || p.method === "tab.create") return { root_pane: { pane_id: `w1:p${++n}` } };
+        if (p.method === "agent.start") starts.push(p.params);
+        if (p.method === "agent.prompt") prompts.push(p.params);
+        return {};
+      },
+    } as any;
+    await startSession(rpc, { cwd: "/a/proj", kind: "claude", prompt: "one" });
+    await startSession(rpc, { cwd: "/b/proj", kind: "claude", prompt: "two", workspaceId: "w1" });
+    expect(starts[0].name).not.toBe(starts[1].name);
+    expect(prompts.map((p) => p.target)).toEqual(["w1:p1", "w1:p2"]);
+  });
+});
+
+describe("agentName", () => {
+  it("produces names herdr accepts", () => {
+    for (const cwd of ["/a/My App.v2", "/a/9lives", "/a/" + "x".repeat(60), "/"]) {
+      const name = agentName(cwd, "w1A:p12");
+      expect(name).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
+      expect(name.endsWith("-w1a-p12")).toBe(true);
+    }
   });
 });
