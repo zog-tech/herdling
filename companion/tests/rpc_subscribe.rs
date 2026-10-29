@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,6 +29,29 @@ fn spawn_fake_with_panes(
     path: &PathBuf,
     panes: &[&str],
 ) -> (mpsc::UnboundedSender<Push>, mpsc::UnboundedReceiver<Value>) {
+    let (push, reqs, _open) = spawn_fake_opts(path, panes, &[]);
+    (push, reqs)
+}
+
+/// Counts open connections while alive.
+struct OpenGuard(Arc<AtomicUsize>);
+impl Drop for OpenGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Like `spawn_fake_with_panes`, plus: an `events.subscribe` that names a pane in
+/// `reject` fails with `pane_not_found`, and the returned counter holds the number of
+/// open connections.
+fn spawn_fake_opts(
+    path: &PathBuf,
+    panes: &[&str],
+    reject: &[&str],
+) -> (mpsc::UnboundedSender<Push>, mpsc::UnboundedReceiver<Value>, Arc<AtomicUsize>) {
+    let open = Arc::new(AtomicUsize::new(0));
+    let open2 = open.clone();
+    let reject: Vec<String> = reject.iter().map(|s| s.to_string()).collect();
     let listener = UnixListener::bind(path).unwrap();
     let (push_tx, mut push_rx) = mpsc::unbounded_channel::<Push>();
     let (req_tx, req_rx) = mpsc::unbounded_channel::<Value>();
@@ -52,7 +78,11 @@ fn spawn_fake_with_panes(
             let snapshot = snapshot.clone();
             let mut bus_rx = bus.subscribe();
             let is_first = std::mem::replace(&mut first, false);
+            open2.fetch_add(1, Ordering::SeqCst);
+            let guard = OpenGuard(open2.clone());
+            let reject = reject.clone();
             tokio::spawn(async move {
+                let _guard = guard;
                 let (r, mut w) = stream.into_split();
                 let mut lines = BufReader::new(r).lines();
                 let mut subs: Vec<Value> = vec![];
@@ -62,6 +92,15 @@ fn spawn_fake_with_panes(
                         line = lines.next_line() => {
                             let Ok(Some(line)) = line else { return };
                             let req: Value = serde_json::from_str(&line).unwrap();
+                            let asked = req["params"]["subscriptions"].as_array().cloned().unwrap_or_default();
+                            let rejected = req["method"] == "events.subscribe"
+                                && asked.iter().any(|s| s["pane_id"].as_str().is_some_and(|p| reject.iter().any(|r| r == p)));
+                            if rejected {
+                                req_tx.send(req.clone()).unwrap();
+                                let e = json!({"id": req["id"], "error": {"code": "pane_not_found", "message": "no such pane"}});
+                                if w.write_all(format!("{e}\n").as_bytes()).await.is_err() { return; }
+                                continue;
+                            }
                             let result = match req["method"].as_str().unwrap() {
                                 "session.snapshot" => snapshot.clone(),
                                 "events.subscribe" => {
@@ -95,7 +134,7 @@ fn spawn_fake_with_panes(
             });
         }
     });
-    (push_tx, req_rx)
+    (push_tx, req_rx, open)
 }
 
 fn spawn_fake(path: &PathBuf) -> (mpsc::UnboundedSender<Push>, mpsc::UnboundedReceiver<Value>) {
@@ -288,4 +327,93 @@ async fn cancel_stops_status_connections_too() {
     let _ = push.send(Push::Event(status_ev("w1:p1", "idle")));
     let got = tokio::time::timeout(std::time::Duration::from_millis(200), s.rx.next_line()).await;
     assert!(got.is_err(), "event forwarded after cancel: {got:?}");
+}
+
+/// Waits until `open` equals `want`, failing after 2 s.
+async fn wait_open(open: &AtomicUsize, want: usize) {
+    for _ in 0..200 {
+        if open.load(Ordering::SeqCst) == want {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("open connections: {} (want {want})", open.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn status_falls_back_to_one_connection_per_pane() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let (push, mut reqs, open) = spawn_fake_opts(&sock, &["w1:p1", "w1:p2", "w1:p3"], &["w1:p2"]);
+    let mut s = Session::start(sock, dir.path().into());
+    let stream = s.subscribe(1, "{}").await;
+    // Lifecycle, rejected batch, then one request per pane.
+    let mut single: Vec<String> = vec![];
+    for _ in 0..5 {
+        let r = tokio::time::timeout(Duration::from_secs(2), reqs.recv()).await.expect("missing subscribe request").unwrap();
+        let subs = r["params"]["subscriptions"].as_array().unwrap().clone();
+        if subs.len() == 1 && subs[0]["pane_id"].is_string() {
+            single.push(subs[0]["pane_id"].as_str().unwrap().to_string());
+        }
+    }
+    single.sort();
+    assert_eq!(single, ["w1:p1", "w1:p2", "w1:p3"]);
+    // Lifecycle plus the two accepted per-pane connections stay open.
+    wait_open(&open, 3).await;
+    push.send(Push::Event(status_ev("w1:p1", "working"))).unwrap();
+    push.send(Push::Event(status_ev("w1:p3", "blocked"))).unwrap();
+    let mut got: Vec<String> = vec![];
+    for _ in 0..2 {
+        let n = s.recv().await;
+        assert_eq!(n["params"]["stream"], stream.as_str());
+        got.push(n["params"]["data"]["data"]["pane_id"].as_str().unwrap().to_string());
+    }
+    got.sort();
+    assert_eq!(got, ["w1:p1", "w1:p3"]);
+}
+
+fn closed_ev(pane: &str) -> Value {
+    json!({"event": "pane.closed", "data": {"type": "pane_closed", "pane_id": pane, "workspace_id": "w1"}})
+}
+
+#[tokio::test]
+async fn closed_pane_drops_its_status_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let (push, _reqs, open) = spawn_fake_opts(&sock, &["w1:p1", "w1:p2"], &[]);
+    let mut s = Session::start(sock, dir.path().into());
+    s.subscribe(1, "{}").await;
+    wait_open(&open, 2).await; // lifecycle + batch status
+    push.send(Push::Event(json!({"event": "pane.created", "data": {"pane": {"pane_id": "w1:p9"}}}))).unwrap();
+    s.recv().await;
+    wait_open(&open, 3).await;
+    push.send(Push::Event(closed_ev("w1:p9"))).unwrap();
+    assert_eq!(s.recv().await["params"]["data"]["event"], "pane.closed");
+    wait_open(&open, 2).await;
+    // The batch connection stays while one of its panes is open.
+    push.send(Push::Event(closed_ev("w1:p1"))).unwrap();
+    s.recv().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(open.load(Ordering::SeqCst), 2);
+    push.send(Push::Event(closed_ev("w1:p2"))).unwrap();
+    s.recv().await;
+    wait_open(&open, 1).await;
+}
+
+#[tokio::test]
+async fn idle_exit_closes_every_herdr_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let (push, _reqs, open) = spawn_fake_opts(&sock, &["w1:p1"], &[]);
+    let mut ctx = Ctx::new(sock, dir.path().into());
+    ctx.idle_timeout = Duration::from_millis(300);
+    let mut s = Session::start_with(ctx);
+    s.subscribe(1, "{}").await;
+    push.send(Push::Event(json!({"event": "pane.created", "data": {"pane": {"pane_id": "w1:p2"}}}))).unwrap();
+    s.recv().await;
+    wait_open(&open, 3).await; // lifecycle, snapshot-pane status, new-pane status
+    // No more requests: the watchdog fires and every connection closes.
+    wait_open(&open, 0).await;
+    let eof = tokio::time::timeout(Duration::from_secs(2), s.rx.next_line()).await.unwrap().unwrap();
+    assert!(eof.is_none(), "output still open: {eof:?}");
 }
