@@ -1,7 +1,7 @@
 node_modules/
 target/
 .expo/
-ios/
-android/
+/app/ios/
+/app/android/
 *.log
 .DS_Store
