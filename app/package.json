@@ -7,6 +7,7 @@
     "@zogssh/protocol": "workspace:*",
     "expo": "~58.0.21",
     "expo-build-properties": "~58.0.11",
+    "expo-clipboard": "~58.0.4",
     "expo-constants": "~58.0.14",
     "expo-font": "~58.0.11",
     "expo-linking": "~58.0.15",
@@ -31,8 +32,10 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",
+    "@types/react-test-renderer": "^19.3.0",
     "jest": "^30.5.2",
     "jest-expo": "^58.0.13",
+    "react-test-renderer": "19.3.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -46,6 +49,13 @@
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^lucide-react-native$": "<rootDir>/../node_modules/lucide-react-native/dist/cjs/lucide-react-native.js"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|@zogssh/.*))"
+    ]
   }
 }
