@@ -8,6 +8,9 @@ use anyhow::Result;
 
 use crate::config;
 
+pub mod debounce;
+pub mod watch;
+
 pub struct ServeCtx {
     pub home: PathBuf,
     pub herdr_socket: PathBuf,
@@ -23,6 +26,9 @@ pub struct ServeCtx {
 pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()> {
     let _config = config::load(&ctx.config_path)?;
     eprintln!("zogsshd serve: started");
-    shutdown.await;
+    tokio::select! {
+        _ = watch::watch(&ctx) => {}
+        _ = shutdown => {}
+    }
     Ok(())
 }

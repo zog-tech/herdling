@@ -16,9 +16,11 @@ thiserror = "2"
 dirs = "6"
 toml = "0.8"
 fs4 = { version = "0.13", features = ["sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 tempfile = "3"
+axum = "0.8"
 
 [lib]
 name = "zogsshd"

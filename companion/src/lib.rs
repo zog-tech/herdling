@@ -1,7 +1,9 @@
 pub mod claude;
 pub mod config;
+pub mod events;
 pub mod fsdirs;
 pub mod herdr;
+pub mod push;
 pub mod rpc;
 pub mod serve;
 pub mod tail;

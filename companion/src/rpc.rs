@@ -1,6 +1,6 @@
 //! NDJSON JSON-RPC loop. One request per line in, one response per line out.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -393,194 +393,38 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     c.call(&method, p).await.map_err(herdr_err)
 }
 
-/// Event types sent when the caller names none. Only types that need no extra
-/// parameters (pane.output_matched, pane.agent_status_changed and pane.scroll_changed
-/// need a pane id, so they are left out).
-const DEFAULT_EVENTS: &[&str] = &[
-    "workspace.created", "workspace.updated", "workspace.metadata_updated", "workspace.renamed",
-    "workspace.moved", "workspace.reordered", "workspace.closed", "workspace.focused",
-    "worktree.created", "worktree.opened", "worktree.removed",
-    "tab.created", "tab.closed", "tab.focused", "tab.renamed", "tab.moved",
-    "pane.created", "pane.closed", "pane.updated", "pane.focused", "pane.moved",
-    "pane.exited", "pane.agent_detected", "layout.updated",
-];
-
 async fn notify(out: &Out, stream: &str, data: Value) -> bool {
     out.send(json!({ "method": "event", "params": { "stream": stream, "data": data } })).await.is_ok()
 }
 
-/// Opens a herdr connection that streams `pane.agent_status_changed` for `panes`.
-/// herdr needs a pane id for that subscription type, so the default set cannot include it.
-async fn status_connection(ctx: &Ctx, panes: &[String]) -> Result<herdr::Client, HerdrError> {
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await?;
-    let subs: Vec<Value> =
-        panes.iter().map(|p| json!({ "type": "pane.agent_status_changed", "pane_id": p })).collect();
-    c.call("events.subscribe", json!({ "subscriptions": subs })).await?;
-    Ok(c)
-}
-
-/// Pane ids of the current `session.snapshot`. Empty when herdr cannot answer.
-async fn snapshot_panes(ctx: &Ctx) -> Vec<String> {
-    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return vec![] };
-    let Ok(r) = c.call("session.snapshot", json!({})).await else { return vec![] };
-    let snap = r.get("snapshot").unwrap_or(&r);
-    snap.get("panes")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|p| p.get("pane_id").and_then(Value::as_str).map(String::from)).collect())
-        .unwrap_or_default()
-}
-
-/// Pane id of a `pane_created` / `pane_agent_detected` event line, if it is one.
-fn new_pane_id(ev: &Value) -> Option<&str> {
-    let name = ev.get("event").and_then(Value::as_str)?;
-    let data = ev.get("data")?;
-    match name.replace('.', "_").as_str() {
-        "pane_created" => data.get("pane").and_then(|p| p.get("pane_id")).and_then(Value::as_str),
-        "pane_agent_detected" => data.get("pane_id").and_then(Value::as_str),
-        _ => None,
-    }
-}
-
-/// Pane id of a `pane_closed` event line, if it is one.
-fn closed_pane_id(ev: &Value) -> Option<&str> {
-    let name = ev.get("event").and_then(Value::as_str)?;
-    if name.replace('.', "_") != "pane_closed" {
-        return None;
-    }
-    ev.get("data")?.get("pane_id").and_then(Value::as_str)
-}
-
-/// Status connections for `panes`: one connection for all of them, or, when herdr
-/// rejects that (for example one pane closed meanwhile), one per pane. Panes whose
-/// connection fails are left out.
-async fn open_status_connections(ctx: &Ctx, panes: &[String]) -> Vec<(herdr::Client, Vec<String>)> {
-    if panes.is_empty() {
-        return vec![];
-    }
-    if let Ok(c) = status_connection(ctx, panes).await {
-        return vec![(c, panes.to_vec())];
-    }
-    let mut set = JoinSet::new();
-    for pane in panes {
-        let (ctx, pane) = (ctx.clone(), pane.clone());
-        set.spawn(async move { status_connection(&ctx, std::slice::from_ref(&pane)).await.ok().map(|c| (c, vec![pane])) });
-    }
-    let mut out = vec![];
-    while let Some(r) = set.join_next().await {
-        if let Ok(Some(conn)) = r {
-            out.push(conn);
-        }
-    }
-    out
-}
-
-/// The status connections of one subscribe stream. Dropping it aborts all of them.
-#[derive(Default)]
-struct StatusConns {
-    readers: JoinSet<()>,
-    /// Connection id to its reader and the panes it still serves.
-    conns: HashMap<u64, (AbortHandle, HashSet<String>)>,
-    by_pane: HashMap<String, u64>,
-    next: u64,
-}
-
-impl StatusConns {
-    fn covers(&self, pane: &str) -> bool {
-        self.by_pane.contains_key(pane)
-    }
-
-    /// Forwards the events of `c` into `tx` until herdr closes it.
-    fn add(&mut self, mut c: herdr::Client, panes: Vec<String>, tx: mpsc::Sender<Value>) {
-        while self.readers.try_join_next().is_some() {}
-        let handle = self.readers.spawn(async move {
-            while let Ok(Some(ev)) = c.next_event().await {
-                if tx.send(ev).await.is_err() {
-                    return;
-                }
-            }
-        });
-        self.next += 1;
-        for p in &panes {
-            self.by_pane.insert(p.clone(), self.next);
-        }
-        self.conns.insert(self.next, (handle, panes.into_iter().collect()));
-    }
-
-    /// Forgets `pane`. A connection that serves no open pane any more is closed.
-    fn pane_closed(&mut self, pane: &str) {
-        let Some(id) = self.by_pane.remove(pane) else { return };
-        let Some((handle, panes)) = self.conns.get_mut(&id) else { return };
-        panes.remove(pane);
-        if panes.is_empty() {
-            handle.abort();
-            self.conns.remove(&id);
-        }
-    }
-}
-
 async fn herdr_subscribe(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
     // With no explicit list the caller gets the lifecycle events plus status changes of every pane.
-    let (types, with_status): (Vec<String>, bool) = match params.get("events") {
-        None | Some(Value::Null) => (DEFAULT_EVENTS.iter().map(|s| s.to_string()).collect(), true),
-        Some(Value::Array(a)) => (
+    let events: Option<Vec<String>> = match params.get("events") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(a)) => Some(
             a.iter()
                 .map(|v| v.as_str().map(String::from))
                 .collect::<Option<_>>()
                 .ok_or_else(|| err("bad_request", "events must be an array of strings"))?,
-            false,
         ),
         Some(_) => return Err(err("bad_request", "events must be an array of strings")),
     };
-    let subscriptions: Vec<Value> = types.iter().map(|t| json!({ "type": t })).collect();
 
     // Subscribe before replying, so the caller sees herdr errors and gets no events before the id.
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.map_err(herdr_err)?;
-    c.call("events.subscribe", json!({ "subscriptions": subscriptions })).await.map_err(herdr_err)?;
-
-    // Panes known now. The lifecycle subscription is already active, so a pane created
-    // after this snapshot arrives as an event and gets covered below.
-    let (tx, mut rx) = mpsc::channel::<Value>(OUT_CAPACITY);
-    let mut status = StatusConns::default();
-    if with_status {
-        let panes = snapshot_panes(ctx).await;
-        for (sc, served) in open_status_connections(ctx, &panes).await {
-            status.add(sc, served, tx.clone());
-        }
-    }
+    let mut events = crate::events::subscribe(&ctx.herdr_socket, ctx.herdr_timeout, events).await.map_err(herdr_err)?;
 
     let out = out.clone();
-    let ctx = ctx.clone();
-    let stream = ctx.streams.clone().spawn("herdr", move |id| async move {
-        let mut status = status;
+    let stream = ctx.streams.spawn("herdr", move |id| async move {
         loop {
-            tokio::select! {
-                ev = c.next_event() => match ev {
-                    Ok(Some(ev)) => {
-                        if with_status {
-                            if let Some(pane) = new_pane_id(&ev) {
-                                if !status.covers(pane) {
-                                    let pane = pane.to_string();
-                                    if let Ok(sc) = status_connection(&ctx, std::slice::from_ref(&pane)).await {
-                                        status.add(sc, vec![pane], tx.clone());
-                                    }
-                                }
-                            } else if let Some(pane) = closed_pane_id(&ev) {
-                                status.pane_closed(pane);
-                            }
-                        }
-                        if !notify(&out, &id, ev).await {
-                            return;
-                        }
-                    }
-                    Ok(None) | Err(_) => {
-                        notify(&out, &id, json!({ "closed": true })).await;
-                        return;
-                    }
-                },
-                Some(ev) = rx.recv() => {
+            match events.next().await {
+                Some(ev) => {
                     if !notify(&out, &id, ev).await {
                         return;
                     }
+                }
+                None => {
+                    notify(&out, &id, json!({ "closed": true })).await;
+                    return;
                 }
             }
         }
