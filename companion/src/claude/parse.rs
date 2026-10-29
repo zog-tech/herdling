@@ -24,38 +24,55 @@ pub fn parse_line(line: &str) -> Vec<ThreadItem> {
     }
 }
 
+/// A tool result plus subagent details from the line's `toolUseResult` object.
+#[derive(Debug, Clone)]
+pub struct ResultInfo {
+    pub result: ToolResult,
+    pub agent_id: Option<String>,
+    pub status: Option<String>,
+}
+
 /// Tool results found on one line, keyed by `tool_use_id`.
-pub fn parse_results(line: &str) -> Vec<(String, ToolResult)> {
+pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
     let Ok(v) = serde_json::from_str::<Value>(line) else { return Vec::new() };
     if v.get("type").and_then(Value::as_str) != Some("user") {
         return Vec::new();
     }
     let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else { return Vec::new() };
+    let blocks: Vec<&Value> =
+        blocks.iter().filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result")).collect();
+    // `toolUseResult` describes one call. Use it only when the line holds one result.
+    let extra = if blocks.len() == 1 { v.get("toolUseResult") } else { None };
+    let agent_id = extra.and_then(|t| t.get("agentId")).and_then(Value::as_str).map(String::from);
+    let status = extra.and_then(|t| t.get("status")).and_then(Value::as_str).map(String::from);
     blocks
-        .iter()
-        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
+        .into_iter()
         .filter_map(|b| {
             let id = b.get("tool_use_id")?.as_str()?.to_string();
             let ok = !b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
             let (text, truncated) = cap(&result_text(b.get("content")), RESULT_CAP);
-            Some((id, ToolResult { ok, text, truncated }))
+            let result = ToolResult { ok, text, truncated };
+            Some((id, ResultInfo { result, agent_id: agent_id.clone(), status: status.clone() }))
         })
         .collect()
 }
 
 /// Merge tool results into the tool and subagent items with the same id.
-pub fn assemble(mut items: Vec<ThreadItem>, mut results: HashMap<String, ToolResult>) -> Vec<ThreadItem> {
+pub fn assemble(mut items: Vec<ThreadItem>, mut results: HashMap<String, ResultInfo>) -> Vec<ThreadItem> {
     for item in &mut items {
         match item {
             ThreadItem::Tool { id, result, .. } => {
                 if let Some(r) = results.remove(id.as_str()) {
-                    *result = Some(r);
+                    *result = Some(r.result);
                 }
             }
-            ThreadItem::Subagent { id, status, result_summary, .. } => {
+            ThreadItem::Subagent { id, agent_id, status, result_summary, .. } => {
                 if let Some(r) = results.remove(id.as_str()) {
-                    *status = if r.ok { "done" } else { "error" }.into();
-                    *result_summary = Some(cap(&r.text, 500).0);
+                    *status = r.status.unwrap_or_else(|| if r.result.ok { "done" } else { "error" }.into());
+                    if let Some(a) = r.agent_id {
+                        *agent_id = a;
+                    }
+                    *result_summary = Some(cap(&r.result.text, 500).0);
                 }
             }
             _ => {}
@@ -160,7 +177,7 @@ fn tool_item(b: &Value, uuid: &str, i: usize, ts: i64) -> ThreadItem {
             .map(|s| cap(s, 200).0)
             .unwrap_or_default();
         return ThreadItem::Subagent {
-            agent_id: id.clone(),
+            agent_id: String::new(),
             id,
             ts,
             description,

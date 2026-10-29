@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use serde_json::json;
-use zogsshd::claude::{assemble, parse_line, parse_results, thread_get, thread_get_from};
+use zogsshd::claude::{assemble, parse_line, parse_results, thread_get, thread_get_from, ResultInfo};
 use zogsshd::types::{ThreadItem, ToolResult};
 
 fn fixture(name: &str) -> PathBuf {
@@ -104,9 +104,10 @@ fn tool_result_truncated_at_4096() {
 fn task_tool_becomes_subagent() {
     let items = all_items("claude_basic.jsonl");
     match items.iter().find(|i| id_of(i) == "toolu_task1").unwrap() {
-        ThreadItem::Subagent { description, status, result_summary, .. } => {
+        ThreadItem::Subagent { description, status, result_summary, agent_id, .. } => {
+            assert_eq!(agent_id, "agent1");
             assert_eq!(description, "Survey the test suite");
-            assert_eq!(status, "done");
+            assert_eq!(status, "completed");
             assert_eq!(result_summary.as_deref(), Some("Found 12 tests."));
         }
         other => panic!("{other:?}"),
@@ -135,7 +136,7 @@ fn skips_blob_and_meta_lines() {
 #[test]
 fn assemble_leaves_unmatched_tools_alone() {
     let l = r#"{"type":"assistant","uuid":"x","timestamp":"2026-03-04T10:00:02.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Foo","input":{"a":1,"b":"hello"}}]}}"#;
-    let out = assemble(parse_line(l), HashMap::from([("other".to_string(), ToolResult { ok: true, text: "x".into(), truncated: false })]));
+    let out = assemble(parse_line(l), HashMap::from([("other".to_string(), ResultInfo { result: ToolResult { ok: true, text: "x".into(), truncated: false }, agent_id: None, status: None })]));
     assert!(matches!(&out[0], ThreadItem::Tool { input_summary, result: None, .. } if input_summary == "hello"));
 }
 
@@ -164,6 +165,46 @@ fn paging_returns_cursor_and_older_page() {
     let want: Vec<String> = all_items("claude_basic.jsonl").iter().map(id_of).collect();
     assert_eq!(ids.len(), total);
     assert_eq!(ids, want);
+}
+
+#[test]
+fn subagent_has_empty_agent_id_until_result_arrives() {
+    let text = std::fs::read_to_string(fixture("claude_basic.jsonl")).unwrap();
+    let call = text.lines().find(|l| l.contains(r#""id":"toolu_task1""#)).unwrap();
+    match &parse_line(call)[0] {
+        ThreadItem::Subagent { agent_id, status, .. } => {
+            assert_eq!(agent_id, "");
+            assert_eq!(status, "running");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn results_on_a_later_page_are_attached() {
+    let p = fixture("claude_basic.jsonl");
+    for limit in [1, 2] {
+        let mut cur = None;
+        let mut items = Vec::new();
+        loop {
+            let pg = thread_get(&p, cur, limit).unwrap();
+            items.extend(pg.items);
+            cur = pg.cursor;
+            if cur.is_none() {
+                break;
+            }
+        }
+        for want in ["toolu_read1", "toolu_task1"] {
+            match items.iter().find(|i| id_of(i) == want).unwrap() {
+                ThreadItem::Tool { result, .. } => assert!(result.is_some(), "limit {limit} {want}"),
+                ThreadItem::Subagent { status, agent_id, .. } => {
+                    assert_eq!(status, "completed", "limit {limit}");
+                    assert_eq!(agent_id, "agent1");
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+    }
 }
 
 #[test]

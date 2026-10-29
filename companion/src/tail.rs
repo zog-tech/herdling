@@ -1,8 +1,6 @@
 //! Read the last lines of a large file without reading the whole file.
 
-use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
 
 /// Block size for backward reads.
 pub const BLOCK: u64 = 64 * 1024;
@@ -10,34 +8,8 @@ pub const BLOCK: u64 = 64 * 1024;
 /// A complete line and the byte offset where it starts.
 pub type OffsetLine = (u64, String);
 
-/// Read up to `max_items` complete lines that end at byte `before` (default EOF).
-/// Returns the lines in file order and the offset of the first returned line
-/// (`None` when that line starts at byte 0). Blank lines are skipped.
-pub fn read_lines_before(
-    path: &Path,
-    before: Option<u64>,
-    max_items: usize,
-) -> io::Result<(Vec<String>, Option<u64>)> {
-    read_lines_before_from(File::open(path)?, before, max_items)
-}
-
-/// Same as [`read_lines_before`] for any seekable reader.
-pub fn read_lines_before_from<R: Read + Seek>(
-    r: R,
-    before: Option<u64>,
-    max_items: usize,
-) -> io::Result<(Vec<String>, Option<u64>)> {
-    let lines = read_offset_lines_before(r, before, max_items)?;
-    let first = match lines.first() {
-        Some((off, _)) if *off > 0 => Some(*off),
-        Some(_) => None,
-        // Nothing returned: nothing older is known to exist unless `before` is past 0.
-        None => before.filter(|b| *b > 0),
-    };
-    Ok((lines.into_iter().map(|(_, l)| l).collect(), first))
-}
-
-/// Like [`read_lines_before_from`], but keeps each line's start offset.
+/// Read up to `max_items` complete lines that end at byte `before` (default EOF), in file
+/// order, each with its start offset. Blank lines are skipped.
 pub fn read_offset_lines_before<R: Read + Seek>(
     mut r: R,
     before: Option<u64>,

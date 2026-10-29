@@ -8,9 +8,9 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::tail::read_offset_lines_before;
-use crate::types::{ThreadItem, ThreadPage, ToolResult};
+use crate::types::{ThreadItem, ThreadPage};
 
-pub use parse::{assemble, parse_line, parse_results, RESULT_CAP};
+pub use parse::{assemble, parse_line, parse_results, ResultInfo, RESULT_CAP};
 
 /// Default page size in thread items.
 pub const DEFAULT_LIMIT: usize = 60;
@@ -32,10 +32,11 @@ pub fn thread_get_from<R: Read + Seek>(mut r: R, before: Option<u64>, limit: usi
         r.read_exact(&mut b)?;
         b[0] == b'\n'
     };
-    let mut cursor = Some(before.map_or(len, |b| b.min(len)));
+    let page_end = before.map_or(len, |b| b.min(len));
+    let mut cursor = Some(page_end);
     let mut end = len;
     let mut chunks: Vec<Vec<ThreadItem>> = Vec::new();
-    let mut results: HashMap<String, ToolResult> = HashMap::new();
+    let mut results: HashMap<String, ResultInfo> = HashMap::new();
     let mut count = 0usize;
     let mut first = true;
 
@@ -77,6 +78,58 @@ pub fn thread_get_from<R: Read + Seek>(mut r: R, before: Option<u64>, limit: usi
     }
     let cursor = cursor.filter(|c| *c > 0);
     chunks.reverse();
-    let items = assemble(chunks.into_iter().flatten().collect(), results);
+    let items: Vec<ThreadItem> = chunks.into_iter().flatten().collect();
+    scan_forward(&mut r, end.min(page_end), len, &items, &mut results)?;
+    let items = assemble(items, results);
     Ok(ThreadPage { items, cursor, end })
+}
+
+/// Max bytes read past a page to find results for its unresolved tool calls.
+pub const FORWARD_WINDOW: u64 = 256 * 1024;
+
+/// A result can sit on a later page than its call. Look ahead a bounded window
+/// for results of calls on this page that have none yet.
+fn scan_forward<R: Read + Seek>(
+    r: &mut R,
+    from: u64,
+    len: u64,
+    items: &[ThreadItem],
+    results: &mut HashMap<String, ResultInfo>,
+) -> io::Result<()> {
+    let mut pending: std::collections::HashSet<&str> = items
+        .iter()
+        .filter_map(|i| match i {
+            ThreadItem::Tool { id, result: None, .. } | ThreadItem::Subagent { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .filter(|id| !results.contains_key(*id))
+        .collect();
+    if pending.is_empty() || from >= len {
+        return Ok(());
+    }
+    let n = FORWARD_WINDOW.min(len - from);
+    r.seek(SeekFrom::Start(from))?;
+    let mut buf = vec![0u8; n as usize];
+    r.read_exact(&mut buf)?;
+    if from + n < len {
+        // The window ends inside a line. Drop the cut-off tail.
+        match buf.iter().rposition(|c| *c == b'\n') {
+            Some(i) => buf.truncate(i + 1),
+            None => return Ok(()),
+        }
+    }
+    for line in String::from_utf8_lossy(&buf).lines() {
+        if !line.contains("tool_result") {
+            continue;
+        }
+        for (id, info) in parse_results(line) {
+            if pending.remove(id.as_str()) {
+                results.insert(id, info);
+            }
+        }
+        if pending.is_empty() {
+            break;
+        }
+    }
+    Ok(())
 }
