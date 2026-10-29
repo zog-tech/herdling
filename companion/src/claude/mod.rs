@@ -1,6 +1,8 @@
 //! Claude Code session logs (JSONL) as normalized thread items.
 
+mod follow;
 mod parse;
+mod resolve;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -10,6 +12,8 @@ use std::path::Path;
 use crate::tail::read_offset_lines_before;
 use crate::types::{ThreadItem, ThreadPage};
 
+pub use follow::{Follower, POLL_INTERVAL};
+pub use resolve::{descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_sessions, resolve};
 pub use parse::{assemble, parse_line, parse_results, ResultInfo, RESULT_CAP};
 
 /// Default page size in thread items.
@@ -132,4 +136,12 @@ fn scan_forward<R: Read + Seek>(
         }
     }
     Ok(())
+}
+
+/// Path of a subagent transcript next to its parent log.
+pub fn subagent_path(log_path: &Path, agent_id: &str) -> Option<std::path::PathBuf> {
+    if agent_id.is_empty() || !agent_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    Some(log_path.with_extension("").join("subagents").join(format!("agent-{agent_id}.jsonl")))
 }
