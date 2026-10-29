@@ -18,6 +18,8 @@ export function useHostSnapshot(hostId: string): { snapshot?: Snapshot; loading:
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const current = useRef<Snapshot | undefined>(undefined);
+  /** Counts applied events; a refetch that started before the latest event is dropped. */
+  const version = useRef(0);
 
   useEffect(() => {
     current.current = undefined;
@@ -39,9 +41,11 @@ export function useHostSnapshot(hostId: string): { snapshot?: Snapshot; loading:
       setSnapshot(s);
     };
     const refetch = async () => {
+      const started = version.current;
       try {
         const r = await rpc.call("herdr.call", { method: "session.snapshot", params: {} });
-        if (dead) return;
+        // An event arrived meanwhile: it set `stale`, so a newer refetch follows.
+        if (dead || version.current !== started) return;
         set(parseSnapshot(r));
         setError(undefined);
       } catch (e) {
@@ -63,6 +67,7 @@ export function useHostSnapshot(hostId: string): { snapshot?: Snapshot; loading:
         return;
       }
       if (!current.current) return;
+      version.current++;
       const next = applyEvent(current.current, e);
       set(next);
       if (next.stale) scheduleRefetch();

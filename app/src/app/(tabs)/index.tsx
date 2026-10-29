@@ -4,9 +4,9 @@ import { useEffect, useMemo } from "react";
 import { Pressable, View } from "react-native";
 
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
-import { useHostConn } from "@/hosts/connection";
+import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { useSeen } from "@/herdr/seen";
+import { pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { needsYou, type AgentInfo, type Snapshot } from "@/herdr/snapshot";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
@@ -19,9 +19,12 @@ import { Text } from "@/ui/Text";
 
 /** Keeps one host's snapshot live and mirrors it into the shared store. Renders nothing. */
 function HostWatcher({ hostId }: { hostId: string }) {
-  const { snapshot } = useHostSnapshot(hostId);
+  const { snapshot, error } = useHostSnapshot(hostId);
   useEffect(() => {
-    setHostSnapshot(hostId, snapshot);
+    setHostSnapshot(hostId, snapshot, error);
+  }, [hostId, snapshot, error]);
+  useEffect(() => {
+    if (snapshot && !snapshot.stale) pruneSeen(hostId, snapshot.panes.map((p) => p.pane_id));
   }, [hostId, snapshot]);
   useEffect(() => () => setHostSnapshot(hostId, undefined), [hostId]);
   return null;
@@ -92,6 +95,7 @@ function Workspaces({ hostId, snapshot }: { hostId: string; snapshot: Snapshot }
 function HostCard({ host }: { host: Host }) {
   const conn = useHostConn(host.id);
   const snapshot = useSnapshots((s) => s.byHost[host.id]);
+  const error = useSnapshots((s) => s.errors[host.id]);
   const online = conn.status === "online";
   return (
     <Card style={online ? undefined : { opacity: 0.6 }}>
@@ -111,6 +115,10 @@ function HostCard({ host }: { host: Host }) {
       {online ? (
         snapshot ? (
           <Workspaces hostId={host.id} snapshot={snapshot} />
+        ) : error ? (
+          <Text muted variant="small">
+            Can't read herdr
+          </Text>
         ) : (
           <Text muted variant="small">
             Loading…
@@ -121,18 +129,28 @@ function HostCard({ host }: { host: Host }) {
   );
 }
 
+/** Ids of hosts whose connection is online. */
+function useOnlineHostIds(hosts: Host[]): Set<string> {
+  const key = useOnlineHostKey(hosts.map((h) => h.id));
+  return useMemo(() => new Set(key.split(",").filter(Boolean)), [key]);
+}
+
 export default function OverviewScreen() {
   const router = useRouter();
   const hosts = useHosts((s) => s.hosts);
   const byHost = useSnapshots((s) => s.byHost);
   const seen = useSeen((s) => s.seen);
+  const online = useOnlineHostIds(hosts);
+  const hydrated = useSeenHydrated();
   const items = useMemo(
     () =>
-      needsYou(
-        hosts.flatMap((h) => (byHost[h.id] ? [{ hostId: h.id, snapshot: byHost[h.id] }] : [])),
-        seen,
-      ),
-    [hosts, byHost, seen],
+      hydrated
+        ? needsYou(
+            hosts.flatMap((h) => (online.has(h.id) && byHost[h.id] ? [{ hostId: h.id, snapshot: byHost[h.id] }] : [])),
+            seen,
+          )
+        : [],
+    [hosts, byHost, seen, online, hydrated],
   );
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

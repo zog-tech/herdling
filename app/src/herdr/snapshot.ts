@@ -89,7 +89,8 @@ export function applyEvent(s: Snapshot, e: HerdrEvent): Snapshot {
     }
     case "pane_closed": {
       const paneId = str(d.pane_id);
-      return paneId ? removePanes(s, (p) => p.pane_id === paneId) : { ...s, stale: true };
+      // Stale too: a refetch already in flight must not bring the pane back.
+      return paneId ? { ...removePanes(s, (p) => p.pane_id === paneId), stale: true } : { ...s, stale: true };
     }
     case "tab_created": {
       const tab = d.tab as TabInfo | undefined;
@@ -98,7 +99,11 @@ export function applyEvent(s: Snapshot, e: HerdrEvent): Snapshot {
     case "tab_closed": {
       const tabId = str(d.tab_id);
       if (!tabId) return { ...s, stale: true };
-      return { ...removePanes(s, (p) => p.tab_id === tabId), tabs: s.tabs.filter((t) => t.tab_id !== tabId) };
+      return {
+        ...removePanes(s, (p) => p.tab_id === tabId),
+        tabs: s.tabs.filter((t) => t.tab_id !== tabId),
+        stale: true,
+      };
     }
     case "workspace_created": {
       const ws = d.workspace as WorkspaceInfo | undefined;
@@ -117,6 +122,7 @@ export function applyEvent(s: Snapshot, e: HerdrEvent): Snapshot {
         ...removePanes(s, (p) => p.workspace_id === id),
         workspaces: s.workspaces.filter((w) => w.workspace_id !== id),
         tabs: s.tabs.filter((t) => t.workspace_id !== id),
+        stale: true,
       };
     }
     default:

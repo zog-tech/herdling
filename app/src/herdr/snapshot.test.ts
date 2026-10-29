@@ -74,7 +74,14 @@ test("tab_closed removes its panes and agents", () => {
 test("unknown events set the stale flag", () => {
   const s = snap([]);
   expect(applyEvent(s, { event: "pane_updated", data: {} }).stale).toBe(true);
-  expect(applyEvent(s, { event: "pane_closed", data: { pane_id: "x" } }).stale).toBeFalsy();
+  expect(applyEvent(s, { event: "workspace_renamed", data: { workspace_id: "w1", label: "x" } }).stale).toBeFalsy();
+});
+
+test("close events set stale so an in-flight refetch is replaced", () => {
+  const s = snap([agent({ pane_id: "w1:p1" })]);
+  expect(applyEvent(s, { event: "pane_closed", data: { pane_id: "w1:p1" } }).stale).toBe(true);
+  expect(applyEvent(s, { event: "tab_closed", data: { tab_id: "w1:t1" } }).stale).toBe(true);
+  expect(applyEvent(s, { event: "workspace_closed", data: { workspace_id: "w1" } }).stale).toBe(true);
 });
 
 test("needs_you_orders_blocked_first", () => {

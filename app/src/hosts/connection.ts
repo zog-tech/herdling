@@ -143,6 +143,11 @@ export function useHostConn(hostId: string): HostConn {
   return useConns((s) => s.conns[hostId] ?? OFFLINE);
 }
 
+/** Comma-joined ids of the given hosts that are online (a string, so the selector result is stable). */
+export function useOnlineHostKey(hostIds: string[]): string {
+  return useConns((s) => hostIds.filter((id) => s.conns[id]?.status === "online").join(","));
+}
+
 /** Current state outside React. */
 export function getHostConn(hostId: string): HostConn {
   return useConns.getState().conns[hostId] ?? OFFLINE;
