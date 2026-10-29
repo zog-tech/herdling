@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronLeft, TriangleAlert } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -104,7 +104,22 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
       </View>
     );
   }
-  return <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />;
+  return (
+    <View style={{ flex: 1 }}>
+      {status === "error" ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingHorizontal: space.lg, paddingVertical: space.xs, backgroundColor: colors.card }}
+        >
+          <TriangleAlert size={12} color={colors.status.blocked} />
+          <Text variant="caption" color={colors.status.blocked} numberOfLines={1} style={{ flex: 1 }}>
+            {`Live updates paused: ${thread.error ?? "unknown error"}. Retrying…`}
+          </Text>
+        </View>
+      ) : null}
+      <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />
+    </View>
+  );
 }
 
 export default function SessionScreen() {

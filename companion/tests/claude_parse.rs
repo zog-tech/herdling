@@ -259,3 +259,73 @@ fn large_file_reads_bounded() {
     assert!(page.cursor.is_some());
     assert!(bytes.get() < 2 * 1024 * 1024, "read {} bytes", bytes.get());
 }
+
+fn harness_items() -> Vec<ThreadItem> {
+    all_items("claude_harness.jsonl")
+}
+
+fn item_with_uuid<'a>(items: &'a [ThreadItem], uuid: &str) -> Option<&'a ThreadItem> {
+    items.iter().find(|i| id_of(i).starts_with(&format!("{uuid}:")))
+}
+
+fn system_text(i: Option<&ThreadItem>) -> String {
+    match i {
+        Some(ThreadItem::System { text, .. }) => text.clone(),
+        other => panic!("expected system item, got {other:?}"),
+    }
+}
+
+fn user_text(i: Option<&ThreadItem>) -> String {
+    match i {
+        Some(ThreadItem::User { text, .. }) => text.clone(),
+        other => panic!("expected user item, got {other:?}"),
+    }
+}
+
+#[test]
+fn task_notification_becomes_system_row() {
+    let items = harness_items();
+    assert_eq!(
+        system_text(item_with_uuid(&items, "h-01")),
+        "Background task completed: Agent \"Review the parser\" finished"
+    );
+}
+
+#[test]
+fn task_notification_without_status_or_summary_falls_back() {
+    let items = harness_items();
+    assert_eq!(system_text(item_with_uuid(&items, "h-02")), "Background task update");
+}
+
+#[test]
+fn slash_command_becomes_user_command_text() {
+    let items = harness_items();
+    assert_eq!(user_text(item_with_uuid(&items, "h-03")), "/review src/main.rs");
+    assert_eq!(user_text(item_with_uuid(&items, "h-04")), "/clear");
+}
+
+#[test]
+fn command_message_without_name_is_dropped() {
+    assert!(item_with_uuid(&harness_items(), "h-05").is_none());
+}
+
+#[test]
+fn local_command_stdout_becomes_system_row_or_drops_when_empty() {
+    let items = harness_items();
+    assert_eq!(system_text(item_with_uuid(&items, "h-06")), "Set model to Opus");
+    assert!(item_with_uuid(&items, "h-07").is_none());
+}
+
+#[test]
+fn system_reminder_only_and_caveat_are_dropped() {
+    let items = harness_items();
+    assert!(item_with_uuid(&items, "h-08").is_none());
+    assert!(item_with_uuid(&items, "h-09").is_none());
+}
+
+#[test]
+fn system_reminder_is_stripped_from_a_real_prompt() {
+    let items = harness_items();
+    assert_eq!(user_text(item_with_uuid(&items, "h-10")), "Please also update the README");
+    assert_eq!(user_text(item_with_uuid(&items, "h-11")), "Plain prompt with <b>tags</b> inside");
+}

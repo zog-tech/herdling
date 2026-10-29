@@ -33,6 +33,11 @@ const WAITING_RETRY_MS = 2_000;
 /** Retry delays after failures; the last value repeats. */
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
+/** The cursor that reaches further back; null means the start of the file is loaded. */
+function olderCursor(a: number | null, b: number | null): number | null {
+  return a == null || b == null ? null : Math.min(a, b);
+}
+
 const codeOf = (e: unknown) => String((e as { code?: unknown })?.code ?? "");
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -58,6 +63,10 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   statusRef.current = status;
   const refRef = useRef(ref);
   refRef.current = ref;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  /** Guards `loadOlder` synchronously, so a second call with the same cursor never fetches. */
+  const loadingOlderRef = useRef(false);
 
   // A different pane: forget the old thread.
   useEffect(() => {
@@ -65,6 +74,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
     setRef(undefined);
     setHasOlder(false);
     source.current = undefined;
+    failures.current = 0;
   }, [hostId, paneId]);
 
   useEffect(() => {
@@ -120,9 +130,18 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         }
         if (dead) return;
         const token = {};
-        source.current = { rpc, logPath, cursor: page.cursor, token };
-        setItems(page.items);
-        setHasOlder(page.cursor != null);
+        const prev = source.current;
+        // Same log as before (a reconnect or a retry): keep the loaded items and merge, so older
+        // pages stay. Only when the new page overlaps them; otherwise items in between are missing.
+        const overlaps =
+          prev?.logPath === logPath &&
+          page.items.length > 0 &&
+          itemsRef.current.some((i) => i.id === page.items[0].id);
+        const cursor = overlaps ? olderCursor(prev!.cursor, page.cursor) : page.cursor;
+        source.current = { rpc, logPath, cursor, token };
+        loadingOlderRef.current = false;
+        setItems((cur) => (overlaps ? mergeItems(cur, page.items) : page.items));
+        setHasOlder(cursor != null);
         const u = await rpc.stream<FollowData>("thread.follow", { log_path: logPath, from: page.end }, (d) => {
           if (dead) return;
           if ("error" in d) {
@@ -181,10 +200,12 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
 
   const loadOlder = useCallback(() => {
     const src = source.current;
-    if (!src || src.cursor == null || loadingOlder) return;
+    if (!src || src.cursor == null || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
+    const before = src.cursor;
     src.rpc
-      .call<ThreadPage>("thread.get", { log_path: src.logPath, before: src.cursor, limit: PAGE_SIZE })
+      .call<ThreadPage>("thread.get", { log_path: src.logPath, before, limit: PAGE_SIZE })
       .then((page) => {
         if (source.current?.token !== src.token) return;
         src.cursor = page.cursor;
@@ -193,8 +214,11 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         setItems((prev) => mergeItems(page.items, prev));
       })
       .catch(() => {})
-      .finally(() => setLoadingOlder(false));
-  }, [loadingOlder]);
+      .finally(() => {
+        if (source.current?.token === src.token) loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
+  }, []);
 
   return { ref, items, status, error, loadOlder, loadingOlder, hasOlder };
 }

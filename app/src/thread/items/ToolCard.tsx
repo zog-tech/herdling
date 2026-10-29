@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, CircleX, Wrench } from "lucide-react-native";
+import { Check, ChevronDown, ChevronRight, CircleX, Loader, Wrench } from "lucide-react-native";
 import { memo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
@@ -78,9 +78,18 @@ export const ToolCard = memo(function ToolCard({
         </Text>
         {state === "ok" ? (
           <Check size={14} color={colors.status.done} />
-        ) : state === "failed" ? (
-          <CircleX size={14} color={colors.danger} />
-        ) : null}
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
+            {state === "failed" ? (
+              <CircleX size={14} color={colors.danger} />
+            ) : (
+              <Loader size={14} color={colors.status.working} />
+            )}
+            <Text variant="caption" bold color={state === "failed" ? colors.danger : colors.status.working}>
+              {state === "failed" ? "Failed" : "Running"}
+            </Text>
+          </View>
+        )}
         <Chevron size={14} color={colors.textMuted} />
       </Pressable>
       {open ? (

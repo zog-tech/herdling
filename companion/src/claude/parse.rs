@@ -133,7 +133,87 @@ fn parse_user(v: &Value, uuid: &str, ts: i64) -> Vec<ThreadItem> {
     if text.starts_with("[Request interrupted by user") {
         return vec![ThreadItem::System { id, ts, text }];
     }
-    vec![ThreadItem::User { id, ts, text, images: (images > 0).then_some(images) }]
+    let images = (images > 0).then_some(images);
+    match classify_user_text(&text) {
+        UserText::Prompt(text) => vec![ThreadItem::User { id, ts, text, images }],
+        UserText::System(text) => vec![ThreadItem::System { id, ts, text }],
+        UserText::Drop if images.is_some() => vec![ThreadItem::User { id, ts, text: String::new(), images }],
+        UserText::Drop => Vec::new(),
+    }
+}
+
+/// What a user-role text line really is. Claude Code writes harness messages (task
+/// notifications, slash commands, reminders) as user lines, often without `isMeta`.
+#[derive(Debug, PartialEq)]
+enum UserText {
+    Prompt(String),
+    System(String),
+    Drop,
+}
+
+fn classify_user_text(text: &str) -> UserText {
+    let t = text.trim_start();
+    if t.starts_with("<task-notification>") {
+        let status = tag_text(t, "status").filter(|s| !s.is_empty());
+        let summary = tag_text(t, "summary").filter(|s| !s.is_empty());
+        let line = match (status, summary) {
+            (Some(st), Some(su)) => format!("Background task {st}: {su}"),
+            (None, Some(su)) => format!("Background task: {su}"),
+            _ => "Background task update".to_string(),
+        };
+        return UserText::System(cap(&line, COMPACT_CAP).0);
+    }
+    if t.starts_with("<command-") {
+        return match tag_text(t, "command-name").filter(|n| !n.is_empty()) {
+            Some(name) => {
+                let args = tag_text(t, "command-args").unwrap_or("");
+                UserText::Prompt(if args.is_empty() { name.to_string() } else { format!("{name} {args}") })
+            }
+            None => UserText::Drop,
+        };
+    }
+    if t.starts_with("<local-command-stdout>") {
+        let out = tag_text(t, "local-command-stdout").unwrap_or("");
+        return if out.is_empty() { UserText::Drop } else { UserText::System(cap(out, RESULT_CAP).0) };
+    }
+    if t.starts_with("<local-command-caveat>") {
+        return UserText::Drop;
+    }
+    if t.starts_with("<system-reminder>") {
+        let rest = strip_tag_blocks(t, "system-reminder");
+        let rest = rest.trim();
+        return if rest.is_empty() { UserText::Drop } else { UserText::Prompt(rest.to_string()) };
+    }
+    UserText::Prompt(text.to_string())
+}
+
+/// Trimmed text between the first `<name>` and the next `</name>`.
+fn tag_text<'a>(s: &'a str, name: &str) -> Option<&'a str> {
+    let open = format!("<{name}>");
+    let close = format!("</{name}>");
+    let start = s.find(&open)? + open.len();
+    let end = s[start..].find(&close).map_or(s.len(), |e| start + e);
+    Some(s[start..end].trim())
+}
+
+/// `s` with every `<name>…</name>` block removed.
+fn strip_tag_blocks(s: &str, name: &str) -> String {
+    let open = format!("<{name}>");
+    let close = format!("</{name}>");
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find(&open) {
+        out.push_str(&rest[..i]);
+        match rest[i..].find(&close) {
+            Some(j) => rest = &rest[i + j + close.len()..],
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn parse_assistant(v: &Value, uuid: &str, ts: i64) -> Vec<ThreadItem> {
