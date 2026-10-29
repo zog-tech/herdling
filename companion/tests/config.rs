@@ -57,3 +57,13 @@ fn concurrent_updates_keep_both() {
     assert_eq!(config::load(&p).unwrap().devices.len(), 20);
     assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
 }
+
+#[test]
+fn parse_error_does_not_leak_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "pair_port = 1\nanthropic_key = \"sk-secret\n").unwrap();
+    let msg = format!("{:#}", config::load(&p).unwrap_err());
+    assert!(!msg.contains("sk-secret"), "{msg}");
+    assert!(msg.contains("line 2"), "{msg}");
+}

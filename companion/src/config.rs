@@ -63,7 +63,7 @@ pub fn default_path(home: &Path) -> PathBuf {
 /// Reads the config. A missing file gives the default config.
 pub fn load(path: &Path) -> Result<Config> {
     match fs::read_to_string(path) {
-        Ok(s) => toml::from_str(&s).with_context(|| format!("parse {}", path.display())),
+        Ok(s) => toml::from_str(&s).map_err(|e| parse_error(path, &s, &e)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
         Err(e) => Err(e).with_context(|| format!("read {}", path.display())),
     }
@@ -97,4 +97,16 @@ pub fn upsert_device(c: &mut Config, d: Device) {
         Some(slot) => *slot = d,
         None => c.devices.push(d),
     }
+}
+
+/// Parse error with line and column only. The toml error text embeds the source
+/// snippet, which can hold secrets, so it is never passed on.
+fn parse_error(path: &Path, src: &str, e: &toml::de::Error) -> anyhow::Error {
+    let at = e.span().map(|r| {
+        let before = &src[..r.start.min(src.len())];
+        let line = before.matches('\n').count() + 1;
+        let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        format!(" at line {line}, column {col}")
+    });
+    anyhow::anyhow!("parse {}{}: {}", path.display(), at.unwrap_or_default(), e.message())
 }
