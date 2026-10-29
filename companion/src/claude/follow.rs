@@ -13,6 +13,8 @@ use crate::types::ThreadItem;
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Pending tool items kept to match later results. The oldest are dropped first.
 pub const PENDING_CAP: usize = 256;
+/// Bytes before the start offset scanned for calls that still wait for a result.
+pub const SEED_WINDOW: u64 = 256 * 1024;
 /// Bytes read per step. A longer line grows the read.
 const CHUNK: u64 = 1024 * 1024;
 
@@ -25,7 +27,30 @@ pub struct Follower {
 
 impl Follower {
     pub fn new(path: &Path, from: u64) -> Follower {
-        Follower { path: path.to_path_buf(), offset: from, pending: HashMap::new(), order: VecDeque::new() }
+        let mut f =
+            Follower { path: path.to_path_buf(), offset: from, pending: HashMap::new(), order: VecDeque::new() };
+        // Calls before `from` may get their result later. Remember the unresolved ones.
+        if let Some(text) = f.window_before(from) {
+            // process() remembers the unresolved items. The output is not emitted.
+            f.process(&text);
+        }
+        f
+    }
+
+    /// The complete lines in the last `SEED_WINDOW` bytes before `end`.
+    fn window_before(&self, end: u64) -> Option<String> {
+        let mut file = File::open(&self.path).ok()?;
+        let end = end.min(file.metadata().ok()?.len());
+        let start = end.saturating_sub(SEED_WINDOW);
+        file.seek(SeekFrom::Start(start)).ok()?;
+        let mut buf = vec![0u8; (end - start) as usize];
+        file.read_exact(&mut buf).ok()?;
+        if start > 0 {
+            // The window starts inside a line. Drop it.
+            let i = buf.iter().position(|c| *c == b'\n')?;
+            buf.drain(..=i);
+        }
+        Some(String::from_utf8_lossy(&buf).into_owned())
     }
 
     /// Read the complete lines past the offset. Returns the items to emit and the new offset,

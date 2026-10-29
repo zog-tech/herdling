@@ -31,6 +31,19 @@ pub async fn resolve(
     home: &Path,
     pane_id: &str,
 ) -> Result<ThreadRef, HerdrError> {
+    resolve_with(socket, timeout, home, pane_id, process_table).await
+}
+
+/// Source of `(pid, ppid)` pairs. Tests inject a fixed table.
+pub type ProcessTable = fn() -> Option<Vec<(u32, u32)>>;
+
+pub async fn resolve_with(
+    socket: &Path,
+    timeout: Duration,
+    home: &Path,
+    pane_id: &str,
+    table: ProcessTable,
+) -> Result<ThreadRef, HerdrError> {
     let mut c = Client::connect(socket, timeout).await?;
     let got = c.call("agent.get", json!({ "target": pane_id })).await?;
     let agent = got.get("agent").unwrap_or(&got);
@@ -43,7 +56,7 @@ pub async fn resolve(
     let info = c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null);
     let (direct, roots) = pane_pids(info.get("process_info").unwrap_or(&info));
     let home = home.to_path_buf();
-    let resolved = tokio::task::spawn_blocking(move || locate(&home, &cwd, &direct, &roots)).await.ok().flatten();
+    let resolved = tokio::task::spawn_blocking(move || locate(&home, &cwd, &direct, &roots, table)).await.ok().flatten();
     if let Some((session, log)) = resolved {
         out.session = Some(session);
         out.log_path = Some(log.to_string_lossy().into_owned());
@@ -93,10 +106,10 @@ fn read_session_file(home: &Path, pid: u32) -> Option<SessionFile> {
 }
 
 /// Session id and log path for a pane: PID files first, then the newest recent log.
-fn locate(home: &Path, cwd: &str, direct: &[u32], roots: &[u32]) -> Option<(String, PathBuf)> {
+fn locate(home: &Path, cwd: &str, direct: &[u32], roots: &[u32], table: ProcessTable) -> Option<(String, PathBuf)> {
     let from_pid = |pid: u32| read_session_file(home, pid);
     let hit = direct.iter().find_map(|p| from_pid(*p)).or_else(|| {
-        let table = process_table()?;
+        let table = table()?;
         descendants(&table, roots).into_iter().find_map(from_pid)
     });
     if let Some(s) = hit {

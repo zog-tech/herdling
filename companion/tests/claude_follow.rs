@@ -120,3 +120,41 @@ async fn follow_stream_over_rpc() {
     assert_eq!(ev["params"]["data"]["items"][0]["text"], "fresh");
     assert_eq!(ev["params"]["data"]["offset"], std::fs::metadata(&log).unwrap().len());
 }
+
+#[test]
+fn follow_seeds_pending_from_before_offset() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("s.jsonl");
+    append(&log, &tool_use_line());
+    let from = std::fs::metadata(&log).unwrap().len();
+    let mut f = Follower::new(&log, from);
+    append(&log, &tool_result_line());
+    let (items, _) = f.poll().unwrap().unwrap();
+    assert_eq!(items.len(), 1);
+    assert!(matches!(&items[0], ThreadItem::Tool { id, result: Some(r), .. } if id == "toolu_1" && r.text == "file.txt"));
+}
+
+#[tokio::test]
+async fn follow_stream_ends_when_file_vanishes() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("s.jsonl");
+    append(&log, &user_line("u0", "old"));
+    let (mut tx, server_in) = tokio::io::duplex(65536);
+    let (server_out, client_rx) = tokio::io::duplex(65536);
+    let ctx = Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
+    let mut rx = BufReader::new(client_rx).lines();
+    let req = json!({"id":1,"method":"thread.follow","params":{"log_path":log,"from":0}});
+    tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();
+    let _ = rx.next_line().await.unwrap().unwrap();
+    // Drain the first batch of items.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), rx.next_line()).await.unwrap();
+    std::fs::remove_file(&log).unwrap();
+    let line = tokio::time::timeout(std::time::Duration::from_secs(10), rx.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let ev: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(ev["params"]["data"]["error"], "not_found");
+}

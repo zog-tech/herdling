@@ -318,6 +318,9 @@ async fn thread_resolve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
+/// Consecutive poll errors before a follow stream ends.
+const FOLLOW_MAX_FAILURES: u32 = 10;
+
 fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
     let path = std::path::PathBuf::from(str_param(&params, "log_path", "thread.follow")?);
     let from = params.get("from").and_then(Value::as_u64).unwrap_or(0);
@@ -327,16 +330,25 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
     let out = out.clone();
     let stream = ctx.streams.spawn("thread", move |id| async move {
         let mut follower = claude::Follower::new(&path, from);
+        let mut failures = 0u32;
         loop {
-            match follower.poll() {
+            let polled = follower.poll();
+            failures = if polled.is_err() { failures + 1 } else { 0 };
+            match polled {
                 Ok(Some((items, offset))) => {
                     if !items.is_empty() && !notify(&out, &id, json!({ "items": items, "offset": offset })) {
                         return;
                     }
                 }
                 Ok(None) => {}
-                // The file may be rotated or briefly missing. Keep polling.
-                Err(_) => {}
+                // The file may be briefly missing. Give up after repeated failures.
+                Err(e) => {
+                    if failures >= FOLLOW_MAX_FAILURES {
+                        let code = if e.kind() == std::io::ErrorKind::NotFound { "not_found" } else { "io_error" };
+                        notify(&out, &id, json!({ "error": code }));
+                        return;
+                    }
+                }
             }
             tokio::time::sleep(claude::POLL_INTERVAL).await;
         }

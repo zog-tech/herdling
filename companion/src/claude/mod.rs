@@ -13,7 +13,7 @@ use crate::tail::read_offset_lines_before;
 use crate::types::{ThreadItem, ThreadPage};
 
 pub use follow::{Follower, POLL_INTERVAL};
-pub use resolve::{descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_sessions, resolve};
+pub use resolve::{resolve_with, ProcessTable, descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_sessions, resolve};
 pub use parse::{assemble, parse_line, parse_results, ResultInfo, RESULT_CAP};
 
 /// Default page size in thread items.
