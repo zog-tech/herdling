@@ -57,8 +57,9 @@ export class RpcClient {
     return this.earlyCount;
   }
 
-  call<T>(method: string, params?: object): Promise<T> {
-    return this.request(method, params) as Promise<T>;
+  /** `timeoutMs` overrides the client default for this call only. */
+  call<T>(method: string, params?: object, timeoutMs?: number): Promise<T> {
+    return this.request(method, params, undefined, timeoutMs) as Promise<T>;
   }
 
   async stream<T>(method: string, params: object, onData: (d: T) => void): Promise<() => void> {
@@ -101,14 +102,19 @@ export class RpcClient {
     this.handleClose();
   }
 
-  private request(method: string, params?: object, onResult?: (r: unknown) => void): Promise<unknown> {
+  private request(
+    method: string,
+    params?: object,
+    onResult?: (r: unknown) => void,
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<unknown> {
     if (this.closed) return Promise.reject(new RpcError("disconnected", "connection closed"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new RpcError("timeout", `${method} timed out after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
+        reject(new RpcError("timeout", `${method} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, onResult });
       try {
         this.transport.send(JSON.stringify({ id, method, params: params ?? {} }));

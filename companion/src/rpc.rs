@@ -18,6 +18,7 @@ use crate::types::{Hello, RpcError, RpcRequest, RpcResponse};
 
 /// Default bound for a herdr connect or request/response round trip.
 pub const HERDR_TIMEOUT: Duration = Duration::from_secs(10);
+const AGENT_START_TIMEOUT: Duration = Duration::from_secs(40);
 
 #[derive(Clone)]
 pub struct Ctx {
@@ -250,7 +251,9 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("bad_request", "herdr.call requires a method"))?
         .to_string();
     let p = params.get("params").cloned().unwrap_or_else(|| json!({}));
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.map_err(herdr_err)?;
+    // `agent.start` waits for the agent to boot, which can take much longer than other calls.
+    let timeout = if method == "agent.start" { AGENT_START_TIMEOUT } else { ctx.herdr_timeout };
+    let mut c = herdr::Client::connect(&ctx.herdr_socket, timeout).await.map_err(herdr_err)?;
     c.call(&method, p).await.map_err(herdr_err)
 }
 
