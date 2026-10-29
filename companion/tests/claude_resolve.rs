@@ -49,8 +49,8 @@ fn write(path: &Path, text: &str) {
 
 #[test]
 fn project_dir_encoding() {
-    let p = claude::project_dir(Path::new("/h"), "/Volumes/MiniSSD/dev/apps/zogssh");
-    assert_eq!(p, Path::new("/h/.claude/projects/-Volumes-MiniSSD-dev-apps-zogssh"));
+    let p = claude::project_dir(Path::new("/h"), "/home/sam/dev/apps/zogssh");
+    assert_eq!(p, Path::new("/h/.claude/projects/-home-sam-dev-apps-zogssh"));
     let p = claude::project_dir(Path::new("/h"), "/home/sam/my.proj_x");
     assert_eq!(p, Path::new("/h/.claude/projects/-home-sam-my-proj-x"));
 }

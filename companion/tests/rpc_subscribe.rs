@@ -82,7 +82,7 @@ fn spawn_fake_with_panes(
                                     let pane = v["data"]["pane_id"].as_str();
                                     let hit = subs.iter().any(|s| {
                                         s["type"].as_str().unwrap_or("").replace('.', "_") == name
-                                            && s["pane_id"].as_str().map_or(true, |p| Some(p) == pane)
+                                            && s["pane_id"].as_str().is_none_or(|p| Some(p) == pane)
                                     });
                                     if hit && w.write_all(format!("{v}\n").as_bytes()).await.is_err() { return; }
                                 }

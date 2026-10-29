@@ -177,7 +177,7 @@ fn jsonl_files(dir: &Path) -> Vec<(PathBuf, SystemTime)> {
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.is_file())
         .filter_map(|p| mtime(&p).map(|t| (p, t)))
         .collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1));
+    v.sort_by_key(|e| std::cmp::Reverse(e.1));
     v
 }
 
@@ -185,7 +185,7 @@ fn jsonl_files(dir: &Path) -> Vec<(PathBuf, SystemTime)> {
 pub fn newest_jsonl(dir: &Path, max_age: Option<Duration>) -> Option<(PathBuf, SystemTime)> {
     let (p, t) = jsonl_files(dir).into_iter().next()?;
     if let Some(age) = max_age {
-        if SystemTime::now().duration_since(t).map_or(false, |d| d > age) {
+        if SystemTime::now().duration_since(t).is_ok_and(|d| d > age) {
             return None;
         }
     }
@@ -233,7 +233,7 @@ pub fn recent_cwds(home: &Path, cap: usize) -> Vec<String> {
             Some((t, last_cwd(&path)?))
         })
         .collect();
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|e| std::cmp::Reverse(e.0));
     let mut seen = HashSet::new();
     found.into_iter().map(|(_, c)| c).filter(|c| seen.insert(c.clone())).take(cap).collect()
 }
