@@ -32,6 +32,8 @@ pub const MAX_LINE: usize = 1 << 20;
 pub struct Ctx {
     pub herdr_socket: PathBuf,
     pub home: PathBuf,
+    /// Companion config file, written by `push.register`.
+    pub config_path: PathBuf,
     /// Bound for herdr connect and request/response. Long-lived streams are not bound by it.
     pub herdr_timeout: Duration,
     /// See [`IDLE_TIMEOUT`].
@@ -46,6 +48,7 @@ impl Ctx {
     pub fn new(herdr_socket: PathBuf, home: PathBuf) -> Ctx {
         Ctx {
             herdr_socket,
+            config_path: crate::config::default_path(&home),
             home,
             herdr_timeout: HERDR_TIMEOUT,
             idle_timeout: IDLE_TIMEOUT,
@@ -299,6 +302,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "thread.follow" => thread_follow(ctx, out, params),
         "sessions.recent" => sessions_recent(ctx, params).await,
         "fs.dirs" => fs_dirs(ctx, params).await,
+        "push.register" => push_register(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -656,4 +660,37 @@ async fn fs_dirs(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
             std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
             _ => err("io_error", e.to_string()),
         })
+}
+
+async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    use crate::config::{self, Device, Prefs};
+    let req = |key: &str| str_param(&params, key, "push.register").map(String::from);
+    let (id, host_id, name) = (req("device_id")?, req("host_id")?, req("name")?);
+    if id.is_empty() {
+        return Err(err("bad_request", "push.register requires device_id"));
+    }
+    let expo_token = match params.get("expo_token") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err(err("bad_request", "expo_token must be a string or null")),
+    };
+    let prefs = params.get("prefs");
+    let flag = |k: &str| prefs.and_then(|p| p.get(k)).and_then(Value::as_bool);
+    let (Some(finished), Some(needs_you)) = (flag("finished"), flag("needs_you")) else {
+        return Err(err("bad_request", "push.register requires prefs.finished and prefs.needs_you"));
+    };
+    let path = ctx.config_path.clone();
+    tokio::task::spawn_blocking(move || {
+        config::update(&path, |c| {
+            let public_key = c.devices.iter().find(|d| d.id == id).and_then(|d| d.public_key.clone());
+            config::upsert_device(
+                c,
+                Device { id, name, host_id, public_key, expo_token, prefs: Prefs { finished, needs_you } },
+            );
+        })
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?
+    .map_err(|e| err("io_error", format!("{e:#}")))?;
+    Ok(json!({ "ok": true }))
 }

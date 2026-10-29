@@ -136,3 +136,18 @@ pub struct RecentSession {
     pub last_activity: i64,
     pub cwd: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushPrefs {
+    pub finished: bool,
+    pub needs_you: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushRegister {
+    pub device_id: String,
+    pub host_id: String,
+    pub name: String,
+    pub expo_token: Option<String>,
+    pub prefs: PushPrefs,
+}

@@ -42,3 +42,12 @@ export type ThreadItem =
 export type ThreadPage = { items: ThreadItem[]; cursor: number | null; end: number };
 export type ThreadRef = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 export type RecentSession = { session: string; first_prompt: string; last_activity: number; cwd: string };
+
+export type PushPrefs = { finished: boolean; needs_you: boolean };
+export type PushRegister = {
+  device_id: string;
+  host_id: string;
+  name: string;
+  expo_token: string | null;
+  prefs: PushPrefs;
+};
