@@ -1,0 +1,7 @@
+node_modules/
+target/
+.expo/
+ios/
+android/
+*.log
+.DS_Store
