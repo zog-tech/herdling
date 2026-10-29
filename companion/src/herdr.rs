@@ -1,6 +1,7 @@
 //! Client for the herdr unix socket (NDJSON request/response).
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -19,18 +20,48 @@ pub struct Client {
     reader: BufReader<OwnedReadHalf>,
     writer: OwnedWriteHalf,
     next_id: u64,
+    timeout: Duration,
 }
 
 impl Client {
-    pub async fn connect(path: &Path) -> Result<Client, HerdrError> {
-        let stream = UnixStream::connect(path)
+    /// Connects to the herdr socket. `timeout` bounds the connect and each `call`.
+    pub async fn connect(path: &Path, timeout: Duration) -> Result<Client, HerdrError> {
+        let stream = tokio::time::timeout(timeout, UnixStream::connect(path))
             .await
+            .map_err(|_| HerdrError::Unavailable("connect timed out".into()))?
             .map_err(|e| HerdrError::Unavailable(e.to_string()))?;
         let (r, w) = stream.into_split();
-        Ok(Client { reader: BufReader::new(r), writer: w, next_id: 1 })
+        Ok(Client { reader: BufReader::new(r), writer: w, next_id: 1, timeout })
     }
 
+    /// Sends one request and waits for its response, bounded by the client timeout.
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value, HerdrError> {
+        let timeout = self.timeout;
+        tokio::time::timeout(timeout, self.call_inner(method, params))
+            .await
+            .map_err(|_| HerdrError::Unavailable("request timed out".into()))?
+    }
+
+    /// Reads the next JSON line from a subscription. No timeout: the stream is long-lived.
+    /// Returns `Ok(None)` when herdr closes the connection.
+    pub async fn next_event(&mut self) -> Result<Option<Value>, HerdrError> {
+        loop {
+            let mut buf = String::new();
+            let n = self
+                .reader
+                .read_line(&mut buf)
+                .await
+                .map_err(|e| HerdrError::Unavailable(e.to_string()))?;
+            if n == 0 {
+                return Ok(None);
+            }
+            if let Ok(v) = serde_json::from_str::<Value>(&buf) {
+                return Ok(Some(v));
+            }
+        }
+    }
+
+    async fn call_inner(&mut self, method: &str, params: Value) -> Result<Value, HerdrError> {
         let id = self.next_id.to_string();
         self.next_id += 1;
         let mut line = json!({ "id": id, "method": method, "params": params }).to_string();

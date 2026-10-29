@@ -17,7 +17,7 @@ impl Session {
     fn start(sock: PathBuf, home: PathBuf) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(65536);
         let (server_out, client_rx) = tokio::io::duplex(65536);
-        let ctx = Ctx { herdr_socket: sock, home };
+        let ctx = Ctx::new(sock, home);
         tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
@@ -101,4 +101,27 @@ async fn unknown_method() {
     let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
     s.send(r#"{"id":5,"method":"nope"}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "unknown_method");
+}
+
+#[tokio::test]
+async fn herdr_call_times_out_when_herdr_never_replies() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("silent.sock");
+    let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            held.push(stream); // accept, never reply
+        }
+    });
+    let (client_tx, server_in) = tokio::io::duplex(65536);
+    let (server_out, client_rx) = tokio::io::duplex(65536);
+    let mut ctx = Ctx::new(sock, dir.path().into());
+    ctx.herdr_timeout = std::time::Duration::from_millis(100);
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
+    let mut s = Session { tx: client_tx, rx: BufReader::new(client_rx).lines() };
+    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"agent.list"}}"#).await;
+    let r = s.recv().await;
+    assert_eq!(r["id"], 6);
+    assert_eq!(r["error"]["code"], "herdr_unavailable");
 }

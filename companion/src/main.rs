@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("rpc") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-            let ctx = rpc::Ctx { herdr_socket: herdr_socket(&home), home };
+            let ctx = rpc::Ctx::new(herdr_socket(&home), home);
             rpc::run(BufReader::new(tokio::io::stdin()), tokio::io::stdout(), ctx).await
         }
         _ => bail!("usage: zogsshd rpc"),
