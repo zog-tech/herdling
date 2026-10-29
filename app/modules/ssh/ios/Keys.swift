@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Security
+import UIKit
 
 /// The phone's ed25519 key pair. The private key lives in the Keychain as its raw representation.
 enum Keys {
@@ -20,12 +21,37 @@ enum Keys {
     return key
   }
 
-  /// OpenSSH public key line: `ssh-ed25519 <base64 wire blob> zogssh`.
+  /// OpenSSH public key line: `ssh-ed25519 <base64 wire blob> zogssh:<device name>`.
+  /// Only the comment depends on the device; the key itself never changes.
   static func openSSHPublicKey(_ key: Curve25519.Signing.PrivateKey) -> String {
     var blob = Data()
     appendSSHString(&blob, Data("ssh-ed25519".utf8))
     appendSSHString(&blob, key.publicKey.rawRepresentation)
-    return "ssh-ed25519 \(blob.base64EncodedString()) zogssh"
+    return "ssh-ed25519 \(blob.base64EncodedString()) \(comment(deviceName: currentDeviceName()))"
+  }
+
+  /// Key comment `zogssh:<name>`, so the host's authorized_keys shows which phone a line is for.
+  /// The name keeps only `[A-Za-z0-9._-]`; other runs become one `-`.
+  static func comment(deviceName: String) -> String {
+    var out = ""
+    for u in deviceName.unicodeScalars {
+      let ok = (u >= "a" && u <= "z") || (u >= "A" && u <= "Z") || (u >= "0" && u <= "9") || u == "." || u == "_" || u == "-"
+      if ok {
+        out.unicodeScalars.append(u)
+      } else if !out.hasSuffix("-") {
+        out.append("-")
+      }
+    }
+    let name = out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    return name.isEmpty ? "zogssh" : "zogssh:\(name)"
+  }
+
+  /// `UIDevice.name` is main-thread only; module functions run on a background queue.
+  private static func currentDeviceName() -> String {
+    if Thread.isMainThread {
+      return MainActor.assumeIsolated { UIDevice.current.name }
+    }
+    return DispatchQueue.main.sync { MainActor.assumeIsolated { UIDevice.current.name } }
   }
 
   /// OpenSSH-style fingerprint of a public key wire blob: `SHA256:<base64 without padding>`.
