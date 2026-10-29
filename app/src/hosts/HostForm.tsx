@@ -13,6 +13,7 @@ import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
 import { retryNow, useHostConn } from "./connection";
+import { editPatch } from "./editPatch";
 import { DEFAULT_COMMAND, useHosts, type Host } from "./store";
 
 function CopyBlock({ title, text }: { title: string; text: string }) {
@@ -39,6 +40,26 @@ function CopyBlock({ title, text }: { title: string; text: string }) {
   );
 }
 
+/** The pinned host key, so the user can compare it with `ssh-keygen -lf` on the host. */
+function HostKey({ fingerprint }: { fingerprint?: string }) {
+  return (
+    <View style={{ gap: space.xs }}>
+      <Text variant="small" muted>
+        Host key
+      </Text>
+      {fingerprint ? (
+        <Text variant="caption" mono selectable accessibilityLabel={`Host key ${fingerprint}`}>
+          {fingerprint}
+        </Text>
+      ) : (
+        <Text variant="caption" muted>
+          Not pinned yet. The first connection pins it.
+        </Text>
+      )}
+    </View>
+  );
+}
+
 /** Message for a failed connection. */
 function errorMessage(error: string): string {
   return error.startsWith("Host key changed")
@@ -60,6 +81,7 @@ export function HostForm({ host }: { host?: Host }) {
   /** Attempt number of the last Test press. Results of earlier attempts are ignored. */
   const [testAttempt, setTestAttempt] = useState<number>();
   const conn = useHostConn(savedId ?? "");
+  const fingerprint = useHosts((s) => s.hosts.find((h) => h.id === savedId)?.fingerprint);
 
   useEffect(() => {
     ensureKey().then(
@@ -82,8 +104,9 @@ export function HostForm({ host }: { host?: Host }) {
       command: command.trim() || DEFAULT_COMMAND,
     };
     const { hosts, addHost, updateHost } = useHosts.getState();
-    if (savedId && hosts.some((h) => h.id === savedId)) {
-      updateHost(savedId, values);
+    const old = savedId ? hosts.find((h) => h.id === savedId) : undefined;
+    if (savedId && old) {
+      updateHost(savedId, editPatch(old, values));
       return savedId;
     }
     const created = addHost(values);
@@ -111,6 +134,7 @@ export function HostForm({ host }: { host?: Host }) {
         <Field label="Port" value={port} onChangeText={setPort} keyboardType="number-pad" />
         <Field label="User" value={user} onChangeText={setUser} placeholder="sam" />
         <Field label="Command" value={command} onChangeText={setCommand} mono />
+        {host ? <HostKey fingerprint={fingerprint} /> : null}
       </Card>
 
       <Card>
@@ -144,6 +168,7 @@ export function HostForm({ host }: { host?: Host }) {
               <Text>
                 {hello.herdr_ok ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}` : "herdr not running"}
               </Text>
+              <HostKey fingerprint={fingerprint} />
             </View>
           ) : null}
           {error ? (
