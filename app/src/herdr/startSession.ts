@@ -10,8 +10,11 @@ export type StartOptions = {
   onProgress?: (label: string) => void;
 };
 
-/** `agent.start` waits for the agent to boot; herdr allows up to 30 s. */
-const AGENT_START_TIMEOUT_MS = 40_000;
+/**
+ * `agent.start` waits for the agent to boot; herdr allows up to 30 s and the companion
+ * gives up after 40 s. Wait longer than the companion, so its error arrives first.
+ */
+export const AGENT_START_TIMEOUT_MS = 45_000;
 
 /**
  * Unique agent name for a pane. herdr allows lowercase letters, digits, "-" and "_", starting
@@ -55,11 +58,15 @@ async function retrying(retries: number, retryable: (e: unknown) => boolean, run
 const herdr = <T>(rpc: Pick<RpcClient, "call">, method: string, params: object, timeoutMs?: number) =>
   rpc.call<T>("herdr.call", { method, params }, timeoutMs);
 
-/** Creates a workspace (or a tab), starts the agent in its first pane, then sends the prompt. */
+/**
+ * Creates a workspace (or a tab), starts the agent in its first pane, then sends the prompt.
+ * Once the agent runs, a failed prompt does not throw: it comes back as `promptError`, so the
+ * caller opens the session instead of offering a second Start (a duplicate agent).
+ */
 export async function startSession(
   rpc: Pick<RpcClient, "call">,
   { cwd, kind, prompt, workspaceId, onProgress }: StartOptions,
-): Promise<{ paneId: string }> {
+): Promise<{ paneId: string; promptError?: string }> {
   const label = basename(cwd);
   onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
   const created = workspaceId
@@ -86,7 +93,11 @@ export async function startSession(
   const text = prompt?.trim();
   if (text) {
     onProgress?.("Sending prompt…");
-    await retrying(PROMPT_RETRIES, notReadyYet, () => herdr(rpc, "agent.prompt", { target: paneId, text }));
+    try {
+      await retrying(PROMPT_RETRIES, notReadyYet, () => herdr(rpc, "agent.prompt", { target: paneId, text }));
+    } catch (e) {
+      return { paneId, promptError: e instanceof Error ? e.message : String(e) };
+    }
   }
   return { paneId };
 }

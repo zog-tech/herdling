@@ -123,7 +123,13 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
 }
 
 export default function SessionScreen() {
-  const { hostId, paneId } = useLocalSearchParams<{ hostId: string; paneId: string }>();
+  const { hostId, paneId, prompt, promptError } = useLocalSearchParams<{
+    hostId: string;
+    paneId: string;
+    /** Set by New session when the first prompt failed after the agent started. */
+    prompt?: string;
+    promptError?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardShown();
@@ -173,7 +179,13 @@ export default function SessionScreen() {
       ) : (
         <TerminalView hostId={hostId} paneId={paneId} />
       )}
-      <Composer hostId={hostId} paneId={paneId} bottomInset={keyboard ? 0 : insets.bottom} />
+      <Composer
+        hostId={hostId}
+        paneId={paneId}
+        bottomInset={keyboard ? 0 : insets.bottom}
+        initialText={promptError ? prompt : undefined}
+        initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
+      />
     </KeyboardAvoidingView>
   );
 }

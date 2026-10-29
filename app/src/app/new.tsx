@@ -187,14 +187,19 @@ export default function NewSessionScreen() {
     try {
       // The snapshot can lag: fall back to a new workspace when the old one is gone.
       const reuse = existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
-      const { paneId } = await startSession(rpc, {
+      const { paneId, promptError } = await startSession(rpc, {
         cwd,
         kind,
         prompt,
         workspaceId: reuse && existing ? existing.workspace_id : undefined,
         onProgress: setProgress,
       });
-      router.replace(`/session/${hostId}/${paneId}` as never);
+      // The agent runs even when the prompt failed: open it with the prompt ready to resend.
+      router.replace(
+        (promptError
+          ? { pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, prompt, promptError } }
+          : `/session/${hostId}/${paneId}`) as never,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setProgress(undefined);

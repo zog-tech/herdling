@@ -13,11 +13,24 @@ const PAD_V = 10;
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 
 /** Prompt box: multiline, grows to 5 lines; send = herdr `agent.prompt`. */
-export function Composer({ hostId, paneId, bottomInset }: { hostId: string; paneId: string; bottomInset: number }) {
+export function Composer({
+  hostId,
+  paneId,
+  bottomInset,
+  initialText,
+  initialError,
+}: {
+  hostId: string;
+  paneId: string;
+  bottomInset: number;
+  /** Text to start with, for example a first prompt that failed to send. */
+  initialText?: string;
+  initialError?: string;
+}) {
   const { rpc, status } = useHostConn(hostId);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText ?? "");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<string | undefined>(initialError);
   /** Bumped after a send: a remount resets the grown multiline height (iOS keeps it otherwise). */
   const [inputKey, setInputKey] = useState(0);
   const latest = useRef(text);

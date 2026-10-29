@@ -22,7 +22,8 @@ describe("startSession", () => {
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create", "agent.start", "agent.prompt"]);
     expect(rpc.calls[0].params).toEqual({ cwd: "/home/sam/proj", label: "proj", focus: false });
     expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "claude", pane_id: "w1:p1" });
-    expect(rpc.calls[1].timeoutMs).toBeGreaterThan(30_000);
+    // Longer than the companion's own 40 s limit, so its error wins the race.
+    expect(rpc.calls[1].timeoutMs).toBe(45_000);
     expect(rpc.calls[2].params).toEqual({ target: "w1:p1", text: "hi" });
     expect(progress).toEqual(["Creating workspace…", "Starting claude…", "Sending prompt…"]);
   });
@@ -94,6 +95,24 @@ describe("startSession", () => {
     await expect(done).resolves.toEqual({ paneId: "w1:p1" });
     expect(n).toBe(4);
     jest.useRealTimers();
+  });
+
+  it("returns_prompt_error_instead_of_throwing_once_the_agent_runs", async () => {
+    const calls: string[] = [];
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        calls.push(p.method);
+        if (p.method === "workspace.create") return { workspace: { workspace_id: "w7" }, root_pane: { pane_id: "w7:p1" } };
+        if (p.method === "agent.prompt") throw new Error("agent_blocked");
+        return {};
+      },
+    } as any;
+    await expect(startSession(rpc, { cwd: "/a/proj", kind: "claude", prompt: "hi" })).resolves.toEqual({
+      paneId: "w7:p1",
+      promptError: "agent_blocked",
+    });
+    // The running agent and its workspace stay.
+    expect(calls).not.toContain("workspace.close");
   });
 
   it("same_basename_gets_distinct_names_and_prompts_by_pane_id", async () => {
