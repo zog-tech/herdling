@@ -46,12 +46,27 @@ import { useHosts } from "./store";
 
 const HELLO = { host: "box", os: "macos", zogsshd: "0.1.0", herdr_ok: true };
 
-/** Make `write` answer every rpc request line with `result`. */
-function answerRequests(result: unknown = HELLO) {
+/** Rpc methods the fake companion does not answer (to simulate a dead link). */
+const silent = new Set<string>();
+
+/** Make `write` answer every rpc request line: `hello` with HELLO, anything else with {}. */
+function answerRequests() {
   mockSsh.write.mockImplementation(async (ch: string, data: string) => {
     const req = JSON.parse(data);
+    if (silent.has(req.method)) return;
+    const result = req.method === "hello" ? HELLO : {};
     queueMicrotask(() => mockSsh.emit("onData", { channelId: ch, data: JSON.stringify({ id: req.id, result }) + "\n" }));
   });
+}
+
+function sentMethods(): string[] {
+  return mockSsh.write.mock.calls.map(([, data]) => JSON.parse(data as string).method);
+}
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
 }
 
 async function flush() {
@@ -69,7 +84,10 @@ beforeEach(() => {
   mockSsh.closeChannel.mockReset().mockResolvedValue(undefined);
   mockSsh.disconnect.mockReset().mockResolvedValue(undefined);
   answerRequests();
+  silent.clear();
   appStateHandler = undefined;
+  // The jest-expo mock has no real value here.
+  (AppState as { currentState: string }).currentState = "active";
   jest.spyOn(AppState, "addEventListener").mockImplementation((_t: any, cb: any) => {
     appStateHandler = cb;
     return { remove: () => {} } as any;
@@ -189,4 +207,117 @@ test("mismatch_marks_error_and_stops_retrying", async () => {
   expect(mockSsh.connect).toHaveBeenCalledTimes(1);
   // The pin is kept as it was.
   expect(useHosts.getState().hosts[0].fingerprint).toBe("SHA256:old");
+});
+
+test("early_channel_events_are_kept", async () => {
+  mockSsh.openExec.mockImplementation(async () => {
+    // The companion writes before openExec resolves in JS.
+    mockSsh.emit("onData", { channelId: "ch9", data: '{"a":1}\n{"b"' });
+    mockSsh.emit("onData", { channelId: "other", data: '{"x":1}\n' });
+    mockSsh.emit("onData", { channelId: "ch9", data: ":2}\n" });
+    mockSsh.emit("onChannelClose", { channelId: "ch9", reason: "exit 1" });
+    return "ch9";
+  });
+  const t = await ExecTransport.open("h1", "zogsshd rpc");
+  const lines: string[] = [];
+  const reasons: string[] = [];
+  t.onLine((l) => lines.push(l));
+  t.onClose((r) => reasons.push(r));
+  await flush();
+  expect(lines).toEqual(['{"a":1}', '{"b":2}']);
+  expect(reasons).toEqual(["exit 1"]);
+});
+
+test("update_during_inflight_connect_uses_only_new_attempt", async () => {
+  addHost("SHA256:abc");
+  const first = deferred<{ fingerprint: string }>();
+  mockSsh.connect.mockReturnValueOnce(first.promise);
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("connecting");
+
+  // The address changes while the first handshake runs.
+  useHosts.getState().updateHost("h1", { address: "10.0.0.6" });
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+  expect(mockSsh.connect).toHaveBeenLastCalledWith("h1", expect.objectContaining({ host: "10.0.0.6" }));
+  expect(getHostConn("h1").status).toBe("online");
+
+  // The old handshake finishes late: it must not open a channel or replace the connection.
+  const rpc = getHostConn("h1").rpc;
+  first.resolve({ fingerprint: "SHA256:abc" });
+  await flush();
+  expect(mockSsh.openExec).toHaveBeenCalledTimes(1);
+  expect(getHostConn("h1").rpc).toBe(rpc);
+  expect(getHostConn("h1").status).toBe("online");
+});
+
+test("stop_during_inflight_connect_disconnects", async () => {
+  addHost("SHA256:abc");
+  const first = deferred<{ fingerprint: string }>();
+  mockSsh.connect.mockReturnValueOnce(first.promise);
+  startConnections();
+  await flush();
+  useHosts.getState().removeHost("h1");
+  await flush();
+  mockSsh.disconnect.mockClear();
+  first.resolve({ fingerprint: "SHA256:abc" });
+  await flush();
+  expect(mockSsh.disconnect).toHaveBeenCalledWith("h1");
+  expect(mockSsh.openExec).not.toHaveBeenCalled();
+  expect(getHostConn("h1").status).toBe("offline");
+});
+
+test("ping_every_15s_and_drop_on_timeout", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+
+  jest.advanceTimersByTime(14_999);
+  await flush();
+  expect(sentMethods()).toEqual(["hello"]);
+  jest.advanceTimersByTime(1);
+  await flush();
+  expect(sentMethods()).toEqual(["hello", "ping"]);
+  expect(getHostConn("h1").status).toBe("online");
+
+  // The link dies: the next ping gets no answer and times out after 5 s.
+  silent.add("ping");
+  jest.advanceTimersByTime(15_000);
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+  jest.advanceTimersByTime(5_000);
+  await flush();
+  expect(getHostConn("h1")).toMatchObject({ status: "offline", error: expect.stringMatching(/ping/) });
+  // Normal reconnect follows.
+  silent.clear();
+  jest.advanceTimersByTime(1_000);
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+  expect(getHostConn("h1").status).toBe("online");
+});
+
+test("foreground_pings_at_once_and_background_stops_pings", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+
+  appStateHandler!("background");
+  jest.advanceTimersByTime(60_000);
+  await flush();
+  expect(sentMethods()).toEqual(["hello"]);
+
+  silent.add("ping");
+  appStateHandler!("active");
+  await flush();
+  expect(sentMethods()).toEqual(["hello", "ping"]);
+  jest.advanceTimersByTime(5_000);
+  await flush();
+  expect(getHostConn("h1").status).toBe("offline");
+  expect(mockSsh.connect).toHaveBeenCalledTimes(1);
+  jest.advanceTimersByTime(1_000);
+  await flush();
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
 });

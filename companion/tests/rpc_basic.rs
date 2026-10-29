@@ -125,3 +125,14 @@ async fn herdr_call_times_out_when_herdr_never_replies() {
     assert_eq!(r["id"], 6);
     assert_eq!(r["error"]["code"], "herdr_unavailable");
 }
+
+#[tokio::test]
+async fn ping_returns_empty_object() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    s.send(r#"{"id":7,"method":"ping"}"#).await;
+    let r = s.recv().await;
+    assert_eq!(r["id"], 7);
+    assert_eq!(r["result"], json!({}));
+    assert!(r.get("error").is_none());
+}

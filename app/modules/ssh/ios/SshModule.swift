@@ -58,7 +58,9 @@ public class SshModule: Module {
   // MARK: - Connect
 
   private func connect(hostId: String, opts: ConnectOptions) async throws -> [String: String] {
-    await disconnect(hostId: hostId)
+    // Only the newest connect (or disconnect) for a host may store its client.
+    let token = state.beginAttempt(hostId)
+    await disconnect(hostId: hostId, supersede: false)
 
     let key = try Keys.loadOrCreate()
     let check = HostKeyCheck(pinned: opts.fingerprint)
@@ -86,9 +88,19 @@ public class SshModule: Module {
       throw Exception(name: "ConnectFailed", description: String(describing: error), code: "connect_failed")
     }
 
-    state.setClient(hostId, client)
     client.onDisconnect { [weak self] in
       self?.clientClosed(hostId: hostId, client: client)
+    }
+    guard let previous = state.commitClient(hostId, token: token, client) else {
+      // A later connect or a disconnect for this host started meanwhile: this client is stale.
+      try? await client.close()
+      throw Exception(name: "Superseded", description: "a newer connect or disconnect replaced this one", code: "superseded")
+    }
+    if let old = previous {
+      try? await old.close()
+    }
+    if !client.isConnected {
+      clientClosed(hostId: hostId, client: client)
     }
     return ["fingerprint": check.seen ?? ""]
   }
@@ -102,7 +114,9 @@ public class SshModule: Module {
     sendEvent("onDisconnect", ["hostId": hostId, "reason": "connection closed"])
   }
 
-  private func disconnect(hostId: String) async {
+  /// Closes the host's channels and client. With `supersede`, an in-flight connect for the host becomes stale.
+  private func disconnect(hostId: String, supersede: Bool = true) async {
+    if supersede { _ = state.beginAttempt(hostId) }
     for channel in state.removeChannels(of: hostId) {
       channel.stop()
     }
@@ -119,8 +133,10 @@ public class SshModule: Module {
     let channelId = UUID().uuidString
     let (outStream, outbox) = AsyncStream<String>.makeStream()
     let ready = OnceSignal()
+    let channel = ExecChannel(id: channelId, hostId: hostId, outbox: outbox)
+    state.addChannel(channel)  // registered before the task can end
 
-    let task = Task { [weak self] in
+    channel.start(Task { [weak self] in
       let ended = EndFlag()
       var reason = "eof"
       do {
@@ -150,6 +166,9 @@ public class SshModule: Module {
               if let text = stdout.flush() {
                 self?.sendEvent("onData", ["channelId": channelId, "data": text])
               }
+              if let text = stderr.flush() {
+                self?.sendEvent("onStderr", ["channelId": channelId, "data": text])
+              }
             }
             // The first task to finish ends the channel: the remote side closed or the app closed the outbox.
             try await group.next()
@@ -169,11 +188,9 @@ public class SshModule: Module {
       if !ready.resolve(ExecOpenError(reason: reason)) {
         self?.sendEvent("onChannelClose", ["channelId": channelId, "reason": reason])
       }
-    }
+    })
 
-    state.addChannel(ExecChannel(id: channelId, hostId: hostId, outbox: outbox, task: task))
     if let error = await ready.wait() {
-      state.removeChannel(channelId)  // the task can end before `addChannel` runs
       throw Exception(name: "ExecFailed", description: error.reason, code: "exec_failed")
     }
     return channelId
@@ -222,18 +239,32 @@ final class ExecChannel: @unchecked Sendable {
   let id: String
   let hostId: String
   let outbox: AsyncStream<String>.Continuation
-  let task: Task<Void, Never>
+  private let lock = NSLock()
+  private var task: Task<Void, Never>?
+  private var stopped = false
 
-  init(id: String, hostId: String, outbox: AsyncStream<String>.Continuation, task: Task<Void, Never>) {
+  init(id: String, hostId: String, outbox: AsyncStream<String>.Continuation) {
     self.id = id
     self.hostId = hostId
     self.outbox = outbox
-    self.task = task
+  }
+
+  /// Attaches the channel's task. Cancels it at once if `stop()` already ran.
+  func start(_ task: Task<Void, Never>) {
+    let cancelNow: Bool = lock.withLock {
+      self.task = task
+      return stopped
+    }
+    if cancelNow { task.cancel() }
   }
 
   func stop() {
     outbox.finish()
-    task.cancel()
+    let task: Task<Void, Never>? = lock.withLock {
+      stopped = true
+      return self.task
+    }
+    task?.cancel()
   }
 }
 
@@ -242,10 +273,30 @@ final class SshState: @unchecked Sendable {
   private let lock = NSLock()
   private var clients: [String: SSHClient] = [:]
   private var channels: [String: ExecChannel] = [:]
+  private var attempts: [String: UInt64] = [:]
+
+  /// Starts a new connect (or disconnect) for the host and returns its token.
+  func beginAttempt(_ hostId: String) -> UInt64 {
+    lock.withLock {
+      let next = (attempts[hostId] ?? 0) &+ 1
+      attempts[hostId] = next
+      return next
+    }
+  }
+
+  /// Stores the client if `token` is still the newest attempt. Returns nil when stale,
+  /// else `.some(previous client)` (the caller closes the previous one).
+  func commitClient(_ hostId: String, token: UInt64, _ client: SSHClient) -> SSHClient?? {
+    lock.withLock {
+      guard attempts[hostId] == token else { return nil }
+      let previous = clients[hostId]
+      clients[hostId] = client
+      return .some(previous)
+    }
+  }
 
   func hostIds() -> [String] { lock.withLock { Array(clients.keys) } }
   func client(_ hostId: String) -> SSHClient? { lock.withLock { clients[hostId] } }
-  func setClient(_ hostId: String, _ client: SSHClient) { lock.withLock { clients[hostId] = client } }
 
   func removeClient(_ hostId: String) -> SSHClient? {
     lock.withLock { clients.removeValue(forKey: hostId) }

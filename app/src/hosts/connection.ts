@@ -17,42 +17,85 @@ export type HostConn = {
 
 /** Seconds to wait before retry number n (1-based); the last value repeats. */
 const BACKOFF_S = [1, 2, 4, 8, 16, 30];
+/** While in the foreground and online, ping this often; a ping that takes longer than the timeout counts as a drop. */
+const PING_EVERY_MS = 15_000;
+const PING_TIMEOUT_MS = 5_000;
 const OFFLINE: HostConn = { status: "offline" };
 
-/** `LineTransport` over a native exec channel. Splits `onData` chunks into lines. */
+type ChannelEvent =
+  | { kind: "data"; channelId: string; data: string }
+  | { kind: "stderr"; channelId: string; data: string }
+  | { kind: "close"; channelId: string; reason: string };
+
+/** Subscribes to all channel events of the native module and passes them to `cb`. */
+function listenChannels(cb: (e: ChannelEvent) => void): () => void {
+  const subs = [
+    ssh.addListener("onData", (e) => cb({ kind: "data", ...e })),
+    ssh.addListener("onStderr", (e) => cb({ kind: "stderr", ...e })),
+    ssh.addListener("onChannelClose", (e) => cb({ kind: "close", ...e })),
+  ];
+  return () => subs.forEach((s) => s.remove());
+}
+
+/**
+ * `LineTransport` over a native exec channel. Splits `onData` chunks into lines.
+ * Lines that arrive before the first `onLine` callback are kept and delivered to it;
+ * a close is delivered to `onClose` callbacks added after it.
+ */
 export class ExecTransport implements LineTransport {
   private buffer = "";
-  private closed = false;
+  private closeReason?: string;
+  private early: string[] | null = [];
   private readonly lineCbs = new Set<(line: string) => void>();
   private readonly closeCbs = new Set<(reason: string) => void>();
-  private readonly subs: { remove(): void }[];
+  private readonly unlisten: () => void;
 
-  constructor(readonly channelId: string) {
-    this.subs = [
-      ssh.addListener("onData", (e) => {
-        if (e.channelId === channelId) this.push(e.data);
-      }),
-      ssh.addListener("onStderr", (e) => {
-        if (e.channelId === channelId) console.warn(`[ssh ${channelId}] stderr:`, e.data.trimEnd());
-      }),
-      ssh.addListener("onChannelClose", (e) => {
-        if (e.channelId === channelId) this.end(e.reason);
-      }),
-    ];
+  /** Subscribes first, then opens the channel, so no event of the new channel is lost. */
+  static async open(hostId: string, command: string): Promise<ExecTransport> {
+    const pending: ChannelEvent[] = [];
+    const unlisten = listenChannels((e) => pending.push(e));
+    try {
+      const channelId = await ssh.openExec(hostId, command);
+      return new ExecTransport(channelId, pending.filter((e) => e.channelId === channelId));
+    } finally {
+      unlisten();
+    }
+  }
+
+  constructor(
+    readonly channelId: string,
+    replay: ChannelEvent[] = [],
+  ) {
+    this.unlisten = listenChannels((e) => {
+      if (e.channelId === channelId) this.handle(e);
+    });
+    replay.forEach((e) => this.handle(e));
+  }
+
+  get closed(): boolean {
+    return this.closeReason !== undefined;
   }
 
   send(line: string): void {
     if (this.closed) throw new Error("channel closed");
-    ssh.write(this.channelId, line + "\n").catch((e) => this.end(e instanceof Error ? e.message : "write failed"));
+    ssh.write(this.channelId, line + "\n").catch((e) => this.end(errorText(e)));
   }
 
   onLine(cb: (line: string) => void): () => void {
     this.lineCbs.add(cb);
+    const early = this.early;
+    if (early) {
+      this.early = null;
+      // Async, so the subscriber finishes its own setup first.
+      if (early.length > 0) queueMicrotask(() => early.forEach((l) => cb(l)));
+    }
     return () => this.lineCbs.delete(cb);
   }
 
   onClose(cb: (reason: string) => void): () => void {
     this.closeCbs.add(cb);
+    const reason = this.closeReason;
+    if (reason !== undefined) queueMicrotask(() => this.closeCbs.has(cb) && cb(reason));
     return () => this.closeCbs.delete(cb);
   }
 
@@ -62,20 +105,28 @@ export class ExecTransport implements LineTransport {
     this.end("closed");
   }
 
+  private handle(e: ChannelEvent): void {
+    if (e.kind === "data") this.push(e.data);
+    else if (e.kind === "stderr") console.warn(`[ssh ${this.channelId}] stderr:`, e.data.trimEnd());
+    else this.end(e.reason);
+  }
+
   private push(chunk: string): void {
     this.buffer += chunk;
     const parts = this.buffer.split("\n");
     this.buffer = parts.pop() ?? "";
     for (const part of parts) {
       const line = part.endsWith("\r") ? part.slice(0, -1) : part;
-      if (line.length > 0) this.lineCbs.forEach((cb) => cb(line));
+      if (line.length === 0) continue;
+      if (this.early) this.early.push(line);
+      else this.lineCbs.forEach((cb) => cb(line));
     }
   }
 
   private end(reason: string): void {
     if (this.closed) return;
-    this.closed = true;
-    this.subs.forEach((s) => s.remove());
+    this.closeReason = reason;
+    this.unlisten();
     this.closeCbs.forEach((cb) => cb(reason));
   }
 }
@@ -101,11 +152,18 @@ class HostConnection {
   private failures = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private rpc?: RpcClient;
+  private pingTimer?: ReturnType<typeof setInterval>;
+  private foreground: boolean;
   /** Set on a host key mismatch: no retries until the host entry changes. */
   private blocked = false;
   private stopped = false;
 
-  constructor(private host: Host) {}
+  constructor(
+    private host: Host,
+    foreground: boolean,
+  ) {
+    this.foreground = foreground;
+  }
 
   get id(): string {
     return this.host.id;
@@ -135,6 +193,21 @@ class HostConnection {
     this.connectNow();
   }
 
+  /** The app came to the foreground or left it. */
+  setForeground(active: boolean): void {
+    this.foreground = active;
+    if (!active) {
+      this.stopPings();
+      return;
+    }
+    if (getHostConn(this.id).status === "online") {
+      this.ping();
+      this.startPings();
+    } else {
+      this.wake();
+    }
+  }
+
   /** The SSH connection dropped. */
   dropped(reason: string): void {
     if (getHostConn(this.id).status === "offline") return;
@@ -160,7 +233,8 @@ class HostConnection {
 
   private async attempt(gen: number): Promise<void> {
     const host = this.host;
-    setConn(host.id, { ...getHostConn(host.id), status: "connecting", rpc: undefined });
+    const prev = getHostConn(host.id);
+    setConn(host.id, { status: "connecting", lastSeen: prev.lastSeen, hello: prev.hello });
     try {
       const { fingerprint } = await ssh.connect(host.id, {
         host: host.address,
@@ -168,17 +242,22 @@ class HostConnection {
         user: host.user,
         fingerprint: host.fingerprint,
       });
+      if (this.stopped) {
+        // stop() ran during the handshake: make sure no connection stays open.
+        ssh.disconnect(host.id).catch(() => {});
+        return;
+      }
+      // A newer attempt supersedes this one natively (its connect replaces this client).
       if (gen !== this.generation) return;
       if (!host.fingerprint && fingerprint) {
         this.host = { ...this.host, fingerprint };
         useHosts.getState().updateHost(host.id, { fingerprint });
       }
-      const channelId = await ssh.openExec(host.id, host.command);
+      const transport = await ExecTransport.open(host.id, host.command);
       if (gen !== this.generation) {
-        ssh.closeChannel(channelId).catch(() => {});
+        transport.close();
         return;
       }
-      const transport = new ExecTransport(channelId);
       const rpc = new RpcClient(transport);
       this.rpc = rpc;
       transport.onClose((reason) => {
@@ -188,6 +267,7 @@ class HostConnection {
       if (gen !== this.generation) return;
       this.failures = 0;
       setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello });
+      if (this.foreground) this.startPings();
     } catch (e) {
       if (gen !== this.generation) return;
       this.teardown();
@@ -210,7 +290,38 @@ class HostConnection {
     this.timer = setTimeout(() => this.connectNow(), delay * 1000);
   }
 
+  private startPings(): void {
+    this.stopPings();
+    this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
+  }
+
+  private stopPings(): void {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = undefined;
+  }
+
+  private ping(): void {
+    const rpc = this.rpc;
+    if (!rpc) return;
+    const gen = this.generation;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("ping timed out")), PING_TIMEOUT_MS);
+    });
+    Promise.race([rpc.call("ping"), timeout])
+      .then(() => {
+        if (gen !== this.generation) return;
+        const cur = getHostConn(this.id);
+        if (cur.status === "online") setConn(this.id, { ...cur, lastSeen: Date.now() });
+      })
+      .catch((e) => {
+        if (gen === this.generation) this.dropped(`ping failed: ${errorText(e)}`);
+      })
+      .finally(() => clearTimeout(timer));
+  }
+
   private teardown(): void {
+    this.stopPings();
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     const rpc = this.rpc;
@@ -227,7 +338,12 @@ function errorText(e: unknown): string {
   return cause || message;
 }
 
-let running: { conns: Map<string, HostConnection>; cleanup: (() => void)[] } | undefined;
+let running: { conns: Map<string, HostConnection>; cleanup: (() => void)[]; foreground: boolean } | undefined;
+
+/** "unknown" (or no value yet) at launch counts as active. */
+function isActive(s: string | null | undefined): boolean {
+  return s == null || s === "active" || s === "unknown";
+}
 
 function syncHosts(hosts: Host[]): void {
   if (!running) return;
@@ -243,7 +359,7 @@ function syncHosts(hosts: Host[]): void {
     const c = conns.get(h.id);
     if (c) c.update(h);
     else {
-      const created = new HostConnection(h);
+      const created = new HostConnection(h, running.foreground);
       conns.set(h.id, created);
       created.connectNow();
     }
@@ -253,7 +369,11 @@ function syncHosts(hosts: Host[]): void {
 /** Connects all saved hosts and keeps them connected. Safe to call more than once. */
 export function startConnections(): void {
   if (running) return;
-  const state = { conns: new Map<string, HostConnection>(), cleanup: [] as (() => void)[] };
+  const state = {
+    conns: new Map<string, HostConnection>(),
+    cleanup: [] as (() => void)[],
+    foreground: isActive(AppState.currentState),
+  };
   running = state;
 
   const start = () => {
@@ -267,7 +387,8 @@ export function startConnections(): void {
   else state.cleanup.push(persist.onFinishHydration(start));
 
   const appState = AppState.addEventListener("change", (s) => {
-    if (s === "active") state.conns.forEach((c) => c.wake());
+    state.foreground = s === "active";
+    state.conns.forEach((c) => c.setForeground(state.foreground));
   });
   state.cleanup.push(() => appState.remove());
 

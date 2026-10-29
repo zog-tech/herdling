@@ -156,6 +156,7 @@ fn err(code: &str, message: impl Into<String>) -> RpcError {
 async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<Value, RpcError> {
     match method {
         "hello" => hello(ctx).await,
+        "ping" => Ok(json!({})),
         "herdr.call" => herdr_call(ctx, params).await,
         "herdr.subscribe" => herdr_subscribe(ctx, out, params).await,
         "rpc.cancel" => rpc_cancel(ctx, params),
