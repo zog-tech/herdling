@@ -47,9 +47,12 @@ struct Session {
 
 impl Session {
     fn start(sock: PathBuf, home: PathBuf) -> Session {
+        Session::start_with(Ctx::new(sock, home))
+    }
+    fn start_with(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(65536);
         let (server_out, client_rx) = tokio::io::duplex(65536);
-        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
     async fn send(&mut self, line: &str) {
@@ -136,12 +139,26 @@ async fn cancel_stops_stream() {
     let r = s.recv().await;
     assert_eq!(r["id"], 2);
     assert_eq!(r["result"]["cancelled"], true);
+    // Cancel is acknowledged first, then herdr emits an event: nothing may arrive.
     let _ = push.send(Push::Event(ev("workspace_created", "w2")));
-    // A later response proves ordering: nothing was forwarded in between.
-    s.send(r#"{"id":3,"method":"rpc.cancel","params":{"stream":"herdr:999"}}"#).await;
-    let r = s.recv().await;
-    assert_eq!(r["id"], 3);
-    assert_eq!(r["result"]["cancelled"], false);
+    let got = tokio::time::timeout(std::time::Duration::from_millis(200), s.rx.next_line()).await;
+    assert!(got.is_err(), "event forwarded after cancel: {got:?}");
+}
+
+#[tokio::test]
+async fn subscribe_idle_longer_than_timeout_stays_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let (push, _reqs) = spawn_fake(&sock);
+    let mut ctx = Ctx::new(sock, dir.path().into());
+    ctx.herdr_timeout = std::time::Duration::from_millis(100);
+    let mut s = Session::start_with(ctx);
+    let stream = s.subscribe(1, "{}").await;
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    push.send(Push::Event(ev("workspace_created", "w3"))).unwrap();
+    let n = s.recv().await;
+    assert_eq!(n["params"]["stream"], stream.as_str());
+    assert_eq!(n["params"]["data"]["event"], "workspace_created");
 }
 
 #[tokio::test]
