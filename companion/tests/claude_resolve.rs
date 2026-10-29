@@ -214,3 +214,21 @@ async fn resolve_via_child_of_pane_pid() {
     .unwrap();
     assert_eq!(r.session.as_deref(), Some("child-sess"));
 }
+
+#[tokio::test]
+async fn resolve_works_when_herdr_closes_each_connection_after_one_reply() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    write(&home.join(".claude/sessions/200.json"), r#"{"pid":200,"sessionId":"oneshot-sess","cwd":"/home/sam/proj"}"#);
+    let sock = dir.path().join("herdr.sock");
+    let mut m = HashMap::new();
+    m.insert("agent.get".to_string(), json!({"agent":{"agent":"claude","cwd":"/home/sam/proj"}}));
+    m.insert(
+        "pane.process_info".to_string(),
+        json!({"process_info":{"shell_pid":100,"foreground_process_group_id":200,
+            "foreground_processes":[{"pid":200,"name":"claude"}]}}),
+    );
+    fake_herdr::spawn_one_shot(&sock, m);
+    let r = claude::resolve_with(&sock, std::time::Duration::from_secs(5), &home, "w1:p1", || None).await.unwrap();
+    assert_eq!(r.session.as_deref(), Some("oneshot-sess"));
+}

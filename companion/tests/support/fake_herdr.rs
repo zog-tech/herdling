@@ -8,6 +8,16 @@ use tokio::net::UnixListener;
 /// Starts a fake herdr on `path`. `responses` maps method name to the `result` value.
 /// Unknown methods get an `unknown_method` error.
 pub fn spawn(path: &Path, responses: HashMap<String, Value>) {
+    spawn_with(path, responses, false)
+}
+
+/// Like `spawn`, but closes each connection after one response (herdr 0.9.0 behaviour).
+#[allow(dead_code)]
+pub fn spawn_one_shot(path: &Path, responses: HashMap<String, Value>) {
+    spawn_with(path, responses, true)
+}
+
+fn spawn_with(path: &Path, responses: HashMap<String, Value>, one_shot: bool) {
     let listener = UnixListener::bind(path).unwrap();
     tokio::spawn(async move {
         loop {
@@ -24,6 +34,9 @@ pub fn spawn(path: &Path, responses: HashMap<String, Value>) {
                         None => json!({"id": req["id"], "error": {"code": "unknown_method", "message": method}}),
                     };
                     let _ = w.write_all(format!("{resp}\n").as_bytes()).await;
+                    if one_shot {
+                        return;
+                    }
                 }
             });
         }

@@ -53,7 +53,11 @@ pub async fn resolve_with(
     let Some(cwd) = cwd.filter(|_| out.kind == "claude") else { return Ok(out) };
 
     // A failed process lookup is not fatal: the recent-file fallback still applies.
-    let info = c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null);
+    // herdr 0.9.0 closes the connection after each reply, so use a fresh connection.
+    let info = match Client::connect(socket, timeout).await {
+        Ok(mut c2) => c2.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null),
+        Err(_) => Value::Null,
+    };
     let (direct, roots) = pane_pids(info.get("process_info").unwrap_or(&info));
     let home = home.to_path_buf();
     let resolved = tokio::task::spawn_blocking(move || locate(&home, &cwd, &direct, &roots, table)).await.ok().flatten();
