@@ -1,6 +1,6 @@
 //! NDJSON JSON-RPC loop. One request per line in, one response per line out.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,7 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
-use tokio::task::AbortHandle;
+use tokio::task::{AbortHandle, JoinSet};
 
 use crate::claude;
 use crate::herdr::{self, HerdrError};
@@ -270,14 +270,60 @@ fn notify(out: &Out, stream: &str, data: Value) -> bool {
     out.send(json!({ "method": "event", "params": { "stream": stream, "data": data } })).is_ok()
 }
 
+/// Opens a herdr connection that streams `pane.agent_status_changed` for `panes`.
+/// herdr needs a pane id for that subscription type, so the default set cannot include it.
+async fn status_connection(ctx: &Ctx, panes: &[String]) -> Result<herdr::Client, HerdrError> {
+    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await?;
+    let subs: Vec<Value> =
+        panes.iter().map(|p| json!({ "type": "pane.agent_status_changed", "pane_id": p })).collect();
+    c.call("events.subscribe", json!({ "subscriptions": subs })).await?;
+    Ok(c)
+}
+
+/// Pane ids of the current `session.snapshot`. Empty when herdr cannot answer.
+async fn snapshot_panes(ctx: &Ctx) -> Vec<String> {
+    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return vec![] };
+    let Ok(r) = c.call("session.snapshot", json!({})).await else { return vec![] };
+    let snap = r.get("snapshot").unwrap_or(&r);
+    snap.get("panes")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|p| p.get("pane_id").and_then(Value::as_str).map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+/// Pane id of a `pane_created` / `pane_agent_detected` event line, if it is one.
+fn new_pane_id(ev: &Value) -> Option<&str> {
+    let name = ev.get("event").and_then(Value::as_str)?;
+    let data = ev.get("data")?;
+    match name.replace('.', "_").as_str() {
+        "pane_created" => data.get("pane").and_then(|p| p.get("pane_id")).and_then(Value::as_str),
+        "pane_agent_detected" => data.get("pane_id").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
+/// Runs a status connection: forwards its events into `tx` until it closes.
+fn spawn_status_reader(set: &mut JoinSet<()>, mut c: herdr::Client, tx: mpsc::UnboundedSender<Value>) {
+    set.spawn(async move {
+        while let Ok(Some(ev)) = c.next_event().await {
+            if tx.send(ev).is_err() {
+                return;
+            }
+        }
+    });
+}
+
 async fn herdr_subscribe(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
-    let types: Vec<String> = match params.get("events") {
-        None | Some(Value::Null) => DEFAULT_EVENTS.iter().map(|s| s.to_string()).collect(),
-        Some(Value::Array(a)) => a
-            .iter()
-            .map(|v| v.as_str().map(String::from))
-            .collect::<Option<_>>()
-            .ok_or_else(|| err("bad_request", "events must be an array of strings"))?,
+    // With no explicit list the caller gets the lifecycle events plus status changes of every pane.
+    let (types, with_status): (Vec<String>, bool) = match params.get("events") {
+        None | Some(Value::Null) => (DEFAULT_EVENTS.iter().map(|s| s.to_string()).collect(), true),
+        Some(Value::Array(a)) => (
+            a.iter()
+                .map(|v| v.as_str().map(String::from))
+                .collect::<Option<_>>()
+                .ok_or_else(|| err("bad_request", "events must be an array of strings"))?,
+            false,
+        ),
         Some(_) => return Err(err("bad_request", "events must be an array of strings")),
     };
     let subscriptions: Vec<Value> = types.iter().map(|t| json!({ "type": t })).collect();
@@ -286,18 +332,55 @@ async fn herdr_subscribe(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, R
     let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.map_err(herdr_err)?;
     c.call("events.subscribe", json!({ "subscriptions": subscriptions })).await.map_err(herdr_err)?;
 
+    // Panes known now. The lifecycle subscription is already active, so a pane created
+    // after this snapshot arrives as an event and gets covered below.
+    let mut covered: HashSet<String> = HashSet::new();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
+    // Dropping the set aborts every extra connection, so `rpc.cancel` stops all of them.
+    let mut extras: JoinSet<()> = JoinSet::new();
+    if with_status {
+        let panes = snapshot_panes(ctx).await;
+        if !panes.is_empty() {
+            if let Ok(sc) = status_connection(ctx, &panes).await {
+                covered.extend(panes);
+                spawn_status_reader(&mut extras, sc, tx.clone());
+            }
+        }
+    }
+
     let out = out.clone();
-    let stream = ctx.streams.spawn("herdr", move |id| async move {
+    let ctx = ctx.clone();
+    let stream = ctx.streams.clone().spawn("herdr", move |id| async move {
+        let mut extras = extras;
         loop {
-            match c.next_event().await {
-                Ok(Some(ev)) => {
+            tokio::select! {
+                ev = c.next_event() => match ev {
+                    Ok(Some(ev)) => {
+                        if with_status {
+                            if let Some(pane) = new_pane_id(&ev).map(String::from) {
+                                if covered.insert(pane.clone()) {
+                                    match status_connection(&ctx, std::slice::from_ref(&pane)).await {
+                                        Ok(sc) => spawn_status_reader(&mut extras, sc, tx.clone()),
+                                        Err(_) => {
+                                            covered.remove(&pane);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !notify(&out, &id, ev) {
+                            return;
+                        }
+                    }
+                    Ok(None) | Err(_) => {
+                        notify(&out, &id, json!({ "closed": true }));
+                        return;
+                    }
+                },
+                Some(ev) = rx.recv() => {
                     if !notify(&out, &id, ev) {
                         return;
                     }
-                }
-                Ok(None) | Err(_) => {
-                    notify(&out, &id, json!({ "closed": true }));
-                    return;
                 }
             }
         }
