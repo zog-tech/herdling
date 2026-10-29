@@ -142,4 +142,89 @@ describe("RpcClient", () => {
     await expect(p).resolves.toBe("ok");
     expect(warn).toHaveBeenCalledTimes(1);
   });
+
+  it("late_events_after_unsubscribe_are_dropped_not_buffered", async () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    const got: number[] = [];
+    const p = c.stream<number>("sub", {}, (d) => got.push(d));
+    t.receive({ id: t.sent[0].id, result: { stream: "s1" } });
+    const unsub = await p;
+    unsub();
+    t.receive({ id: t.sent[1].id, result: {} });
+    t.receive({ method: "event", params: { stream: "s1", data: 1 } });
+    expect(got).toEqual([]);
+    expect(c.bufferedEvents).toBe(0);
+    // even while another subscribe is in flight
+    const p2 = c.stream<number>("sub", {}, () => {});
+    t.receive({ method: "event", params: { stream: "s1", data: 2 } });
+    expect(c.bufferedEvents).toBe(0);
+    t.receive({ id: t.sent[2].id, result: { stream: "s2" } });
+    await p2;
+  });
+
+  it("events_are_not_buffered_without_a_subscribe_in_flight", () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    t.receive({ method: "event", params: { stream: "ghost", data: 1 } });
+    expect(c.bufferedEvents).toBe(0);
+  });
+
+  it("failed_subscribe_clears_buffer", async () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    const p = c.stream("sub", {}, () => {});
+    t.receive({ method: "event", params: { stream: "s1", data: 1 } });
+    expect(c.bufferedEvents).toBe(1);
+    t.receive({ id: t.sent[0].id, error: { code: "boom", message: "x" } });
+    await expect(p).rejects.toMatchObject({ code: "boom" });
+    expect(c.bufferedEvents).toBe(0);
+  });
+
+  it("timed_out_subscribe_clears_buffer", async () => {
+    jest.useFakeTimers();
+    const t = new FakeTransport();
+    const c = new RpcClient(t, { timeoutMs: 100 });
+    const p = c.stream("sub", {}, () => {});
+    const assertion = expect(p).rejects.toMatchObject({ code: "timeout" });
+    t.receive({ method: "event", params: { stream: "s1", data: 1 } });
+    jest.advanceTimersByTime(100);
+    await assertion;
+    expect(c.bufferedEvents).toBe(0);
+  });
+
+  it("buffer_cap_drops_oldest", async () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    const got: number[] = [];
+    const p = c.stream<number>("sub", {}, (d) => got.push(d));
+    for (let i = 0; i < 600; i++) t.receive({ method: "event", params: { stream: "s1", data: i } });
+    expect(c.bufferedEvents).toBe(500);
+    t.receive({ id: t.sent[0].id, result: { stream: "s1" } });
+    await p;
+    expect(got).toHaveLength(500);
+    expect(got[0]).toBe(100);
+    expect(got[499]).toBe(599);
+    expect(c.bufferedEvents).toBe(0);
+  });
+
+  it("stream_without_stream_id_rejects_bad_response", async () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    const p = c.stream("sub", {}, () => {});
+    t.receive({ id: t.sent[0].id, result: { nope: true } });
+    await expect(p).rejects.toMatchObject({ code: "bad_response" });
+    expect(c.bufferedEvents).toBe(0);
+  });
+
+  it("close_closes_transport_and_rejects_pending", async () => {
+    const t = new FakeTransport();
+    const c = new RpcClient(t);
+    const p = c.call("x");
+    c.close();
+    expect(t.closed).toBe(true);
+    expect(c.closed).toBe(true);
+    await expect(p).rejects.toMatchObject({ code: "disconnected" });
+    c.close(); // idempotent
+  });
 });

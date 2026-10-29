@@ -23,6 +23,8 @@ type Pending = {
 type Handler = (data: unknown) => void;
 
 const DEFAULT_TIMEOUT_MS = 15000;
+const MAX_EARLY_EVENTS = 500;
+const MAX_ENDED_STREAMS = 1000;
 
 export class RpcClient {
   closed = false;
@@ -33,6 +35,11 @@ export class RpcClient {
   private readonly handlers = new Map<string, Handler>();
   /** Events that arrived for a stream id before its subscribe result. */
   private readonly early = new Map<string, unknown[]>();
+  private earlyCount = 0;
+  /** Number of subscribe requests awaiting their result. Events are buffered only while this is above zero. */
+  private subscribing = 0;
+  /** Stream ids the app unsubscribed from; their late events are dropped. */
+  private readonly ended = new Set<string>();
   private readonly offLine: () => void;
   private readonly offClose: () => void;
 
@@ -45,6 +52,11 @@ export class RpcClient {
     this.offClose = transport.onClose(() => this.handleClose());
   }
 
+  /** Number of buffered early events (exposed for tests). */
+  get bufferedEvents(): number {
+    return this.earlyCount;
+  }
+
   call<T>(method: string, params?: object): Promise<T> {
     return this.request(method, params) as Promise<T>;
   }
@@ -52,15 +64,24 @@ export class RpcClient {
   async stream<T>(method: string, params: object, onData: (d: T) => void): Promise<() => void> {
     let streamId: string | undefined;
     const handler = onData as Handler;
-    await this.request(method, params, (result) => {
+    this.subscribing++;
+    try {
+      await this.request(method, params, (result) => {
       const id = (result as { stream?: unknown } | null)?.stream;
       if (typeof id !== "string") return;
       streamId = id;
       this.handlers.set(id, handler);
       const buffered = this.early.get(id);
-      this.early.delete(id);
-      buffered?.forEach((d) => handler(d));
+      if (buffered) {
+        this.early.delete(id);
+        this.earlyCount -= buffered.length;
+        buffered.forEach((d) => handler(d));
+      }
     });
+    } finally {
+      // No subscribe in flight: any remaining buffered events belong to no one.
+      if (--this.subscribing === 0) this.clearEarly();
+    }
     if (streamId === undefined) throw new RpcError("bad_response", `${method} did not return a stream id`);
     const id = streamId;
     let cancelled = false;
@@ -68,6 +89,8 @@ export class RpcClient {
       if (cancelled) return;
       cancelled = true;
       this.handlers.delete(id);
+      this.ended.add(id);
+      if (this.ended.size > MAX_ENDED_STREAMS) this.ended.delete(this.ended.values().next().value as string);
       if (!this.closed) this.call("rpc.cancel", { stream: id }).catch(() => {});
     };
   }
@@ -111,11 +134,7 @@ export class RpcClient {
       if (typeof stream !== "string") return;
       const handler = this.handlers.get(stream);
       if (handler) handler(msg.params.data);
-      else {
-        const buf = this.early.get(stream);
-        if (buf) buf.push(msg.params.data);
-        else this.early.set(stream, [msg.params.data]);
-      }
+      else if (this.subscribing > 0 && !this.ended.has(stream)) this.buffer(stream, msg.params.data);
       return;
     }
 
@@ -135,6 +154,26 @@ export class RpcClient {
     p.resolve(msg.result);
   }
 
+  private buffer(stream: string, data: unknown): void {
+    const buf = this.early.get(stream);
+    if (buf) buf.push(data);
+    else this.early.set(stream, [data]);
+    if (++this.earlyCount > MAX_EARLY_EVENTS) {
+      // Drop the oldest event overall (Map keeps insertion order by first event per stream).
+      for (const [id, events] of this.early) {
+        events.shift();
+        this.earlyCount--;
+        if (events.length === 0) this.early.delete(id);
+        break;
+      }
+    }
+  }
+
+  private clearEarly(): void {
+    this.early.clear();
+    this.earlyCount = 0;
+  }
+
   private handleClose(): void {
     this.closed = true;
     this.offLine();
@@ -145,6 +184,7 @@ export class RpcClient {
     }
     this.pending.clear();
     this.handlers.clear();
-    this.early.clear();
+    this.clearEarly();
+    this.ended.clear();
   }
 }
