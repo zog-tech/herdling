@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
+use crate::claude;
 use crate::herdr::{self, HerdrError};
 use crate::types::{Hello, RpcError, RpcRequest, RpcResponse};
 
@@ -158,8 +159,30 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "herdr.call" => herdr_call(ctx, params).await,
         "herdr.subscribe" => herdr_subscribe(ctx, out, params).await,
         "rpc.cancel" => rpc_cancel(ctx, params),
+        "thread.get" => thread_get(params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
+}
+
+async fn thread_get(params: Value) -> Result<Value, RpcError> {
+    let path = params
+        .get("log_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| err("bad_request", "thread.get requires log_path"))?
+        .to_string();
+    let before = params.get("before").and_then(Value::as_u64);
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .map_or(claude::DEFAULT_LIMIT, |n| n as usize);
+    let page = tokio::task::spawn_blocking(move || claude::thread_get(std::path::Path::new(&path), before, limit))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
+            _ => err("io_error", e.to_string()),
+        })?;
+    serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))
 }
 
 fn herdr_err(e: HerdrError) -> RpcError {
