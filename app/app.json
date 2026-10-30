@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.zogtech.zogssh",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Zogssh connects to your computers on the local network over SSH."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -48,6 +52,23 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "bfac8d0c-87ff-42be-877a-8907b4fe587c"
+      }
+    },
+    "owner": "admin.zogtech",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bfac8d0c-87ff-42be-877a-8907b4fe587c"
     }
   }
 }
