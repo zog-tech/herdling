@@ -11,6 +11,9 @@ import { speechText } from "./speechText";
 /** The log can land a moment after the status flips; wait before reading the reply. */
 const SETTLE_MS = 800;
 
+/** A push open waits this long for the thread to load a reply. */
+const PUSH_WAIT_MS = 10_000;
+
 const quiet = (p: Promise<unknown>) => void p.catch(() => {});
 
 /** Bumped by every stop, so a speak that waits for the audio session can see it was cancelled. */
@@ -60,6 +63,14 @@ export function useSpeakReplies(
   const pushDone = useRef(false);
   const userCount = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** A push open still waits for a reply to exist. */
+  const pushPending = useRef(false);
+  const giveUp = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const endPush = () => {
+    pushPending.current = false;
+    clearTimeout(giveUp.current);
+  };
 
   const settleThenSpeak = () => {
     clearTimeout(timer.current);
@@ -67,6 +78,8 @@ export function useSpeakReplies(
       const { items, enabled } = latest.current;
       const reply = replyToSpeak(items);
       const id = lastAssistantId(items);
+      if (!reply && pushPending.current) return; // The items effect re-arms when they load.
+      endPush();
       if (!enabled || !reply || id === spokenId.current || useRecording.getState().recording) return;
       const text = speechText(reply);
       if (!text) return;
@@ -74,6 +87,12 @@ export function useSpeakReplies(
       quiet(speak(text));
     }, SETTLE_MS);
   };
+
+  // A push open waits for the thread to load.
+  useEffect(() => {
+    if (pushPending.current && replyToSpeak(items)) settleThenSpeak();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
 
   // Recording stops speech.
   useEffect(() => {
@@ -96,6 +115,7 @@ export function useSpeakReplies(
   useEffect(
     () => () => {
       clearTimeout(timer.current);
+      clearTimeout(giveUp.current);
       stopSpeech();
     },
     [],
@@ -109,7 +129,12 @@ export function useSpeakReplies(
     if (!status) return;
     const fromPush = !!o?.speakNow && !pushDone.current && finished(status);
     if (shouldSpeak(before, status) || fromPush) {
-      if (finished(status) && o?.speakNow) pushDone.current = true;
+      if (fromPush) {
+        pushDone.current = true;
+        pushPending.current = true;
+        clearTimeout(giveUp.current);
+        giveUp.current = setTimeout(endPush, PUSH_WAIT_MS);
+      } else if (finished(status) && o?.speakNow) pushDone.current = true;
       settleThenSpeak();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

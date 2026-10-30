@@ -116,6 +116,35 @@ describe("useSpeakReplies", () => {
     expect(mockSpeak.mock.calls[0][0]).toBe("Part Final");
   });
 
+  it("speakNow waits for items that load after the settle delay", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="idle" items={[]} speakNow />);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(mockSpeak).not.toHaveBeenCalled();
+    await act(async () => r.update(<Probe status="idle" items={items} speakNow />));
+    await flush();
+    await act(async () => r.update(<Probe status="idle" items={[...items]} speakNow />));
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("speakNow gives up after 10 s without a reply", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="idle" items={[]} speakNow />);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(11000);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} speakNow />));
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
   it("speakNow respects the speaker toggle", async () => {
     useSessionSpeak.setState({ bySession: { "h:p": false } });
     await act(async () => {
