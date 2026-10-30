@@ -3,6 +3,7 @@ pub mod config;
 pub mod events;
 pub mod fsdirs;
 pub mod herdr;
+pub mod install;
 pub mod pair;
 pub mod push;
 pub mod rpc;

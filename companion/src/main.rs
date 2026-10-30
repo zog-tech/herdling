@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tokio::io::BufReader;
 use std::time::Duration;
-use zogsshd::{config, rpc, serve};
+use zogsshd::{config, install, rpc, serve};
 
 fn herdr_socket(home: &std::path::Path) -> PathBuf {
     match std::env::var_os("HERDR_SOCKET") {
@@ -119,6 +119,20 @@ async fn main() -> Result<()> {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             pair_cmd(&home)
         }
-        _ => bail!("usage: zogsshd rpc | serve | pair"),
+        Some("install") => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            let dry_run = std::env::args().skip(2).any(|a| a == "--dry-run");
+            let os = if cfg!(target_os = "macos") { install::Os::Macos } else { install::Os::Linux };
+            let report = install::install(&install::InstallOpts { home, exe: std::env::current_exe()?.canonicalize()?, os, dry_run })?;
+            println!("Binary: {}\nUnit:   {}", report.bin.display(), report.unit_path.display());
+            for c in &report.commands {
+                println!("{} {}", if dry_run { "Would run:" } else { "Ran:" }, c.join(" "));
+            }
+            for s in &report.next_steps {
+                println!("Next: {s}");
+            }
+            Ok(())
+        }
+        _ => bail!("usage: zogsshd rpc | serve | pair | install [--dry-run]"),
     }
 }
