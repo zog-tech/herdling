@@ -126,6 +126,17 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    const USAGE: &str = "usage: zogsshd rpc | serve | pair | install [--dry-run]";
+    // A help flag never runs a subcommand: `install --help` once installed the service.
+    if std::env::args().skip(1).any(|a| a == "-h" || a == "--help" || a == "help") {
+        println!("{USAGE}");
+        return Ok(());
+    }
+    if std::env::args().nth(1).as_deref() == Some("install") {
+        if let Some(a) = std::env::args().skip(2).find(|a| a != "--dry-run") {
+            bail!("unknown option {a}\n{USAGE}");
+        }
+    }
     match std::env::args().nth(1).as_deref() {
         Some("rpc") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
@@ -173,6 +184,6 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        _ => bail!("usage: zogsshd rpc | serve | pair | install [--dry-run]"),
+        _ => bail!("{USAGE}"),
     }
 }
