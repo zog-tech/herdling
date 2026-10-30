@@ -23,6 +23,7 @@ export const APP_METHODS = [
   "summary.make",
   "tts.make",
   "agents.preview",
+  "commands.list",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older zogsshd): the caller tries and falls back. */

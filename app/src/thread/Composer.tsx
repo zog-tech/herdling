@@ -10,11 +10,15 @@ import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 
 import { answerChoice, useChoices, type Choice } from "./choices";
+import { CommandMenu } from "./CommandMenu";
+import { filterCommands, slashQuery, useCommands } from "./commands";
 import { PermissionButtons } from "./PermissionButtons";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
 const PAD_V = 10;
+/** Most matches the typed `/` menu renders. */
+const MENU_MAX = 50;
 
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 
@@ -67,6 +71,11 @@ export function Composer({
   const [picking, setPicking] = useState(false);
   /** Lock against a double tap: two taps can land before `picking` re-renders. */
   const pickLock = useRef(false);
+  const query = slashQuery(text);
+  const slash = useCommands(hostId, paneId, visible && online && query !== undefined);
+  const matches =
+    query !== undefined && slash.supported && slash.commands ? filterCommands(slash.commands, query).slice(0, MENU_MAX) : [];
+  const showMenu = visible && online && !showChoices && matches.length > 0;
 
   /**
    * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).
@@ -145,6 +154,7 @@ export function Composer({
           Host offline — you can send when it reconnects.
         </Text>
       ) : null}
+      {showMenu ? <CommandMenu commands={matches} onPick={(c) => setText(`/${c.name} `)} /> : null}
       {partial ? (
         <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>
           {partial}

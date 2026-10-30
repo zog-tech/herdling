@@ -1,5 +1,6 @@
 pub mod automations;
 pub mod claude;
+pub mod commands;
 pub mod config;
 pub mod enroll;
 pub mod events;

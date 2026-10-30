@@ -340,6 +340,7 @@ pub const METHODS: &[&str] = &[
     "summary.make",
     "tts.make",
     "agents.preview",
+    "commands.list",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -366,6 +367,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "summary.make" => summary_make(ctx, params).await,
         "tts.make" => tts_make(ctx, params).await,
         "agents.preview" => agents_preview(ctx, params).await,
+        "commands.list" => commands_list(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -658,6 +660,32 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     .await
     .map_err(herdr_err)?;
     Ok(json!({ "previews": previews }))
+}
+
+/// Slash commands and skills for the folder `cwd`. When `cwd` is missing, the folder of
+/// `pane_id` comes from herdr. No folder gives the built-in, user and plugin commands only.
+async fn commands_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let mut cwd = params.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
+    if cwd.is_none() {
+        if let Some(pane) = params.get("pane_id").and_then(Value::as_str) {
+            cwd = pane_cwd(ctx, pane).await;
+        }
+    }
+    let home = ctx.home.clone();
+    let commands = tokio::task::spawn_blocking(move || crate::commands::list(&home, cwd.as_deref().map(std::path::Path::new)))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?;
+    Ok(json!({ "commands": commands }))
+}
+
+/// The folder of a pane from herdr `pane.get`. `None` when herdr does not answer.
+async fn pane_cwd(ctx: &Ctx, pane_id: &str) -> Option<String> {
+    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.ok()?;
+    let got = c.call("pane.get", json!({ "pane_id": pane_id })).await.ok()?;
+    let pane = got.get("pane").unwrap_or(&got);
+    ["cwd", "foreground_cwd"]
+        .iter()
+        .find_map(|k| pane.get(*k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

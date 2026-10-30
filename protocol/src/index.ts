@@ -137,3 +137,13 @@ export type AgentPreview = {
   status_since?: number | null;
   source: "log" | "screen";
 };
+
+/** `commands.list` item: one slash command or skill that Claude Code offers in the pane's folder. */
+export type CommandInfo = {
+  /** Without the leading `/`. Plugin items look like `plugin:name`. */
+  name: string;
+  description?: string;
+  source: "builtin" | "user" | "project" | "plugin";
+};
+/** `commands.list` result, sorted by name. */
+export type CommandList = { commands: CommandInfo[] };
