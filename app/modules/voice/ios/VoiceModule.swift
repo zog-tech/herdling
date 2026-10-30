@@ -8,16 +8,29 @@ struct DictationOptions: Record {
   @Field var locale: String?
 }
 
+struct RecordingOptions: Record {
+  /// Also run live recognition (the Apple engine).
+  @Field var live: Bool = false
+  @Field var locale: String?
+}
+
+private func exception(_ e: Error) -> Exception {
+  if let e = e as? DictationError { return Exception(name: "DictationError", description: e.message, code: e.code) }
+  return Exception(name: "VoiceError", description: e.localizedDescription, code: "failed")
+}
+
 public class VoiceModule: Module {
   private lazy var recognizer = Recognizer(
     onPartial: { [weak self] text in self?.sendEvent("onPartial", ["text": text]) },
-    onError: { [weak self] code, message in self?.sendEvent("onDictationError", ["code": code, "message": message]) }
+    onError: { [weak self] code, message in self?.sendEvent("onDictationError", ["code": code, "message": message]) },
+    onLevel: { [weak self] level in self?.sendEvent("onLevel", ["level": level]) },
+    onHalt: { [weak self] reason in self?.sendEvent("onRecordingHalted", ["reason": reason]) }
   )
 
   public func definition() -> ModuleDefinition {
     Name("VoiceModule")
 
-    Events("onPartial", "onDictationError")
+    Events("onPartial", "onDictationError", "onLevel", "onRecordingHalted")
 
     AsyncFunction("requestPermission") { () async -> String in
       await Recognizer.requestPermission() ? "granted" : "denied"
@@ -53,6 +66,33 @@ public class VoiceModule: Module {
 
     AsyncFunction("releaseAudio") { () async in
       await self.recognizer.releaseSpeech()
+    }
+
+    AsyncFunction("requestMicPermission") { () async -> String in
+      await Recognizer.requestMicPermission() ? "granted" : "denied"
+    }
+
+    AsyncFunction("startRecording") { (opts: RecordingOptions?) async throws in
+      do {
+        try await self.recognizer.startRecording(live: opts?.live ?? false, localeId: opts?.locale)
+      } catch {
+        throw exception(error)
+      }
+    }
+
+    AsyncFunction("stopRecording") { () async throws -> [String: Any] in
+      do {
+        let r = try await self.recognizer.stopRecording()
+        var out: [String: Any] = ["uri": r.uri, "durationMs": r.durationMs]
+        if let text = r.text { out["text"] = text }
+        return out
+      } catch {
+        throw exception(error)
+      }
+    }
+
+    AsyncFunction("cancelRecording") { () async in
+      await self.recognizer.cancel()
     }
 
     AsyncFunction("localSummaryAvailable") { () -> Bool in

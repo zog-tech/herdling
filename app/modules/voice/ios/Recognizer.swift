@@ -2,7 +2,8 @@ import AVFAudio
 import Foundation
 import Speech
 
-/// Rejection codes the JS side sees: "busy", "denied", "unavailable", "recognition_failed", "timeout", "cancelled".
+/// Rejection codes the JS side sees: "busy", "denied", "unavailable", "recognition_failed", "timeout", "cancelled",
+/// "not_recording".
 struct DictationError: Error {
   let code: String
   let message: String
@@ -32,11 +33,26 @@ protocol DictationSession: AnyObject, Sendable {
   func cancel() async
 }
 
-/// Hold-to-talk dictation: one run at a time. The audio session is active only while a run is.
+typealias LevelHandler = @Sendable (Double) -> Void
+typealias HaltHandler = @Sendable (_ reason: String) -> Void
+
+/// What `stopRecording` gives back: the WAV file, its length, and the live text when live
+/// recognition ran (nil when it did not run or failed).
+struct Recorded {
+  let uri: String
+  let durationMs: Int
+  let text: String?
+}
+
+/// Dictation and recording: one run at a time. The audio session is active only while a run is.
+/// A dictation run feeds live recognition only. A recording run writes a WAV file and can also
+/// feed live recognition. Both emit a level for the waveform.
 actor Recognizer {
   private struct Run {
     let engine: AVAudioEngine
-    let session: DictationSession
+    let session: DictationSession?
+    let writer: WavWriter?
+    let observer: NSObjectProtocol
   }
 
   /// Wait for the final text at most this long after the microphone stops.
@@ -44,16 +60,22 @@ actor Recognizer {
 
   private let onPartial: PartialHandler
   private let onError: ErrorHandler
+  private let onLevel: LevelHandler
+  private let onHalt: HaltHandler
   private var run: Run?
   private var starting = false
   /// `stop` is waiting for the final text; the audio session is still ours.
   private var finishing = false
   /// A stop or cancel came while `start` was still setting up.
   private var dropWhenStarted = false
+  /// The microphone stopped by itself ("limit" or "interrupted"). The run waits for a stop.
+  private var halted = false
 
-  init(onPartial: @escaping PartialHandler, onError: @escaping ErrorHandler) {
+  init(onPartial: @escaping PartialHandler, onError: @escaping ErrorHandler, onLevel: @escaping LevelHandler, onHalt: @escaping HaltHandler) {
     self.onPartial = onPartial
     self.onError = onError
+    self.onLevel = onLevel
+    self.onHalt = onHalt
   }
 
   /// Asks for microphone and speech recognition access. True only when both are granted.
@@ -65,7 +87,12 @@ actor Recognizer {
     return mic && speech == .authorized
   }
 
-  /// True while dictation owns the audio session.
+  /// Asks for microphone access only (a recording for Parakeet or the host). True when granted.
+  static func requestMicPermission() async -> Bool {
+    await AVAudioApplication.requestRecordPermission()
+  }
+
+  /// True while dictation or a recording owns the audio session.
   var isBusy: Bool { run != nil || starting || finishing }
 
   /// Switches to the speech audio session unless dictation runs. The check and the switch cannot be split by a start.
@@ -80,18 +107,30 @@ actor Recognizer {
     AudioSession.deactivate()
   }
 
+  /// Starts live dictation.
   func start(localeId: String?) async throws {
+    try await begin(live: true, record: false, localeId: localeId)
+  }
+
+  /// Starts a recording to a WAV file. `live`: also run live recognition (the Apple engine).
+  func startRecording(live: Bool, localeId: String?) async throws {
+    try await begin(live: live, record: true, localeId: localeId)
+  }
+
+  private func begin(live: Bool, record: Bool, localeId: String?) async throws {
     guard run == nil, !starting, !finishing else { throw DictationError.busy }
     guard AVAudioApplication.shared.recordPermission == .granted else {
       throw DictationError.denied("Microphone access is off. Turn it on in Settings.")
     }
     starting = true
     dropWhenStarted = false
+    halted = false
     defer { starting = false }
 
     let locale = localeId.map(Locale.init(identifier:)) ?? Locale.current
-    let session = try await makeSession(locale: locale)
+    let session = live ? try await makeSession(locale: locale) : nil
     let engine = AVAudioEngine()
+    var writer: WavWriter?
     do {
       try AudioSession.activate()
       let input = engine.inputNode
@@ -99,26 +138,52 @@ actor Recognizer {
       guard format.sampleRate > 0, format.channelCount > 0 else {
         throw DictationError.unavailable("No microphone input")
       }
-      try await session.prepare(inputFormat: format)
-      input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-        session.append(buffer)
+      try await session?.prepare(inputFormat: format)
+      if record { writer = try WavWriter(inputFormat: format) }
+      let meter = LevelMeter(emit: onLevel)
+      let file = writer
+      let capped = Flag()
+      input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        session?.append(buffer)
+        meter.feed(buffer)
+        if let file, file.append(buffer), capped.setOnce() {
+          Task { await self?.halt(reason: "limit") }
+        }
       }
       engine.prepare()
       try engine.start()
     } catch {
       Self.stopAudio(engine)
-      await session.cancel()
+      await session?.cancel()
+      writer?.discard()
       AudioSession.deactivate()
       throw DictationError.failed(error)
     }
 
     if dropWhenStarted {
       Self.stopAudio(engine)
-      await session.cancel()
+      await session?.cancel()
+      writer?.discard()
       AudioSession.deactivate()
       throw DictationError.cancelled
     }
-    run = Run(engine: engine, session: session)
+    // A call or Siri takes the microphone: stop it and keep what was recorded.
+    let observer = NotificationCenter.default.addObserver(
+      forName: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), queue: nil
+    ) { [weak self] note in
+      let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+      guard raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began else { return }
+      Task { await self?.halt(reason: "interrupted") }
+    }
+    run = Run(engine: engine, session: session, writer: writer, observer: observer)
+  }
+
+  /// Stops the microphone but keeps the run, so a later stop still returns the text and the file.
+  private func halt(reason: String) {
+    guard let run, !halted else { return }
+    halted = true
+    Self.stopAudio(run.engine)
+    onHalt(reason)
   }
 
   /// Stops the microphone and returns the final text. Returns "" when nothing runs.
@@ -127,14 +192,42 @@ actor Recognizer {
       if starting { dropWhenStarted = true }
       return ""
     }
+    // A recording run that JS stops with the dictation call: drop its file.
+    run.writer?.discard()
+    guard let session = run.session else {
+      end(run)
+      return ""
+    }
+    return try await finishLive(run, session: session)
+  }
+
+  /// Stops a recording and returns its file. The live text is nil when live recognition did not
+  /// run or failed: the caller can still transcribe the file.
+  func stopRecording() async throws -> Recorded {
+    guard let run, let writer = run.writer else {
+      if starting { dropWhenStarted = true }
+      throw DictationError(code: "not_recording", message: "No recording runs")
+    }
+    let durationMs = writer.finish()
+    var text: String?
+    if let session = run.session {
+      text = try? await finishLive(run, session: session)
+    } else {
+      end(run)
+    }
+    return Recorded(uri: writer.url.absoluteString, durationMs: durationMs, text: text)
+  }
+
+  /// Ends the run with its audio; the session finish is raced against the timeout.
+  private func finishLive(_ run: Run, session: DictationSession) async throws -> String {
     self.run = nil
     finishing = true
     Self.stopAudio(run.engine)
+    NotificationCenter.default.removeObserver(run.observer)
     defer {
       AudioSession.deactivate()
       finishing = false
     }
-    let session = run.session
     // Race the final text against the timeout. Not a task group: it would wait for a `finish`
     // that only a cancel can end. The session is cancelled after the race, so a timeout always
     // reaches JS as "timeout", never as a silent "cancelled".
@@ -149,6 +242,14 @@ actor Recognizer {
     }
   }
 
+  private func end(_ run: Run) {
+    self.run = nil
+    Self.stopAudio(run.engine)
+    NotificationCenter.default.removeObserver(run.observer)
+    AudioSession.deactivate()
+  }
+
+  /// Stops the microphone and drops the transcript and the file.
   func cancel() async {
     guard let run else {
       if starting { dropWhenStarted = true }
@@ -156,7 +257,9 @@ actor Recognizer {
     }
     self.run = nil
     Self.stopAudio(run.engine)
-    await run.session.cancel()
+    NotificationCenter.default.removeObserver(run.observer)
+    await run.session?.cancel()
+    run.writer?.discard()
     AudioSession.deactivate()
   }
 
@@ -184,6 +287,19 @@ actor Recognizer {
   private static func stopAudio(_ engine: AVAudioEngine) {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
+  }
+}
+
+/// True once: the first `setOnce` returns true, every later one false.
+private final class Flag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var set = false
+
+  func setOnce() -> Bool {
+    lock.withLock {
+      defer { set = true }
+      return !set
+    }
   }
 }
 
@@ -226,15 +342,33 @@ enum AudioSession {
 
 // MARK: - SFSpeechRecognizer (iOS 17+)
 
+/// Joins two pieces of transcript with one space.
+func joinText(_ a: String, _ b: String) -> String {
+  let a = a.trimmingCharacters(in: .whitespaces)
+  let b = b.trimmingCharacters(in: .whitespaces)
+  if a.isEmpty { return b }
+  if b.isEmpty { return a }
+  return a + " " + b
+}
+
 /// SFSpeechRecognizer, on-device when the locale supports it.
+///
+/// A long run must not lose text. SF can start a new transcript after a pause, can end its task
+/// with a final result, or can end it with "no speech" while the user still records. The text
+/// so far goes into `committed`, and a new task starts on a new request.
 final class SFSession: DictationSession, @unchecked Sendable {
   private let recognizer: SFSpeechRecognizer
-  private let request = SFSpeechAudioBufferRecognitionRequest()
   private let onPartial: PartialHandler
   private let onError: ErrorHandler
   private let lock = NSLock()
+  private var request = SFSpeechAudioBufferRecognitionRequest()
   private var task: SFSpeechRecognitionTask?
+  /// Text of tasks and transcripts that ended.
+  private var committed = ""
+  /// The transcript of the current task.
   private var latest = ""
+  /// Counts tasks, so a late callback of an old task is ignored.
+  private var generation = 0
   private var stopping = false
   private var outcome: Result<String, DictationError>?
   private var waiter: CheckedContinuation<String, Error>?
@@ -255,25 +389,34 @@ final class SFSession: DictationSession, @unchecked Sendable {
   }
 
   func prepare(inputFormat: AVAudioFormat) async throws {
+    lock.withLock { startTask() }
+  }
+
+  /// Starts a task on a fresh request. Call with the lock held.
+  private func startTask() {
+    let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
     request.taskHint = .dictation
     request.addsPunctuation = true
     if recognizer.supportsOnDeviceRecognition {
       request.requiresOnDeviceRecognition = true
     }
+    self.request = request
+    generation += 1
+    let gen = generation
     task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-      self?.handle(result: result, error: error)
+      self?.handle(result: result, error: error, generation: gen)
     }
   }
 
   func append(_ buffer: AVAudioPCMBuffer) {
-    request.append(buffer)
+    lock.withLock { request }.append(buffer)
   }
 
   func finish() async throws -> String {
-    let done = lock.withLock {
+    let (done, request) = lock.withLock {
       stopping = true
-      return outcome
+      return (outcome, self.request)
     }
     if let done { return try done.get() }
     request.endAudio()
@@ -290,27 +433,51 @@ final class SFSession: DictationSession, @unchecked Sendable {
   }
 
   func cancel() async {
-    lock.withLock { stopping = true }
+    let (task, request) = lock.withLock {
+      stopping = true
+      return (self.task, self.request)
+    }
     task?.cancel()
     request.endAudio()
     resolve(.failure(.cancelled))
   }
 
-  private func handle(result: SFSpeechRecognitionResult?, error: Error?) {
+  private func handle(result: SFSpeechRecognitionResult?, error: Error?, generation gen: Int) {
     lock.lock()
-    if let result { latest = result.bestTranscription.formattedString }
-    let text = latest
+    guard gen == generation else {
+      lock.unlock()
+      return
+    }
+    if let result {
+      let text = result.bestTranscription.formattedString
+      // A new transcript after a pause: it shares no first word with the old one and is
+      // shorter. Keep the old one.
+      if !latest.isEmpty && text.count < latest.count && Self.firstWord(text) != Self.firstWord(latest) {
+        committed = joinText(committed, latest)
+      }
+      latest = text
+    }
+    let full = joinText(committed, latest)
     let stopping = self.stopping
+    let noSpeech = (error as NSError?).map { $0.domain == "kAFAssistantErrorDomain" && $0.code == 1110 } ?? false
+    // The task ended while the user still records: keep its text and go on with a new task.
+    if !stopping && ((result?.isFinal ?? false) || noSpeech) {
+      committed = full
+      latest = ""
+      startTask()
+      lock.unlock()
+      return
+    }
     lock.unlock()
 
     if let result, result.isFinal {
-      resolve(.success(text))
+      resolve(.success(full))
       return
     }
     if let error = error as NSError? {
-      // 1110 = no speech detected: an empty transcript, not a failure.
-      if stopping && error.domain == "kAFAssistantErrorDomain" && error.code == 1110 {
-        resolve(.success(""))
+      // 1110 = no speech detected: the text so far (maybe empty), not a failure.
+      if stopping && noSpeech {
+        resolve(.success(full))
         return
       }
       let failure = DictationError(code: "recognition_failed", message: error.localizedDescription)
@@ -318,7 +485,11 @@ final class SFSession: DictationSession, @unchecked Sendable {
       if !stopping && first { onError(failure.code, failure.message) }
       return
     }
-    if result != nil && !stopping { onPartial(text) }
+    if result != nil && !stopping { onPartial(full) }
+  }
+
+  private static func firstWord(_ s: String) -> String {
+    s.split(separator: " ", maxSplits: 1).first.map { $0.lowercased() } ?? ""
   }
 
   /// Stores the first outcome and wakes a waiting `finish`. Returns false when an outcome was already stored.
@@ -400,11 +571,12 @@ final class AnalyzerSession: DictationSession, @unchecked Sendable {
       do {
         for try await result in transcriber.results {
           let text = String(result.text.characters)
+          // Final segments join with a space; a volatile result shows after them.
           if result.isFinal {
-            done += text
+            done = joinText(done, text)
             onPartial(done)
           } else {
-            onPartial(done + text)
+            onPartial(joinText(done, text))
           }
         }
       } catch {
