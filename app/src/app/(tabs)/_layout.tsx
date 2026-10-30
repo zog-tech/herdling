@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { LayoutGrid, Settings } from "lucide-react-native";
+import { Gauge, LayoutGrid, Settings } from "lucide-react-native";
 
 import { colors, hitTarget, type } from "@/theme/tokens";
 
@@ -20,6 +20,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{ title: "Overview", tabBarIcon: ({ color, size }) => <LayoutGrid color={color} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="usage"
+        options={{ title: "Usage", tabBarIcon: ({ color, size }) => <Gauge color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="settings"

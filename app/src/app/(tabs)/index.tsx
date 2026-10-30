@@ -4,17 +4,15 @@ import { useEffect, useMemo } from "react";
 import { Pressable, View } from "react-native";
 
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
+import { HostMeters } from "@/hosts/HostMeters";
 import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { useHostStats } from "@/hosts/useHostStats";
 import { pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { needsYou, type AgentInfo, type Snapshot } from "@/herdr/snapshot";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { colors, hitTarget, space } from "@/theme/tokens";
 import { Card } from "@/ui/Card";
-import { formatBytes, pct } from "@/ui/format";
-import { Meter } from "@/ui/Meter";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { StatusBadge } from "@/ui/StatusBadge";
@@ -91,21 +89,6 @@ function Workspaces({ hostId, snapshot }: { hostId: string; snapshot: Snapshot }
           ))}
         </View>
       ))}
-    </View>
-  );
-}
-
-function HostMeters({ hostId }: { hostId: string }) {
-  const stats = useHostStats(hostId);
-  if (!stats) return null;
-  return (
-    <View style={{ flexDirection: "row", gap: space.lg }}>
-      <Meter label="CPU" value={stats.cpu_pct} />
-      <Meter
-        label="Mem"
-        value={pct(stats.mem_used, stats.mem_total)}
-        detail={`${formatBytes(stats.mem_used)} / ${formatBytes(stats.mem_total)}`}
-      />
     </View>
   );
 }

@@ -49,6 +49,10 @@ pub struct Ctx {
     pub stats: Arc<Mutex<sysinfo::System>>,
     /// False until the first `stats.get` has primed the CPU counters.
     pub stats_primed: Arc<AtomicBool>,
+    /// Endpoints asked by `usage.get`.
+    pub usage_urls: crate::usage::UsageUrls,
+    /// Whether `usage.get` may read the Claude token from the macOS keychain.
+    pub usage_keychain: bool,
 }
 
 impl Ctx {
@@ -64,6 +68,8 @@ impl Ctx {
             streams: Streams::default(),
             stats: Arc::new(Mutex::new(sysinfo::System::new())),
             stats_primed: Arc::new(AtomicBool::new(false)),
+            usage_urls: crate::usage::UsageUrls::default(),
+            usage_keychain: cfg!(target_os = "macos"),
         }
     }
 }
@@ -315,6 +321,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "push.register" => push_register(ctx, params).await,
         "pair.revoke" => pair_revoke(ctx, params).await,
         "stats.get" => stats_get(ctx).await,
+        "usage.get" => usage_get(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -524,6 +531,11 @@ async fn stats_get(ctx: &Ctx) -> Result<Value, RpcError> {
         .await
         .map_err(|e| err("internal", e.to_string()))?;
     serde_json::to_value(stats).map_err(|e| err("internal", e.to_string()))
+}
+
+async fn usage_get(ctx: &Ctx) -> Result<Value, RpcError> {
+    let usage = crate::usage::get(&ctx.home, &ctx.usage_urls, ctx.usage_keychain).await;
+    serde_json::to_value(usage).map_err(|e| err("internal", e.to_string()))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

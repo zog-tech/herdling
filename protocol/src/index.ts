@@ -69,3 +69,14 @@ export type PairResponse = {
 
 /** `stats.get`: host load. Memory in bytes; `mem_used = total - available`. */
 export type Stats = { cpu_pct: number; mem_used: number; mem_total: number; load: [number, number, number]; uptime_s: number };
+
+/** `usage.get`: plan usage of the CLIs on a host. `resets_at` is unix seconds. */
+export type UsageWindow = { label: string; used_pct: number; resets_at: number | null };
+export type ProviderUsage = {
+  provider: "claude" | "codex";
+  status: "ok" | "not_logged_in" | "unavailable";
+  error?: string;
+  windows: UsageWindow[];
+};
+/** Always both providers, Claude first. */
+export type Usage = { providers: ProviderUsage[] };

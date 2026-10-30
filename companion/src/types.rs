@@ -179,3 +179,34 @@ pub struct Stats {
     pub load: [f64; 3],
     pub uptime_s: u64,
 }
+
+/// One plan-usage window, such as the 5 hour or 7 day limit. `resets_at` is unix seconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageWindow {
+    pub label: String,
+    pub used_pct: f64,
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageStatus {
+    Ok,
+    NotLoggedIn,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderUsage {
+    pub provider: String,
+    pub status: UsageStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub windows: Vec<UsageWindow>,
+}
+
+/// `usage.get`: always both providers, Claude first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Usage {
+    pub providers: Vec<ProviderUsage>,
+}
