@@ -341,3 +341,28 @@ fn system_reminder_is_stripped_from_a_real_prompt() {
     assert_eq!(user_text(item_with_uuid(&items, "h-10")), "Please also update the README");
     assert_eq!(user_text(item_with_uuid(&items, "h-11")), "Plain prompt with <b>tags</b> inside");
 }
+
+#[test]
+fn queued_prompt_from_human_is_a_user_item() {
+    let line = json!({
+        "type": "attachment", "uuid": "q1", "timestamp": "2026-10-30T23:19:40.688Z",
+        "attachment": { "type": "queued_command", "prompt": "Also move the status", "commandMode": "prompt",
+            "origin": { "kind": "human" }, "humanTurn": true }
+    });
+    let items = parse_line(&line.to_string());
+    assert_eq!(items.len(), 1);
+    match &items[0] {
+        ThreadItem::User { text, .. } => assert_eq!(text, "Also move the status"),
+        other => panic!("expected a user item, got {other:?}"),
+    }
+}
+
+#[test]
+fn queued_task_notification_is_not_a_user_item() {
+    let line = json!({
+        "type": "attachment", "uuid": "q2", "timestamp": "2026-10-30T23:19:40.688Z",
+        "attachment": { "type": "queued_command", "prompt": "<task-notification>x</task-notification>",
+            "commandMode": "task-notification", "origin": { "kind": "task-notification" } }
+    });
+    assert!(parse_line(&line.to_string()).is_empty());
+}

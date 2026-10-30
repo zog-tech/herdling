@@ -20,6 +20,7 @@ pub fn parse_line(line: &str) -> Vec<ThreadItem> {
         Some("user") => parse_user(&v, &uuid, ts),
         Some("assistant") => parse_assistant(&v, &uuid, ts),
         Some("system") => parse_system(&v, &uuid, ts),
+        Some("attachment") => parse_queued(&v, &uuid, ts),
         _ => Vec::new(),
     }
 }
@@ -92,6 +93,19 @@ fn flag(v: &Value, key: &str) -> bool {
 
 fn block_id(uuid: &str, i: usize) -> String {
     format!("{uuid}:{i}")
+}
+
+/// A prompt the user sent while the agent worked. Claude Code logs it as a `queued_command`
+/// attachment, not as a user line. Only prompts from a human count; task notifications do not.
+fn parse_queued(v: &Value, uuid: &str, ts: i64) -> Vec<ThreadItem> {
+    let Some(a) = v.get("attachment") else { return Vec::new() };
+    let human = a.pointer("/origin/kind").and_then(Value::as_str) == Some("human") || flag(a, "humanTurn");
+    if a.get("type").and_then(Value::as_str) != Some("queued_command") || str_of(a, "commandMode") != "prompt" || !human {
+        return Vec::new();
+    }
+    let Some(prompt) = a.get("prompt") else { return Vec::new() };
+    let line = serde_json::json!({ "message": { "content": prompt } });
+    parse_user(&line, uuid, ts)
 }
 
 fn parse_user(v: &Value, uuid: &str, ts: i64) -> Vec<ThreadItem> {
