@@ -2,7 +2,7 @@ import { MailOpen, Reply, RotateCcw } from "lucide-react-native";
 import { memo, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated from "react-native-reanimated";
+import Animated, { cubicBezier } from "react-native-reanimated";
 
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
@@ -12,7 +12,8 @@ import { BUCKET_META, kindIcon } from "./bucketMeta";
 import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
-const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+/** Strong ease-out for press feedback. */
+const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 type Actions = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
