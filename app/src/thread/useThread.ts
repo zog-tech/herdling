@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHostConn } from "@/hosts/connection";
 import type { RpcClient } from "@/rpc/RpcClient";
+import { PAGE_SIZE, type FollowData, codeOf, fetchOlder, followHandler, makeFail, messageOf } from "./followShared";
 import { mergeItems } from "./merge";
 
 /**
@@ -25,21 +26,13 @@ export type Thread = {
   hasOlder: boolean;
 };
 
-type FollowData = { items: ThreadItem[]; offset: number } | { error: string };
-
-const PAGE_SIZE = 40;
 /** Retry delay while the log file does not exist yet. */
 const WAITING_RETRY_MS = 2_000;
-/** Retry delays after failures; the last value repeats. */
-const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
 /** The cursor that reaches further back; null means the start of the file is loaded. */
 function olderCursor(a: number | null, b: number | null): number | null {
   return a == null || b == null ? null : Math.min(a, b);
 }
-
-const codeOf = (e: unknown) => String((e as { code?: unknown })?.code ?? "");
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Thread of one herdr pane: `thread.resolve` → `thread.get` (last page) → `thread.follow` from the
@@ -88,14 +81,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
     const restartIn = (ms: number) => {
       retry = setTimeout(() => !dead && setEpoch((n) => n + 1), ms);
     };
-    const fail = (e: unknown) => {
-      setError(messageOf(e));
-      setStatus("error");
-      const delay = BACKOFF_MS[Math.min(failures.current, BACKOFF_MS.length - 1)];
-      failures.current++;
-      // A dropped connection gives a new rpc client, which restarts this effect anyway.
-      if (codeOf(e) !== "disconnected") restartIn(delay);
-    };
+    const fail = makeFail({ failures, setError, setStatus, restartIn });
 
     const start = async () => {
       if (statusRef.current !== "live") setStatus("loading");
@@ -142,16 +128,19 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         loadingOlderRef.current = false;
         setItems((cur) => (overlaps ? mergeItems(cur, page.items) : page.items));
         setHasOlder(cursor != null);
-        const u = await rpc.stream<FollowData>("thread.follow", { log_path: logPath, from: page.end }, (d) => {
-          if (dead) return;
-          if ("error" in d) {
-            // The log went away (for example a new session in the same pane): resolve again.
-            unsub = undefined;
-            fail(new Error(`thread follow ended: ${d.error}`));
-            return;
-          }
-          if (d.items.length > 0) setItems((prev) => mergeItems(prev, d.items));
-        });
+        const u = await rpc.stream<FollowData>(
+          "thread.follow",
+          { log_path: logPath, from: page.end },
+          followHandler({
+            isDead: () => dead,
+            setItems,
+            onEnded: (e) => {
+              // The log went away (for example a new session in the same pane): resolve again.
+              unsub = undefined;
+              fail(e);
+            },
+          }),
+        );
         if (dead) {
           u();
           return;
@@ -201,23 +190,19 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   const loadOlder = useCallback(() => {
     const src = source.current;
     if (!src || src.cursor == null || loadingOlderRef.current) return;
-    loadingOlderRef.current = true;
-    setLoadingOlder(true);
     const before = src.cursor;
-    src.rpc
-      .call<ThreadPage>("thread.get", { log_path: src.logPath, before, limit: PAGE_SIZE })
-      .then((page) => {
-        if (source.current?.token !== src.token) return;
+    fetchOlder({
+      guard: loadingOlderRef,
+      setLoadingOlder,
+      fetch: () => src.rpc.call<ThreadPage>("thread.get", { log_path: src.logPath, before, limit: PAGE_SIZE }),
+      isCurrent: () => source.current?.token === src.token,
+      apply: (page) => {
         src.cursor = page.cursor;
         setHasOlder(page.cursor != null);
         // Newer copies of the same ids (already loaded) win.
         setItems((prev) => mergeItems(page.items, prev));
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (source.current?.token === src.token) loadingOlderRef.current = false;
-        setLoadingOlder(false);
-      });
+      },
+    });
   }, []);
 
   return { ref, items, status, error, loadOlder, loadingOlder, hasOlder };

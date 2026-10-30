@@ -334,7 +334,8 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
 
 async fn thread_get(params: Value) -> Result<Value, RpcError> {
     let path = str_param(&params, "log_path", "thread.get")?.to_string();
-    read_page(std::path::PathBuf::from(path), &params).await
+    let page = read_page(std::path::PathBuf::from(path), &params).await?;
+    serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))
 }
 
 fn str_param<'a>(params: &'a Value, key: &str, method: &str) -> Result<&'a str, RpcError> {
@@ -351,11 +352,10 @@ async fn thread_subagent(params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("bad_request", "invalid agent_id"))?;
     let log_path = path.to_string_lossy().into_owned();
     let page = read_page(path, &params).await?;
-    let page = serde_json::from_value(page).map_err(|e| err("internal", e.to_string()))?;
     serde_json::to_value(crate::types::SubagentPage { page, log_path }).map_err(|e| err("internal", e.to_string()))
 }
 
-async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<Value, RpcError> {
+async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<crate::types::ThreadPage, RpcError> {
     let before = params.get("before").and_then(Value::as_u64);
     let limit = params
         .get("limit")
@@ -368,7 +368,7 @@ async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<Value, Rp
             std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
             _ => err("io_error", e.to_string()),
         })?;
-    serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))
+    Ok(page)
 }
 
 fn herdr_err(e: HerdrError) -> RpcError {

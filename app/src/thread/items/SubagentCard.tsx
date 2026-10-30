@@ -1,12 +1,11 @@
 import { Bot, Check, CircleHelp, CircleX, Loader, type LucideIcon } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
-import { useRouter } from "expo-router";
-
 
 import { colors, radius, space } from "@/theme/tokens";
-import { useThreadLog } from "../ThreadLogContext";
 import { Text } from "@/ui/Text";
+import { useThreadLog } from "../ThreadLogContext";
 
 /** Status words from the log mapped to icon + color (never color alone). */
 function statusMeta(status: string): { color: string; Icon: LucideIcon } {
