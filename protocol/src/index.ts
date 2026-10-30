@@ -104,6 +104,9 @@ export type Summary = { summary: string };
 /** `tts.make` result: audio bytes as base64 (WAV, MP3 or Ogg) and their mime type. */
 export type TtsAudio = { audio_b64: string; mime: "audio/wav" | "audio/mpeg" | "audio/ogg" };
 
+/** `stt.make` result: the text of a recording, trimmed. */
+export type SttText = { text: string };
+
 /** `automations.list` item (companion adapter for `herdr-automate`). `content_hash` is what `automations.approve` must echo. */
 export type Automation = {
   id: string;

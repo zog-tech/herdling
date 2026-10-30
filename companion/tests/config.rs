@@ -17,7 +17,7 @@ fn device(id: &str, name: &str) -> Device {
 fn missing_file_is_default() {
     let dir = tempfile::tempdir().unwrap();
     let c = config::load(&dir.path().join("config.toml")).unwrap();
-    assert_eq!(c, Config { devices: vec![], summary_command: None, tts_command: None, pair_port: 7790, ssh_port: 22 });
+    assert_eq!(c, Config { devices: vec![], summary_command: None, tts_command: None, stt_command: None, pair_port: 7790, ssh_port: 22 });
 }
 
 #[test]

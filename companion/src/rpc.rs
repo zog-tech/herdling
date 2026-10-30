@@ -26,9 +26,9 @@ pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Messages queued for stdout before senders wait.
 const OUT_CAPACITY: usize = 1024;
-/// Longest request line accepted, without the newline. A `files.put` of the largest
-/// file (10 MiB, about 13.4 MiB as base64) must fit.
-pub const MAX_LINE: usize = 16 << 20;
+/// Longest request line accepted, without the newline. An `stt.make` of the largest
+/// recording (25 MiB, about 33.4 MiB as base64) must fit.
+pub const MAX_LINE: usize = 34 << 20;
 
 #[derive(Clone)]
 pub struct Ctx {
@@ -60,6 +60,8 @@ pub struct Ctx {
     pub summary_timeout: Duration,
     /// Bound for one `tts_command` run.
     pub tts_timeout: Duration,
+    /// Bound for one `stt_command` run.
+    pub stt_timeout: Duration,
     /// Status start times and resolved logs kept for `agents.preview`.
     pub preview: crate::preview::PreviewState,
 }
@@ -82,6 +84,7 @@ impl Ctx {
             usage_keychain: cfg!(target_os = "macos"),
             summary_timeout: crate::summary::TIMEOUT,
             tts_timeout: crate::tts::TIMEOUT,
+            stt_timeout: crate::stt::TIMEOUT,
             preview: crate::preview::PreviewState::default(),
         }
     }
@@ -343,6 +346,7 @@ pub const METHODS: &[&str] = &[
     "agents.preview",
     "commands.list",
     "files.put",
+    "stt.make",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -371,6 +375,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "agents.preview" => agents_preview(ctx, params).await,
         "commands.list" => commands_list(ctx, params).await,
         "files.put" => files_put(ctx, params).await,
+        "stt.make" => stt_make(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -638,6 +643,16 @@ async fn tts_make(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("no_command", "no tts_command in the companion config"))?;
     let audio = crate::tts::make(argv, text, ctx.tts_timeout).await?;
     serde_json::to_value(audio).map_err(|e| err("internal", e.to_string()))
+}
+
+/// Transcribes a recording with the host's `stt_command`. No command gives `no_command`.
+async fn stt_make(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let audio = crate::stt::decode(str_param(&params, "audio_b64", "stt.make")?)?;
+    let cfg = load_config(ctx).await?;
+    let argv = crate::hostcmd::argv(cfg.stt_command.as_deref())
+        .ok_or_else(|| err("no_command", "no stt_command in the companion config"))?;
+    let text = crate::stt::make(argv, audio, ctx.stt_timeout).await?;
+    serde_json::to_value(crate::types::SttText { text }).map_err(|e| err("internal", e.to_string()))
 }
 
 /// One preview line per agent (only `pane_ids` when given). See [`crate::preview`].

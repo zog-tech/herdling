@@ -1,4 +1,4 @@
-//! Shared by the `summary.make` and `tts.make` tests: small scripts and one rpc round trip.
+//! Shared by the `summary.make`, `tts.make` and `stt.make` tests: small scripts and one rpc round trip.
 #![allow(dead_code)]
 
 use std::os::unix::fs::PermissionsExt;
@@ -21,6 +21,7 @@ pub fn script(dir: &Path, name: &str, body: &str) -> String {
 pub enum Which {
     Summary,
     Tts,
+    Stt,
 }
 
 pub fn set_command(home: &Path, which: Which, argv: Option<Vec<String>>) {
@@ -28,17 +29,19 @@ pub fn set_command(home: &Path, which: Which, argv: Option<Vec<String>>) {
     zogsshd::config::update(&path, |c| match which {
         Which::Summary => c.summary_command = argv,
         Which::Tts => c.tts_command = argv,
+        Which::Stt => c.stt_command = argv,
     })
     .unwrap();
 }
 
-/// Runs one request with `timeout` for both commands and returns the whole response line.
+/// Runs one request with `timeout` for every command and returns the whole response line.
 pub async fn call(home: &Path, method: &str, params: Value, timeout: Duration) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 20);
     let (server_out, client_rx) = tokio::io::duplex(1 << 24);
     let mut ctx = Ctx::new(home.join("none.sock"), PathBuf::from(home));
     ctx.summary_timeout = timeout;
     ctx.tts_timeout = timeout;
+    ctx.stt_timeout = timeout;
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let req = json!({ "id": 1, "method": method, "params": params });
     tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();

@@ -16,6 +16,7 @@ pub mod serve;
 pub mod stats;
 pub mod summary;
 pub mod tail;
+pub mod stt;
 pub mod tts;
 pub mod types;
 pub mod uploads;

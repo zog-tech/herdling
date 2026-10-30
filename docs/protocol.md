@@ -7,7 +7,7 @@ The app talks to `zogsshd` on each host. This page lists the rules for both side
 - The app opens an SSH connection with the restricted SSH key.
 - The key runs `zogsshd rpc`. The command reads and writes one JSON object per line.
 - A line ends with `\n`. A JSON object never contains a raw newline.
-- A request line is at most 16 MiB. A longer line gets a `bad_request` error.
+- A request line is at most 34 MiB. A longer line gets a `bad_request` error. (Before `stt.make`, the limit was 16 MiB.)
 
 ## Messages
 

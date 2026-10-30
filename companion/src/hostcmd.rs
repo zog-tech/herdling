@@ -1,4 +1,5 @@
-//! Runs a host command from the companion config (`summary_command`, `tts_command`).
+//! Runs a host command from the companion config (`summary_command`, `tts_command`,
+//! `stt_command`).
 //!
 //! No shell: the first array item is the program, the rest are its arguments. The input goes
 //! to stdin, the output comes from stdout. The command runs in its own process group, and the

@@ -271,6 +271,12 @@ pub struct TtsAudio {
     pub mime: String,
 }
 
+/// `stt.make` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SttText {
+    pub text: String,
+}
+
 /// One automation of `herdr-automate`. Optional fields are left out when absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {

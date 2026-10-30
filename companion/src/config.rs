@@ -28,6 +28,9 @@ pub struct Config {
     /// argv run by `tts.make`. Unset or empty means no host voice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_command: Option<Vec<String>>,
+    /// argv run by `stt.make`. Unset or empty means no host transcription.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_command: Option<Vec<String>>,
     #[serde(default = "default_pair_port")]
     pub pair_port: u16,
     #[serde(default = "default_ssh_port")]
@@ -40,6 +43,7 @@ impl Default for Config {
             devices: vec![],
             summary_command: None,
             tts_command: None,
+            stt_command: None,
             pair_port: default_pair_port(),
             ssh_port: default_ssh_port(),
         }
