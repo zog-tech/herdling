@@ -4,6 +4,7 @@ import { act, create as createRenderer } from "react-test-renderer";
 import { useRecording } from "./recording";
 import { useSessionSpeak, useVoiceSettings } from "./settings";
 import { useSpeakReplies } from "./useSpeakReplies";
+import { HOST_VOICE_FAILED, resetVoiceNotice, useVoiceNotice } from "./voiceNotice";
 
 const mockSpeak = jest.fn();
 const mockHaptic = jest.fn(async () => {});
@@ -23,7 +24,21 @@ jest.mock("../../modules/voice", () => ({
   localSummaryAvailable: () => mockLocalAvailable(),
   summarizeLocal: (t: string, i: string) => mockSummarizeLocal(t, i),
 }));
-const mockCall = jest.fn(async (..._a: unknown[]): Promise<unknown> => ({ summary: "Host summary." }));
+/** Host voice player: each clip ends on the next tick, or at once on stop. */
+const mockPlayed: string[] = [];
+const mockDeleted: string[] = [];
+const mockStopHost = jest.fn();
+jest.mock("./hostAudio", () => ({
+  stopHostAudio: () => mockStopHost(),
+  hostAudio: () => ({
+    writeClip: async (a: { audio_b64: string }) => ({ uri: `file:///${a.audio_b64}` }),
+    deleteClip: (c: { uri: string }) => mockDeleted.push(c.uri),
+    play: async (c: { uri: string }) => void mockPlayed.push(c.uri),
+  }),
+}));
+const hostAnswers = async (method: unknown, params?: any, _t?: unknown): Promise<unknown> =>
+  method === "tts.make" ? { audio_b64: params.text, mime: "audio/wav" } : { summary: "Host summary." };
+const mockCall = jest.fn(hostAnswers);
 let mockRpc: { call: typeof mockCall } | undefined;
 jest.mock("../hosts/connection", () => ({ getHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }) }));
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
@@ -52,7 +67,11 @@ const flush = async () => {
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
-  useVoiceSettings.setState({ ttsDefault: true, mode: "full", voice: "v1", rate: 1.2 });
+  useVoiceSettings.setState({ ttsDefault: true, mode: "full", engine: "iphone", voice: "v1", rate: 1.2 });
+  mockCall.mockImplementation(hostAnswers);
+  mockPlayed.length = 0;
+  mockDeleted.length = 0;
+  resetVoiceNotice();
   useSessionSpeak.setState({ bySession: {} });
   useRecording.setState({ recording: false });
   mockLocalAvailable.mockResolvedValue(false);
@@ -241,14 +260,14 @@ describe("useSpeakReplies", () => {
     expect(mockSpeak).toHaveBeenCalledWith("Host summary.", expect.anything());
   });
 
-  it("summary mode falls back to full text offline or without a key", async () => {
+  it("summary mode falls back to full text offline or without a host command", async () => {
     useVoiceSettings.setState({ mode: "summary" });
     mockRpc = undefined;
     await finishTurn();
     expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
     mockSpeak.mockClear();
     mockRpc = { call: mockCall };
-    mockCall.mockRejectedValueOnce(Object.assign(new Error("no key"), { code: "no_key" }));
+    mockCall.mockRejectedValueOnce(Object.assign(new Error("no command"), { code: "no_command" }));
     await finishTurn();
     expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
   });
@@ -295,5 +314,66 @@ describe("useSpeakReplies", () => {
     expect(mockStop).toHaveBeenCalledTimes(1);
     await act(async () => r.unmount());
     expect(mockStop).toHaveBeenCalledTimes(2);
+  });
+  const longReply = [user("1"), asst("2", "The build passed on the first try. Should I open a pull request now?")];
+  const finishLong = async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={longReply} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={longReply} />));
+    await flush();
+    await act(async () => {});
+    return r;
+  };
+
+  it("host engine speaks each sentence through tts.make, in order, and deletes the clips", async () => {
+    useVoiceSettings.setState({ engine: "host" });
+    await finishLong();
+    const tts = mockCall.mock.calls.filter((c) => c[0] === "tts.make").map((c) => (c[1] as { text: string }).text);
+    expect(tts).toEqual(["The build passed on the first try.", "Should I open a pull request now?"]);
+    expect(mockPlayed).toEqual(["file:///The build passed on the first try.", "file:///Should I open a pull request now?"]);
+    expect(mockDeleted).toEqual(mockPlayed);
+    expect(mockSpeak).not.toHaveBeenCalled();
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("host engine falls back to the iPhone voice for the rest of the reply and shows the notice once", async () => {
+    useVoiceSettings.setState({ engine: "host" });
+    mockCall.mockImplementation(async (method: unknown, params?: any) => {
+      if (method !== "tts.make") return { summary: "Host summary." };
+      if (params.text.startsWith("Should")) throw Object.assign(new Error("failed"), { code: "command_failed" });
+      return { audio_b64: params.text, mime: "audio/wav" };
+    });
+    await finishLong();
+    expect(mockPlayed).toEqual(["file:///The build passed on the first try."]);
+    expect(mockSpeak).toHaveBeenCalledWith("Should I open a pull request now?", expect.objectContaining({ voice: "v1" }));
+    expect(useVoiceNotice.getState().text).toBe(HOST_VOICE_FAILED);
+
+    // A second failure in this app run shows no new notice.
+    useVoiceNotice.setState({ text: undefined });
+    mockSpeak.mockClear();
+    mockCall.mockRejectedValue(Object.assign(new Error("no command"), { code: "no_command" }));
+    await finishLong();
+    expect(mockSpeak).toHaveBeenCalledWith("The build passed on the first try. Should I open a pull request now?", expect.anything());
+    expect(useVoiceNotice.getState().text).toBeUndefined();
+  });
+
+  it("host engine without a connection uses the iPhone voice", async () => {
+    useVoiceSettings.setState({ engine: "host" });
+    mockRpc = undefined;
+    await finishTurn();
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
+  });
+
+  it("stopping speech stops the host voice player", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="idle" items={items} />);
+    });
+    mockStopHost.mockClear();
+    await act(async () => r.update(<Probe status="working" items={[...items, user("3")]} />));
+    expect(mockStopHost).toHaveBeenCalledTimes(1);
   });
 });

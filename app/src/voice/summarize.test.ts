@@ -31,8 +31,8 @@ describe("speakableReply", () => {
     await expect(speakableReply(md, "summary", x.d)).resolves.toEqual({ text: "Host summary.", source: "host" });
   });
 
-  it("falls_back_to_full_on_no_key", async () => {
-    const x = deps({ available: false, rpc: async () => Promise.reject(new RpcError("no_key", "no key")) });
+  it.each(["no_command", "command_failed", "timeout", "upstream_error"])("falls back to full on host error %s", async (code) => {
+    const x = deps({ available: false, rpc: async () => Promise.reject(new RpcError(code, "host summary command")) });
     await expect(speakableReply(md, "summary", x.d)).resolves.toEqual({ text: speechText(md), source: "full" });
   });
 

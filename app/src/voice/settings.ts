@@ -2,7 +2,10 @@ import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-export type VoiceSettings = { ttsDefault: boolean; mode: "full" | "summary"; voice?: string; rate: number };
+/** "iphone": the device's voices (expo-speech). "host": the host's `tts_command` through `tts.make`. */
+export type VoiceEngine = "iphone" | "host";
+
+export type VoiceSettings = { ttsDefault: boolean; mode: "full" | "summary"; engine: VoiceEngine; voice?: string; rate: number };
 
 type VoiceStore = VoiceSettings & { set: (patch: Partial<VoiceSettings>) => void };
 
@@ -18,6 +21,7 @@ export const useVoiceSettings = create<VoiceStore>()(
     (set) => ({
       ttsDefault: false,
       mode: "full",
+      engine: "iphone",
       voice: undefined,
       rate: 1.0,
       set: (patch) => set(patch),
@@ -25,7 +29,7 @@ export const useVoiceSettings = create<VoiceStore>()(
     {
       name: "zogssh.voice_settings",
       storage,
-      partialize: (s) => ({ ttsDefault: s.ttsDefault, mode: s.mode, voice: s.voice, rate: s.rate }),
+      partialize: (s) => ({ ttsDefault: s.ttsDefault, mode: s.mode, engine: s.engine, voice: s.voice, rate: s.rate }),
     },
   ),
 );

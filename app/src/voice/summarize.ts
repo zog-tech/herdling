@@ -3,13 +3,13 @@ import type { Summary } from "@zogssh/protocol";
 import type { RpcClient } from "../rpc/RpcClient";
 import { speechText } from "./speechText";
 
-/** Same text as `SYSTEM` in the companion's `summary.rs`. */
+/** Same text as `INSTRUCTIONS` in the companion's `summary.rs`. */
 export const SUMMARY_INSTRUCTIONS =
   "You summarize a coding agent's reply for someone listening on headphones. " +
   "Say in 2 or 3 short sentences what the agent did and what it needs from the user. No markdown, no code, no lists.";
 
-/** The companion waits up to 15 s for the Messages API; give it a little more. */
-const HOST_TIMEOUT_MS = 20_000;
+/** The companion gives the host summary command 20 s; wait a little longer. */
+const HOST_TIMEOUT_MS = 25_000;
 /** Bound for the on-device check plus summary. A slower model falls to the host. */
 export const LOCAL_TIMEOUT_MS = 8_000;
 /** The on-device model has a ~4096-token window; longer input keeps its end. */
@@ -44,8 +44,9 @@ async function localSummary(local: SummaryDeps["local"], text: string): Promise<
 }
 
 /**
- * The text to speak for a reply. Summary mode tries the on-device model, then the host's
- * `summary.make`, then the full text. A step that throws, gives no text, or (on device) takes
+ * The text to speak for a reply. Summary mode tries the on-device model, then the host summary
+ * command (`summary.make`), then the full text. Any host error (`no_command`, `command_failed`,
+ * `timeout`, `upstream_error`, offline) falls to the full text. A step that throws, gives no text, or (on device) takes
  * longer than `LOCAL_TIMEOUT_MS` falls to the next. The on-device input is clipped to its end.
  */
 export async function speakableReply(

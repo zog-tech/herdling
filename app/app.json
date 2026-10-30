@@ -64,7 +64,8 @@
             "deploymentTarget": "17.0"
           }
         }
-      ]
+      ],
+      ["expo-audio", { "enableBackgroundPlayback": false }]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,15 +1,20 @@
-import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
+import type { AgentStatus, ThreadItem, TtsAudio } from "@zogssh/protocol";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
 
 import { localSummaryAvailable, releaseAudio, setSpeechAudio, summarizeLocal } from "../../modules/voice";
 import { getHostConn } from "../hosts/connection";
+import type { RpcClient } from "../rpc/RpcClient";
+import { hostAudio, stopHostAudio } from "./hostAudio";
+import { speakWithHost } from "./hostVoice";
 import { useRecording } from "./recording";
 import { replyToSpeak, shouldSpeak } from "./replyToSpeak";
 import { useSpeakEnabled, useVoiceSettings } from "./settings";
+import { splitSentences } from "./sentences";
 import { speechText } from "./speechText";
 import { speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
+import { noticeHostVoiceFailed } from "./voiceNotice";
 
 /** The log can land a moment after the status flips; wait before reading the reply. */
 const SETTLE_MS = 800;
@@ -17,14 +22,20 @@ const SETTLE_MS = 800;
 /** A push open waits this long for the thread to load a reply. */
 const PUSH_WAIT_MS = 10_000;
 
+/** The companion gives a TTS command 30 s; wait a little longer. */
+export const TTS_TIMEOUT_MS = 35_000;
+
 const quiet = (p: Promise<unknown>) => void p.catch(() => {});
 
 /** Bumped by every stop, so a speak that waits for the audio session can see it was cancelled. */
 let epoch = 0;
+/** The epoch of the speak that holds the speech audio session. An older speak never releases it. */
+let audioOwner = -1;
 
 function stopSpeech() {
   epoch++;
   quiet(Speech.stop());
+  stopHostAudio();
 }
 
 const local = {
@@ -33,20 +44,37 @@ const local = {
 };
 
 /**
- * Speaks `text` with the saved voice and rate. Music ducks while it plays.
+ * Speaks `text` with the saved engine, voice and rate. Music ducks while it plays.
  * `mine` is the epoch the speak began in; a stop since then drops it.
+ * The host engine speaks sentence by sentence through `tts.make`; a failure speaks the rest
+ * with the iPhone voice and shows a one-time notice. Without a connection it uses the iPhone voice.
  */
-async function speak(text: string, mine: number): Promise<void> {
-  const { voice, rate } = useVoiceSettings.getState();
-  const release = () => quiet(releaseAudio());
+async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | undefined): Promise<void> {
+  const { voice, rate, engine } = useVoiceSettings.getState();
+  const release = () => {
+    if (audioOwner !== mine) return;
+    audioOwner = -1;
+    quiet(releaseAudio());
+  };
+  const stale = () => mine !== epoch || useRecording.getState().recording;
   if (mine !== epoch) return;
   try {
     await setSpeechAudio();
   } catch {
     return; // The microphone is in use.
   }
-  if (mine !== epoch || useRecording.getState().recording) return release();
-  Speech.speak(text, { voice, rate, onDone: release, onStopped: release, onError: release });
+  audioOwner = mine;
+  if (stale()) return release();
+  let rest = text;
+  if (engine === "host" && rpc) {
+    const sentences = splitSentences(text);
+    const tts = (t: string) => rpc.call<TtsAudio>("tts.make", { text: t }, TTS_TIMEOUT_MS);
+    const r = await speakWithHost(sentences, { tts, ...hostAudio(rate) }, stale);
+    if (r.status !== "failed" || stale()) return release();
+    noticeHostVoiceFailed();
+    rest = sentences.slice(r.at).join(" ");
+  }
+  Speech.speak(rest, { voice, rate, onDone: release, onStopped: release, onError: release });
 }
 
 const lastAssistantId = (items: ThreadItem[]) => [...items].reverse().find((i) => i.kind === "assistant")?.id;
@@ -54,10 +82,11 @@ const finished = (s: AgentStatus | undefined) => s === "idle" || s === "done";
 
 /**
  * Speaks the agent's last reply when it goes working to idle or done. Summary mode speaks a short
- * summary (on-device model, else the host's `summary.make`, else the full text).
+ * summary (on-device model, else the host summary command, else the full text).
  * `speakNow` (opened from a push) speaks the reply once: at once if the agent is finished, else when it finishes.
  * Both go through one settle delay and dedupe by the last assistant item.
  * A light haptic marks each real status change (not the first value).
+ * The voice engine (iPhone voices or the host voice command) comes from the voice settings.
  * Turning the speaker off, a new prompt, recording or leaving the screen stops speech.
  * Only the focused screen speaks: `focused: false` (a session under another screen) stops speech
  * and speaks nothing, so two mounted screens never speak the same reply twice.
@@ -104,7 +133,7 @@ export function useSpeakReplies(
       const { mode } = useVoiceSettings.getState();
       quiet(
         speakableReply(reply, mode, { local, rpc: getHostConn(hostId).rpc }).then(({ text }) => {
-          if (text) return speak(text, mine);
+          if (text) return speak(text, mine, getHostConn(hostId).rpc);
         }),
       );
     }, SETTLE_MS);

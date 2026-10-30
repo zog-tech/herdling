@@ -27,6 +27,7 @@ import { StatusBadge, type BadgeStatus } from "@/ui/StatusBadge";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { useSpeakReplies } from "@/voice/useSpeakReplies";
+import { useVoiceNotice } from "@/voice/voiceNotice";
 
 type Mode = "thread" | "terminal";
 
@@ -319,6 +320,7 @@ export default function SessionScreen() {
   const speakOn = useSpeakEnabled(hostId, paneId);
   const setSpeak = useSessionSpeak((s) => s.setSpeak);
   useSpeakReplies(hostId, paneId, agent?.agent_status, thread.items, { speakNow: from === "push", focused });
+  const voiceNotice = useVoiceNotice((s) => s.text);
 
   // Opening the session, and every status change seen here, counts as seen.
   const seq = agent?.state_change_seq;
@@ -384,6 +386,11 @@ export default function SessionScreen() {
           <StatusBadge status={badge} />
         </View>
         <Segmented mode={mode} onChange={setMode} />
+        {voiceNotice ? (
+          <Text variant="caption" muted accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg }}>
+            {voiceNotice}
+          </Text>
+        ) : null}
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>

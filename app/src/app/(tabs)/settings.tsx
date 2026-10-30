@@ -91,7 +91,7 @@ function useDeviceVoices(): Speech.Voice[] {
 }
 
 function VoiceSection() {
-  const { ttsDefault, mode, voice, rate, set } = useVoiceSettings();
+  const { ttsDefault, mode, engine, voice, rate, set } = useVoiceSettings();
   const voices = useDeviceVoices();
   const [picking, setPicking] = useState(false);
   const current = voices.find((v) => v.identifier === voice);
@@ -127,6 +127,32 @@ function VoiceSection() {
             }
           >
             <Text bold>Mode</Text>
+            <Text variant="small" muted>
+              Summary: on-device (Apple Intelligence) → host command → full text.
+            </Text>
+          </Row>
+        </View>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+          <Row
+            trailing={
+              <View style={{ flexDirection: "row", gap: space.xs }}>
+                <Button
+                  label="iPhone"
+                  variant={engine === "iphone" ? "primary" : "secondary"}
+                  onPress={() => set({ engine: "iphone" })}
+                />
+                <Button
+                  label="Host"
+                  variant={engine === "host" ? "primary" : "secondary"}
+                  onPress={() => set({ engine: "host" })}
+                />
+              </View>
+            }
+          >
+            <Text bold>Voice engine</Text>
+            <Text variant="small" muted>
+              {engine === "host" ? "Host voice command (tts_command). Falls back to iPhone voices." : "iPhone voices."}
+            </Text>
           </Row>
         </View>
         <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
