@@ -10,12 +10,14 @@ import { hasMethod } from "@/hosts/methods";
 export const USAGE_POLL_MS = 5 * 60_000;
 
 /** Plan usage of one host (`usage.get`), refreshed every 5 min while the screen is focused and the app is active. `refresh` reads now. */
-export function useUsage(hostId: string): { usage: Usage | undefined; refresh: () => Promise<void> } {
+export function useUsage(hostId: string): { usage: Usage | undefined; refresh: () => Promise<void>; failed: boolean } {
   const { rpc, hello } = useHostConn(hostId);
   const supported = hasMethod(hello, "usage.get");
   const focused = useIsFocused();
   const [active, setActive] = useState(AppState.currentState === "active");
   const [usage, setUsage] = useState<Usage>();
+  /** The last read failed (a timeout or an error). The screen offers Retry. */
+  const [failed, setFailed] = useState(false);
   const readRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -38,9 +40,13 @@ export function useUsage(hostId: string): { usage: Usage | undefined; refresh: (
       busy ??= (async () => {
         try {
           const u = await rpc.call<Usage>("usage.get", {});
-          if (!dead) setUsage(u);
+          if (!dead) {
+            setUsage(u);
+            setFailed(false);
+          }
         } catch {
           // Keep the last reading; the next tick retries.
+          if (!dead) setFailed(true);
         } finally {
           busy = undefined;
         }
@@ -57,5 +63,5 @@ export function useUsage(hostId: string): { usage: Usage | undefined; refresh: (
   }, [rpc, supported, focused, active]);
 
   const refresh = useCallback(() => readRef.current(), []);
-  return { usage, refresh };
+  return { usage, refresh, failed };
 }

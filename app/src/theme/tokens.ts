@@ -104,6 +104,8 @@ export const motion = {
     overlay: 0.04,
     /** Hold time before a long press fires. */
     longPressMs: 350,
+    /** A control that grows while it is held (the mic while recording). */
+    growScale: 1.08,
   },
   spring: {
     /** Snap back to rest after a press or a long press. */

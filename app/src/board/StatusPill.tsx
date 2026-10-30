@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import { radius, space } from "@/theme/tokens";
+import { denseScale, radius, space } from "@/theme/tokens";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 
@@ -29,7 +29,7 @@ export function StatusPill({ item, now }: { item: BoardItem; now: number }) {
     >
       {/* Working: the same spinner as the session header (static under Reduce Motion). */}
       {item.bucket === "working" ? <StatusIcon status="working" size={12} color={color} /> : <Icon size={12} color={color} />}
-      <Text variant="caption" color={color} bold numberOfLines={1} maxFontSizeMultiplier={1.4}>
+      <Text variant="caption" color={color} bold numberOfLines={1} maxFontSizeMultiplier={denseScale.pill}>
         {text}
       </Text>
     </View>

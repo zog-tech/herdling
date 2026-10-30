@@ -11,6 +11,7 @@ import { Card } from "@/ui/Card";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { Badge } from "@/ui/StatusBadge";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
@@ -59,7 +60,7 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
 }
 
 /** Browse state as text: searching, empty, local network denied or failed. */
-function BrowseStatus({ state }: { state: DiscoveryState }) {
+function BrowseStatus({ state, onRetry }: { state: DiscoveryState; onRetry: () => void }) {
   if (state.status === "waiting") {
     return (
       <View style={{ gap: space.sm }} accessibilityLiveRegion="polite">
@@ -83,12 +84,13 @@ function BrowseStatus({ state }: { state: DiscoveryState }) {
   }
   if (state.status === "failed") {
     return (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }} accessibilityLiveRegion="polite">
-        <TriangleAlert size={18} color={colors.danger} />
-        <Text color={colors.danger} style={{ flex: 1 }}>
-          Search failed{state.error ? `: ${state.error}` : "."}
-        </Text>
-      </View>
+      <StateNotice
+        Icon={TriangleAlert}
+        color={colors.danger}
+        message={`Search failed${state.error ? `: ${state.error}` : "."}`}
+        action="Retry"
+        onAction={onRetry}
+      />
     );
   }
   if (state.list.length > 0) return null;
@@ -116,7 +118,13 @@ export default function DiscoverScreen() {
       return () => setFocused(false);
     }, []),
   );
-  const state = useDiscovery(focused);
+  // Retry: stop the search for one frame, then start it again.
+  const [paused, setPaused] = useState(false);
+  const retry = useCallback(() => {
+    setPaused(true);
+    requestAnimationFrame(() => setPaused(false));
+  }, []);
+  const state = useDiscovery(focused && !paused);
   const hosts = useHosts((s) => s.hosts);
 
   return (
@@ -125,7 +133,7 @@ export default function DiscoverScreen() {
         ON THIS NETWORK
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
-        <BrowseStatus state={state} />
+        <BrowseStatus state={state} onRetry={retry} />
         {state.list.length > 0 ? (
           <Divided>
             {state.list.map((d) => (

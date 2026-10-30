@@ -93,3 +93,34 @@ test("press_while_busy_is_ignored", () => {
   const finishing = run([{ type: "press" }, { type: "release" }]).state;
   expect(holdReducer(finishing, { type: "press" })).toEqual({ state: finishing, effects: [] });
 });
+
+test("a_short_tap_latches_and_the_next_tap_sends", () => {
+  const latched = run([{ type: "press", at: 1000 }, { type: "release", at: 1200 }]);
+  expect(latched.state).toMatchObject({ phase: "recording", latched: true });
+  expect(latched.effects).toEqual(["start", "hapticStart"]);
+  // The touch ending, a slide or a lost touch do not end a latched recording.
+  expect(run([{ type: "move", dx: 200, dy: 0 }, { type: "cancel" }], latched.state).state).toMatchObject({ phase: "recording", latched: true });
+  const stopped = run([{ type: "press", at: 3000 }, { type: "release", at: 3100 }], latched.state);
+  expect(stopped.state.phase).toBe("finishing");
+  expect(stopped.effects).toEqual(["stop"]);
+  expect(sends(holdReducer(stopped.state, { type: "final", text: "ship it" }).effects)).toEqual([{ send: "ship it" }]);
+});
+
+test("a_long_hold_still_sends_on_release", () => {
+  const r = run([{ type: "press", at: 1000 }, { type: "release", at: 1600 }]);
+  expect(r.state.phase).toBe("finishing");
+  expect(r.effects).toEqual(["start", "hapticStart", "stop"]);
+});
+
+test("voiceover_toggle_starts_and_stops", () => {
+  const on = holdReducer(idle, { type: "toggle" });
+  expect(on.state).toMatchObject({ phase: "recording", latched: true });
+  const off = holdReducer(on.state, { type: "toggle" });
+  expect(off.state.phase).toBe("finishing");
+  expect(off.effects).toEqual(["stop"]);
+});
+
+test("force_cancel_ends_a_latched_recording", () => {
+  const latched = run([{ type: "toggle" }]).state;
+  expect(holdReducer(latched, { type: "cancel", force: true }).state.phase).toBe("idle");
+});

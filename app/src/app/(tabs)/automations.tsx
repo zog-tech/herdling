@@ -1,18 +1,21 @@
 import type { Automation, AutomationRun } from "@zogssh/protocol";
-import { CircleAlert, Clock, Info, ShieldCheck } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { CircleAlert, CircleSlash, Clock, Info, Server, ShieldCheck } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAutomations } from "@/automations/useAutomations";
-import { useHostConn } from "@/hosts/connection";
+import { timeAgo } from "@/hosts/ConnBadge";
+import { retryNow, useHostConn } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, hitTarget, space, state as uiState } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Screen } from "@/ui/Screen";
 import { CloseButton } from "@/ui/CloseButton";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 const RUN_LABEL: Record<AutomationRun["status"], string> = {
@@ -155,9 +158,12 @@ function HostAutomations({
         {host.name}
       </Text>
       {!online ? (
-        <Text variant="small" muted>
-          Offline
-        </Text>
+        <StateNotice
+          Icon={CircleSlash}
+          message={conn.status === "connecting" ? "Connecting…" : conn.lastSeen ? `Offline · seen ${timeAgo(conn.lastSeen)}` : "Offline"}
+          action={conn.status === "connecting" ? undefined : "Retry"}
+          onAction={() => retryNow(host.id)}
+        />
       ) : state.kind === "loading" ? (
         <Text variant="small" muted>
           Loading…
@@ -177,12 +183,7 @@ function HostAutomations({
           </Text>
         </View>
       ) : state.kind === "error" ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <CircleAlert size={16} color={colors.danger} />
-          <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
-            {state.message}
-          </Text>
-        </View>
+        <StateNotice Icon={CircleAlert} color={colors.danger} message={state.message} action="Retry" onAction={() => void refresh()} />
       ) : (
         <>
           {state.automations.length === 0 ? (
@@ -221,6 +222,7 @@ function HostAutomations({
 }
 
 export default function AutomationsScreen() {
+  const router = useRouter();
   const hosts = useHosts((s) => s.hosts);
   const refreshers = useRef(new Map<string, () => Promise<void>>());
   const [refreshing, setRefreshing] = useState(false);
@@ -239,7 +241,7 @@ export default function AutomationsScreen() {
   return (
     <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
       {hosts.length === 0 ? (
-        <Text muted>No hosts yet. Add one in Settings.</Text>
+        <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
       ) : (
         hosts.map((h) => <HostAutomations key={h.id} host={h} register={register} />)
       )}

@@ -19,11 +19,12 @@ import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
 import { needsZogsshdUpdate, UPDATE_ZOGSSHD_HINT } from "@/hosts/methods";
-import { getHostConn, useHostConn, useOnlineHostKey } from "@/hosts/connection";
+import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 /** Pills show seconds; refresh the clock this often while the Board is visible. */
@@ -124,6 +125,9 @@ function HostStripRow({ host }: { host: Host }) {
           : `${host.name} is offline`;
   const Icon = conn.status === "online" ? TriangleAlert : conn.status === "connecting" ? Loader : CircleSlash;
   const color = conn.status === "online" ? colors.status.blocked : colors.textMuted;
+  if (conn.status !== "connecting") {
+    return <StateNotice Icon={Icon} color={color} message={text} action="Retry" onAction={() => retryNow(host.id)} />;
+  }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 28 }}>
       <Icon size={14} color={color} />

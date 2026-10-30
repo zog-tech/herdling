@@ -1,9 +1,11 @@
 import type { ProviderUsage } from "@zogssh/protocol";
-import { CircleAlert, LogIn } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { CircleAlert, CircleSlash, LogIn, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshControl, View } from "react-native";
 
-import { useHostConn } from "@/hosts/connection";
+import { timeAgo } from "@/hosts/ConnBadge";
+import { retryNow, useHostConn } from "@/hosts/connection";
 import { HostMeters } from "@/hosts/HostMeters";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, space, state } from "@/theme/tokens";
@@ -12,6 +14,7 @@ import { Card } from "@/ui/Card";
 import { formatResetIn } from "@/ui/format";
 import { Meter } from "@/ui/Meter";
 import { Screen } from "@/ui/Screen";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 const NAMES = { claude: "Claude", codex: "Codex" } as const;
@@ -61,7 +64,7 @@ function ProviderRows({ p, nowS }: { p: ProviderUsage; nowS: number }) {
 function HostUsage({ host, register }: { host: Host; register: (id: string, fn: (() => Promise<void>) | undefined) => void }) {
   const conn = useHostConn(host.id);
   const online = conn.status === "online";
-  const { usage, refresh } = useUsage(host.id);
+  const { usage, refresh, failed } = useUsage(host.id);
   useEffect(() => {
     register(host.id, refresh);
     return () => register(host.id, undefined);
@@ -73,11 +76,16 @@ function HostUsage({ host, register }: { host: Host; register: (id: string, fn: 
         {host.name}
       </Text>
       {!online ? (
-        <Text variant="small" muted>
-          Offline
-        </Text>
+        <StateNotice
+          Icon={CircleSlash}
+          message={conn.status === "connecting" ? "Connecting…" : conn.lastSeen ? `Offline · seen ${timeAgo(conn.lastSeen)}` : "Offline"}
+          action={conn.status === "connecting" ? undefined : "Retry"}
+          onAction={() => retryNow(host.id)}
+        />
       ) : usage ? (
         usage.providers.map((p) => <ProviderRows key={p.provider} p={p} nowS={nowS} />)
+      ) : failed ? (
+        <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message="Can't read usage." action="Retry" onAction={() => void refresh()} />
       ) : (
         <Text variant="small" muted>
           Loading…
@@ -89,6 +97,7 @@ function HostUsage({ host, register }: { host: Host; register: (id: string, fn: 
 }
 
 export default function UsageScreen() {
+  const router = useRouter();
   const hosts = useHosts((s) => s.hosts);
   const refreshers = useRef(new Map<string, () => Promise<void>>());
   const [refreshing, setRefreshing] = useState(false);
@@ -107,7 +116,7 @@ export default function UsageScreen() {
   return (
     <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
       {hosts.length === 0 ? (
-        <Text muted>No hosts yet. Add one in Settings.</Text>
+        <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
       ) : (
         hosts.map((h) => <HostUsage key={h.id} host={h} register={register} />)
       )}
