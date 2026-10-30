@@ -10,6 +10,7 @@ export const APP_METHODS = [
   "thread.get",
   "thread.subagent",
   "thread.resolve",
+  "thread.follow",
   "sessions.recent",
   "fs.dirs",
   "push.register",
