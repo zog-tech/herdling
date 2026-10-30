@@ -1,7 +1,6 @@
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
-import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
@@ -12,6 +11,7 @@ import { useHostConn } from "@/hosts/connection";
 import { useHosts } from "@/hosts/store";
 import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
+import { useStatusSince } from "@/herdr/statusSince";
 import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { closeAgent, renameAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
@@ -20,10 +20,13 @@ import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
+import { PendingBubbles } from "@/thread/items/PendingBubble";
+import { usePendingList } from "@/thread/pending";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { useThread, type Thread } from "@/thread/useThread";
-import { StatusBadge, type BadgeStatus } from "@/ui/StatusBadge";
+import * as haptics from "@/ui/haptics";
+import { HeaderStatus, type BadgeStatus } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { useSpeakReplies } from "@/voice/useSpeakReplies";
@@ -181,7 +184,7 @@ function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; pane
 
   const go = useCallback(
     (target: string) => {
-      Haptics.selectionAsync().catch(() => {});
+      haptics.tap();
       router.replace(`/session/${hostId}/${target}` as never);
     },
     [router, hostId],
@@ -216,8 +219,9 @@ function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; pane
   );
 }
 
-function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string; paneId: string }) {
+function ThreadBody({ thread, hostId, paneId, focused }: { thread: Thread; hostId: string; paneId: string; focused: boolean }) {
   const { status, items } = thread;
+  const pending = usePendingList(hostId, paneId);
   if (status === "no_session") {
     return (
       <View style={{ flex: 1 }}>
@@ -228,7 +232,7 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
       </View>
     );
   }
-  if (items.length === 0) {
+  if (items.length === 0 && pending.length === 0) {
     const note =
       status === "loading"
         ? null
@@ -265,7 +269,14 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
         </View>
       ) : null}
       <ThreadLogContext.Provider value={thread.ref?.log_path ? { hostId, logPath: thread.ref.log_path } : null}>
-        <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />
+        <ThreadList
+          items={items}
+          loadOlder={thread.loadOlder}
+          loadingOlder={thread.loadingOlder}
+          hasOlder={thread.hasOlder}
+          tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
+          live={{ hostId, paneId, active: focused }}
+        />
       </ThreadLogContext.Provider>
     </View>
   );
@@ -306,6 +317,15 @@ export default function SessionScreen() {
   const title = agent?.terminal_title_stripped || agent?.agent || thread.ref?.kind || paneId;
   const kind = agent?.agent ?? thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
+  const since = useStatusSince(hostId, paneId, agent?.agent_status);
+
+  // A status change of the open session gets one haptic (the module throttles them).
+  const lastStatus = useRef(agent?.agent_status);
+  useEffect(() => {
+    const from = lastStatus.current;
+    lastStatus.current = agent?.agent_status;
+    if (from && agent?.agent_status && from !== agent.agent_status && focused) haptics.status({ from, to: agent.agent_status });
+  }, [agent?.agent_status, focused]);
   const back = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
   const menu = useSessionMenu(hostId, agent, back);
 
@@ -358,7 +378,7 @@ export default function SessionScreen() {
               <Ellipsis size={22} color={menu.enabled ? colors.text : colors.textMuted} />
             )}
           </Pressable>
-          <StatusBadge status={badge} />
+          <HeaderStatus status={badge} since={since} />
         </View>
         <Segmented mode={mode} onChange={setMode} />
         {voiceNotice ? (
@@ -369,7 +389,7 @@ export default function SessionScreen() {
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
-          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} />
+          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} />
         </SwipeBetweenAgents>
       ) : (
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.

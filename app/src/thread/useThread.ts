@@ -5,6 +5,7 @@ import { useHostConn } from "@/hosts/connection";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { PAGE_SIZE, type FollowData, codeOf, fetchOlder, followHandler, makeFail, messageOf } from "./followShared";
 import { mergeItems } from "./merge";
+import { reconcilePending, usePendingList } from "./pending";
 
 /**
  * - `offline`: no host connection.
@@ -186,6 +187,12 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
       dead = true;
     };
   }, [agentStatus, rpc, paneId]);
+
+  // Pending prompts go away when the log shows them. Only compare against a loaded thread.
+  const pending = usePendingList(hostId, paneId);
+  useEffect(() => {
+    if (pending.length > 0 && (status === "live" || status === "waiting")) reconcilePending(hostId, paneId, items);
+  }, [hostId, paneId, items, pending, status]);
 
   const loadOlder = useCallback(() => {
     const src = source.current;

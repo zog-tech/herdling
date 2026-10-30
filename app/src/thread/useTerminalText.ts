@@ -10,6 +10,8 @@ type Options = {
   /** "text" (default): plain text. "ansi": text with SGR escapes, for `parseAnsi`. */
   format?: "text" | "ansi";
   refreshMs?: number;
+  /** Lines to read (default 200). */
+  lines?: number;
 };
 
 /**
@@ -25,6 +27,7 @@ export function useTerminalText(
 ): { text?: string; error?: string; refresh: () => void } {
   const format = o?.format ?? "text";
   const refreshMs = o?.refreshMs ?? REFRESH_MS;
+  const lines = o?.lines ?? LINES;
   const { rpc } = useHostConn(hostId);
   const [text, setText] = useState<string>();
   const [error, setError] = useState<string>();
@@ -56,7 +59,7 @@ export function useTerminalText(
       try {
         const r = await rpc.call<{ read?: { text?: string } }>("herdr.call", {
           method: "pane.read",
-          params: { pane_id: paneId, source: "recent", lines: LINES, format, strip_ansi: format !== "ansi" },
+          params: { pane_id: paneId, source: "recent", lines, format, strip_ansi: format !== "ansi" },
         });
         if (dead) return;
         setText(r.read?.text ?? "");
@@ -79,7 +82,7 @@ export function useTerminalText(
       readNow.current = undefined;
       clearInterval(timer);
     };
-  }, [rpc, paneId, enabled, active, format, refreshMs]);
+  }, [rpc, paneId, enabled, active, format, refreshMs, lines]);
 
   const refresh = useCallback(() => readNow.current?.(), []);
   return { text, error, refresh };

@@ -39,6 +39,7 @@ pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
         return Vec::new();
     }
     let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else { return Vec::new() };
+    let ts = v.get("timestamp").and_then(Value::as_str).and_then(parse_ts);
     let blocks: Vec<&Value> =
         blocks.iter().filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result")).collect();
     // `toolUseResult` describes one call. Use it only when the line holds one result.
@@ -51,7 +52,7 @@ pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
             let id = b.get("tool_use_id")?.as_str()?.to_string();
             let ok = !b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
             let (text, truncated) = cap(&result_text(b.get("content")), RESULT_CAP);
-            let result = ToolResult { ok, text, truncated };
+            let result = ToolResult { ok, text, truncated, ts };
             Some((id, ResultInfo { result, agent_id: agent_id.clone(), status: status.clone() }))
         })
         .collect()

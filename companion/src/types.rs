@@ -70,6 +70,9 @@ pub struct ToolResult {
     pub ok: bool,
     pub text: String,
     pub truncated: bool,
+    /// Unix ms of the log line that holds the result. Missing when the line has no timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ts: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

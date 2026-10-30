@@ -1,10 +1,11 @@
 import type { ThreadItem } from "@zogssh/protocol";
 import { ArrowDown } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ActivityIndicator, FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { LiveToolContext, newestRunningTool } from "./LiveToolContext";
 import { ThreadRow } from "./ThreadRow";
 
 /** Within this many points of the newest item counts as "at the bottom". */
@@ -15,6 +16,10 @@ type Props = {
   loadOlder: () => void;
   loadingOlder: boolean;
   hasOlder: boolean;
+  /** Shown after the newest item (the pending prompts). */
+  tail?: ReactElement | null;
+  /** The pane the thread belongs to, for live tool output. `active`: the screen is focused. */
+  live?: { hostId: string; paneId: string; active: boolean };
 };
 
 const keyExtractor = (item: ThreadItem) => item.id;
@@ -25,7 +30,7 @@ const Gap = () => <View style={{ height: space.md }} />;
  * Inverted list, newest at the bottom. Stays pinned to the bottom only while the user is there;
  * otherwise new items keep the view still and a "New messages" pill appears.
  */
-export function ThreadList({ items, loadOlder, loadingOlder, hasOlder }: Props) {
+export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, live }: Props) {
   const list = useRef<FlatList<ThreadItem>>(null);
   const data = useMemo(() => items.slice().reverse(), [items]);
   const atBottom = useRef(true);
@@ -45,66 +50,76 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder }: Props) 
     if (bottom) setUnseen(false);
   }, []);
 
+  const newestRunningId = useMemo(() => newestRunningTool(items), [items]);
+  const liveValue = useMemo(
+    () => (live ? { hostId: live.hostId, paneId: live.paneId, active: live.active, newestRunningId } : null),
+    [live?.hostId, live?.paneId, live?.active, newestRunningId],
+  );
+
   const toBottom = useCallback(() => {
     list.current?.scrollToOffset({ offset: 0, animated: true });
     setUnseen(false);
   }, []);
 
   return (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        ref={list}
-        inverted
-        data={data}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        ItemSeparatorComponent={Gap}
-        contentContainerStyle={{ paddingHorizontal: space.lg, paddingVertical: space.md }}
-        onScroll={onScroll}
-        scrollEventThrottle={64}
-        onEndReached={hasOlder ? loadOlder : undefined}
-        onEndReachedThreshold={0.6}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: BOTTOM_SLOP }}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        initialNumToRender={12}
-        windowSize={11}
-        ListFooterComponent={
-          loadingOlder ? (
-            <ActivityIndicator color={colors.textMuted} style={{ padding: space.md }} />
-          ) : !hasOlder && items.length > 0 ? (
-            <Text variant="caption" muted style={{ textAlign: "center", padding: space.md }}>
-              Start of conversation
+    <LiveToolContext.Provider value={liveValue}>
+      <View style={{ flex: 1 }}>
+        <FlatList
+          ref={list}
+          inverted
+          data={data}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          ItemSeparatorComponent={Gap}
+          contentContainerStyle={{ paddingHorizontal: space.lg, paddingVertical: space.md }}
+          onScroll={onScroll}
+          scrollEventThrottle={64}
+          onEndReached={hasOlder ? loadOlder : undefined}
+          onEndReachedThreshold={0.6}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: BOTTOM_SLOP }}
+          // Inverted: the header sits after the newest item.
+          ListHeaderComponent={tail ?? undefined}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={12}
+          windowSize={11}
+          ListFooterComponent={
+            loadingOlder ? (
+              <ActivityIndicator color={colors.textMuted} style={{ padding: space.md }} />
+            ) : !hasOlder && items.length > 0 ? (
+              <Text variant="caption" muted style={{ textAlign: "center", padding: space.md }}>
+                Start of conversation
+              </Text>
+            ) : undefined
+          }
+        />
+        {unseen ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Scroll to new messages"
+            onPress={toBottom}
+            style={({ pressed }) => ({
+              position: "absolute",
+              bottom: space.md,
+              alignSelf: "center",
+              minHeight: hitTarget - 8,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.xs,
+              paddingHorizontal: space.lg,
+              borderRadius: radius.pill,
+              backgroundColor: colors.accent,
+              opacity: pressed ? 0.85 : 1,
+            })}
+            hitSlop={4}
+          >
+            <ArrowDown size={16} color={colors.bg} />
+            <Text variant="small" bold color={colors.bg}>
+              New messages
             </Text>
-          ) : undefined
-        }
-      />
-      {unseen ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Scroll to new messages"
-          onPress={toBottom}
-          style={({ pressed }) => ({
-            position: "absolute",
-            bottom: space.md,
-            alignSelf: "center",
-            minHeight: hitTarget - 8,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: space.xs,
-            paddingHorizontal: space.lg,
-            borderRadius: radius.pill,
-            backgroundColor: colors.accent,
-            opacity: pressed ? 0.85 : 1,
-          })}
-          hitSlop={4}
-        >
-          <ArrowDown size={16} color={colors.bg} />
-          <Text variant="small" bold color={colors.bg}>
-            New messages
-          </Text>
-        </Pressable>
-      ) : null}
-    </View>
+          </Pressable>
+        ) : null}
+      </View>
+    </LiveToolContext.Provider>
   );
 }

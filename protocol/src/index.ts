@@ -27,7 +27,8 @@ export type ThreadItem =
       name: string;
       input_summary: string;
       input: unknown;
-      result?: { ok: boolean; text: string; truncated: boolean };
+      /** `ts`: unix ms of the result line. A host before this field does not send it. */
+      result?: { ok: boolean; text: string; truncated: boolean; ts?: number };
     }
   | {
       kind: "subagent";

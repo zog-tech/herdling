@@ -18,7 +18,9 @@ export const ThreadRow = memo(function ThreadRow({ item }: { item: ThreadItem })
     case "thinking":
       return <ThinkingRow text={item.text} />;
     case "tool":
-      return <ToolCard name={item.name} inputSummary={item.input_summary} input={item.input} result={item.result} />;
+      return (
+        <ToolCard id={item.id} ts={item.ts} name={item.name} inputSummary={item.input_summary} input={item.input} result={item.result} />
+      );
     case "subagent":
       return (
         <SubagentCard

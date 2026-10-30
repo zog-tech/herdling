@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import { ArrowUp } from "lucide-react-native";
 import { useRef, useState, type ComponentRef } from "react";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
@@ -7,6 +6,7 @@ import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 
@@ -15,6 +15,7 @@ import { answerChoice, useChoices, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { filterCommands, slashQuery, useCommands } from "./commands";
+import { sendWithPending } from "./pending";
 import { PermissionButtons } from "./PermissionButtons";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 
@@ -109,7 +110,7 @@ export function Composer({
     try {
       const r = await answerChoice(rpc, paneId, shown, c, stillBlocked);
       setAnswered(shown);
-      if (r === "sent") void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      if (r === "sent") haptics.commit();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -134,6 +135,7 @@ export function Composer({
       try {
         paths = await uploadPhotos(rpc, sent, setUploaded);
       } catch (e) {
+        haptics.fail();
         setError(`Photo upload failed, nothing sent: ${e instanceof Error ? e.message : String(e)}`);
         if (!fromInput && !latest.current.trim()) setText(prompt);
         setUploaded(undefined);
@@ -142,21 +144,22 @@ export function Composer({
       }
       setUploaded(undefined);
     }
+    const full = withPaths(prompt, paths);
+    if (sent.length > 0) setPhotos((cur) => cur.filter((p) => !sent.includes(p)));
+    // The prompt now shows as a pending bubble in the thread, so the box empties at once.
+    // Keep anything typed after the tap.
+    if (fromInput && latest.current === prompt) {
+      setText("");
+      setInputKey((k) => k + 1);
+    }
+    setSending(false);
     try {
-      await rpc.call("herdr.call", { method: "agent.prompt", params: { target: paneId, text: withPaths(prompt, paths) } });
-      if (sent.length > 0) setPhotos((cur) => cur.filter((p) => !sent.includes(p)));
-      // Keep anything typed while the send was in flight.
-      if (fromInput && latest.current === prompt) {
-        setText("");
-        setInputKey((k) => k + 1);
-      }
+      await sendWithPending(rpc, hostId, paneId, full);
+      haptics.commit();
     } catch (e) {
+      haptics.fail();
       const code = (e as { code?: unknown })?.code;
-      setError(code === "agent_blocked" ? BLOCKED_MESSAGE : e instanceof Error ? e.message : String(e));
-      // A spoken prompt that failed goes into the empty box, ready to resend.
-      if (!fromInput && !latest.current.trim()) setText(prompt);
-    } finally {
-      setSending(false);
+      setError(code === "agent_blocked" ? BLOCKED_MESSAGE : `Not sent: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   const send = () => {

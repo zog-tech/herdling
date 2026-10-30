@@ -101,6 +101,18 @@ fn tool_result_truncated_at_4096() {
 }
 
 #[test]
+fn tool_result_carries_its_line_time() {
+    let items = all_items("claude_basic.jsonl");
+    match items.iter().find(|i| id_of(i) == "toolu_read1").unwrap() {
+        ThreadItem::Tool { ts, result: Some(r), .. } => {
+            // The call line is at 10:00:03, the result line at 10:00:04.
+            assert_eq!(r.ts, Some(*ts + 1000));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn task_tool_becomes_subagent() {
     let items = all_items("claude_basic.jsonl");
     match items.iter().find(|i| id_of(i) == "toolu_task1").unwrap() {
@@ -136,7 +148,7 @@ fn skips_blob_and_meta_lines() {
 #[test]
 fn assemble_leaves_unmatched_tools_alone() {
     let l = r#"{"type":"assistant","uuid":"x","timestamp":"2026-03-04T10:00:02.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Foo","input":{"a":1,"b":"hello"}}]}}"#;
-    let out = assemble(parse_line(l), HashMap::from([("other".to_string(), ResultInfo { result: ToolResult { ok: true, text: "x".into(), truncated: false }, agent_id: None, status: None })]));
+    let out = assemble(parse_line(l), HashMap::from([("other".to_string(), ResultInfo { result: ToolResult { ok: true, text: "x".into(), truncated: false, ts: None }, agent_id: None, status: None })]));
     assert!(matches!(&out[0], ThreadItem::Tool { input_summary, result: None, .. } if input_summary == "hello"));
 }
 
