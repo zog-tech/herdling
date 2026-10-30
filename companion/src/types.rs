@@ -178,6 +178,39 @@ pub struct PairResponse {
     pub host_key_fingerprint: Option<String>,
 }
 
+/// Input line of `zogsshd enroll` (password setup).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrollRequest {
+    pub device_id: String,
+    pub device_name: String,
+    pub host_id: String,
+    pub public_key: String,
+}
+
+/// `zogsshd enroll` output on success. `ok` is always true.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrollOk {
+    pub ok: bool,
+    pub host_fingerprint: Option<String>,
+    pub hostname: String,
+}
+
+/// `zogsshd enroll` output on failure. `ok` is always false; `code` is `bad_request` or `io_error`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrollFailed {
+    pub ok: bool,
+    pub code: String,
+    pub message: String,
+}
+
+/// The one JSON line `zogsshd enroll` prints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EnrollResult {
+    Enrolled(EnrollOk),
+    Failed(EnrollFailed),
+}
+
 /// Host load for the Overview meters. Memory is in bytes; `mem_used = total - available`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stats {

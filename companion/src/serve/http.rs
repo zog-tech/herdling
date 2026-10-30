@@ -15,14 +15,11 @@ use serde_json::json;
 use tokio::net::TcpListener;
 
 use super::ServeCtx;
-use crate::config::{self, Device};
-use crate::pair::{self, PairError};
+use crate::pair::{self, NewDevice, PairError};
 use crate::types::{PairRequest, PairResponse};
 
 /// Largest accepted request body.
 pub const BODY_LIMIT: usize = 16 * 1024;
-/// Longest accepted `device_id` or `host_id`.
-const MAX_ID: usize = 128;
 
 pub struct State {
     authorized_keys: PathBuf,
@@ -96,6 +93,7 @@ impl IntoResponse for Failure {
                     PairError::NoWindow => StatusCode::GONE,
                     PairError::BadCode => StatusCode::FORBIDDEN,
                     PairError::TooManyAttempts => StatusCode::TOO_MANY_REQUESTS,
+                    PairError::UnsafeExe => StatusCode::INTERNAL_SERVER_ERROR,
                 };
                 error(status, e.code())
             }
@@ -119,54 +117,22 @@ async fn pair_handler(AxState(state): AxState<Arc<State>>, body: Result<Bytes, B
     }
 }
 
-fn check_id(v: &str, field: &str) -> Result<(), PairError> {
-    if v.is_empty() || v.len() > MAX_ID || v.chars().any(char::is_control) {
-        return Err(PairError::BadRequest(format!("invalid {field}")));
-    }
-    Ok(())
-}
-
 /// Validates everything before the code is checked, so a malformed request never
 /// uses up the window or a wrong-code attempt.
 fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairResponse, Failure> {
     pair::check_code_format(&req.code)?;
-    check_id(&req.device_id, "device_id")?;
-    check_id(&req.host_id, "host_id")?;
-    let public_key = pair::parse_public_key(&req.public_key)?;
-    // The key is valid here, so a key_line error means the companion path is unsafe: a server fault.
-    let line = pair::key_line(&state.exe, &public_key, &req.device_name).map_err(|e| Failure::Internal(e.into()))?;
-    let name = pair::sanitize_name(&req.device_name);
+    let device = NewDevice::validate(&state.exe, &req.device_id, &req.device_name, &req.host_id, &req.public_key)
+        .map_err(|e| match e {
+            PairError::UnsafeExe => Failure::Internal(e.into()),
+            e => Failure::Pair(e),
+        })?;
+    let name = device.name.clone();
+    let key_fp = pair::key_fingerprint(&device.public_key).unwrap_or_default();
 
     let _guard = state.lock.lock().unwrap_or_else(|p| p.into_inner());
     pair::take_window(&state.cfg_dir, &req.code, now)?;
-    // Re-pairing a device with a new key: its old key line must go, or the old key keeps
-    // access that a later `pair.revoke` (which sends the current key) cannot remove.
-    let existing = config::load(&state.config_path)
-        .map_err(Failure::Internal)?
-        .devices
-        .into_iter()
-        .find(|d| d.id == req.device_id);
-    let old_key = existing.as_ref().and_then(|d| d.public_key.clone()).filter(|k| *k != public_key);
-    if let Some(old) = old_key {
-        pair::remove_zogssh_key(&state.authorized_keys, &old).map_err(|e| Failure::Internal(e.into()))?;
-    }
-    pair::append_key(&state.authorized_keys, &line).map_err(|e| Failure::Internal(e.into()))?;
-    let device = Device {
-        id: req.device_id,
-        name: name.clone(),
-        host_id: req.host_id,
-        public_key: Some(public_key.clone()),
-        // The app sends the push token only over the pinned SSH session (`push.register`),
-        // so a re-pair with no token keeps the one already saved, and the prefs.
-        expo_token: req.expo_token.or_else(|| existing.as_ref().and_then(|d| d.expo_token.clone())),
-        prefs: existing.map(|d| d.prefs).unwrap_or_default(),
-    };
-    let ssh_port = config::update(&state.config_path, |c| {
-        config::upsert_device(c, device);
-        c.ssh_port
-    })
-    .map_err(Failure::Internal)?;
-    let key_fp = pair::key_fingerprint(&public_key).unwrap_or_default();
+    let ssh_port =
+        pair::save_device(&state.authorized_keys, &state.config_path, device, req.expo_token).map_err(Failure::Internal)?;
     eprintln!("zogsshd serve: paired device {name}  key {key_fp}");
     Ok(PairResponse {
         host_name: state.host_name.clone(),

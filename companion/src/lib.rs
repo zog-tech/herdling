@@ -1,6 +1,7 @@
 pub mod automations;
 pub mod claude;
 pub mod config;
+pub mod enroll;
 pub mod events;
 pub mod fsdirs;
 pub mod herdr;

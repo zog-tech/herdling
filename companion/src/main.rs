@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tokio::io::BufReader;
 use std::time::Duration;
-use zogsshd::{config, install, rpc, serve};
+use zogsshd::{config, enroll, install, rpc, serve};
 
 fn herdr_socket(home: &std::path::Path) -> PathBuf {
     match std::env::var_os("HERDR_SOCKET") {
@@ -126,7 +126,7 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    const USAGE: &str = "usage: zogsshd rpc | serve | pair | install [--dry-run]";
+    const USAGE: &str = "usage: zogsshd rpc | serve | pair | enroll | install [--dry-run]";
     // A help flag never runs a subcommand: `install --help` once installed the service.
     if std::env::args().skip(1).any(|a| a == "-h" || a == "--help" || a == "help") {
         println!("{USAGE}");
@@ -169,6 +169,15 @@ async fn main() -> Result<()> {
         Some("pair") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             pair_cmd(&home).await
+        }
+        Some("enroll") => {
+            // Reads one JSON request on stdin, prints one JSON line. The restricted rpc key
+            // cannot reach this: sshd forces `zogsshd rpc` for it and ignores the client command.
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            let exe = std::env::current_exe().and_then(|p| p.canonicalize()).unwrap_or_default();
+            let (line, code) = enroll::run(std::io::stdin(), &enroll::EnrollCtx::new(&home, exe));
+            println!("{line}");
+            std::process::exit(code)
         }
         Some("install") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));

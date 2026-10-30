@@ -21,6 +21,8 @@ pub const WINDOW: Duration = Duration::from_secs(300);
 pub const MAX_WRONG: u32 = 5;
 /// Longest kept device name in the key comment.
 pub const MAX_NAME: usize = 40;
+/// Longest accepted `device_id` or `host_id`.
+pub const MAX_ID: usize = 128;
 
 const KEY_TYPE: &str = "ssh-ed25519";
 const KEY_OPTIONS: &str = "no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty";
@@ -35,6 +37,9 @@ pub enum PairError {
     BadCode,
     #[error("too many wrong codes")]
     TooManyAttempts,
+    /// The companion's own path cannot go into a key line: a server fault, not a bad request.
+    #[error("companion path cannot be quoted safely")]
+    UnsafeExe,
 }
 
 impl PairError {
@@ -45,6 +50,7 @@ impl PairError {
             PairError::NoWindow => "no_window",
             PairError::BadCode => "bad_code",
             PairError::TooManyAttempts => "too_many_attempts",
+            PairError::UnsafeExe => "internal",
         }
     }
 }
@@ -332,6 +338,69 @@ fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> 
         let _ = fs::remove_file(&tmp);
     }
     res.map(|()| removed)
+}
+
+/// A non-empty id of at most `MAX_ID` characters with no control characters, else `BadRequest`.
+pub fn check_id(v: &str, field: &str) -> Result<(), PairError> {
+    if v.is_empty() || v.len() > MAX_ID || v.chars().any(char::is_control) {
+        return Err(PairError::BadRequest(format!("invalid {field}")));
+    }
+    Ok(())
+}
+
+/// A validated phone to add: what `POST /pair` and `zogsshd enroll` save.
+#[derive(Debug)]
+pub struct NewDevice {
+    pub id: String,
+    /// Sanitized with [`sanitize_name`].
+    pub name: String,
+    pub host_id: String,
+    /// `ssh-ed25519 <blob>`, no comment.
+    pub public_key: String,
+    /// The exact `authorized_keys` line, from [`key_line`].
+    line: String,
+}
+
+impl NewDevice {
+    /// Checks the ids and the key and builds the key line. Bad input gives `BadRequest`;
+    /// a companion path that cannot be quoted gives `UnsafeExe`.
+    pub fn validate(exe: &Path, device_id: &str, device_name: &str, host_id: &str, public_key: &str) -> Result<NewDevice, PairError> {
+        check_id(device_id, "device_id")?;
+        check_id(host_id, "host_id")?;
+        let public_key = parse_public_key(public_key)?;
+        // The key is valid here, so a key_line error means the companion path is unsafe.
+        let line = key_line(exe, &public_key, device_name).map_err(|_| PairError::UnsafeExe)?;
+        Ok(NewDevice { id: device_id.into(), name: sanitize_name(device_name), host_id: host_id.into(), public_key, line })
+    }
+}
+
+/// Adds the device's restricted key line to `authorized_keys` and upserts the device in the
+/// config. A device that comes back with a new key loses its old zogssh line first; a key
+/// that is already there is not added twice. A `None` token keeps the saved token and prefs.
+/// Returns the config's `ssh_port`.
+pub fn save_device(authorized_keys: &Path, config_path: &Path, d: NewDevice, expo_token: Option<String>) -> anyhow::Result<u16> {
+    // Re-pairing a device with a new key: its old key line must go, or the old key keeps
+    // access that a later `pair.revoke` (which sends the current key) cannot remove.
+    let existing = crate::config::load(config_path)?.devices.into_iter().find(|x| x.id == d.id);
+    let old_key = existing.as_ref().and_then(|x| x.public_key.clone()).filter(|k| *k != d.public_key);
+    if let Some(old) = old_key {
+        remove_zogssh_key(authorized_keys, &old)?;
+    }
+    append_key(authorized_keys, &d.line)?;
+    let device = crate::config::Device {
+        id: d.id,
+        name: d.name,
+        host_id: d.host_id,
+        public_key: Some(d.public_key),
+        // The app sends the push token only over the pinned SSH session (`push.register`),
+        // so a re-pair with no token keeps the one already saved, and the prefs.
+        expo_token: expo_token.or_else(|| existing.as_ref().and_then(|x| x.expo_token.clone())),
+        prefs: existing.map(|x| x.prefs).unwrap_or_default(),
+    };
+    crate::config::update(config_path, |c| {
+        crate::config::upsert_device(c, device);
+        c.ssh_port
+    })
 }
 
 /// Where `serve` and `pair` look for the host key.

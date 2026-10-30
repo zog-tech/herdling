@@ -69,6 +69,18 @@ export type PairResponse = {
   host_key_fingerprint: string | null;
 };
 
+/** Input line of `zogsshd enroll` (password setup). Sent on stdin, never in the command line. */
+export type EnrollRequest = {
+  device_id: string;
+  device_name: string;
+  host_id: string;
+  public_key: string;
+};
+/** The one JSON line `zogsshd enroll` prints. Failure `code` is "bad_request" or "io_error". */
+export type EnrollResult =
+  | { ok: true; host_fingerprint: string | null; hostname: string }
+  | { ok: false; code: string; message: string };
+
 /** `stats.get`: host load. Memory in bytes; `mem_used = total - available`. */
 export type Stats = { cpu_pct: number; mem_used: number; mem_total: number; load: [number, number, number]; uptime_s: number };
 
