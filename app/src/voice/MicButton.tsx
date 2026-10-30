@@ -11,7 +11,8 @@ import { Text } from "@/ui/Text";
 import { CANCEL_DISTANCE, type HoldEvent } from "./holdToTalk";
 import { useDictation } from "./useDictation";
 
-const SIZE = 64;
+/** Default size. The composer passes `hitTarget` so the mic matches the send button. */
+export const MIC_SIZE = 64;
 const RING = 3;
 
 /**
@@ -22,11 +23,15 @@ export function MicButton({
   onSend,
   onPartial,
   disabled,
+  size = MIC_SIZE,
 }: {
   onSend: (text: string) => void;
   onPartial?: (text: string) => void;
   disabled?: boolean;
+  /** Diameter of the idle button in points. While held, the button grows a little. */
+  size?: number;
 }) {
+  const icon = Math.min(28, Math.round(size / 2));
   const { state, error, dispatch } = useDictation({ onSend, onPartial });
   const reduced = useReducedMotion();
   const far = useSharedValue(false);
@@ -81,7 +86,7 @@ export function MicButton({
         : error;
 
   return (
-    <GestureHandlerRootView style={{ width: SIZE, height: SIZE }}>
+    <GestureHandlerRootView style={{ width: size, height: size }}>
       {hint ? (
         <View
           pointerEvents="none"
@@ -89,7 +94,7 @@ export function MicButton({
           style={{
             position: "absolute",
             right: 0,
-            bottom: SIZE + space.sm,
+            bottom: size + space.sm,
             width: 260,
             alignItems: "flex-end",
           }}
@@ -118,9 +123,9 @@ export function MicButton({
           accessibilityHint="Hold and speak, release to send, slide away to cancel"
           accessibilityState={{ disabled: !!disabled, busy: phase === "finishing" }}
           style={{
-            width: SIZE,
-            height: SIZE,
-            borderRadius: SIZE / 2,
+            width: size,
+            height: size,
+            borderRadius: size / 2,
             alignItems: "center",
             justifyContent: "center",
             borderWidth: RING,
@@ -134,9 +139,9 @@ export function MicButton({
           }}
         >
           {armed ? (
-            <X size={28} color={colors.bg} />
+            <X size={icon} color={colors.bg} />
           ) : (
-            <Mic size={28} color={holding ? colors.danger : disabled ? colors.textMuted : colors.text} />
+            <Mic size={icon} color={holding ? colors.danger : disabled ? colors.textMuted : colors.text} />
           )}
         </Animated.View>
       </GestureDetector>

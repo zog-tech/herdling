@@ -182,7 +182,12 @@ export function Composer({
           }}
         />
         {visible ? (
-          <MicButton onSend={(t) => void sendPrompt(t, false)} onPartial={setPartial} disabled={!online || sending} />
+          <MicButton
+            onSend={(t) => void sendPrompt(t, false)}
+            onPartial={setPartial}
+            disabled={!online || sending}
+            size={hitTarget}
+          />
         ) : null}
         <Pressable
           accessibilityRole="button"

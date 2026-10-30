@@ -3,6 +3,7 @@ import { join } from "path";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { hitTarget } from "@/theme/tokens";
 import { MicButton } from "@/voice/MicButton";
 
 import { Composer } from "./Composer";
@@ -88,4 +89,16 @@ test("hidden_composer_polls_nothing_and_has_no_mic", async () => {
   await flush();
   expect(mockCalls.filter((c) => c.method === "pane.read").length).toBeGreaterThan(0);
   expect(tree!.root.findAll((n) => n.type === MicButton)).toHaveLength(1);
+});
+
+test("mic_and_send_have_the_same_size", async () => {
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  const mic = tree!.root.findAll((n) => n.type === MicButton)[0];
+  expect(mic.props.size).toBe(hitTarget);
+  const send = tree!.root.find((n) => n.props.accessibilityLabel === "Send" && typeof n.props.style === "function");
+  const style = send.props.style({ pressed: false });
+  expect(style.width).toBe(hitTarget);
+  expect(style.height).toBe(hitTarget);
 });
