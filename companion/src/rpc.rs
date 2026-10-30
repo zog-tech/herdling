@@ -55,6 +55,8 @@ pub struct Ctx {
     pub usage_keychain: bool,
     /// Directories searched for `herdr-automate`.
     pub bin_dirs: Vec<PathBuf>,
+    /// Messages API endpoint asked by `summary.make`.
+    pub anthropic_url: String,
 }
 
 impl Ctx {
@@ -73,6 +75,7 @@ impl Ctx {
             stats_primed: Arc::new(AtomicBool::new(false)),
             usage_urls: crate::usage::UsageUrls::default(),
             usage_keychain: cfg!(target_os = "macos"),
+            anthropic_url: crate::summary::ANTHROPIC_URL.into(),
         }
     }
 }
@@ -328,6 +331,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "automations.list" => automations_list(ctx).await,
         "automations.runs" => automations_runs(ctx, params).await,
         "automations.approve" => automations_approve(ctx, params).await,
+        "summary.make" => summary_make(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -564,6 +568,20 @@ async fn automations_approve(ctx: &Ctx, params: Value) -> Result<Value, RpcError
     let hash = str_param(&params, "content_hash", "automations.approve")?;
     crate::automations::approve(&ctx.bin_dirs, id, hash).await?;
     Ok(json!({ "approved": true }))
+}
+
+/// Summarizes `text` with the host's `anthropic_key`. No key gives `no_key`.
+async fn summary_make(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let text = str_param(&params, "text", "summary.make")?;
+    let path = ctx.config_path.clone();
+    let cfg = tokio::task::spawn_blocking(move || crate::config::load(&path))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| err("io_error", format!("{e:#}")))?;
+    let key = cfg.anthropic_key.filter(|k| !k.trim().is_empty()).ok_or_else(|| err("no_key", "no anthropic_key in the companion config"))?;
+    let client = reqwest::Client::new();
+    let summary = crate::summary::make(&client, &ctx.anthropic_url, key.trim(), text).await?;
+    serde_json::to_value(crate::types::Summary { summary }).map_err(|e| err("internal", e.to_string()))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

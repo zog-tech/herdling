@@ -13,7 +13,17 @@ jest.mock("expo-speech", () => ({
 }));
 const mockSet = jest.fn(async () => {});
 const mockRelease = jest.fn(async () => {});
-jest.mock("../../modules/voice", () => ({ setSpeechAudio: () => mockSet(), releaseAudio: () => mockRelease() }));
+const mockLocalAvailable = jest.fn(async () => false);
+const mockSummarizeLocal = jest.fn(async (_t: string, _i: string) => "Local summary.");
+jest.mock("../../modules/voice", () => ({
+  setSpeechAudio: () => mockSet(),
+  releaseAudio: () => mockRelease(),
+  localSummaryAvailable: () => mockLocalAvailable(),
+  summarizeLocal: (t: string, i: string) => mockSummarizeLocal(t, i),
+}));
+const mockCall = jest.fn(async (..._a: unknown[]): Promise<unknown> => ({ summary: "Host summary." }));
+let mockRpc: { call: typeof mockCall } | undefined;
+jest.mock("../hosts/connection", () => ({ getHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }) }));
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
 
 const user = (id: string): ThreadItem => ({ kind: "user", id, ts: 0, text: "hi" });
@@ -43,6 +53,8 @@ beforeEach(() => {
   useVoiceSettings.setState({ ttsDefault: true, mode: "full", voice: "v1", rate: 1.2 });
   useSessionSpeak.setState({ bySession: {} });
   useRecording.setState({ recording: false });
+  mockLocalAvailable.mockResolvedValue(false);
+  mockRpc = { call: mockCall };
 });
 afterEach(() => {
   act(() => roots.splice(0).forEach((r) => r.unmount()));
@@ -154,15 +166,61 @@ describe("useSpeakReplies", () => {
     expect(mockSpeak).not.toHaveBeenCalled();
   });
 
-  it("summary mode falls back to full", async () => {
-    useVoiceSettings.setState({ mode: "summary" });
+  const finishTurn = async () => {
     let r: any;
     await act(async () => {
       r = create(<Probe status="working" items={items} />);
     });
     await act(async () => r.update(<Probe status="idle" items={items} />));
     await flush();
-    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    return r;
+  };
+
+  it("summary mode speaks the on-device summary when the model is there", async () => {
+    useVoiceSettings.setState({ mode: "summary" });
+    mockLocalAvailable.mockResolvedValue(true);
+    await finishTurn();
+    expect(mockSummarizeLocal).toHaveBeenCalledWith("Hello there", expect.stringContaining("headphones"));
+    expect(mockCall).not.toHaveBeenCalled();
+    expect(mockSpeak).toHaveBeenCalledWith("Local summary.", expect.anything());
+  });
+
+  it("summary mode asks the host when the on-device model is not there", async () => {
+    useVoiceSettings.setState({ mode: "summary" });
+    await finishTurn();
+    expect(mockCall).toHaveBeenCalledWith("summary.make", { text: "Hello there" }, expect.any(Number));
+    expect(mockSpeak).toHaveBeenCalledWith("Host summary.", expect.anything());
+  });
+
+  it("summary mode falls back to full text offline or without a key", async () => {
+    useVoiceSettings.setState({ mode: "summary" });
+    mockRpc = undefined;
+    await finishTurn();
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
+    mockSpeak.mockClear();
+    mockRpc = { call: mockCall };
+    mockCall.mockRejectedValueOnce(Object.assign(new Error("no key"), { code: "no_key" }));
+    await finishTurn();
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
+  });
+
+  it("a new prompt while the summary is pending drops it", async () => {
+    useVoiceSettings.setState({ mode: "summary" });
+    let answer: (v: unknown) => void = () => {};
+    mockCall.mockImplementationOnce(() => new Promise((res) => (answer = res)));
+    const r = await finishTurn();
+    expect(mockCall).toHaveBeenCalledTimes(1);
+    await act(async () => r.update(<Probe status="working" items={[...items, user("3")]} />));
+    await act(async () => answer({ summary: "Late summary." }));
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
+  it("full mode never asks for a summary", async () => {
+    mockLocalAvailable.mockResolvedValue(true);
+    await finishTurn();
+    expect(mockLocalAvailable).not.toHaveBeenCalled();
+    expect(mockCall).not.toHaveBeenCalled();
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
   });
 
   it("turning the speaker off stops speech", async () => {

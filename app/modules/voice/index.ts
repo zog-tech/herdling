@@ -14,6 +14,8 @@ declare class VoiceNativeModule extends NativeModule<VoiceEvents> {
   cancelDictation(): Promise<void>;
   setSpeechAudio(): Promise<void>;
   releaseAudio(): Promise<void>;
+  localSummaryAvailable(): Promise<boolean>;
+  summarizeLocal(text: string, instructions: string): Promise<string>;
 }
 
 const Voice = requireNativeModule<VoiceNativeModule>("VoiceModule");
@@ -52,6 +54,16 @@ export function setSpeechAudio(): Promise<void> {
 /** Ends the speech audio session so other audio gets its volume back. Does nothing while dictation runs. */
 export function releaseAudio(): Promise<void> {
   return Voice.releaseAudio();
+}
+
+/** Whether Apple Intelligence's on-device model can run now (iOS 26+, supported device, turned on, downloaded). */
+export function localSummaryAvailable(): Promise<boolean> {
+  return Voice.localSummaryAvailable();
+}
+
+/** Runs `text` through the on-device model with `instructions`. Rejects with code "unavailable" or "failed". */
+export function summarizeLocal(text: string, instructions: string): Promise<string> {
+  return Voice.summarizeLocal(text, instructions);
 }
 
 export function addListener<E extends keyof VoiceEvents>(event: E, listener: VoiceEvents[E]): { remove(): void } {

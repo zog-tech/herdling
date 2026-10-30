@@ -219,6 +219,12 @@ pub struct Usage {
     pub providers: Vec<ProviderUsage>,
 }
 
+/// `summary.make` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Summary {
+    pub summary: String,
+}
+
 /// One automation of `herdr-automate`. Optional fields are left out when absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {

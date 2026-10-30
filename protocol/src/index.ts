@@ -83,6 +83,9 @@ export type ProviderUsage = {
 /** Always both providers, Claude first. */
 export type Usage = { providers: ProviderUsage[] };
 
+/** `summary.make` result. */
+export type Summary = { summary: string };
+
 /** `automations.list` item (companion adapter for `herdr-automate`). `content_hash` is what `automations.approve` must echo. */
 export type Automation = {
   id: string;

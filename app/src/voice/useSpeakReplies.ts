@@ -2,11 +2,13 @@ import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
 
-import { releaseAudio, setSpeechAudio } from "../../modules/voice";
+import { localSummaryAvailable, releaseAudio, setSpeechAudio, summarizeLocal } from "../../modules/voice";
+import { getHostConn } from "../hosts/connection";
 import { useRecording } from "./recording";
 import { replyToSpeak, shouldSpeak } from "./replyToSpeak";
 import { useSpeakEnabled, useVoiceSettings } from "./settings";
 import { speechText } from "./speechText";
+import { speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
 
 /** The log can land a moment after the status flips; wait before reading the reply. */
 const SETTLE_MS = 800;
@@ -24,11 +26,19 @@ function stopSpeech() {
   quiet(Speech.stop());
 }
 
-/** Speaks `text` with the saved voice and rate. Music ducks while it plays. */
-async function speak(text: string): Promise<void> {
+const local = {
+  available: localSummaryAvailable,
+  summarize: (t: string) => summarizeLocal(t, SUMMARY_INSTRUCTIONS),
+};
+
+/**
+ * Speaks `text` with the saved voice and rate. Music ducks while it plays.
+ * `mine` is the epoch the speak began in; a stop since then drops it.
+ */
+async function speak(text: string, mine: number): Promise<void> {
   const { voice, rate } = useVoiceSettings.getState();
   const release = () => quiet(releaseAudio());
-  const mine = epoch;
+  if (mine !== epoch) return;
   try {
     await setSpeechAudio();
   } catch {
@@ -42,7 +52,8 @@ const lastAssistantId = (items: ThreadItem[]) => [...items].reverse().find((i) =
 const finished = (s: AgentStatus | undefined) => s === "idle" || s === "done";
 
 /**
- * Speaks the agent's last reply when it goes working to idle or done (summary mode falls back to full for now).
+ * Speaks the agent's last reply when it goes working to idle or done. Summary mode speaks a short
+ * summary (on-device model, else the host's `summary.make`, else the full text).
  * `speakNow` (opened from a push) speaks the reply once: at once if the agent is finished, else when it finishes.
  * Both go through one settle delay and dedupe by the last assistant item.
  * Turning the speaker off, a new prompt, recording or leaving the screen stops speech.
@@ -81,10 +92,15 @@ export function useSpeakReplies(
       if (!reply && pushPending.current) return; // The items effect re-arms when they load.
       endPush();
       if (!enabled || !reply || id === spokenId.current || useRecording.getState().recording) return;
-      const text = speechText(reply);
-      if (!text) return;
+      if (!speechText(reply)) return;
       spokenId.current = id;
-      quiet(speak(text));
+      const mine = epoch;
+      const { mode } = useVoiceSettings.getState();
+      quiet(
+        speakableReply(reply, mode, { local, rpc: getHostConn(hostId).rpc }).then(({ text }) => {
+          if (text) return speak(text, mine);
+        }),
+      );
     }, SETTLE_MS);
   };
 

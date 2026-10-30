@@ -10,6 +10,7 @@ pub mod push;
 pub mod rpc;
 pub mod serve;
 pub mod stats;
+pub mod summary;
 pub mod tail;
 pub mod types;
 pub mod usage;

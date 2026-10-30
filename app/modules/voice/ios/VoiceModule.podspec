@@ -2,7 +2,7 @@ Pod::Spec.new do |s|
   s.name           = 'VoiceModule'
   s.version        = '1.0.0'
   s.summary        = 'On-device dictation for Zogssh'
-  s.description    = 'Hold-to-talk speech recognition: SpeechAnalyzer on iOS 26 with installed assets, else SFSpeechRecognizer.'
+  s.description    = 'Hold-to-talk speech recognition (SpeechAnalyzer on iOS 26 with installed assets, else SFSpeechRecognizer) and on-device reply summaries (FoundationModels on iOS 26).'
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
   s.platforms      = { :ios => '17.0' }
