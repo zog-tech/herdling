@@ -5,9 +5,10 @@ import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
 
-export const USAGE_POLL_MS = 60_000;
+/** The Claude usage endpoint has a strict rate limit, so the screen polls slowly; pull-to-refresh reads at once. */
+export const USAGE_POLL_MS = 5 * 60_000;
 
-/** Plan usage of one host (`usage.get`), refreshed every 60 s while the screen is focused and the app is active. `refresh` reads now. */
+/** Plan usage of one host (`usage.get`), refreshed every 5 min while the screen is focused and the app is active. `refresh` reads now. */
 export function useUsage(hostId: string): { usage: Usage | undefined; refresh: () => Promise<void> } {
   const { rpc } = useHostConn(hostId);
   const focused = useIsFocused();
