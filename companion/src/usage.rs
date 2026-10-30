@@ -56,7 +56,7 @@ async fn fetch(
     headers: &[(&str, &str)],
     parse: fn(&Value) -> Vec<UsageWindow>,
 ) -> ProviderUsage {
-    let mut req = client.get(url);
+    let mut req = client.get(url).timeout(HTTP_TIMEOUT);
     for (k, v) in headers {
         req = req.header(*k, *v);
     }
