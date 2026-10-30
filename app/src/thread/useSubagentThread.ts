@@ -2,7 +2,11 @@ import type { SubagentPage, ThreadItem, ThreadPage } from "@zogssh/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHostConn } from "@/hosts/connection";
-import { PAGE_SIZE, fetchOlder, followHandler, makeFail, /**
+import { PAGE_SIZE, fetchOlder, followHandler, makeFail, type FollowData } from "./followShared";
+import { mergeItems } from "./merge";
+import type { FollowStatus } from "./useThread";
+
+/**
  * Thread of one subagent: `thread.subagent` (last page) → `thread.follow` from the page end on the
  * subagent file. Older pages come from `thread.subagent {before}`. Restarts on reconnect and on a
  * follow error, keeping loaded items.
