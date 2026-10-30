@@ -1,0 +1,12 @@
+⏺ Here is the plan for the refactor:
+
+  1. Move the parser into its own module.
+  2. Add tests for the empty input case.
+  3. Replace the manual loop with an iterator.
+
+  Tell me if you want me to start.
+
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts

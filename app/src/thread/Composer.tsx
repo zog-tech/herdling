@@ -1,11 +1,16 @@
+import * as Haptics from "expo-haptics";
 import { ArrowUp } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 
+import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
+
+import { useChoices, type Choice } from "./choices";
+import { PermissionButtons } from "./PermissionButtons";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -13,7 +18,10 @@ const PAD_V = 10;
 
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 
-/** Prompt box: multiline, grows to 5 lines, plus hold-to-talk; send = herdr `agent.prompt`. */
+/**
+ * Prompt box: multiline, grows to 5 lines, plus hold-to-talk; send = herdr `agent.prompt`.
+ * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
+ */
 export function Composer({
   hostId,
   paneId,
@@ -40,6 +48,27 @@ export function Composer({
   latest.current = text;
   const online = status === "online" && !!rpc;
   const canSend = online && !sending && text.trim().length > 0;
+  const blocked = useSnapshots(
+    (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
+  );
+  const choices = useChoices(hostId, paneId, blocked && online);
+  const showChoices = blocked && online && choices.length > 0;
+  const [picking, setPicking] = useState(false);
+
+  /** Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box). */
+  const pick = async (c: Choice) => {
+    if (!rpc || !online || picking) return;
+    setPicking(true);
+    setError(undefined);
+    try {
+      await rpc.call("herdr.call", { method: "pane.send_keys", params: { pane_id: paneId, keys: [c.key] } });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPicking(false);
+    }
+  };
 
   /** Sends `prompt`. `fromInput`: it is the typed text, so clear the box after. */
   const sendPrompt = async (prompt: string, fromInput: boolean) => {
@@ -78,9 +107,16 @@ export function Composer({
         gap: space.xs,
       }}
     >
-      {error ? (
+      {showChoices ? (
+        <PermissionButtons choices={choices} onPick={(c) => void pick(c)} disabled={picking} />
+      ) : null}
+      {error && !(showChoices && error === BLOCKED_MESSAGE) ? (
         <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
           {error}
+        </Text>
+      ) : blocked && online && !showChoices ? (
+        <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
+          {BLOCKED_MESSAGE}
         </Text>
       ) : !online ? (
         <Text variant="small" muted>
