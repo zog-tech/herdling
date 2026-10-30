@@ -16,11 +16,18 @@ fn default_ssh_port() -> u16 {
     22
 }
 
+/// Unknown keys are ignored, so an old file with `anthropic_key` still loads (the key is
+/// dropped on the next write).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
     #[serde(default)]
     pub devices: Vec<Device>,
-    pub anthropic_key: Option<String>,
+    /// argv run by `summary.make`. Unset or empty means no host summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_command: Option<Vec<String>>,
+    /// argv run by `tts.make`. Unset or empty means no host voice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_command: Option<Vec<String>>,
     #[serde(default = "default_pair_port")]
     pub pair_port: u16,
     #[serde(default = "default_ssh_port")]
@@ -29,7 +36,13 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { devices: vec![], anthropic_key: None, pair_port: default_pair_port(), ssh_port: default_ssh_port() }
+        Config {
+            devices: vec![],
+            summary_command: None,
+            tts_command: None,
+            pair_port: default_pair_port(),
+            ssh_port: default_ssh_port(),
+        }
     }
 }
 

@@ -2028,6 +2028,7 @@ dependencies = [
  "dirs",
  "fs4",
  "if-addrs",
+ "libc",
  "mdns-sd",
  "qrcode",
  "rand 0.9.5",

@@ -82,7 +82,8 @@ Methods (version 1):
 | `stats.get` | CPU %, memory used/total, load, uptime. Linux `/proc`, macOS `host_statistics`/`sysctl` (or `vm_stat`). |
 | `usage.get` | Plan usage per provider. Codex: OAuth token from `~/.codex/auth.json` as herdr-gpui does. Claude: from Claude Code's OAuth credentials on the host (macOS Keychain `Claude Code-credentials`, Linux `~/.claude/.credentials.json`) and the usage endpoint Claude Code's `/usage` uses. Builder verifies the endpoint; if not reachable, shows "unavailable". |
 | `automations.list` / `automations.runs` / `automations.approve` | Wraps `herdr-automate` if installed on the host; otherwise returns `not_installed`. |
-| `summary.make {text}` | Haiku summary for TTS fallback; needs `ANTHROPIC_API_KEY` in the companion config; else error `no_key`. |
+| `summary.make {text}` | Summary for TTS, made by the host's `summary_command` (see `docs/voice.md`); else error `no_command`. |
+| `tts.make {text}` | Speech audio `{audio_b64, mime}` made by the host's `tts_command`; else error `no_command`. |
 | `push.register {device_id, expo_token, prefs}` | Stores/updates the phone's push token in the companion config. |
 
 ### Normalized thread item (shared type)
@@ -159,7 +160,7 @@ Wraps Citadel (SwiftNIO SSH). API to JS:
 - **ASR:** hold the mic button to record; release to send; slide away to cancel. On-device Apple speech (iOS 26 `SpeechAnalyzer`/`SpeechTranscriber`, fallback `SFSpeechRecognizer` on-device). Show live partial text while holding. Haptic on start, send and cancel. Fallback engine later: the maintainer's `transcribe-service`.
 - **TTS:** per-session "speak replies" switch, global default in Settings. When the open session's agent goes from working to idle/done, speak the latest assistant reply:
   - Full: strip markdown; replace code blocks with "code block"; tables with "a table"; read the rest.
-  - Summary: 2–3 sentences on what the agent did and what it needs. Apple Foundation Models on device when available; else `summary.make` on the host (Haiku); else Full.
+  - Summary: 2–3 sentences on what the agent did and what it needs. Apple Foundation Models on device when available; else `summary.make` on the host (the host summary command); else Full.
   - Apple `AVSpeechSynthesizer`, premium/enhanced voice if installed. Audio session ducks other audio; plays through AirPods.
 - iOS cannot speak from the background without the user; with the app in the background the push arrives, and a tap opens the session and speaks the reply.
 

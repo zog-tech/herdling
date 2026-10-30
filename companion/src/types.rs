@@ -258,6 +258,13 @@ pub struct Summary {
     pub summary: String,
 }
 
+/// `tts.make` result: the audio bytes as base64 and their mime type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TtsAudio {
+    pub audio_b64: String,
+    pub mime: String,
+}
+
 /// One automation of `herdr-automate`. Optional fields are left out when absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {

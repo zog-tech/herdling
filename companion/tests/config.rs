@@ -17,15 +17,15 @@ fn device(id: &str, name: &str) -> Device {
 fn missing_file_is_default() {
     let dir = tempfile::tempdir().unwrap();
     let c = config::load(&dir.path().join("config.toml")).unwrap();
-    assert_eq!(c, Config { devices: vec![], anthropic_key: None, pair_port: 7790, ssh_port: 22 });
+    assert_eq!(c, Config { devices: vec![], summary_command: None, tts_command: None, pair_port: 7790, ssh_port: 22 });
 }
 
 #[test]
 fn update_round_trip_and_mode() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("sub/config.toml");
-    config::update(&p, |c| c.anthropic_key = Some("k".into())).unwrap();
-    assert_eq!(config::load(&p).unwrap().anthropic_key, Some("k".into()));
+    config::update(&p, |c| c.summary_command = Some(vec!["claude".into(), "-p".into()])).unwrap();
+    assert_eq!(config::load(&p).unwrap().summary_command, Some(vec!["claude".into(), "-p".into()]));
     assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
     assert_eq!(std::fs::metadata(p.parent().unwrap()).unwrap().permissions().mode() & 0o777, 0o700);
 }
@@ -62,7 +62,7 @@ fn concurrent_updates_keep_both() {
 fn parse_error_does_not_leak_source() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
-    std::fs::write(&p, "pair_port = 1\nanthropic_key = \"sk-secret\n").unwrap();
+    std::fs::write(&p, "pair_port = 1\nssh_port = \"sk-secret\n").unwrap();
     let msg = format!("{:#}", config::load(&p).unwrap_err());
     assert!(!msg.contains("sk-secret"), "{msg}");
     assert!(msg.contains("line 2"), "{msg}");
