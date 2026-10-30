@@ -15,6 +15,7 @@ import { Card } from "@/ui/Card";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
+import { MicButton } from "@/voice/MicButton";
 
 type DirList = { path: string; dirs: string[]; recent_cwds: string[] };
 
@@ -160,6 +161,8 @@ export default function NewSessionScreen() {
   const [kind, setKind] = useState<string>(DEFAULT_KIND);
   const [more, setMore] = useState(false);
   const [prompt, setPrompt] = useState("");
+  /** Live transcript while the mic is held. */
+  const [heard, setHeard] = useState("");
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [progress, setProgress] = useState<string>();
   const [error, setError] = useState<string>();
@@ -284,6 +287,16 @@ export default function NewSessionScreen() {
                 textAlignVertical: "top",
               }}
             />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+              <Text variant="small" muted numberOfLines={3} style={{ flex: 1 }}>
+                {heard || "Hold the mic to dictate."}
+              </Text>
+              <MicButton
+                disabled={busy}
+                onPartial={setHeard}
+                onSend={(t) => setPrompt((p) => (p.trim() ? `${p.trimEnd()} ${t}` : t))}
+              />
+            </View>
           </Section>
 
           {error ? (

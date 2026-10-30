@@ -18,7 +18,9 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Zogssh uses the microphone while you hold the mic button, to turn your speech into a prompt for the agent.",
+        "NSSpeechRecognitionUsageDescription": "Zogssh turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it."
       },
       "buildNumber": "1"
     },

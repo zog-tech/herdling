@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { useHostConn } from "@/hosts/connection";
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { MicButton } from "@/voice/MicButton";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -12,7 +13,7 @@ const PAD_V = 10;
 
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 
-/** Prompt box: multiline, grows to 5 lines; send = herdr `agent.prompt`. */
+/** Prompt box: multiline, grows to 5 lines, plus hold-to-talk; send = herdr `agent.prompt`. */
 export function Composer({
   hostId,
   paneId,
@@ -33,29 +34,36 @@ export function Composer({
   const [error, setError] = useState<string | undefined>(initialError);
   /** Bumped after a send: a remount resets the grown multiline height (iOS keeps it otherwise). */
   const [inputKey, setInputKey] = useState(0);
+  /** Live transcript while the mic is held. */
+  const [partial, setPartial] = useState("");
   const latest = useRef(text);
   latest.current = text;
   const online = status === "online" && !!rpc;
   const canSend = online && !sending && text.trim().length > 0;
 
-  const send = async () => {
-    if (!rpc || !canSend) return;
-    const prompt = text;
+  /** Sends `prompt`. `fromInput`: it is the typed text, so clear the box after. */
+  const sendPrompt = async (prompt: string, fromInput: boolean) => {
+    if (!rpc || !online || sending) return;
     setSending(true);
     setError(undefined);
     try {
       await rpc.call("herdr.call", { method: "agent.prompt", params: { target: paneId, text: prompt } });
       // Keep anything typed while the send was in flight.
-      if (latest.current === prompt) {
+      if (fromInput && latest.current === prompt) {
         setText("");
         setInputKey((k) => k + 1);
       }
     } catch (e) {
       const code = (e as { code?: unknown })?.code;
       setError(code === "agent_blocked" ? BLOCKED_MESSAGE : e instanceof Error ? e.message : String(e));
+      // A spoken prompt that failed goes into the empty box, ready to resend.
+      if (!fromInput && !latest.current.trim()) setText(prompt);
     } finally {
       setSending(false);
     }
+  };
+  const send = () => {
+    if (canSend) void sendPrompt(text, true);
   };
 
   return (
@@ -77,6 +85,11 @@ export function Composer({
       ) : !online ? (
         <Text variant="small" muted>
           Host offline — you can send when it reconnects.
+        </Text>
+      ) : null}
+      {partial ? (
+        <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>
+          {partial}
         </Text>
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
@@ -109,6 +122,7 @@ export function Composer({
             opacity: online ? 1 : 0.6,
           }}
         />
+        <MicButton onSend={(t) => void sendPrompt(t, false)} onPartial={setPartial} disabled={!online || sending} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
