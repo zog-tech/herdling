@@ -23,7 +23,8 @@ type HostStore = {
   removeHost: (id: string) => void;
 };
 
-function newId(): string {
+/** A new saved-host id. Pairing makes it before the host is saved, to send it to the companion. */
+export function newHostId(): string {
   return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
@@ -33,7 +34,7 @@ export const useHosts = create<HostStore>()(
     (set) => ({
       hosts: [],
       addHost: (h) => {
-        const host: Host = { ...h, id: h.id ?? newId(), command: h.command ?? DEFAULT_COMMAND };
+        const host: Host = { ...h, id: h.id ?? newHostId(), command: h.command ?? DEFAULT_COMMAND };
         set((s) => ({ hosts: [...s.hosts, host] }));
         return host;
       },

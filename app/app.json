@@ -47,6 +47,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Zogssh uses the camera to scan the pairing QR code that zogsshd pair shows."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {
