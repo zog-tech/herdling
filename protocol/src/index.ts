@@ -147,3 +147,6 @@ export type CommandInfo = {
 };
 /** `commands.list` result, sorted by name. */
 export type CommandList = { commands: CommandInfo[] };
+
+/** `files.put` result: where the host saved the file (`~/.cache/zogsshd/uploads/...`). */
+export type FilePut = { path: string };

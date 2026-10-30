@@ -26,8 +26,9 @@ pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Messages queued for stdout before senders wait.
 const OUT_CAPACITY: usize = 1024;
-/// Longest request line accepted, without the newline.
-pub const MAX_LINE: usize = 1 << 20;
+/// Longest request line accepted, without the newline. A `files.put` of the largest
+/// file (10 MiB, about 13.4 MiB as base64) must fit.
+pub const MAX_LINE: usize = 16 << 20;
 
 #[derive(Clone)]
 pub struct Ctx {
@@ -341,6 +342,7 @@ pub const METHODS: &[&str] = &[
     "tts.make",
     "agents.preview",
     "commands.list",
+    "files.put",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -368,6 +370,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "tts.make" => tts_make(ctx, params).await,
         "agents.preview" => agents_preview(ctx, params).await,
         "commands.list" => commands_list(ctx, params).await,
+        "files.put" => files_put(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -676,6 +679,17 @@ async fn commands_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .await
         .map_err(|e| err("internal", e.to_string()))?;
     Ok(json!({ "commands": commands }))
+}
+
+/// Saves a file for the agents to read. See [`crate::uploads`].
+async fn files_put(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let name = str_param(&params, "name", "files.put")?.to_string();
+    let data = str_param(&params, "data_b64", "files.put")?.to_string();
+    let home = ctx.home.clone();
+    let path = tokio::task::spawn_blocking(move || crate::uploads::put(&home, &name, &data, std::time::SystemTime::now()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    Ok(json!({ "path": path.to_string_lossy() }))
 }
 
 /// The folder of a pane from herdr `pane.get`. `None` when herdr does not answer.

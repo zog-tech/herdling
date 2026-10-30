@@ -18,4 +18,5 @@ pub mod summary;
 pub mod tail;
 pub mod tts;
 pub mod types;
+pub mod uploads;
 pub mod usage;

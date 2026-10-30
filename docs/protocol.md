@@ -7,6 +7,7 @@ The app talks to `zogsshd` on each host. This page lists the rules for both side
 - The app opens an SSH connection with the restricted SSH key.
 - The key runs `zogsshd rpc`. The command reads and writes one JSON object per line.
 - A line ends with `\n`. A JSON object never contains a raw newline.
+- A request line is at most 16 MiB. A longer line gets a `bad_request` error.
 
 ## Messages
 
@@ -18,7 +19,7 @@ The app talks to `zogsshd` on each host. This page lists the rules for both side
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`.
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 

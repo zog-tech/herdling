@@ -24,6 +24,7 @@ export const APP_METHODS = [
   "tts.make",
   "agents.preview",
   "commands.list",
+  "files.put",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older zogsshd): the caller tries and falls back. */

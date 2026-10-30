@@ -6,6 +6,8 @@ import { useSnapshots } from "@/herdr/snapshotStore";
 import { hitTarget } from "@/theme/tokens";
 import { MicButton } from "@/voice/MicButton";
 
+import * as ImagePicker from "expo-image-picker";
+
 import { clearCommandsCache } from "./commands";
 import { Composer } from "./Composer";
 
@@ -19,18 +21,30 @@ const mockCommands = [
   { name: "tools:compact-all", description: "Compact all", source: "plugin" },
   { name: "deploy", source: "user" },
 ];
+let mockUploadFails = false;
 const mockRpc = {
   call: async (method: string, params: any) => {
     mockRpcCalls.push({ method, params });
     if (method === "commands.list") return { commands: mockCommands };
+    if (method === "files.put") {
+      if (mockUploadFails) throw new Error("disk full");
+      return { path: `/up/${mockRpcCalls.filter((c) => c.method === "files.put").length}-${params.name}` };
+    }
     mockCalls.push(params);
     return params.method === "pane.read" ? { read: { text: screen } } : {};
   },
 };
+let mockHello: any;
 jest.mock("@/hosts/connection", () => ({
-  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }),
+  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: mockHello }),
 }));
 jest.mock("@/voice/MicButton", () => ({ MicButton: () => null }));
+jest.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
+jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+jest.mock("expo-image-picker", () => ({
+  launchImageLibraryAsync: jest.fn(),
+  UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" },
+}));
 jest.mock("expo-haptics", () => ({
   notificationAsync: jest.fn(() => Promise.resolve()),
   NotificationFeedbackType: { Success: "success" },
@@ -48,6 +62,8 @@ beforeEach(() => {
   jest.useFakeTimers();
   mockCalls.length = 0;
   mockRpcCalls.length = 0;
+  mockHello = undefined;
+  mockUploadFails = false;
   clearCommandsCache();
   useSnapshots.setState({ byHost: { "host-1": { agents: [{ pane_id: "w1:p1", agent_status: "blocked" }] } as any }, errors: {} });
 });
@@ -160,4 +176,125 @@ test("no_menu_for_other_agents", async () => {
   await flush();
   expect(menuRows(tree!)).toEqual([]);
   expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(0);
+});
+
+const byLabel = (t: ReactTestRenderer, label: string) =>
+  t.root.findAll((n) => n.props.accessibilityLabel === label && !!n.props.onPress);
+const press = async (t: ReactTestRenderer, label: string) => {
+  await act(async () => byLabel(t, label)[0].props.onPress());
+  await flush();
+};
+const helloWith = (methods: string[]) => ({ host: "h", os: "linux", zogsshd: "1", herdr_ok: true, methods });
+const pickerReturns = (names: string[]) =>
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
+    canceled: false,
+    assets: names.map((n) => ({ uri: `file:///${n}`, fileName: n, base64: `b64-${n}`, width: 1, height: 1 })),
+  });
+const prompts = () => mockCalls.filter((c) => c.method === "agent.prompt").map((c) => c.params.text);
+
+test("attach_photos_uploads_them_then_sends_the_paths", async () => {
+  idle();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Photos")).toHaveLength(1);
+  expect(byLabel(tree!, "Commands & skills")).toHaveLength(1);
+
+  pickerReturns(["IMG_1.HEIC", "b.png"]);
+  await press(tree!, "Photos");
+  expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ allowsMultipleSelection: true, selectionLimit: 4, quality: 0.8, base64: true, mediaTypes: ["images"] }),
+  );
+  expect(byLabel(tree!, "Photos")).toHaveLength(0);
+  expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
+  expect(byLabel(tree!, "Remove photo 2")).toHaveLength(1);
+
+  await act(async () => prompt(tree!).props.onChangeText("What is wrong here?"));
+  await press(tree!, "Send");
+  expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
+    { name: "IMG_1.jpg", data_b64: "b64-IMG_1.HEIC" },
+    { name: "b.jpg", data_b64: "b64-b.png" },
+  ]);
+  expect(prompts()).toEqual(["What is wrong here?\n/up/1-IMG_1.jpg\n/up/2-b.jpg"]);
+  expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
+  expect(prompt(tree!).props.value).toBe("");
+});
+
+test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
+  idle();
+  mockUploadFails = true;
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  pickerReturns(["a.jpg"]);
+  await press(tree!, "Photos");
+  await act(async () => prompt(tree!).props.onChangeText("look"));
+  await press(tree!, "Send");
+  expect(prompts()).toEqual([]);
+  expect(tree!.root.findAll((n) => n.props.children === "Photo upload failed, nothing sent: disk full").length).toBeGreaterThan(0);
+  // The photo and the text stay for a retry.
+  expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
+  expect(prompt(tree!).props.value).toBe("look");
+});
+
+test("a_removed_photo_is_not_uploaded", async () => {
+  idle();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  pickerReturns(["a.jpg", "b.jpg"]);
+  await press(tree!, "Photos");
+  await press(tree!, "Remove photo 1");
+  await press(tree!, "Send");
+  expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params.name)).toEqual(["b.jpg"]);
+  expect(prompts()).toEqual(["/up/1-b.jpg"]);
+});
+
+test("plus_menu_rows_follow_the_host_methods", async () => {
+  idle();
+  mockHello = helloWith(["files.put"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Photos")).toHaveLength(1);
+  expect(byLabel(tree!, "Commands & skills")).toHaveLength(0);
+  act(() => tree!.unmount());
+
+  mockHello = helloWith(["commands.list"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Photos")).toHaveLength(0);
+  expect(byLabel(tree!, "Commands & skills")).toHaveLength(1);
+  act(() => tree!.unmount());
+
+  mockHello = helloWith([]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  expect(byLabel(tree!, "Add")).toHaveLength(0);
+});
+
+test("commands_sheet_lists_by_source_and_a_tap_fills_the_name", async () => {
+  idle();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  await press(tree!, "Commands & skills");
+  const headers = () =>
+    tree!.root.findAll((n) => n.props.accessibilityRole === "header" && typeof n.props.children === "string").map((n) => n.props.children);
+  expect([...new Set(headers())]).toEqual(["Built-in", "User", "Plugins"]);
+
+  const search = tree!.root.find((n) => n.props.accessibilityLabel === "Search commands" && !!n.props.onChangeText);
+  await act(async () => search.props.onChangeText("dep"));
+  expect([...new Set(headers())]).toEqual(["User"]);
+
+  await press(tree!, "/deploy");
+  expect(prompt(tree!).props.value).toBe("/deploy ");
 });
