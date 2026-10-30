@@ -49,6 +49,7 @@ export default function RootLayout() {
         <Stack.Screen name="hosts/scan" options={{ ...hostHeader, title: "Scan QR" }} />
         <Stack.Screen name="hosts/add" options={{ ...hostHeader, title: "Add manually" }} />
         <Stack.Screen name="new" options={{ ...hostHeader, title: "New session", presentation: "modal" }} />
+        <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...hostHeader, title: "Resume session", presentation: "modal" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
       </Stack>
       <NotificationRouting />

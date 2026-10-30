@@ -6,6 +6,8 @@ export type StartOptions = {
   prompt?: string;
   /** Existing workspace: add a tab to it instead of creating a workspace. */
   workspaceId?: string;
+  /** Native agent arguments, for example `["--resume", id]`. */
+  args?: string[];
   /** Called before each step with a short progress label. */
   onProgress?: (label: string) => void;
 };
@@ -65,7 +67,7 @@ const herdr = <T>(rpc: Pick<RpcClient, "call">, method: string, params: object, 
  */
 export async function startSession(
   rpc: Pick<RpcClient, "call">,
-  { cwd, kind, prompt, workspaceId, onProgress }: StartOptions,
+  { cwd, kind, prompt, workspaceId, args, onProgress }: StartOptions,
 ): Promise<{ paneId: string; promptError?: string }> {
   const label = basename(cwd);
   onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
@@ -79,7 +81,7 @@ export async function startSession(
   onProgress?.(`Starting ${kind}…`);
   try {
     await retrying(SHELL_RETRIES, notShellYet, () =>
-      herdr(rpc, "agent.start", { name, kind, pane_id: paneId }, AGENT_START_TIMEOUT_MS),
+      herdr(rpc, "agent.start", { name, kind, pane_id: paneId, ...(args?.length ? { args } : {}) }, AGENT_START_TIMEOUT_MS),
     );
   } catch (e) {
     // Do not leave an empty workspace or tab behind; a retry would offer to reuse it.

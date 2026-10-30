@@ -36,6 +36,12 @@ describe("startSession", () => {
     expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "codex", pane_id: "w1:p1" });
   });
 
+  it("start_passes_args", async () => {
+    const rpc = fakeRpc();
+    await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "w9", args: ["--resume", "abc"] });
+    expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "claude", pane_id: "w1:p1", args: ["--resume", "abc"] });
+  });
+
   it("skips_prompt_when_empty", async () => {
     const rpc = fakeRpc();
     await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", prompt: "  \n" });
