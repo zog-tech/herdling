@@ -85,14 +85,16 @@ export function useDictation({ onSend, onPartial }: { onSend: (text: string) => 
 
   useEffect(() => {
     const partial = Voice.addListener("onPartial", ({ text }) => dispatch({ type: "partial", text }));
-    const failed = Voice.addListener("onDictationError", (e) => fail(e));
+    // The event is global: an idle button (another screen) must not show it.
+    const failed = Voice.addListener("onDictationError", (e) => current.current.phase !== "idle" && fail(e));
     return () => {
       partial.remove();
       failed.remove();
-      // Leaving the screen mid-hold must not leave the microphone on.
-      if (current.current.phase !== "idle") void Voice.cancelDictation().catch(() => {});
+      // Leaving the screen must not leave the microphone on. Queued, so it also runs after a start
+      // that is still waiting (for example on the permission alert), whatever the phase is now.
+      enqueue(Voice.cancelDictation).catch(() => {});
     };
-  }, [dispatch, fail]);
+  }, [dispatch, fail, enqueue]);
 
   useEffect(() => {
     handlers.current.onPartial?.(state.partial);

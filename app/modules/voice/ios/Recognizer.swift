@@ -46,6 +46,8 @@ actor Recognizer {
   private let onError: ErrorHandler
   private var run: Run?
   private var starting = false
+  /// `stop` is waiting for the final text; the audio session is still ours.
+  private var finishing = false
   /// A stop or cancel came while `start` was still setting up.
   private var dropWhenStarted = false
 
@@ -64,7 +66,7 @@ actor Recognizer {
   }
 
   func start(localeId: String?) async throws {
-    guard run == nil, !starting else { throw DictationError.busy }
+    guard run == nil, !starting, !finishing else { throw DictationError.busy }
     guard AVAudioApplication.shared.recordPermission == .granted else {
       throw DictationError.denied("Microphone access is off. Turn it on in Settings.")
     }
@@ -111,21 +113,23 @@ actor Recognizer {
       return ""
     }
     self.run = nil
+    finishing = true
     Self.stopAudio(run.engine)
-    defer { AudioSession.deactivate() }
+    defer {
+      AudioSession.deactivate()
+      finishing = false
+    }
     let session = run.session
-    do {
-      return try await withThrowingTaskGroup(of: String.self) { group in
-        group.addTask { try await session.finish() }
-        group.addTask {
-          try await Task.sleep(for: Self.finishTimeout)
-          await session.cancel()
-          throw DictationError.timeout
-        }
-        defer { group.cancelAll() }
-        return try await group.next() ?? ""
-      }
-    } catch {
+    // Race the final text against the timeout. Not a task group: it would wait for a `finish`
+    // that only a cancel can end. The session is cancelled after the race, so a timeout always
+    // reaches JS as "timeout", never as a silent "cancelled".
+    let outcome = await Self.firstOf(session: session, timeout: Self.finishTimeout)
+    switch outcome {
+    case .success(let text):
+      return text
+    case .failure(let error):
+      // A timed-out or failed finish may still wait on the recognizer: drop it.
+      await session.cancel()
       throw DictationError.failed(error)
     }
   }
@@ -148,9 +152,40 @@ actor Recognizer {
     return try SFSession(locale: locale, onPartial: onPartial, onError: onError)
   }
 
+  private static func firstOf(session: DictationSession, timeout: Duration) async -> Result<String, Error> {
+    let once = Once<Result<String, Error>>()
+    return await withCheckedContinuation { (c: CheckedContinuation<Result<String, Error>, Never>) in
+      once.continuation = c
+      Task {
+        do { once.resume(.success(try await session.finish())) } catch { once.resume(.failure(error)) }
+      }
+      Task {
+        try? await Task.sleep(for: timeout)
+        once.resume(.failure(DictationError.timeout))
+      }
+    }
+  }
+
   private static func stopAudio(_ engine: AVAudioEngine) {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
+  }
+}
+
+/// Resumes a continuation with the first value only.
+private final class Once<T>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var done = false
+  var continuation: CheckedContinuation<T, Never>?
+
+  func resume(_ value: T) {
+    let c: CheckedContinuation<T, Never>? = lock.withLock {
+      guard !done, let c = continuation else { return nil }
+      done = true
+      continuation = nil
+      return c
+    }
+    c?.resume(returning: value)
   }
 }
 
