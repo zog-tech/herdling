@@ -1,7 +1,9 @@
 import type { ThreadItem } from "@zogssh/protocol";
-import { memo } from "react";
+import { memo, useContext } from "react";
 
+import { LiveToolContext } from "./LiveToolContext";
 import { AssistantMessage } from "./items/AssistantMessage";
+import { ReplyPlayButton } from "./items/ReplyPlayButton";
 import { SubagentCard } from "./items/SubagentCard";
 import { SystemRow } from "./items/SystemRow";
 import { ThinkingRow } from "./items/ThinkingRow";
@@ -10,11 +12,17 @@ import { UserBubble } from "./items/UserBubble";
 
 /** One thread item. Memoized: an unchanged item object never re-renders. */
 export const ThreadRow = memo(function ThreadRow({ item }: { item: ThreadItem }) {
+  const live = useContext(LiveToolContext);
   switch (item.kind) {
     case "user":
       return <UserBubble text={item.text} images={item.images} />;
     case "assistant":
-      return <AssistantMessage markdown={item.markdown} />;
+      return (
+        <>
+          <AssistantMessage markdown={item.markdown} />
+          {live ? <ReplyPlayButton hostId={live.hostId} id={item.id} markdown={item.markdown} /> : null}
+        </>
+      );
     case "thinking":
       return <ThinkingRow text={item.text} />;
     case "tool":

@@ -1,6 +1,8 @@
 import type { AgentStatus, ThreadItem, TtsAudio } from "@zogssh/protocol";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
+import { AppState } from "react-native";
+import { create } from "zustand";
 
 import { localSummaryAvailable, releaseAudio, setSpeechAudio, summarizeLocal } from "../../modules/voice";
 import { getHostConn } from "../hosts/connection";
@@ -11,6 +13,7 @@ import { useRecording } from "./recording";
 import { replyToSpeak, shouldSpeak } from "./replyToSpeak";
 import { useSpeakEnabled, useVoiceSettings } from "./settings";
 import { splitSentences } from "./sentences";
+import { logSpeech } from "./speechLog";
 import { speechText } from "./speechText";
 import { speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
 import { noticeHostVoiceFailed } from "./voiceNotice";
@@ -32,10 +35,14 @@ let epoch = 0;
 /** The epoch of the speak that holds the speech audio session. An older speak never releases it. */
 let audioOwner = -1;
 
+/** The reply that a play button speaks now. `owner` is the epoch of that speak. */
+export const useManualSpeech = create<{ key?: string; owner: number }>()(() => ({ key: undefined, owner: -1 }));
+
 function stopSpeech() {
   epoch++;
   quiet(Speech.stop());
   stopHostAudio();
+  useManualSpeech.setState({ key: undefined, owner: -1 });
 }
 
 const local = {
@@ -43,38 +50,120 @@ const local = {
   summarize: (t: string) => summarizeLocal(t, SUMMARY_INSTRUCTIONS),
 };
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The saved voice id, or undefined (system default) when the device no longer has that voice. */
+async function usableVoice(voice: string | undefined): Promise<string | undefined> {
+  if (!voice) return undefined;
+  try {
+    const all = await Speech.getAvailableVoicesAsync();
+    if (Array.isArray(all) && all.length > 0 && !all.some((v) => v.identifier === voice)) {
+      logSpeech("saved voice missing, using default");
+      return undefined;
+    }
+  } catch {
+    // The list is not known; keep the saved voice.
+  }
+  return voice;
+}
+
 /**
  * Speaks `text` with the saved engine, voice and rate. Music ducks while it plays.
  * `mine` is the epoch the speak began in; a stop since then drops it.
  * The host engine speaks sentence by sentence through `tts.make`; a failure speaks the rest
  * with the iPhone voice and shows a one-time notice. Without a connection it uses the iPhone voice.
+ * `onEnd` runs once when the speak ends for any reason. Every outcome goes to the speech log.
  */
-async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | undefined): Promise<void> {
+async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | undefined, onEnd?: () => void): Promise<void> {
   const { voice, rate, engine } = useVoiceSettings.getState();
+  let handedOff = false;
   const release = () => {
     if (audioOwner !== mine) return;
     audioOwner = -1;
     quiet(releaseAudio());
   };
   const stale = () => mine !== epoch || useRecording.getState().recording;
-  if (mine !== epoch) return;
   try {
-    await setSpeechAudio();
-  } catch {
-    return; // The microphone is in use.
+    if (mine !== epoch) return;
+    try {
+      await setSpeechAudio();
+    } catch (e) {
+      // The native module rejects with code "busy" while dictation holds the audio session.
+      logSpeech((e as { code?: unknown })?.code === "busy" ? "audio session busy (microphone)" : `audio session error: ${message(e)}`);
+      return;
+    }
+    audioOwner = mine;
+    if (stale()) return release();
+    let rest = text;
+    if (engine === "host" && rpc) {
+      const sentences = splitSentences(text);
+      const tts = (t: string) => rpc.call<TtsAudio>("tts.make", { text: t }, TTS_TIMEOUT_MS);
+      logSpeech(`speaking (host, ${text.length} chars, voice host command)`);
+      const r = await speakWithHost(sentences, { tts, ...hostAudio(rate) }, stale);
+      if (r.status !== "failed" || stale()) {
+        logSpeech(stale() ? "stopped" : "done");
+        return release();
+      }
+      logSpeech("error: host voice failed, using iPhone voice");
+      noticeHostVoiceFailed();
+      rest = sentences.slice(r.at).join(" ");
+    }
+    const use = await usableVoice(voice);
+    if (stale()) return release();
+    logSpeech(`speaking (iphone, ${rest.length} chars, voice ${use ?? "default"})`);
+    const end = (what: string) => () => {
+      logSpeech(what);
+      release();
+      onEnd?.();
+    };
+    handedOff = true;
+    Speech.speak(rest, {
+      voice: use,
+      rate,
+      onDone: end("done"),
+      onStopped: end("stopped"),
+      onError: (e: unknown) => end(`error: ${message(e)}`)(),
+    });
+  } finally {
+    if (!handedOff) onEnd?.();
   }
-  audioOwner = mine;
-  if (stale()) return release();
-  let rest = text;
-  if (engine === "host" && rpc) {
-    const sentences = splitSentences(text);
-    const tts = (t: string) => rpc.call<TtsAudio>("tts.make", { text: t }, TTS_TIMEOUT_MS);
-    const r = await speakWithHost(sentences, { tts, ...hostAudio(rate) }, stale);
-    if (r.status !== "failed" || stale()) return release();
-    noticeHostVoiceFailed();
-    rest = sentences.slice(r.at).join(" ");
+}
+
+/**
+ * Speaks one reply now, from a play button. It uses the same path as auto-speak (summary mode,
+ * engine, voice, rate) and ignores the session speaker toggle. The same `key` again while it
+ * speaks stops it. Any other speech stops first.
+ */
+export async function speakReplyNow(hostId: string, markdown: string, key: string = markdown): Promise<void> {
+  if (useManualSpeech.getState().key === key) return stopSpeech();
+  stopSpeech();
+  const mine = epoch;
+  useManualSpeech.setState({ key, owner: mine });
+  const clear = () => {
+    if (useManualSpeech.getState().owner === mine) useManualSpeech.setState({ key: undefined, owner: -1 });
+  };
+  try {
+    const { mode } = useVoiceSettings.getState();
+    const rpc = getHostConn(hostId).rpc;
+    const { text, source } = await speakableReply(markdown, mode, { local, rpc });
+    if (mine !== epoch) return clear();
+    if (mode === "summary") logSpeech(`summary: ${source}`);
+    if (!text) {
+      logSpeech("skipped: no reply");
+      return clear();
+    }
+    await speak(text, mine, rpc, clear);
+  } catch (e) {
+    logSpeech(`error: ${message(e)}`);
+    clear();
   }
-  Speech.speak(rest, { voice, rate, onDone: release, onStopped: release, onError: release });
+}
+
+/** Speaks the Settings test phrase through `speak()`, with no summary step. */
+export async function testVoice(hostId?: string): Promise<void> {
+  stopSpeech();
+  logSpeech("test voice");
+  await speak("Voice output works.", epoch, hostId ? getHostConn(hostId).rpc : undefined);
 }
 
 const lastAssistantId = (items: ThreadItem[]) => [...items].reverse().find((i) => i.kind === "assistant")?.id;
@@ -111,6 +200,20 @@ export function useSpeakReplies(
   /** A push open still waits for a reply to exist. */
   const pushPending = useRef(false);
   const giveUp = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** A speak waits for the summary or the audio session. */
+  const speakPending = useRef(false);
+  /** The settle delay runs. */
+  const settling = useRef(false);
+
+  // iOS pauses JS in the background, so a pending speak cannot run there. Log it.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active" && (speakPending.current || settling.current)) {
+        logSpeech(`app went to background while a speak is pending (iOS pauses JS; it cannot speak in the background)`);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const endPush = () => {
     pushPending.current = false;
@@ -119,22 +222,37 @@ export function useSpeakReplies(
 
   const settleThenSpeak = () => {
     clearTimeout(timer.current);
+    settling.current = true;
     timer.current = setTimeout(() => {
+      settling.current = false;
       const { items, enabled, focused } = latest.current;
-      if (!focused) return;
+      const skip = (why: string) => logSpeech(`skipped: ${why}`);
+      if (!focused) return skip("not focused");
       const reply = replyToSpeak(items);
       const id = lastAssistantId(items);
       if (!reply && pushPending.current) return; // The items effect re-arms when they load.
       endPush();
-      if (!enabled || !reply || id === spokenId.current || useRecording.getState().recording) return;
-      if (!speechText(reply)) return;
+      if (!enabled) return skip("speaker off");
+      if (AppState.currentState === "background" || AppState.currentState === "inactive") return skip("app not active");
+      if (!reply) return skip("no reply");
+      if (id === spokenId.current) return skip("same reply");
+      if (useRecording.getState().recording) return skip("recording");
+      if (!speechText(reply)) return skip("no reply");
       spokenId.current = id;
       const mine = epoch;
       const { mode } = useVoiceSettings.getState();
+      speakPending.current = true;
+      const done = () => {
+        speakPending.current = false;
+      };
       quiet(
-        speakableReply(reply, mode, { local, rpc: getHostConn(hostId).rpc }).then(({ text }) => {
-          if (text) return speak(text, mine, getHostConn(hostId).rpc);
-        }),
+        speakableReply(reply, mode, { local, rpc: getHostConn(hostId).rpc })
+          .then(({ text, source }) => {
+            if (mode === "summary") logSpeech(`summary: ${source}`);
+            if (text) return speak(text, mine, getHostConn(hostId).rpc);
+            logSpeech("skipped: no reply");
+          })
+          .finally(done),
       );
     }, SETTLE_MS);
   };
@@ -167,6 +285,7 @@ export function useSpeakReplies(
   useEffect(() => {
     if (focused) return;
     clearTimeout(timer.current);
+    settling.current = false;
     endPush();
     stopSpeech();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,6 +302,7 @@ export function useSpeakReplies(
   useEffect(
     () => () => {
       clearTimeout(timer.current);
+      settling.current = false;
       clearTimeout(giveUp.current);
       stopSpeech();
     },
@@ -195,7 +315,10 @@ export function useSpeakReplies(
     prev.current = status;
     // A real change of the open session's status; the first value is the baseline.
     if (before !== undefined && status !== undefined && before !== status && latest.current.focused) haptics.status({ from: before, to: status });
-    if (status === "working") clearTimeout(timer.current);
+    if (status === "working") {
+      clearTimeout(timer.current);
+      settling.current = false;
+    }
     if (!status) return;
     const fromPush = !!o?.speakNow && !pushDone.current && finished(status);
     if (shouldSpeak(before, status) || fromPush) {

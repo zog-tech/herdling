@@ -3,7 +3,8 @@ import { act, create as createRenderer } from "react-test-renderer";
 
 import { useRecording } from "./recording";
 import { useSessionSpeak, useVoiceSettings } from "./settings";
-import { useSpeakReplies } from "./useSpeakReplies";
+import { logSpeech, useSpeechLog } from "./speechLog";
+import { speakReplyNow, testVoice, useManualSpeech, useSpeakReplies } from "./useSpeakReplies";
 import { HOST_VOICE_FAILED, resetVoiceNotice, useVoiceNotice } from "./voiceNotice";
 
 const mockSpeak = jest.fn();
@@ -13,7 +14,9 @@ const mockStop = jest.fn(async () => {});
 jest.mock("expo-speech", () => ({
   speak: (...a: unknown[]) => mockSpeak(...a),
   stop: () => mockStop(),
+  getAvailableVoicesAsync: () => mockVoices(),
 }));
+const mockVoices = jest.fn(async (): Promise<{ identifier: string }[]> => [{ identifier: "v1" }]);
 const mockSet = jest.fn(async () => {});
 const mockRelease = jest.fn(async () => {});
 const mockLocalAvailable = jest.fn(async () => false);
@@ -67,6 +70,9 @@ const flush = async () => {
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
+  mockVoices.mockImplementation(async () => [{ identifier: "v1" }]);
+  useSpeechLog.getState().clear();
+  useManualSpeech.setState({ key: undefined, owner: -1 });
   useVoiceSettings.setState({ ttsDefault: true, mode: "full", engine: "iphone", voice: "v1", rate: 1.2 });
   mockCall.mockImplementation(hostAnswers);
   mockPlayed.length = 0;
@@ -412,5 +418,85 @@ describe("useSpeakReplies", () => {
     mockStopHost.mockClear();
     await act(async () => r.update(<Probe status="working" items={[...items, user("3")]} />));
     expect(mockStopHost).toHaveBeenCalledTimes(1);
+  });
+
+  const logged = () => useSpeechLog.getState().events.map((e) => e.text);
+
+  it("logs why it stays quiet: speaker off, not focused, busy", async () => {
+    useSessionSpeak.setState({ bySession: { "h:p": false } });
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(logged()).toContain("skipped: speaker off");
+
+    useSessionSpeak.setState({ bySession: {} });
+    useSpeechLog.getState().clear();
+    await act(async () => r.update(<Probe status="working" items={items} focused={false} />));
+    await act(async () => r.update(<Probe status="idle" items={items} focused={false} />));
+    await flush();
+    expect(logged()).toContain("skipped: not focused");
+
+    useSpeechLog.getState().clear();
+    mockSet.mockRejectedValueOnce(Object.assign(new Error("busy"), { code: "busy" }));
+    await act(async () => r.update(<Probe status="working" items={items} />));
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(logged()).toContain("audio session busy (microphone)");
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
+  it("logs the speak and its end", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(logged()).toContain("speaking (iphone, 11 chars, voice v1)");
+    await act(async () => mockSpeak.mock.calls[0][1].onDone());
+    expect(logged().at(-1)).toBe("done");
+  });
+
+  it("speaks with the system voice when the saved voice is missing", async () => {
+    mockVoices.mockResolvedValue([{ identifier: "other" }]);
+    await act(async () => {
+      await speakReplyNow("h", "Hello there", "a1");
+    });
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.objectContaining({ voice: undefined, rate: 1.2 }));
+    expect(logged()).toContain("saved voice missing, using default");
+  });
+
+  it("the play button path speaks with the speaker off, and a second call stops it", async () => {
+    useVoiceSettings.setState({ ttsDefault: false });
+    await act(async () => {
+      await speakReplyNow("h", "**Hello** there", "a1");
+    });
+    expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.objectContaining({ voice: "v1", rate: 1.2 }));
+    expect(useManualSpeech.getState().key).toBe("a1");
+    mockStop.mockClear();
+    await act(async () => {
+      await speakReplyNow("h", "**Hello** there", "a1");
+    });
+    expect(mockStop).toHaveBeenCalled();
+    expect(useManualSpeech.getState().key).toBeUndefined();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("the test voice speaks its phrase and logs it", async () => {
+    await act(async () => {
+      await testVoice();
+    });
+    expect(mockSpeak).toHaveBeenCalledWith("Voice output works.", expect.anything());
+    expect(logged()).toContain("test voice");
+  });
+
+  it("keeps only the last 20 events", () => {
+    for (let i = 0; i < 25; i++) logSpeech(`e${i}`);
+    const e = useSpeechLog.getState().events;
+    expect(e).toHaveLength(20);
+    expect(e[0].text).toBe("e5");
   });
 });

@@ -59,6 +59,7 @@ export default function RootLayout() {
         <Stack.Screen name="hosts/password" options={{ ...hostHeader, title: "Set up with password" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
+        <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
         <Stack.Screen name="tool" options={{ presentation: "modal", contentStyle: { backgroundColor: colors.bg } }} />
         <Stack.Screen

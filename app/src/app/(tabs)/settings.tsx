@@ -17,6 +17,7 @@ import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 import * as haptics from "@/ui/haptics";
 import { useVoiceSettings } from "@/voice/settings";
+import { testVoice } from "@/voice/useSpeakReplies";
 
 function HostRow({ host }: { host: Host }) {
   const router = useRouter();
@@ -129,6 +130,8 @@ function VoiceSection() {
   const voices = useDeviceVoices();
   const [picking, setPicking] = useState(false);
   const current = voices.find((v) => v.identifier === voice);
+  const router = useRouter();
+  const hosts = useHosts((s) => s.hosts);
   const setRate = (r: number) => set({ rate: Math.round(Math.min(RATE_MAX, Math.max(RATE_MIN, r)) * 10) / 10 });
   return (
     <>
@@ -238,6 +241,22 @@ function VoiceSection() {
             }
           >
             <Text bold>Speed</Text>
+          </Row>
+        </View>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+          <Row trailing={<Button label="Test voice" variant="secondary" onPress={() => (haptics.tap(), void testVoice(hosts[0]?.id))} />}>
+            <Text bold>Test voice</Text>
+            <Text variant="small" muted>
+              Voice: {voice ?? "system default"}. Speed: {rate.toFixed(1)}x.
+            </Text>
+          </Row>
+        </View>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+          <Row accessibilityLabel="Speech log" onPress={() => router.push("/speech-log" as never) /* typed routes regenerate on the next dev start */}>
+            <Text bold>Speech log</Text>
+            <Text variant="small" muted>
+              The last 20 speech events. It shows why a reply stays silent.
+            </Text>
           </Row>
         </View>
       </Card>
