@@ -1,5 +1,5 @@
 import type { FilePut } from "@zogssh/protocol";
-import * as ImagePicker from "expo-image-picker";
+import { requireOptionalNativeModule } from "expo";
 
 import type { RpcClient } from "@/rpc/RpcClient";
 
@@ -10,6 +10,14 @@ export const PHOTO_QUALITY = 0.8;
 /** Bound for one `files.put` call. A large photo over a slow link takes a while. */
 const UPLOAD_TIMEOUT_MS = 60_000;
 
+/**
+ * True when this binary has the photo picker. Builds before the picker was added do not, and an
+ * over-the-air update must not crash them, so the picker module loads only on use.
+ */
+export function photosAvailable(): boolean {
+  return requireOptionalNativeModule("ExponentImagePicker") != null;
+}
+
 /** A picked photo, ready to upload. */
 export type Photo = { uri: string; name: string; base64: string };
 
@@ -18,7 +26,8 @@ export type Photo = { uri: string; name: string; base64: string };
  * The picker gives JPEG data at `PHOTO_QUALITY` (HEIC photos are converted).
  */
 export async function pickPhotos(max: number): Promise<Photo[]> {
-  if (max <= 0) return [];
+  if (max <= 0 || !photosAvailable()) return [];
+  const ImagePicker = require("expo-image-picker") as typeof import("expo-image-picker");
   const r = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     allowsMultipleSelection: true,

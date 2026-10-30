@@ -10,7 +10,7 @@ import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 
-import { MAX_PHOTOS, pickPhotos, uploadPhotos, withPaths, type Photo } from "./attachments";
+import { MAX_PHOTOS, photosAvailable, pickPhotos, uploadPhotos, withPaths, type Photo } from "./attachments";
 import { answerChoice, useChoices, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
@@ -91,7 +91,7 @@ export function Composer({
   const matches =
     query !== undefined && slash.supported && slash.commands ? filterCommands(slash.commands, query).slice(0, MENU_MAX) : [];
   const showMenu = visible && online && !showChoices && matches.length > 0;
-  const canAttach = hasMethod(hello, "files.put");
+  const canAttach = hasMethod(hello, "files.put") && photosAvailable();
   const showPlus = canAttach || slash.supported;
 
   /**

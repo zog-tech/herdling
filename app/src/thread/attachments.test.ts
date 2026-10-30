@@ -1,6 +1,9 @@
 import * as ImagePicker from "expo-image-picker";
 
-import { jpegName, pickPhotos, withPaths } from "./attachments";
+import { jpegName, photosAvailable, pickPhotos, withPaths } from "./attachments";
+
+const mockOptional = jest.fn((_name: string): unknown => ({}));
+jest.mock("expo", () => ({ requireOptionalNativeModule: (n: string) => mockOptional(n) }));
 
 jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
@@ -37,5 +40,14 @@ test("pick_photos_returns_nothing_on_cancel_and_skips_assets_without_data", asyn
 
   launch.mockClear();
   expect(await pickPhotos(0)).toEqual([]);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+test("a_binary_without_the_picker_has_no_photos_and_never_opens_it", async () => {
+  mockOptional.mockReturnValueOnce(null).mockReturnValueOnce(null);
+  expect(photosAvailable()).toBe(false);
+  const launch = ImagePicker.launchImageLibraryAsync as jest.Mock;
+  launch.mockClear();
+  expect(await pickPhotos(4)).toEqual([]);
   expect(launch).not.toHaveBeenCalled();
 });
