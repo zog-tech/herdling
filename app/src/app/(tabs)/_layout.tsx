@@ -1,7 +1,8 @@
 import { Tabs } from "expo-router";
 import { Gauge, LayoutGrid, Settings, Workflow } from "lucide-react-native";
 
-import { colors, hitTarget, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, type } from "@/theme/tokens";
+import { Text } from "@/ui/Text";
 
 export default function TabsLayout() {
   return (
@@ -10,6 +11,13 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerShadowVisible: false,
+        // The header bar has a fixed height: its title grows with Dynamic Type only up to the row cap.
+        headerTitle: ({ children }) => (
+          <Text variant="title" accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+            {children}
+          </Text>
+        ),
+        tabBarAllowFontScaling: false,
         sceneStyle: { backgroundColor: colors.bg },
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border, minHeight: hitTarget },
         tabBarActiveTintColor: colors.accent,

@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHosts } from "@/hosts/store";
-import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { useThread } from "@/thread/useThread";
@@ -102,15 +102,18 @@ export function PeekSheet({
           <KindIcon size={20} color={colors.text} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text variant="title" numberOfLines={1} accessibilityRole="header">
+          <Text variant="title" numberOfLines={2} accessibilityRole="header">
             {title}
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text variant="caption" muted numberOfLines={1} style={{ flexShrink: 1 }}>
-              {item ? item.subtitle : hostName}
-            </Text>
-            {item ? <StatusPill item={item} now={now} /> : null}
-          </View>
+          <Text variant="caption" muted numberOfLines={1}>
+            {item ? item.subtitle : hostName}
+          </Text>
+          {/* Own row: the pill never squeezes "<host> · <kind>". */}
+          {item ? (
+            <View style={{ flexDirection: "row", marginTop: space.xs }}>
+              <StatusPill item={item} now={now} />
+            </View>
+          ) : null}
         </View>
         <Pressable
           accessibilityRole="button"
@@ -132,7 +135,7 @@ export function PeekSheet({
           })}
         >
           <ExternalLink size={16} color={colors.text} />
-          <Text variant="small" bold>
+          <Text variant="small" bold maxFontSizeMultiplier={denseScale.row}>
             Open
           </Text>
         </Pressable>

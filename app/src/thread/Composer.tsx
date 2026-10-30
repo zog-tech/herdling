@@ -1,11 +1,11 @@
 import { ArrowUp } from "lucide-react-native";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
-import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -58,6 +58,8 @@ export function Composer({
   onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const { rpc, status, hello } = useHostConn(hostId);
+  // The box text scales with Dynamic Type up to the row cap. The 5-line limit scales with it.
+  const inputScale = Math.min(useWindowDimensions().fontScale, denseScale.row);
   const [text, setText] = useState(initialText ?? "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | undefined>(initialError);
@@ -268,10 +270,11 @@ export function Composer({
           placeholder={online ? "Message the agent" : "Host offline"}
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Prompt"
+          maxFontSizeMultiplier={denseScale.row}
           style={{
             flex: 1,
             minHeight: hitTarget,
-            maxHeight: LINE * MAX_LINES + PAD_V * 2,
+            maxHeight: Math.round(LINE * inputScale) * MAX_LINES + PAD_V * 2,
             color: colors.text,
             fontSize: type.size.body,
             lineHeight: LINE,

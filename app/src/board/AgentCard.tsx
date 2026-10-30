@@ -6,7 +6,7 @@ import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "reac
 import Animated, { type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, hitTarget, motion, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, motion, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -17,6 +17,9 @@ import { cardActions, makeCardPress } from "./cardPress";
 import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
+/** Card title: room it keeps beside the pill, and its Dynamic Type cap (a dense row). */
+const TITLE_MIN = 140;
+const TITLE_SCALE = 2;
 /** A finger that moves further than this is a swipe or a scroll, not a press. */
 const PRESS_SLOP = 10;
 export type CardActions = {
@@ -220,7 +223,8 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
               <KindIcon size={18} color={colors.text} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.sm }}>
+              {/* Wraps: with large text the pill moves under the title instead of squeezing it. */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", columnGap: space.sm, rowGap: space.xs }}>
                 {unread ? (
                   <View
                     accessibilityElementsHidden
@@ -228,18 +232,19 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
                   />
                 ) : null}
                 {/* Two lines before the title truncates (Dynamic Type makes long names wrap). */}
-                <Text bold numberOfLines={2} style={{ flex: 1 }}>
+                <Text bold numberOfLines={2} maxFontSizeMultiplier={TITLE_SCALE} style={{ flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}>
                   {item.title}
                 </Text>
                 <StatusPill item={item} now={now} />
               </View>
-              <Text variant="caption" muted numberOfLines={1}>
+              <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
                 {item.subtitle}
               </Text>
               {line ? (
                 <Text
                   variant="small"
                   numberOfLines={2}
+                  maxFontSizeMultiplier={TITLE_SCALE}
                   color={bucket === "needs_you" ? colors.status.blocked : bucket === "idle" ? colors.textMuted : colors.text}
                   mono={bucket === "working" && !!item.line}
                 >
@@ -252,7 +257,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
         {/* A sibling, not a child, of the card: its touches never reach the card's tap and long press. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="More actions"
+          accessibilityLabel={`More actions for ${item.title}`}
           onPress={() => actions.onMenu(item)}
           hitSlop={4}
           style={({ pressed }) => ({

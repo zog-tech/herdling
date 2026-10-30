@@ -29,7 +29,7 @@ export function StatusPill({ item, now }: { item: BoardItem; now: number }) {
     >
       {/* Working: the same spinner as the session header (static under Reduce Motion). */}
       {item.bucket === "working" ? <StatusIcon status="working" size={12} color={color} /> : <Icon size={12} color={color} />}
-      <Text variant="caption" color={color} bold numberOfLines={1} maxFontSizeMultiplier={denseScale.pill}>
+      <Text variant="caption" color={color} bold numberOfLines={1} maxFontSizeMultiplier={denseScale.pill} style={{ flexShrink: 1 }}>
         {text}
       </Text>
     </View>

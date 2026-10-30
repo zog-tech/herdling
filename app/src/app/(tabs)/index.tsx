@@ -21,7 +21,7 @@ import { HostMeters } from "@/hosts/HostMeters";
 import { needsZogsshdUpdate, UPDATE_ZOGSSHD_HINT } from "@/hosts/methods";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { StateNotice } from "@/ui/StateNotice";
@@ -171,7 +171,15 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
       }}
     >
       {meta ? <meta.Icon size={14} color={meta.color} /> : <Server size={14} color={colors.textMuted} />}
-      <Text accessibilityRole="header" variant="small" bold color={meta?.color ?? colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+      <Text
+        accessibilityRole="header"
+        variant="small"
+        bold
+        color={meta?.color ?? colors.textMuted}
+        numberOfLines={1}
+        maxFontSizeMultiplier={denseScale.row}
+        style={{ flex: 1 }}
+      >
         {title.toUpperCase()}
       </Text>
       {onMenu ? (
@@ -273,7 +281,9 @@ export default function BoardScreen() {
           style={{ minWidth: hitTarget, minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.xs, paddingHorizontal: space.md }}
         >
           <ListFilter size={18} color={colors.text} />
-          <Text variant="small">{GROUP_LABEL[groupBy]}</Text>
+          <Text variant="small" maxFontSizeMultiplier={denseScale.row}>
+            {GROUP_LABEL[groupBy]}
+          </Text>
         </Pressable>
       ),
     });
