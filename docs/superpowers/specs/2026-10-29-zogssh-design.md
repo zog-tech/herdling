@@ -4,7 +4,7 @@ Working name: **Zogssh**. The iPhone app is "Zogssh". The host companion is `zog
 
 ## Intent
 
-The maintainer runs coding agents in [herdr](https://herdr.dev) on three machines: a MacBook (laptop), a Mac Mini (macOS, always on) and a dev server (Ubuntu, always on). Away from the laptop, for example on a train, they want to start a new idea or continue an existing session from the phone, in seconds, "like pulling out the laptop without having it".
+The maintainer runs coding agents in [herdr](https://herdr.dev) on three machines: a laptop, an always-on macOS desktop and an always-on Linux server. Away from the laptop, for example on a train, they want to start a new idea or continue an existing session from the phone, in seconds, "like pulling out the laptop without having it".
 
 Zogssh is a phone app that the maintainer owns. It is a UI layer on top of herdr, in the spirit of [herdr-gpui](https://github.com/penso/herdr-gpui), optimized for the phone. Prior art: Moshi (getmoshi.app), a paid iOS app for agents over SSH.
 

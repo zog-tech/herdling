@@ -32,8 +32,8 @@ import type { FoundService } from "../../modules/ssh";
 import { applyFound, applyLost, type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from "./discovery";
 import type { Host } from "./store";
 
-const MINI: FoundService = {
-  name: "mini",
+const STUDIO: FoundService = {
+  name: "studio",
   address: "10.0.0.5",
   pairPort: 7790,
   txt: { user: "sam", ssh_port: "2222", fp: "SHA256:abc", ver: "0.2.0" },
@@ -44,9 +44,9 @@ function host(id: string, address: string, fingerprint?: string): Host {
 }
 
 test("found_parses_txt", () => {
-  expect(applyFound([], MINI)).toEqual<Discovered[]>([
+  expect(applyFound([], STUDIO)).toEqual<Discovered[]>([
     {
-      name: "mini",
+      name: "studio",
       address: "10.0.0.5",
       pairPort: 7790,
       user: "sam",
@@ -59,32 +59,32 @@ test("found_parses_txt", () => {
 
 test("bad_ssh_port_defaults_to_22", () => {
   for (const ssh_port of ["", "abc", "0", "70000", "22x", "-1"]) {
-    const [d] = applyFound([], { ...MINI, txt: { ssh_port } });
+    const [d] = applyFound([], { ...STUDIO, txt: { ssh_port } });
     expect(d.sshPort).toBe(22);
     expect(d.user).toBeUndefined();
     expect(d.fingerprint).toBeUndefined();
   }
-  expect(applyFound([], { ...MINI, txt: {} })[0].sshPort).toBe(22);
+  expect(applyFound([], { ...STUDIO, txt: {} })[0].sshPort).toBe(22);
 });
 
 test("found_twice_replaces", () => {
-  let list = applyFound([], MINI);
-  list = applyFound(list, { ...MINI, name: "box" });
-  list = applyFound(list, { ...MINI, address: "10.0.0.6" });
+  let list = applyFound([], STUDIO);
+  list = applyFound(list, { ...STUDIO, name: "box" });
+  list = applyFound(list, { ...STUDIO, address: "10.0.0.6" });
   expect(list.map((d) => [d.name, d.address])).toEqual([
     ["box", "10.0.0.5"],
-    ["mini", "10.0.0.6"],
+    ["studio", "10.0.0.6"],
   ]);
 });
 
 test("lost_removes", () => {
-  const list = applyFound(applyFound([], MINI), { ...MINI, name: "box" });
-  expect(applyLost(list, "mini").map((d) => d.name)).toEqual(["box"]);
+  const list = applyFound(applyFound([], STUDIO), { ...STUDIO, name: "box" });
+  expect(applyLost(list, "studio").map((d) => d.name)).toEqual(["box"]);
   expect(applyLost(list, "other")).toEqual(list);
 });
 
 test("known_host_by_fingerprint_then_address", () => {
-  const [d] = applyFound([], MINI);
+  const [d] = applyFound([], STUDIO);
   const byAddress = host("a", "10.0.0.5");
   const byFp = host("b", "10.0.0.9", "SHA256:abc");
   expect(knownHostFor(d, [byAddress, byFp])?.id).toBe("b");
@@ -127,9 +127,9 @@ test("use_discovery_browses_only_while_active", async () => {
   expect(latest.a.status).toBe("starting");
   await act(async () => {
     mockSsh.emit("onBrowseState", { state: "ready" });
-    mockSsh.emit("onServiceFound", MINI);
-    mockSsh.emit("onServiceFound", { ...MINI, name: "box" });
-    mockSsh.emit("onServiceLost", { name: "mini" });
+    mockSsh.emit("onServiceFound", STUDIO);
+    mockSsh.emit("onServiceFound", { ...STUDIO, name: "box" });
+    mockSsh.emit("onServiceLost", { name: "studio" });
   });
   expect(latest.a.status).toBe("ready");
   expect(names("a")).toEqual(["box"]);
@@ -149,9 +149,9 @@ test("two_consumers_share_one_browse", async () => {
     </>,
   );
   expect(mockSsh.startBrowse).toHaveBeenCalledTimes(1);
-  await act(async () => mockSsh.emit("onServiceFound", MINI));
-  expect(names("a")).toEqual(["mini"]);
-  expect(names("b")).toEqual(["mini"]);
+  await act(async () => mockSsh.emit("onServiceFound", STUDIO));
+  expect(names("a")).toEqual(["studio"]);
+  expect(names("b")).toEqual(["studio"]);
 
   // "a" stops: the browse goes on for "b".
   await act(async () =>
@@ -164,8 +164,8 @@ test("two_consumers_share_one_browse", async () => {
   );
   expect(mockSsh.stopBrowse).not.toHaveBeenCalled();
   expect(names("a")).toEqual([]);
-  await act(async () => mockSsh.emit("onServiceFound", { ...MINI, name: "box" }));
-  expect(names("b")).toEqual(["box", "mini"]);
+  await act(async () => mockSsh.emit("onServiceFound", { ...STUDIO, name: "box" }));
+  expect(names("b")).toEqual(["box", "studio"]);
 
   // The last consumer stops: the browse stops once.
   await act(async () => tree.unmount());
@@ -181,11 +181,11 @@ test("browse_failure_sets_failed_status", async () => {
 
   // A native "failed" event clears the list; "waiting" keeps it and shows the reason.
   tree = await mount(<Probe id="a" active />);
-  await act(async () => mockSsh.emit("onServiceFound", MINI));
+  await act(async () => mockSsh.emit("onServiceFound", STUDIO));
   await act(async () => mockSsh.emit("onBrowseState", { state: "waiting", error: "-65570: PolicyDenied" }));
   expect(latest.a.status).toBe("waiting");
   expect(latest.a.error).toBe("-65570: PolicyDenied");
-  expect(names("a")).toEqual(["mini"]);
+  expect(names("a")).toEqual(["studio"]);
   await act(async () => mockSsh.emit("onBrowseState", { state: "failed", error: "-65555: NoAuth" }));
   expect(latest.a).toEqual({ list: [], status: "failed", error: "-65555: NoAuth" });
   await act(async () => tree.unmount());

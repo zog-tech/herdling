@@ -4,7 +4,7 @@ use zogsshd::serve::bonjour::{advert_command, txt, AdvertInfo, SERVICE_TYPE};
 
 fn info(fp: Option<&str>) -> AdvertInfo {
     AdvertInfo {
-        host: "mini".into(),
+        host: "studio".into(),
         user: "sam".into(),
         ssh_port: 22,
         pair_port: 7790,
@@ -21,13 +21,13 @@ fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
 fn txt_has_all_fields() {
     assert_eq!(
         txt(&info(Some("SHA256:abc"))),
-        pairs(&[("host", "mini"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0"), ("fp", "SHA256:abc")])
+        pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0"), ("fp", "SHA256:abc")])
     );
 }
 
 #[test]
 fn txt_omits_missing_fp() {
-    assert_eq!(txt(&info(None)), pairs(&[("host", "mini"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0")]));
+    assert_eq!(txt(&info(None)), pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0")]));
 }
 
 fn strs(v: &[&str]) -> Vec<String> {
@@ -40,7 +40,7 @@ fn macos_uses_dns_sd() {
     assert_eq!(prog, "dns-sd");
     assert_eq!(
         args,
-        strs(&["-R", "mini", "_zogssh._tcp", "local", "7790", "host=mini", "user=sam", "ssh_port=22", "ver=0.2.0", "fp=SHA256:abc"])
+        strs(&["-R", "studio", "_zogssh._tcp", "local", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "fp=SHA256:abc"])
     );
 }
 
@@ -64,7 +64,7 @@ fn fp_omitted_when_none() {
 fn linux_with_avahi() {
     let (prog, args) = advert_command("linux", true, &info(None)).unwrap();
     assert_eq!(prog, "avahi-publish-service");
-    assert_eq!(args, strs(&["mini", "_zogssh._tcp", "7790", "host=mini", "user=sam", "ssh_port=22", "ver=0.2.0"]));
+    assert_eq!(args, strs(&["studio", "_zogssh._tcp", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0"]));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn mdns_fallback_is_browsable() {
     let deadline = Instant::now() + Duration::from_secs(5);
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         if let Ok(ServiceEvent::ServiceResolved(s)) = rx.recv_timeout(left) {
-            if s.get_fullname().starts_with("mini.") {
+            if s.get_fullname().starts_with("studio.") {
                 assert_eq!(s.get_property_val_str("user"), Some("sam"));
                 return;
             }

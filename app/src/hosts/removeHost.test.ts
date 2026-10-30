@@ -17,7 +17,7 @@ import { useHosts } from "./store";
 
 function seed(): string {
   useHosts.setState({ hosts: [] });
-  return useHosts.getState().addHost({ name: "mini", address: "10.0.0.5", port: 22, user: "sam" }).id;
+  return useHosts.getState().addHost({ name: "studio", address: "10.0.0.5", port: 22, user: "sam" }).id;
 }
 
 describe("removeHostEverywhere", () => {

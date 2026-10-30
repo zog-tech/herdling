@@ -199,7 +199,7 @@ pub struct AdvertInfo { pub host: String, pub user: String, pub ssh_port: u16, p
 pub fn txt(info: &AdvertInfo) -> Vec<(String, String)>;  // host, user, ssh_port, ver, fp (omitted when None)
 pub fn advertise(info: &AdvertInfo) -> anyhow::Result<mdns_sd::ServiceDaemon>; // instance name = host; enable_addr_auto; port = pair_port
 ```
-- [ ] **Step 1: Tests:** `txt_has_all_fields` — `txt(&AdvertInfo{host:"mini", user:"sam", ssh_port:22, pair_port:7790, version:"0.2.0", fingerprint:Some("SHA256:abc")})` == `[("host","mini"),("user","sam"),("ssh_port","22"),("ver","0.2.0"),("fp","SHA256:abc")]`; `txt_omits_missing_fp`; `#[ignore] advert_is_browsable` — advertise, browse `SERVICE_TYPE` with a second daemon, resolved within 5 s with TXT `user == "sam"`.
+- [ ] **Step 1: Tests:** `txt_has_all_fields` — `txt(&AdvertInfo{host:"studio", user:"sam", ssh_port:22, pair_port:7790, version:"0.2.0", fingerprint:Some("SHA256:abc")})` == `[("host","studio"),("user","sam"),("ssh_port","22"),("ver","0.2.0"),("fp","SHA256:abc")]`; `txt_omits_missing_fp`; `#[ignore] advert_is_browsable` — advertise, browse `SERVICE_TYPE` with a second daemon, resolved within 5 s with TXT `user == "sam"`.
 - [ ] **Step 2:** fail. **Step 3:** implement; `serve::run` starts the advert and keeps the daemon alive; an advert error logs and does not stop `serve`.
 - [ ] **Step 4:** `cargo test` pass; `cargo test -- --ignored advert_is_browsable` passes on macOS; manual `dns-sd -B _zogssh._tcp` lists the host.
 - [ ] **Step 5:** Commit `feat(companion): bonjour advert for _zogssh._tcp`.
@@ -227,7 +227,7 @@ export function knownHostFor(d: Discovered, hosts: Host[]): Host | undefined; //
 ```
 Swift: on `browseResultsChangedHandler`, for each added `.service` result, open an `NWConnection` to the endpoint (TCP), on `.ready` read `currentPath?.remoteEndpoint` → IPv4 string (prefer IPv4; strip `%iface`), cancel, then emit `onServiceFound`. Resolve timeout 3 s → `address: null`. `app.json`: `NSLocalNetworkUsageDescription: "Zogssh finds your computers that run zogsshd on the local network."`, `NSBonjourServices: ["_zogssh._tcp"]`, `NSAppTransportSecurity: { NSAllowsLocalNetworking: true }` (pairing is plain HTTP on the LAN or WireGuard).
 
-- [ ] **Step 1: Tests:** `found_parses_txt` — `{name:"mini", address:"10.0.0.5", pairPort:7790, txt:{user:"sam", ssh_port:"2222", fp:"SHA256:abc", ver:"0.2.0"}}` → `{…, user:"sam", sshPort:2222, fingerprint:"SHA256:abc"}`; `bad_ssh_port_defaults_to_22`; `found_twice_replaces`; `lost_removes`; `known_host_by_fingerprint_then_address`.
+- [ ] **Step 1: Tests:** `found_parses_txt` — `{name:"studio", address:"10.0.0.5", pairPort:7790, txt:{user:"sam", ssh_port:"2222", fp:"SHA256:abc", ver:"0.2.0"}}` → `{…, user:"sam", sshPort:2222, fingerprint:"SHA256:abc"}`; `bad_ssh_port_defaults_to_22`; `found_twice_replaces`; `lost_removes`; `known_host_by_fingerprint_then_address`.
 - [ ] **Step 2:** `pnpm --filter app test discovery` → fail. **Step 3:** implement JS + Swift.
 - [ ] **Step 4:** pass; `pnpm --filter app typecheck`; dev build; simulator with `serve` running on this Mac shows the host (log the event from a temporary dev button, removed before commit).
 - [ ] **Step 5:** Commit `feat(app): bonjour browser and discovery store`.
@@ -284,7 +284,7 @@ export async function removeHostEverywhere(hostId: string, deps?: { rpc?: Pick<R
 
 - [ ] **Step 1: Tests:**
   - `parse_pair_url` — `"zogssh://pair?h=10.0.0.5&p=7790&c=123456"` → `{address:"10.0.0.5", port:7790, code:"123456"}`; missing `c` → null; `c=12345` → null; other scheme → null.
-  - `pair_posts_request_and_saves_host` — mock fetch returns 200 `{host_name:"mini", user:"sam", ssh_port:22, host_key_fingerprint:"SHA256:abc"}` → fetch URL `http://10.0.0.5:7790/pair`, body has `code:"123456"`, `device_id` from `getDeviceId`, `public_key` from mocked `ensureKey`, `host_id` equal to the saved host id; saved host `{address:"10.0.0.5", port:22, user:"sam", fingerprint:"SHA256:abc", name:"mini"}`.
+  - `pair_posts_request_and_saves_host` — mock fetch returns 200 `{host_name:"studio", user:"sam", ssh_port:22, host_key_fingerprint:"SHA256:abc"}` → fetch URL `http://10.0.0.5:7790/pair`, body has `code:"123456"`, `device_id` from `getDeviceId`, `public_key` from mocked `ensureKey`, `host_id` equal to the saved host id; saved host `{address:"10.0.0.5", port:22, user:"sam", fingerprint:"SHA256:abc", name:"studio"}`.
   - `pair_maps_errors` — 403 `{error:"bad_code"}` → `PairFailed` code `bad_code`; fetch rejects → `unreachable`; no host saved.
   - `remove_revokes_then_deletes` — rpc mock receives `pair.revoke {device_id, public_key}`; host gone. `remove_offline_still_deletes` — no rpc → `{revoked:false}`, host gone.
 - [ ] **Step 2:** fail. **Step 3:** implement (`npx expo install expo-camera expo-device`).
