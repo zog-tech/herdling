@@ -3,6 +3,7 @@ import { AccessibilityInfo, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { colors, motion, space } from "@/theme/tokens";
+import { LanternGlow } from "./LanternGlow";
 import { STATUS_META, StatusIcon, statusSpoken, useElapsed, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
 import { SPOKEN_TICK_MS, TickingDuration } from "./TickingDuration";
@@ -10,6 +11,7 @@ import { SPOKEN_TICK_MS, TickingDuration } from "./TickingDuration";
 /** Only these states show a row. Idle, done and unknown hide it. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
 const ROW_HEIGHT = 32;
+const ROW_ICON = 16;
 const SLIDE = 6;
 const EASE_OUT = Easing.bezier(...motion.ease.out);
 
@@ -76,7 +78,10 @@ export const StatusRow = memo(function StatusRow({ status, since }: { status: Ba
         accessibilityLabel={text}
         style={{ height: ROW_HEIGHT, flexDirection: "row", alignItems: "center", gap: space.xs, paddingHorizontal: space.lg }}
       >
-        <StatusIcon status={shown} size={16} />
+        <View style={{ width: ROW_ICON, height: ROW_ICON }}>
+          <LanternGlow active={working} size={ROW_ICON} />
+          <StatusIcon status={shown} size={ROW_ICON} />
+        </View>
         <Text variant="caption" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {label}
         </Text>

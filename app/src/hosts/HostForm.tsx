@@ -159,7 +159,7 @@ export function HostForm({ host }: { host?: Host }) {
           {waiting ? <Text muted>Connecting…</Text> : null}
           {hello ? (
             <View style={{ gap: space.xs }} accessibilityLiveRegion="polite">
-              <Text bold color={colors.accent}>
+              <Text bold color={colors.status.done}>
                 Connected
               </Text>
               <Text>

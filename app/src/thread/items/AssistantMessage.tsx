@@ -57,7 +57,7 @@ const mdStyles = StyleSheet.create({
   heading6: { fontSize: BODY, lineHeight: LINE, fontWeight: "600" },
   strong: { fontWeight: "700" },
   em: { fontStyle: "italic" },
-  link: { color: colors.status.working, textDecorationLine: "underline" },
+  link: { color: colors.link, textDecorationLine: "underline" },
   code_inline: {
     fontFamily: fontFamily.mono,
     fontSize: CODE,
@@ -90,7 +90,7 @@ const mdStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  codeScroll: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
+  codeScroll: { backgroundColor: colors.sunken, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
   codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
 });
 

@@ -8,6 +8,7 @@ import { colors, hitTarget, radius, space, state as uiState, type } from "@/them
 import { spokenDuration } from "@/ui/format";
 import { StatusIcon, useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
+import { TopHighlight } from "@/ui/TopHighlight";
 import { SPOKEN_TICK_MS, TickingDuration } from "@/ui/TickingDuration";
 
 import { HScrollView } from "../HScrollView";
@@ -33,7 +34,7 @@ function Block({ label, text, color }: { label: string; text: string; color?: st
       <Text variant="caption" muted>
         {label}
       </Text>
-      <HScrollView showsHorizontalScrollIndicator={false} style={{ backgroundColor: colors.bg, borderRadius: radius.sm }}>
+      <HScrollView showsHorizontalScrollIndicator={false} style={{ backgroundColor: colors.sunken, borderRadius: radius.sm }}>
         <Text
           selectable
           style={{
@@ -112,7 +113,8 @@ export const ToolCard = memo(function ToolCard({
   const stateLabel = running ? "running" : state === "ok" ? "done" : "failed";
   const stateColor = running ? colors.status.working : state === "ok" ? colors.status.done : colors.danger;
   return (
-    <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.edge, backgroundColor: colors.card }}>
+    <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.edge, backgroundColor: colors.card, overflow: "hidden" }}>
+      <TopHighlight inset={radius.md} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${spokenTime ? `, ${spokenTime}` : ""}`}
@@ -124,7 +126,8 @@ export const ToolCard = memo(function ToolCard({
           alignItems: "center",
           gap: space.sm,
           paddingHorizontal: space.md,
-          opacity: pressed ? uiState.pressedOpacity : 1,
+          // Pressed: the raised fill, so the row reads as one control.
+          backgroundColor: pressed ? colors.raised : "transparent",
         })}
       >
         {running ? (

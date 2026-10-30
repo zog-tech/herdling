@@ -143,7 +143,7 @@ export default function ToolScreen() {
           <RotateCcw size={20} color={font === FONT_DEFAULT ? colors.textMuted : colors.text} />
         </IconButton>
         <IconButton label={copied ? "Copied" : "Copy"} onPress={() => void copy()}>
-          <Copy size={20} color={copied ? colors.accent : colors.text} />
+          <Copy size={20} color={copied ? colors.status.done : colors.text} />
         </IconButton>
         <IconButton label="Close" onPress={close}>
           <X size={22} color={colors.text} />

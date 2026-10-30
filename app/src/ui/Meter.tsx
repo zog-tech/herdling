@@ -7,7 +7,8 @@ import { Text } from "./Text";
 export function meterColor(value: number): string {
   if (value >= 90) return colors.danger;
   if (value >= 70) return colors.status.blocked;
-  return colors.accent;
+  // Calm stone while it is fine: gold stays for actions and work.
+  return colors.textMuted;
 }
 
 /** Labeled bar. `value` is 0..100. The text carries the value too, so color is never the only signal. */
@@ -26,7 +27,7 @@ export function Meter({ label, value, detail }: { label: string; value: number; 
         <Text variant="caption" muted>
           {label}
         </Text>
-        <Text variant="caption" bold numberOfLines={1}>
+        <Text variant="caption" bold numberOfLines={1} style={{ fontVariant: ["tabular-nums"] }}>
           {text}
         </Text>
       </View>

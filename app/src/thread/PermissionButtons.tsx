@@ -46,8 +46,8 @@ export function PermissionButtons({
               borderRadius: radius.md,
               borderWidth: 1,
               borderColor: destructive ? colors.danger : c.selected ? colors.accent : colors.border,
-              backgroundColor: colors.card,
-              opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
+              backgroundColor: pressed ? colors.raised : colors.card,
+              opacity: disabled ? state.disabledOpacity : 1,
             })}
           >
             <Text mono bold color={fg}>

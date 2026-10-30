@@ -38,9 +38,10 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
         gap: space.sm,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: border,
-        backgroundColor: bg,
-        opacity: off ? state.disabledOpacity : pressed ? state.pressedFill : 1,
+        borderColor: pressed && variant === "primary" ? colors.accentPressed : border,
+        // Pressed: gold deepens; an outline button gets the raised fill.
+        backgroundColor: pressed ? (variant === "primary" ? colors.accentPressed : colors.raised) : bg,
+        opacity: off ? state.disabledOpacity : 1,
       })}
     >
       {loading ? <DelayedSpinner color={fg} fallback={Icon ? <Icon size={18} color={fg} /> : null} /> : Icon ? <Icon size={18} color={fg} /> : null}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { denseScale, radius, space } from "@/theme/tokens";
+import { LanternGlow } from "@/ui/LanternGlow";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { RollingText } from "@/ui/RollingText";
 import { Text, textStyle } from "@/ui/Text";
@@ -10,6 +11,7 @@ import type { BoardItem } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
 import { pillParts, pillText } from "./elapsed";
 
+const PILL_ICON = 12;
 /** Below this age the pill shows seconds, so it ticks every second on its own. */
 const SECONDS_UNTIL_MS = 60_000;
 /** The Board clock ticks every 5 s. A `now` older than this means the Board stopped it. */
@@ -53,8 +55,11 @@ export function StatusPill({ item, now: boardNow }: { item: BoardItem; now: numb
         borderColor: color,
       }}
     >
-      {/* Working: the same spinner as the session header (static under Reduce Motion). */}
-      {item.bucket === "working" ? <StatusIcon status="working" size={12} color={color} /> : <Icon size={12} color={color} />}
+      {/* Working: the same spinner as the session header (static under Reduce Motion), lit by the lantern glow. */}
+      <View style={{ width: PILL_ICON, height: PILL_ICON }}>
+        <LanternGlow active={item.bucket === "working"} size={PILL_ICON} />
+        {item.bucket === "working" ? <StatusIcon status="working" size={PILL_ICON} color={color} /> : <Icon size={PILL_ICON} color={color} />}
+      </View>
       <Text {...textProps} numberOfLines={1} style={{ flexShrink: 1 }}>
         {label}
       </Text>

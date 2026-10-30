@@ -20,7 +20,7 @@ function Bar({ levels, index }: { levels: SharedValue<number[]>; index: number }
   }));
   return (
     <Animated.View
-      style={[{ width: BAR_W, height: HEIGHT, borderRadius: BAR_W / 2, backgroundColor: colors.text }, style]}
+      style={[{ width: BAR_W, height: HEIGHT, borderRadius: BAR_W / 2, backgroundColor: colors.accent }, style]}
     />
   );
 }

@@ -171,16 +171,9 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
       }}
     >
       {meta ? <meta.Icon size={14} color={meta.color} /> : <Server size={14} color={colors.textMuted} />}
-      <Text
-        accessibilityRole="header"
-        variant="small"
-        bold
-        color={meta?.color ?? colors.textMuted}
-        numberOfLines={1}
-        maxFontSizeMultiplier={denseScale.row}
-        style={{ flex: 1 }}
-      >
-        {title.toUpperCase()}
+      {/* Small caps style in stone; the icon keeps the bucket color. */}
+      <Text accessibilityRole="header" variant="section" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flex: 1 }}>
+        {title}
       </Text>
       {onMenu ? (
         <Pressable
@@ -402,7 +395,7 @@ export default function BoardScreen() {
           ListFooterComponent={
             // Room so the floating button never covers the last card.
             <View style={{ gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 56 + space.lg + insets.bottom }}>
-              <Text variant="small" muted>
+              <Text variant="section" accessibilityRole="header">
                 HOSTS
               </Text>
               {hosts.map((h) => (
@@ -424,10 +417,9 @@ export default function BoardScreen() {
           height: 56,
           minHeight: hitTarget,
           borderRadius: radius.pill,
-          backgroundColor: colors.accent,
+          backgroundColor: pressed ? colors.accentPressed : colors.accent,
           alignItems: "center",
           justifyContent: "center",
-          opacity: pressed ? state.pressedFill : 1,
         })}
       >
         <Plus color={colors.onAccent} size={28} />

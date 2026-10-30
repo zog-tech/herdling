@@ -2,7 +2,7 @@ import { LayoutGrid } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { Pressable, ScrollView } from "react-native";
 
-import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -24,7 +24,9 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
-  const fg = active ? colors.onAccent : count === 0 ? colors.textMuted : color;
+  // Selected: a raised fill and an edge in the chip color (no large bright fill). Gold for "All".
+  // At rest "All" (no count) is ivory, so gold shows only when it is selected.
+  const fg = active ? color : count === undefined ? colors.text : count === 0 ? colors.textMuted : color;
   return (
     <Pressable
       accessibilityRole="button"
@@ -39,12 +41,12 @@ function Chip({
         flexDirection: "row",
         alignItems: "center",
         gap: space.xs,
-        paddingHorizontal: space.md,
         borderRadius: radius.pill,
-        borderWidth: 1,
+        borderWidth: active ? 2 : 1,
+        // Keep the same outer size when the edge gets thicker.
+        paddingHorizontal: active ? space.md - 1 : space.md,
         borderColor: active ? color : colors.edge,
-        backgroundColor: active ? color : colors.card,
-        opacity: pressed ? state.pressedFill : 1,
+        backgroundColor: active || pressed ? colors.raised : colors.card,
       })}
     >
       <Icon size={14} color={fg} />
@@ -77,7 +79,7 @@ export function BoardChips({
       contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.sm }}
       accessibilityRole="tablist"
     >
-      <Chip label="All" color={colors.text} Icon={LayoutGrid} active={filter === null} onPress={() => onChange(null)} />
+      <Chip label="All" color={colors.accent} Icon={LayoutGrid} active={filter === null} onPress={() => onChange(null)} />
       {BUCKETS.map((b) => (
         <Chip
           key={b}

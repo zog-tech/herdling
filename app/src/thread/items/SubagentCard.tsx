@@ -5,6 +5,7 @@ import { Pressable, View } from "react-native";
 
 import { colors, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { TopHighlight } from "@/ui/TopHighlight";
 import { useThreadLog } from "../ThreadLogContext";
 
 /** Status words from the log mapped to icon + color (never color alone). */
@@ -63,6 +64,7 @@ export const SubagentCard = memo(function SubagentCard({
         gap: space.xs,
       }}
     >
+      <TopHighlight inset={radius.md} />
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.sm }}>
         <View style={{ paddingTop: 2 }}>
           <Bot size={16} color={colors.textMuted} />

@@ -40,7 +40,7 @@ export const UserBubble = memo(function UserBubble({ text, images }: { text: str
           style={{ gap: space.xs }}
         >
           {body}
-          <Text variant="caption" bold color={colors.status.working}>
+          <Text variant="caption" bold muted>
             {open ? "Show less" : "Show more"}
           </Text>
         </Pressable>

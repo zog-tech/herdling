@@ -56,7 +56,8 @@ function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you"; labe
           accessibilityLabel={label}
           value={value}
           onValueChange={(v) => setPref(pref, v)}
-          trackColor={{ false: colors.raised, true: colors.accent }}
+          trackColor={{ false: colors.edge, true: colors.accent }}
+          ios_backgroundColor={colors.edge}
         />
       }
     >
@@ -74,7 +75,7 @@ function FeelSection() {
   const set = haptics.useFeelSettings((s) => s.set);
   return (
     <>
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         FEEL
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
@@ -87,7 +88,8 @@ function FeelSection() {
                 set({ haptics: v });
                 if (v) haptics.tap();
               }}
-              trackColor={{ false: colors.raised, true: colors.accent }}
+              trackColor={{ false: colors.edge, true: colors.accent }}
+          ios_backgroundColor={colors.edge}
             />
           }
         >
@@ -136,7 +138,7 @@ function VoiceSection() {
   const setRate = (r: number) => set({ rate: Math.round(Math.min(RATE_MAX, Math.max(RATE_MIN, r)) * 10) / 10 });
   return (
     <>
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         VOICE
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
@@ -146,7 +148,8 @@ function VoiceSection() {
               accessibilityLabel="Speak replies by default"
               value={ttsDefault}
               onValueChange={(v) => set({ ttsDefault: v })}
-              trackColor={{ false: colors.raised, true: colors.accent }}
+              trackColor={{ false: colors.edge, true: colors.accent }}
+          ios_backgroundColor={colors.edge}
             />
           }
         >
@@ -270,7 +273,7 @@ export default function SettingsScreen() {
   const hosts = useHosts((s) => s.hosts);
   return (
     <Screen>
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         HOSTS
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
@@ -290,7 +293,7 @@ export default function SettingsScreen() {
         )}
       </Card>
       <Button label="Add host" Icon={Plus} onPress={() => router.push("/hosts/discover")} />
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         NOTIFICATIONS
       </Text>
       <Card style={{ paddingVertical: space.sm }}>

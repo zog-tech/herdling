@@ -126,7 +126,7 @@ export function VoiceInputSection() {
   const label: Record<InputEngine, string> = { parakeet: "Parakeet", host: "Host", apple: "Apple" };
   return (
     <>
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         VOICE INPUT
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
@@ -171,7 +171,8 @@ export function VoiceInputSection() {
                     accessibilityLabel="Download over cellular"
                     value={allowCellular}
                     onValueChange={(v) => set({ allowCellular: v })}
-                    trackColor={{ false: colors.raised, true: colors.accent }}
+                    trackColor={{ false: colors.edge, true: colors.accent }}
+          ios_backgroundColor={colors.edge}
                   />
                 }
               >

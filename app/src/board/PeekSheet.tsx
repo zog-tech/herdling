@@ -149,7 +149,7 @@ export function PeekSheet({
       ) : null}
 
       {item?.bucket === "working" && item.line ? (
-        <Text variant="small" mono color={colors.status.working} numberOfLines={2} style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+        <Text variant="small" mono numberOfLines={2} style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
           {item.line}
         </Text>
       ) : null}

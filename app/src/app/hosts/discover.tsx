@@ -129,7 +129,7 @@ export default function DiscoverScreen() {
 
   return (
     <Screen>
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         ON THIS NETWORK
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
@@ -143,7 +143,7 @@ export default function DiscoverScreen() {
         ) : null}
       </Card>
 
-      <Text variant="small" muted>
+      <Text variant="section" accessibilityRole="header">
         OTHER WAYS
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
