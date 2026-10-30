@@ -31,8 +31,8 @@ jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemA
 const user = (id: string): ThreadItem => ({ kind: "user", id, ts: 0, text: "hi" });
 const asst = (id: string, markdown: string): ThreadItem => ({ kind: "assistant", id, ts: 0, markdown });
 
-function Probe(p: { status?: AgentStatus; items: ThreadItem[]; speakNow?: boolean }) {
-  useSpeakReplies("h", "p", p.status, p.items, { speakNow: p.speakNow });
+function Probe(p: { status?: AgentStatus; items: ThreadItem[]; speakNow?: boolean; focused?: boolean }) {
+  useSpeakReplies("h", "p", p.status, p.items, { speakNow: p.speakNow, focused: p.focused });
   return null;
 }
 
@@ -116,6 +116,39 @@ describe("useSpeakReplies", () => {
     await flush();
     expect(mockSpeak).not.toHaveBeenCalled();
     expect(mockStop).toHaveBeenCalled();
+  });
+
+  it("a session under another screen speaks nothing and stops speech when it loses focus", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} focused={false} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} focused={false} />));
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+    expect(mockHaptic).not.toHaveBeenCalled();
+
+    // Focused again, then covered while a speak waits for the settle delay: the speak is dropped.
+    await act(async () => r.update(<Probe status="working" items={items} />));
+    await act(async () => r.update(<Probe status="idle" items={[...items, asst("3", "Next")]} />));
+    mockStop.mockClear();
+    await act(async () => r.update(<Probe status="idle" items={[...items, asst("3", "Next")]} focused={false} />));
+    expect(mockStop).toHaveBeenCalled();
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
+  it("a push for the open session (setParams) does not speak the reply a second time", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    await act(async () => r.update(<Probe status="idle" items={items} speakNow />));
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
   });
 
   it("speakNow speaks once, after the settle delay", async () => {

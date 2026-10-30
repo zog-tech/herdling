@@ -60,3 +60,12 @@ export async function renameAgent(rpc: Rpc, paneId: string, name: string): Promi
 export async function closeAgent(rpc: Rpc, paneId: string): Promise<void> {
   await herdr(rpc, "pane.close", { pane_id: paneId });
 }
+
+/**
+ * After "Resume older session": closes the resume modal, then replaces the old session screen
+ * with the new one, so the old screen unmounts (it would keep speaking and polling).
+ */
+export function openResumedSession(router: { dismiss: () => void; replace: (href: never) => void }, hostId: string, paneId: string) {
+  router.dismiss();
+  router.replace(`/session/${hostId}/${paneId}` as never);
+}

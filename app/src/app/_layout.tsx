@@ -5,19 +5,17 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 
 import { startConnections } from "@/hosts/connection";
-import { useNotificationRouting } from "@/push/useNotificationRouting";
+import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
 
 SplashScreen.preventAutoHideAsync();
 startConnections();
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (n) => {
+    const show = showBannerFor(n.request.content.data);
+    return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
+  },
 });
 
 const hostHeader = {

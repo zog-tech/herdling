@@ -59,18 +59,21 @@ const finished = (s: AgentStatus | undefined) => s === "idle" || s === "done";
  * Both go through one settle delay and dedupe by the last assistant item.
  * A light haptic marks each real status change (not the first value).
  * Turning the speaker off, a new prompt, recording or leaving the screen stops speech.
+ * Only the focused screen speaks: `focused: false` (a session under another screen) stops speech
+ * and speaks nothing, so two mounted screens never speak the same reply twice.
  */
 export function useSpeakReplies(
   hostId: string,
   paneId: string,
   status: AgentStatus | undefined,
   items: ThreadItem[],
-  o?: { speakNow?: boolean },
+  o?: { speakNow?: boolean; focused?: boolean },
 ): void {
   const enabled = useSpeakEnabled(hostId, paneId);
+  const focused = o?.focused ?? true;
   const recording = useRecording((s) => s.recording);
-  const latest = useRef({ items, enabled });
-  latest.current = { items, enabled };
+  const latest = useRef({ items, enabled, focused });
+  latest.current = { items, enabled, focused };
   const prev = useRef<AgentStatus | undefined>(undefined);
   const spokenId = useRef<string | undefined>(undefined);
   const pushDone = useRef(false);
@@ -88,7 +91,8 @@ export function useSpeakReplies(
   const settleThenSpeak = () => {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      const { items, enabled } = latest.current;
+      const { items, enabled, focused } = latest.current;
+      if (!focused) return;
       const reply = replyToSpeak(items);
       const id = lastAssistantId(items);
       if (!reply && pushPending.current) return; // The items effect re-arms when they load.
@@ -122,6 +126,15 @@ export function useSpeakReplies(
     if (!enabled) stopSpeech();
   }, [enabled]);
 
+  // Another screen covers this one: stop speech and drop a pending speak.
+  useEffect(() => {
+    if (focused) return;
+    clearTimeout(timer.current);
+    endPush();
+    stopSpeech();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused]);
+
   // A new prompt stops speech. The first value is the baseline.
   useEffect(() => {
     const count = items.filter((i) => i.kind === "user").length;
@@ -144,7 +157,7 @@ export function useSpeakReplies(
     const before = prev.current;
     prev.current = status;
     // A real change of the open session's status; the first value is the baseline.
-    if (before !== undefined && status !== undefined && before !== status) quiet(Haptics.selectionAsync());
+    if (before !== undefined && status !== undefined && before !== status && latest.current.focused) quiet(Haptics.selectionAsync());
     if (status === "working") clearTimeout(timer.current);
     if (!status) return;
     const fromPush = !!o?.speakNow && !pushDone.current && finished(status);

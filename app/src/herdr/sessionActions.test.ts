@@ -1,6 +1,6 @@
 import { RpcError } from "@/rpc/RpcClient";
 
-import { closeAgent, renameAgent, restartAgent, resumeSession } from "./sessionActions";
+import { closeAgent, openResumedSession, renameAgent, restartAgent, resumeSession } from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
 
 function fakeRpc(fail?: string, failWith?: Error) {
@@ -83,4 +83,11 @@ describe("sessionActions", () => {
     await closeAgent(rpc, "w1:p1");
     expect(rpc.calls).toEqual([{ method: "pane.close", params: { pane_id: "w1:p1" } }]);
   });
+});
+
+it("open_resumed_session_closes_the_modal_then_replaces_the_old_session", () => {
+  const order: string[] = [];
+  const router = { dismiss: jest.fn(() => order.push("dismiss")), replace: jest.fn((h: never) => order.push(`replace ${h}`)) };
+  openResumedSession(router, "h_1", "w1:p9");
+  expect(order).toEqual(["dismiss", "replace /session/h_1/w1:p9"]);
 });

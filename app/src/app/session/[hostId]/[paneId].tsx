@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -302,6 +302,8 @@ export default function SessionScreen() {
     from?: string;
   }>();
   const router = useRouter();
+  // Only the focused session speaks and polls choices: another session or a modal may sit on top.
+  const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardShown();
   const [mode, setMode] = useState<Mode>("thread");
@@ -312,7 +314,7 @@ export default function SessionScreen() {
 
   const speakOn = useSpeakEnabled(hostId, paneId);
   const setSpeak = useSessionSpeak((s) => s.setSpeak);
-  useSpeakReplies(hostId, paneId, agent?.agent_status, thread.items, { speakNow: from === "push" });
+  useSpeakReplies(hostId, paneId, agent?.agent_status, thread.items, { speakNow: from === "push", focused });
 
   // Opening the session, and every status change seen here, counts as seen.
   const seq = agent?.state_change_seq;
@@ -395,7 +397,7 @@ export default function SessionScreen() {
           bottomInset={keyboard ? 0 : insets.bottom}
           initialText={promptError ? prompt : undefined}
           initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
-          visible={mode === "thread"}
+          visible={mode === "thread" && focused}
         />
       </View>
     </KeyboardAvoidingView>

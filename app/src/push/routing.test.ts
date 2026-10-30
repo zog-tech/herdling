@@ -2,9 +2,12 @@ import { act, create } from "react-test-renderer";
 import { createElement } from "react";
 
 const mockPush = jest.fn();
+const mockSetParams = jest.fn();
 let mockNavKey: string | undefined = "root";
+let mockPath = "/";
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ navigate: mockPush, setParams: mockSetParams }),
+  usePathname: () => mockPath,
   useRootNavigationState: () => (mockNavKey ? { key: mockNavKey } : undefined),
 }));
 
@@ -21,7 +24,7 @@ jest.mock("expo-notifications", () => ({
   },
 }));
 
-import { notificationTarget, useNotificationRouting } from "./useNotificationRouting";
+import { isPushSession, notificationTarget, showBannerFor, useNotificationRouting } from "./useNotificationRouting";
 
 function response(id: string, data: unknown) {
   return { notification: { request: { identifier: id, content: { data } } } };
@@ -34,6 +37,8 @@ function Probe() {
 
 beforeEach(() => {
   mockPush.mockReset();
+  mockSetParams.mockReset();
+  mockPath = "/";
   mockClear.mockReset();
   mockRemove.mockReset();
   mockLast = null;
@@ -106,5 +111,40 @@ describe("useNotificationRouting", () => {
     mockNavKey = "root";
     act(() => r?.update(createElement(Probe)));
     expect(mockPush).toHaveBeenCalledWith("/session/h_1/p?from=push");
+  });
+});
+
+describe("push for the open session", () => {
+  it("is_push_session_matches_encoded_and_plain_paths", () => {
+    const data = { hostId: "h_1", paneId: "w1:p1" };
+    expect(isPushSession("/session/h_1/w1:p1", data)).toBe(true);
+    expect(isPushSession("/session/h_1/w1%3Ap1", data)).toBe(true);
+    expect(isPushSession("/session/h_1/w1:p2", data)).toBe(false);
+    expect(isPushSession("/session/h_2/w1:p1", data)).toBe(false);
+    expect(isPushSession("/resume/h_1/w1:p1", data)).toBe(false);
+    expect(isPushSession(undefined, data)).toBe(false);
+    expect(isPushSession("/session/h_1/w1:p1", null)).toBe(false);
+  });
+
+  it("tap_on_open_session_sets_params_instead_of_a_second_screen", () => {
+    mockPath = "/session/h_1/w1:p1";
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(response("n5", { hostId: "h_1", paneId: "w1:p1" })));
+    expect(mockSetParams).toHaveBeenCalledWith({ from: "push" });
+    expect(mockPush).not.toHaveBeenCalled();
+    // Another pane opens its own screen.
+    act(() => mockListener?.(response("n6", { hostId: "h_1", paneId: "w1:p2" })));
+    expect(mockPush).toHaveBeenCalledWith("/session/h_1/w1%3Ap2?from=push");
+  });
+
+  it("no_banner_while_that_session_is_on_screen", () => {
+    mockPath = "/session/h_1/w1:p1";
+    act(() => {
+      create(createElement(Probe));
+    });
+    expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(false);
+    expect(showBannerFor({ hostId: "h_1", paneId: "w1:p2" })).toBe(true);
   });
 });

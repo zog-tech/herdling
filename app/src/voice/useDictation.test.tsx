@@ -99,3 +99,21 @@ test("error_event_while_recording_cancels_and_shows_message", async () => {
   expect(calls).toEqual(["requestPermission", "start", "cancel"]);
   expect(onSend).not.toHaveBeenCalled();
 });
+
+test("second_instance_does_not_clear_another_ones_recording_flag", async () => {
+  const { useRecording } = require("./recording") as typeof import("./recording");
+  useRecording.setState({ recording: false });
+  const a = mount();
+  act(() => a.api.current!.dispatch({ type: "press" }));
+  await flush();
+  expect(useRecording.getState().recording).toBe(true);
+  // Another composer mounts and unmounts while the first one records.
+  const b = mount();
+  expect(useRecording.getState().recording).toBe(true);
+  act(() => b.root.unmount());
+  expect(useRecording.getState().recording).toBe(true);
+  act(() => a.root.unmount());
+  expect(useRecording.getState().recording).toBe(false);
+  releasePermission("denied");
+  await flush();
+});

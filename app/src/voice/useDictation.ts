@@ -97,11 +97,25 @@ export function useDictation({ onSend, onPartial }: { onSend: (text: string) => 
     };
   }, [dispatch, fail, enqueue]);
 
-  // Speech waits for the microphone and stops when it starts.
+  // Speech waits for the microphone and stops when it starts. Only the instance that set the
+  // global flag clears it, so a second mounted composer cannot clear another one's recording.
+  const setFlag = useRef(false);
   useEffect(() => {
-    useRecording.setState({ recording: state.phase !== "idle" });
+    const on = state.phase !== "idle";
+    if (on) {
+      setFlag.current = true;
+      useRecording.setState({ recording: true });
+    } else if (setFlag.current) {
+      setFlag.current = false;
+      useRecording.setState({ recording: false });
+    }
   }, [state.phase]);
-  useEffect(() => () => useRecording.setState({ recording: false }), []);
+  useEffect(
+    () => () => {
+      if (setFlag.current) useRecording.setState({ recording: false });
+    },
+    [],
+  );
 
   useEffect(() => {
     handlers.current.onPartial?.(state.partial);

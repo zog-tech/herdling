@@ -6,7 +6,7 @@ import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 
 import { timeAgo } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
-import { resumeSession } from "@/herdr/sessionActions";
+import { openResumedSession, resumeSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
@@ -43,7 +43,7 @@ export default function ResumeScreen() {
       setError(undefined);
       try {
         const { paneId: next } = await resumeSession(rpc, agent, s.session);
-        router.replace(`/session/${hostId}/${next}` as never);
+        openResumedSession(router, hostId, next);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setStarting(undefined);
