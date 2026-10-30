@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -44,6 +45,10 @@ pub struct Ctx {
     pub write_timeout: Duration,
     /// Running streams, keyed by stream id. Shared by every clone of the context.
     pub streams: Streams,
+    /// Kept between `stats.get` calls: CPU usage is a delta against the last refresh.
+    pub stats: Arc<Mutex<sysinfo::System>>,
+    /// False until the first `stats.get` has primed the CPU counters.
+    pub stats_primed: Arc<AtomicBool>,
 }
 
 impl Ctx {
@@ -57,6 +62,8 @@ impl Ctx {
             idle_timeout: IDLE_TIMEOUT,
             write_timeout: WRITE_TIMEOUT,
             streams: Streams::default(),
+            stats: Arc::new(Mutex::new(sysinfo::System::new())),
+            stats_primed: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -307,6 +314,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "fs.dirs" => fs_dirs(ctx, params).await,
         "push.register" => push_register(ctx, params).await,
         "pair.revoke" => pair_revoke(ctx, params).await,
+        "stats.get" => stats_get(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -508,6 +516,14 @@ async fn fs_dirs(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
             std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
             _ => err("io_error", e.to_string()),
         })
+}
+
+async fn stats_get(ctx: &Ctx) -> Result<Value, RpcError> {
+    let (sys, primed) = (ctx.stats.clone(), ctx.stats_primed.clone());
+    let stats = tokio::task::spawn_blocking(move || crate::stats::read(&sys, &primed))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?;
+    serde_json::to_value(stats).map_err(|e| err("internal", e.to_string()))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

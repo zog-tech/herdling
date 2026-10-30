@@ -8,5 +8,6 @@ pub mod pair;
 pub mod push;
 pub mod rpc;
 pub mod serve;
+pub mod stats;
 pub mod tail;
 pub mod types;

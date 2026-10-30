@@ -169,3 +169,13 @@ pub struct PairResponse {
     pub ssh_port: u16,
     pub host_key_fingerprint: Option<String>,
 }
+
+/// Host load for the Overview meters. Memory is in bytes; `mem_used = total - available`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stats {
+    pub cpu_pct: f32,
+    pub mem_used: u64,
+    pub mem_total: u64,
+    pub load: [f64; 3],
+    pub uptime_s: u64,
+}

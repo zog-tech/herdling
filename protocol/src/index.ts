@@ -66,3 +66,6 @@ export type PairResponse = {
   ssh_port: number;
   host_key_fingerprint: string | null;
 };
+
+/** `stats.get`: host load. Memory in bytes; `mem_used = total - available`. */
+export type Stats = { cpu_pct: number; mem_used: number; mem_total: number; load: [number, number, number]; uptime_s: number };
