@@ -114,3 +114,36 @@ fn dry_run_runs_nothing() {
     install_with(&opts(home.path(), Os::Linux, true), &f).unwrap();
     assert!(f.calls.borrow().is_empty());
 }
+
+struct FlakyBootstrap {
+    calls: RefCell<Vec<Vec<String>>>,
+    fails_left: RefCell<u32>,
+}
+
+impl Runner for FlakyBootstrap {
+    fn run(&self, cmd: &[String]) -> anyhow::Result<String> {
+        self.calls.borrow_mut().push(cmd.to_vec());
+        if cmd[1] == "bootstrap" && *self.fails_left.borrow() > 0 {
+            *self.fails_left.borrow_mut() -= 1;
+            anyhow::bail!("Bootstrap failed: 5: Input/output error");
+        }
+        Ok(String::new())
+    }
+}
+
+#[test]
+fn bootstrap_is_retried_after_bootout() {
+    let home = tempfile::tempdir().unwrap();
+    let r = FlakyBootstrap { calls: RefCell::new(vec![]), fails_left: RefCell::new(1) };
+    install_with(&opts(home.path(), Os::Macos, false), &r).unwrap();
+    let boots = r.calls.borrow().iter().filter(|c| c[1] == "bootstrap").count();
+    assert_eq!(boots, 2);
+}
+
+#[test]
+fn linux_reinstall_restarts_the_unit() {
+    let home = tempfile::tempdir().unwrap();
+    let f = fake("Linger=yes");
+    install_with(&opts(home.path(), Os::Linux, false), &f).unwrap();
+    assert!(f.calls.borrow().iter().any(|c| c[..] == ["systemctl", "--user", "restart", "zogsshd.service"]));
+}

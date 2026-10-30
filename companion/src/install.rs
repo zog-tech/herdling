@@ -127,6 +127,8 @@ pub fn install_with(o: &InstallOpts, runner: &dyn Runner) -> Result<InstallRepor
             let cmds = vec![
                 vec!["systemctl".into(), "--user".into(), "daemon-reload".into()],
                 vec!["systemctl".into(), "--user".into(), "enable".into(), "--now".into(), "zogsshd.service".into()],
+                // `enable --now` leaves a running unit alone; restart it so a reinstall runs the new binary.
+                vec!["systemctl".into(), "--user".into(), "restart".into(), "zogsshd.service".into()],
             ];
             (unit_path, systemd_unit(&bin), cmds)
         }
@@ -139,9 +141,24 @@ pub fn install_with(o: &InstallOpts, runner: &dyn Runner) -> Result<InstallRepor
     if !o.dry_run {
         for cmd in &commands {
             let res = runner.run(cmd);
-            // `bootout` fails when the service is not loaded yet.
-            if cmd.get(1).map(String::as_str) != Some("bootout") {
-                res?;
+            match cmd.get(1).map(String::as_str) {
+                // `bootout` fails when the service is not loaded yet.
+                Some("bootout") => {}
+                // launchd can refuse a `bootstrap` (error 5) for a moment after `bootout`.
+                Some("bootstrap") if res.is_err() => {
+                    let mut last = res;
+                    for _ in 0..5 {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        last = runner.run(cmd);
+                        if last.is_ok() {
+                            break;
+                        }
+                    }
+                    last?;
+                }
+                _ => {
+                    res?;
+                }
             }
         }
         if o.os == Os::Linux {
