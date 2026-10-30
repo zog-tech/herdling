@@ -8,6 +8,7 @@ use anyhow::Result;
 
 use crate::config;
 
+pub mod bonjour;
 pub mod debounce;
 pub mod http;
 pub mod watch;
@@ -40,6 +41,17 @@ pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()
         }
         std::future::pending::<()>().await
     };
+    // An advert failure only costs auto-discovery. Keep the daemon alive until `serve` ends.
+    let _advert = bonjour::advertise(&bonjour::AdvertInfo {
+        host: crate::rpc::hostname(),
+        user: http::current_user(&ctx.home),
+        ssh_port: config.ssh_port,
+        pair_port: port,
+        version: env!("CARGO_PKG_VERSION").into(),
+        fingerprint: crate::pair::host_fingerprint(&ctx.host_key_paths),
+    })
+    .map_err(|e| eprintln!("zogsshd serve: bonjour advert failed: {e:#}"))
+    .ok();
     eprintln!("zogsshd serve: started");
     tokio::select! {
         _ = watch::watch(&ctx) => {}

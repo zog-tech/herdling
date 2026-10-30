@@ -53,7 +53,7 @@ impl State {
 }
 
 /// `$USER`, else `$LOGNAME`, else the last part of the home path.
-fn current_user(home: &std::path::Path) -> String {
+pub(crate) fn current_user(home: &std::path::Path) -> String {
     ["USER", "LOGNAME"]
         .iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
