@@ -1,0 +1,164 @@
+import * as Haptics from "expo-haptics";
+import { ExternalLink } from "lucide-react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { ActivityIndicator, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { markSeen, useSeen } from "@/herdr/seen";
+import { useSnapshots } from "@/herdr/snapshotStore";
+import { useHosts } from "@/hosts/store";
+import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { Composer } from "@/thread/Composer";
+import { AssistantMessage } from "@/thread/items/AssistantMessage";
+import { useThread } from "@/thread/useThread";
+import { Text } from "@/ui/Text";
+
+import { StatusPill } from "./StatusPill";
+import { useBoard } from "./boardStore";
+import { kindIcon } from "./bucketMeta";
+import { mergeBoard } from "./buckets";
+
+/** Share of the screen height the last reply may take before it scrolls. */
+const REPLY_MAX = 0.4;
+
+/**
+ * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
+ * when blocked, and the composer with hold-to-talk. Closing marks the pane seen.
+ */
+export function PeekSheet({
+  hostId,
+  paneId,
+  focusComposer,
+  onOpenSession,
+}: {
+  hostId: string;
+  paneId: string;
+  /** Raise the keyboard at once (the "Reply" swipe action). */
+  focusComposer?: boolean;
+  onOpenSession: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const snapshot = useSnapshots((s) => s.byHost[hostId]);
+  const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
+  const preview = useBoard((s) => s.previews[`${hostId}:${paneId}`]);
+  const firstSeen = useBoard((s) => s.firstSeen);
+  const seen = useSeen((s) => s.seen);
+  const agent = snapshot?.agents.find((a) => a.pane_id === paneId);
+  const thread = useThread(hostId, paneId, agent?.agent_status);
+  const now = Date.now();
+
+  const item = useMemo(() => {
+    if (!agent || !snapshot) return undefined;
+    const key = `${hostId}:${paneId}`;
+    return mergeBoard(
+      [{ hostId, hostName, agents: [agent], workspaces: snapshot.workspaces }],
+      preview ? { [key]: preview } : {},
+      seen,
+      firstSeen,
+    )[0];
+  }, [agent, snapshot, hostId, paneId, hostName, preview, seen, firstSeen]);
+
+  const lastReply = useMemo(() => {
+    for (let i = thread.items.length - 1; i >= 0; i--) {
+      const it = thread.items[i];
+      if (it.kind === "assistant") return it.markdown;
+    }
+    return undefined;
+  }, [thread.items]);
+
+  // Closing the sheet counts as seeing the pane, at the newest status it had while open.
+  const seq = useRef(agent?.state_change_seq);
+  seq.current = agent?.state_change_seq ?? seq.current;
+  useEffect(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    return () => {
+      if (seq.current !== undefined) markSeen(hostId, paneId, seq.current);
+    };
+  }, [hostId, paneId]);
+
+  const KindIcon = kindIcon(agent?.agent ?? thread.ref?.kind ?? "");
+  const title = agent?.terminal_title_stripped || agent?.agent || paneId;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.md,
+          paddingHorizontal: space.lg,
+          paddingTop: space.xl,
+          paddingBottom: space.md,
+        }}
+      >
+        <View
+          style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }}
+        >
+          <KindIcon size={20} color={colors.text} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text variant="title" numberOfLines={1} accessibilityRole="header">
+            {title}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text variant="caption" muted numberOfLines={1} style={{ flexShrink: 1 }}>
+              {item ? `${hostName} · ${item.workspace}` : hostName}
+            </Text>
+            {item ? <StatusPill item={item} now={now} /> : null}
+          </View>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open session"
+          onPress={onOpenSession}
+          style={({ pressed }) => ({
+            minHeight: hitTarget,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.xs,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <ExternalLink size={16} color={colors.text} />
+          <Text variant="small" bold>
+            Open
+          </Text>
+        </Pressable>
+      </View>
+
+      {!agent ? (
+        <Text muted style={{ paddingHorizontal: space.lg }}>
+          This agent is gone.
+        </Text>
+      ) : null}
+
+      {item?.bucket === "working" && item.line ? (
+        <Text variant="small" mono color={colors.status.working} numberOfLines={2} style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+          {item.line}
+        </Text>
+      ) : null}
+
+      <ScrollView
+        style={{ maxHeight: height * REPLY_MAX, flexGrow: 0 }}
+        contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.md }}
+        accessibilityLabel="Last reply"
+      >
+        {lastReply ? (
+          <AssistantMessage markdown={lastReply} />
+        ) : thread.status === "loading" ? (
+          <ActivityIndicator color={colors.textMuted} />
+        ) : (
+          <Text muted>{preview?.last_reply ?? item?.line ?? "No reply yet."}</Text>
+        )}
+      </ScrollView>
+
+      <View style={{ flex: 1 }} />
+      <Composer hostId={hostId} paneId={paneId} bottomInset={insets.bottom} autoFocus={focusComposer} />
+    </View>
+  );
+}

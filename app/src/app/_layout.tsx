@@ -52,6 +52,16 @@ export default function RootLayout() {
         <Stack.Screen name="new" options={{ ...hostHeader, title: "New session", presentation: "modal" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...hostHeader, title: "Resume session", presentation: "modal" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
+        <Stack.Screen
+          name="peek/[hostId]/[paneId]"
+          options={{
+            presentation: "formSheet",
+            sheetAllowedDetents: [0.6, 1],
+            sheetGrabberVisible: true,
+            sheetCornerRadius: 16,
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        />
       </Stack>
       <NotificationRouting />
     </GestureHandlerRootView>

@@ -1,26 +1,38 @@
-import { useRouter } from "expo-router";
-import { Plus } from "lucide-react-native";
-import { useEffect, useMemo } from "react";
-import { Pressable, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { useIsFocused, useNavigation, useRouter } from "expo-router";
+import { ListFilter, Moon, Plus, Server } from "lucide-react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
-import { HostMeters } from "@/hosts/HostMeters";
-import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
-import { useHosts, type Host } from "@/hosts/store";
-import { pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
-import { needsYou, type AgentInfo, type Snapshot } from "@/herdr/snapshot";
+import { AgentCard } from "@/board/AgentCard";
+import { BoardChips } from "@/board/BoardChips";
+import { setFilter, setGroupBy, updateFirstSeen, useBoard } from "@/board/boardStore";
+import { BUCKET_META } from "@/board/bucketMeta";
+import { countBuckets, filterBoard, groupBoard, mergeBoard, type BoardItem, type GroupBy } from "@/board/buckets";
+import { usePreviewPolling } from "@/board/usePreviewPolling";
+import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
+import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
-import { colors, hitTarget, space } from "@/theme/tokens";
+import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
+import { HostMeters } from "@/hosts/HostMeters";
+import { getHostConn, useHostConn, useOnlineHostKey } from "@/hosts/connection";
+import { useHosts, type Host } from "@/hosts/store";
+import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
-import { Row } from "@/ui/Row";
-import { Screen } from "@/ui/Screen";
-import { StatusBadge } from "@/ui/StatusBadge";
 import { Text } from "@/ui/Text";
 
-/** Keeps one host's snapshot live and mirrors it into the shared store. Renders nothing. */
-function HostWatcher({ hostId }: { hostId: string }) {
+/** Pills show seconds; refresh the clock this often while the Board is visible. */
+const CLOCK_MS = 5_000;
+const GROUP_LABEL: Record<GroupBy, string> = { status: "Status", host: "Host", workspace: "Workspace" };
+const GROUPS: GroupBy[] = ["status", "host", "workspace"];
+
+/** Keeps one host's snapshot live and mirrors it into the shared store; polls previews while the Board is focused. */
+function HostWatcher({ hostId, focused }: { hostId: string; focused: boolean }) {
   const { snapshot, error } = useHostSnapshot(hostId);
+  usePreviewPolling(hostId, focused);
   useEffect(() => {
     setHostSnapshot(hostId, snapshot, error);
   }, [hostId, snapshot, error]);
@@ -31,68 +43,7 @@ function HostWatcher({ hostId }: { hostId: string }) {
   return null;
 }
 
-function AgentRow({ hostId, agent, subtitle }: { hostId: string; agent: AgentInfo; subtitle?: string }) {
-  const router = useRouter();
-  const title = agent.terminal_title_stripped || agent.agent;
-  return (
-    <Row
-      accessibilityLabel={`Open ${title}`}
-      onPress={() => router.push(`/session/${hostId}/${agent.pane_id}` as never)}
-      trailing={<StatusBadge status={agent.agent_status} />}
-    >
-      <Text numberOfLines={1} bold>
-        {title}
-      </Text>
-      <Text variant="caption" muted numberOfLines={1}>
-        {subtitle ?? agent.agent}
-      </Text>
-    </Row>
-  );
-}
-
-function NeedsYouSection({ items, hosts }: { items: ReturnType<typeof needsYou>; hosts: Host[] }) {
-  if (items.length === 0) return null;
-  const name = (id: string) => hosts.find((h) => h.id === id)?.name ?? id;
-  return (
-    <View style={{ gap: space.sm }}>
-      <Text variant="small" muted>
-        NEEDS YOU
-      </Text>
-      <Card style={{ paddingVertical: space.sm, gap: space.xs }}>
-        {items.map(({ hostId, agent }) => (
-          <AgentRow key={`${hostId}:${agent.pane_id}`} hostId={hostId} agent={agent} subtitle={`${name(hostId)} · ${agent.agent}`} />
-        ))}
-      </Card>
-    </View>
-  );
-}
-
-function Workspaces({ hostId, snapshot }: { hostId: string; snapshot: Snapshot }) {
-  const groups = snapshot.workspaces
-    .map((w) => ({ ws: w, agents: snapshot.agents.filter((a) => a.workspace_id === w.workspace_id) }))
-    .filter((g) => g.agents.length > 0);
-  if (groups.length === 0)
-    return (
-      <Text muted variant="small">
-        No agents running.
-      </Text>
-    );
-  return (
-    <View style={{ gap: space.sm }}>
-      {groups.map(({ ws, agents }) => (
-        <View key={ws.workspace_id}>
-          <Text variant="caption" muted>
-            {ws.label}
-          </Text>
-          {agents.map((a) => (
-            <AgentRow key={a.pane_id} hostId={hostId} agent={a} />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
-
+/** Connection state, meters and herdr errors of one host, under the cards. */
 function HostCard({ host }: { host: Host }) {
   const conn = useHostConn(host.id);
   const snapshot = useSnapshots((s) => s.byHost[host.id]);
@@ -114,20 +65,43 @@ function HostCard({ host }: { host: Host }) {
         <ConnBadge status={conn.status} />
       </View>
       {online ? <HostMeters hostId={host.id} /> : null}
-      {online ? (
-        snapshot ? (
-          <Workspaces hostId={host.id} snapshot={snapshot} />
-        ) : error ? (
-          <Text muted variant="small">
-            Can't read herdr
-          </Text>
-        ) : (
-          <Text muted variant="small">
-            Loading…
-          </Text>
-        )
+      {online && !snapshot ? (
+        <Text muted variant="small">
+          {error ? "Can't read herdr" : "Loading…"}
+        </Text>
       ) : null}
     </Card>
+  );
+}
+
+/** One line per host that is not fully there: offline, connecting, or herdr unreadable. Silent when all is well. */
+function HostProblems({ hosts }: { hosts: Host[] }) {
+  return (
+    <>
+      {hosts.map((h) => (
+        <HostProblem key={h.id} host={h} />
+      ))}
+    </>
+  );
+}
+
+function HostProblem({ host }: { host: Host }) {
+  const conn = useHostConn(host.id);
+  const error = useSnapshots((s) => s.errors[host.id]);
+  const hasSnapshot = useSnapshots((s) => !!s.byHost[host.id]);
+  const online = conn.status === "online";
+  if (online && !(error && !hasSnapshot)) return null;
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.xs }}
+    >
+      <Server size={14} color={colors.textMuted} />
+      <Text variant="small" muted numberOfLines={1} style={{ flex: 1 }}>
+        {online ? `${host.name} · Can't read herdr` : host.name}
+      </Text>
+      {online ? null : <ConnBadge status={conn.status} />}
+    </View>
   );
 }
 
@@ -137,45 +111,196 @@ function useOnlineHostIds(hosts: Host[]): Set<string> {
   return useMemo(() => new Set(key.split(",").filter(Boolean)), [key]);
 }
 
-export default function OverviewScreen() {
+/** Wall clock that ticks every `ms` while `on`. */
+function useNow(ms: number, on: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms, on]);
+  return now;
+}
+
+function SectionHeader({ title, bucket }: { title: string; bucket?: BoardItem["bucket"] }) {
+  const meta = bucket ? BUCKET_META[bucket] : undefined;
+  return (
+    <View
+      accessibilityRole="header"
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.sm,
+        paddingHorizontal: space.lg,
+        paddingTop: space.md,
+        paddingBottom: space.sm,
+        backgroundColor: colors.bg,
+      }}
+    >
+      {meta ? <meta.Icon size={14} color={meta.color} /> : <Server size={14} color={colors.textMuted} />}
+      <Text variant="small" bold color={meta?.color ?? colors.textMuted}>
+        {title.toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+function Calm({ text }: { text: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md }}>
+      <Moon size={16} color={colors.textMuted} />
+      <Text muted>{text}</Text>
+    </View>
+  );
+}
+
+export default function BoardScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
+  const focused = useIsFocused();
+  const insets = useSafeAreaInsets();
   const hosts = useHosts((s) => s.hosts);
   const byHost = useSnapshots((s) => s.byHost);
   const seen = useSeen((s) => s.seen);
-  const online = useOnlineHostIds(hosts);
   const hydrated = useSeenHydrated();
-  const items = useMemo(
+  const online = useOnlineHostIds(hosts);
+  const { previews, firstSeen, filter, groupBy } = useBoard();
+  const now = useNow(CLOCK_MS, focused);
+
+  const boardHosts = useMemo(
     () =>
-      hydrated
-        ? needsYou(
-            hosts.flatMap((h) => (online.has(h.id) && byHost[h.id] ? [{ hostId: h.id, snapshot: byHost[h.id] }] : [])),
-            seen,
-          )
-        : [],
-    [hosts, byHost, seen, online, hydrated],
+      hosts.flatMap((h) =>
+        online.has(h.id) && byHost[h.id]
+          ? [{ hostId: h.id, hostName: h.name, agents: byHost[h.id].agents, workspaces: byHost[h.id].workspaces }]
+          : [],
+      ),
+    [hosts, byHost, online],
   );
+
+  // The app's own status start times, for agents the companion has no start for.
+  useEffect(() => {
+    updateFirstSeen(
+      boardHosts.flatMap((h) => h.agents.map((a) => ({ key: `${h.hostId}:${a.pane_id}`, status: a.agent_status }))),
+      Date.now(),
+    );
+  }, [boardHosts]);
+
+  const items = useMemo(
+    () => mergeBoard(boardHosts, previews, hydrated ? seen : null, firstSeen),
+    [boardHosts, previews, hydrated, seen, firstSeen],
+  );
+  const counts = useMemo(() => countBuckets(items), [items]);
+  const sections = useMemo(() => groupBoard(filterBoard(items, filter), groupBy), [items, filter, groupBy]);
+
+  const pickGroup = useCallback(() => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: "Group by", options: [...GROUPS.map((g) => GROUP_LABEL[g]), "Cancel"], cancelButtonIndex: GROUPS.length },
+      (i) => {
+        if (GROUPS[i]) setGroupBy(GROUPS[i]);
+      },
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Group by ${GROUP_LABEL[groupBy]}`}
+          accessibilityHint="Changes how the agents are grouped"
+          onPress={pickGroup}
+          style={{ minWidth: hitTarget, minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.xs, paddingHorizontal: space.md }}
+        >
+          <ListFilter size={18} color={colors.text} />
+          <Text variant="small">{GROUP_LABEL[groupBy]}</Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation, groupBy, pickGroup]);
+
+  const onOpen = useCallback((i: BoardItem) => router.push(`/session/${i.hostId}/${i.agent.pane_id}` as never), [router]);
+  const onPeek = useCallback((i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}` as never), [router]);
+  const onReply = useCallback(
+    (i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}?reply=1` as never),
+    [router],
+  );
+  const onMarkRead = useCallback((i: BoardItem) => {
+    markSeen(i.hostId, i.agent.pane_id, i.agent.state_change_seq);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
+  const onRestart = useCallback(
+    async (i: BoardItem) => {
+      const { rpc } = getHostConn(i.hostId);
+      if (!rpc || !(await confirmRestart())) return;
+      try {
+        await restartConfirmed(rpc, i.agent, (paneId) => router.push(`/session/${i.hostId}/${paneId}` as never));
+      } catch (e) {
+        Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
+      }
+    },
+    [router],
+  );
+
+  const quiet = items.length > 0 && counts.needs_you + counts.ready + counts.working === 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       {hosts.map((h) => (
-        <HostWatcher key={h.id} hostId={h.id} />
+        <HostWatcher key={h.id} hostId={h.id} focused={focused} />
       ))}
-      <Screen>
-        <NeedsYouSection items={items} hosts={hosts} />
-        {hosts.length === 0 ? (
-          <Text muted>No hosts yet. Add one in Settings.</Text>
-        ) : (
-          <View style={{ gap: space.sm }}>
-            <Text variant="small" muted>
-              HOSTS
-            </Text>
-            {hosts.map((h) => (
-              <HostCard key={h.id} host={h} />
-            ))}
-          </View>
-        )}
-        {/* Room so the floating button never covers the last card. */}
-        <View style={{ height: 56 }} />
-      </Screen>
+      {hosts.length === 0 ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.lg, padding: space.xl }}>
+          <Server size={32} color={colors.textMuted} />
+          <Text muted style={{ textAlign: "center" }}>
+            No hosts yet. Add one to see its agents here.
+          </Text>
+          <Button label="Add a host" Icon={Plus} onPress={() => router.push("/hosts/discover" as never)} />
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(i) => i.key}
+          stickySectionHeadersEnabled
+          contentInsetAdjustmentBehavior="automatic"
+          renderSectionHeader={({ section }) => <SectionHeader title={section.title} bucket={section.bucket} />}
+          renderItem={({ item }) => (
+            <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+              <AgentCard
+                item={item}
+                now={now}
+                onOpen={onOpen}
+                onPeek={onPeek}
+                onMarkRead={onMarkRead}
+                onReply={onReply}
+                onRestart={onRestart}
+              />
+            </View>
+          )}
+          ListHeaderComponent={
+            <View>
+              <BoardChips counts={counts} filter={filter} onChange={setFilter} />
+              <HostProblems hosts={hosts} />
+              {quiet && filter === null ? <Calm text="All quiet. Nothing needs you." /> : null}
+              {items.length === 0 && online.size > 0 ? <Calm text="No agents running." /> : null}
+              {items.length > 0 && filter !== null && sections.length === 0 ? (
+                <Calm text={`Nothing ${filter === "needs_you" ? "needs you" : `is ${filter}`} right now.`} />
+              ) : null}
+            </View>
+          }
+          ListFooterComponent={
+            // Room so the floating button never covers the last card.
+            <View style={{ gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 56 + space.lg + insets.bottom }}>
+              <Text variant="small" muted>
+                HOSTS
+              </Text>
+              {hosts.map((h) => (
+                <HostCard key={h.id} host={h} />
+              ))}
+            </View>
+          }
+        />
+      )}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="New session"
@@ -187,7 +312,7 @@ export default function OverviewScreen() {
           width: 56,
           height: 56,
           minHeight: hitTarget,
-          borderRadius: 28,
+          borderRadius: radius.pill,
           backgroundColor: colors.accent,
           alignItems: "center",
           justifyContent: "center",
