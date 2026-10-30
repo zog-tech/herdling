@@ -1,13 +1,15 @@
+import { RpcError } from "@/rpc/RpcClient";
+
 import { closeAgent, renameAgent, restartAgent, resumeSession } from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
 
-function fakeRpc(fail?: string) {
+function fakeRpc(fail?: string, failWith?: Error) {
   const calls: { method: string; params: any }[] = [];
   return {
     calls,
     call: async (_m: string, p: any) => {
       calls.push({ method: p.method, params: p.params });
-      if (p.method === fail) throw new Error(`${fail} failed`);
+      if (p.method === fail) throw failWith ?? new Error(`${fail} failed`);
       if (p.method === "tab.create") return { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } };
       return {};
     },
@@ -41,6 +43,12 @@ describe("sessionActions", () => {
     expect(rpc.calls.some((c: any) => c.method === "pane.close")).toBe(false);
   });
 
+  it("restart_reports_failed_close", async () => {
+    const rpc = fakeRpc("pane.close");
+    await expect(restartAgent(rpc, agent())).resolves.toEqual({ paneId: "w1:p2", closeError: "pane.close failed" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start", "pane.close"]);
+  });
+
   it("restart_needs_a_cwd", async () => {
     const rpc = fakeRpc();
     await expect(restartAgent(rpc, agent({ cwd: undefined }))).rejects.toMatchObject({ code: "no_cwd" });
@@ -60,6 +68,14 @@ describe("sessionActions", () => {
     expect(rpc.calls).toEqual([]);
     await renameAgent(rpc, "w1:p1", "reviewer-2");
     expect(rpc.calls).toEqual([{ method: "agent.rename", params: { target: "w1:p1", name: "reviewer-2" } }]);
+  });
+
+  it("rename_maps_launch_pending", async () => {
+    const rpc = fakeRpc("agent.rename", new RpcError("agent_launch_pending", "agent name cannot change while startup is pending"));
+    await expect(renameAgent(rpc, "w1:p1", "reviewer")).rejects.toMatchObject({
+      code: "agent_launch_pending",
+      message: "Still starting — try again in a few seconds.",
+    });
   });
 
   it("close_sends_pane_close", async () => {

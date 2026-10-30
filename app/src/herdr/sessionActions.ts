@@ -20,10 +20,14 @@ function cwdOf(a: AgentInfo): string {
  * herdr has no agent stop: start the same kind in a new tab of the same workspace, then close
  * the old pane. A failed start leaves the old pane as it was.
  */
-export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: string }> {
+export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: string; closeError?: string }> {
   const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: a.agent, workspaceId: a.workspace_id });
-  // The new agent runs; a pane that will not close stays in the list for the user to close.
-  await herdr(rpc, "pane.close", { pane_id: a.pane_id }).catch(() => {});
+  // The new agent runs, so do not throw: the caller opens it and offers to close the old one.
+  try {
+    await herdr(rpc, "pane.close", { pane_id: a.pane_id });
+  } catch (e) {
+    return { paneId, closeError: e instanceof Error ? e.message : String(e) };
+  }
   return { paneId };
 }
 
@@ -42,7 +46,15 @@ export async function renameAgent(rpc: Rpc, paneId: string, name: string): Promi
   if (!AGENT_NAME_RE.test(name)) {
     throw new RpcError("bad_name", "Use lowercase letters, digits, - or _, starting with a letter (32 max).");
   }
-  await herdr(rpc, "agent.rename", { target: paneId, name });
+  try {
+    await herdr(rpc, "agent.rename", { target: paneId, name });
+  } catch (e) {
+    // herdr refuses a rename for some seconds after agent.start returns.
+    if (e instanceof RpcError && e.code === "agent_launch_pending") {
+      throw new RpcError("agent_launch_pending", "Still starting — try again in a few seconds.");
+    }
+    throw e;
+  }
 }
 
 export async function closeAgent(rpc: Rpc, paneId: string): Promise<void> {

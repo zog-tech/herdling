@@ -9,6 +9,7 @@ import { useHosts } from "@/hosts/store";
 import { markSeen } from "@/herdr/seen";
 import { closeAgent, renameAgent, restartAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
+import type { RpcClient } from "@/rpc/RpcClient";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
@@ -33,6 +34,18 @@ function confirmDestructive(title: string, detail: string, action: string): Prom
       (i) => resolve(i === 0),
     ),
   );
+}
+
+/** After a restart whose old pane did not close: say so, and offer to close it again. */
+function offerCloseOld(rpc: Pick<RpcClient, "call">, paneId: string, error: string) {
+  Alert.alert("The old agent is still running", `Can't close it: ${error}`, [
+    { text: "Keep it", style: "cancel" },
+    {
+      text: "Close it",
+      style: "destructive",
+      onPress: () => closeAgent(rpc, paneId).catch((e) => offerCloseOld(rpc, paneId, message(e))),
+    },
+  ]);
 }
 
 /** Restart, Resume (Claude only), Rename and Close for the session's agent. */
@@ -65,8 +78,10 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
           const ok = await confirmDestructive("Restart this agent?", "A new agent starts in a new tab. This pane closes.", "Restart");
           if (ok)
             run("Restarting…", "Can't restart", async () => {
-              const { paneId } = await restartAgent(rpc, agent);
+              const oldPane = agent.pane_id;
+              const { paneId, closeError } = await restartAgent(rpc, agent);
               router.replace(`/session/${hostId}/${paneId}` as never);
+              if (closeError) offerCloseOld(rpc, oldPane, closeError);
             });
         },
       },
