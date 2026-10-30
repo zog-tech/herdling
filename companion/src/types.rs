@@ -121,6 +121,14 @@ pub struct ThreadPage {
     pub end: u64,
 }
 
+/// `thread.subagent` result: a page plus the subagent transcript path (for `thread.follow`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubagentPage {
+    #[serde(flatten)]
+    pub page: ThreadPage,
+    pub log_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThreadRef {
     pub kind: String,

@@ -349,7 +349,10 @@ async fn thread_subagent(params: Value) -> Result<Value, RpcError> {
     let agent = str_param(&params, "agent_id", "thread.subagent")?;
     let path = claude::subagent_path(std::path::Path::new(log), agent)
         .ok_or_else(|| err("bad_request", "invalid agent_id"))?;
-    read_page(path, &params).await
+    let log_path = path.to_string_lossy().into_owned();
+    let page = read_page(path, &params).await?;
+    let page = serde_json::from_value(page).map_err(|e| err("internal", e.to_string()))?;
+    serde_json::to_value(crate::types::SubagentPage { page, log_path }).map_err(|e| err("internal", e.to_string()))
 }
 
 async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<Value, RpcError> {

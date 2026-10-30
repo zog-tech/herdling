@@ -1,8 +1,11 @@
 import { Bot, Check, CircleHelp, CircleX, Loader, type LucideIcon } from "lucide-react-native";
 import { memo } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
+
 
 import { colors, radius, space } from "@/theme/tokens";
+import { useThreadLog } from "../ThreadLogContext";
 import { Text } from "@/ui/Text";
 
 /** Status words from the log mapped to icon + color (never color alone). */
@@ -20,22 +23,38 @@ function statusLabel(status: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : "Unknown";
 }
 
-/** A subagent run: description and status. Opening its own thread comes later (Phase 4). */
+/** A subagent run: description and status. Tapping opens its own thread once `agentId` is known. */
 export const SubagentCard = memo(function SubagentCard({
   description,
   status,
   resultSummary,
+  agentId,
 }: {
   description: string;
   status: string;
   resultSummary?: string;
+  agentId?: string;
 }) {
+  const router = useRouter();
+  const threadLog = useThreadLog();
+  const canOpen = Boolean(agentId && threadLog);
   const { color, Icon } = statusMeta(status);
   const label = statusLabel(status);
   return (
-    <View
+    <Pressable
       accessible
+      accessibilityRole={canOpen ? "button" : undefined}
       accessibilityLabel={`Subagent: ${description}. ${label}`}
+      accessibilityHint={canOpen ? "Opens the subagent thread" : undefined}
+      disabled={!canOpen}
+      onPress={() =>
+        threadLog &&
+        agentId &&
+        router.push({
+          pathname: "/subagent/[hostId]/[agentId]",
+          params: { hostId: threadLog.hostId, agentId, log: threadLog.logPath, title: description },
+        } as never)
+      }
       style={{
         borderWidth: 1,
         borderColor: colors.muted,
@@ -66,6 +85,6 @@ export const SubagentCard = memo(function SubagentCard({
           ) : null}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 });

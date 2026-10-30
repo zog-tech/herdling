@@ -40,6 +40,8 @@ export type ThreadItem =
 
 /** cursor = byte offset for the older page (null at file start); end = file size at read time, used as thread.follow `from`. */
 export type ThreadPage = { items: ThreadItem[]; cursor: number | null; end: number };
+/** `thread.subagent` result: a page plus the subagent transcript path (the `thread.follow` log). */
+export type SubagentPage = ThreadPage & { log_path: string };
 export type ThreadRef = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 export type RecentSession = { session: string; first_prompt: string; last_activity: number; cwd: string };
 

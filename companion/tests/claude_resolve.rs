@@ -188,8 +188,22 @@ async fn thread_subagent_reads_sibling_transcript() {
     let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
     let r = s.call("thread.subagent", json!({"log_path": log, "agent_id":"a1b2","limit":10})).await;
     assert_eq!(r["result"]["items"][0]["text"], "do it");
+    assert!(r["result"]["log_path"].as_str().unwrap().ends_with("/subagents/agent-a1b2.jsonl"));
     let r = s.call("thread.subagent", json!({"log_path": log, "agent_id":"../x","limit":10})).await;
     assert_eq!(r["error"]["code"], "bad_request");
+}
+
+#[tokio::test]
+async fn subagent_page_includes_log_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("sess1.jsonl");
+    write(&log, "");
+    write(&dir.path().join("sess1/subagents/agent-a1.jsonl"), "");
+    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let r = s.call("thread.subagent", json!({"log_path": log, "agent_id":"a1","limit":10})).await;
+    let p = r["result"]["log_path"].as_str().unwrap();
+    assert!(p.ends_with("/subagents/agent-a1.jsonl"), "{p}");
+    assert!(r["result"]["end"].is_number());
 }
 
 #[tokio::test]

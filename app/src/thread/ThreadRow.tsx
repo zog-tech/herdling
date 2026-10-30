@@ -20,7 +20,14 @@ export const ThreadRow = memo(function ThreadRow({ item }: { item: ThreadItem })
     case "tool":
       return <ToolCard name={item.name} inputSummary={item.input_summary} input={item.input} result={item.result} />;
     case "subagent":
-      return <SubagentCard description={item.description} status={item.status} resultSummary={item.result_summary} />;
+      return (
+        <SubagentCard
+          description={item.description}
+          status={item.status}
+          resultSummary={item.result_summary}
+          agentId={item.agent_id}
+        />
+      );
     case "system":
       return <SystemRow text={item.text} />;
     default:

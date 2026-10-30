@@ -12,6 +12,7 @@ import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { TerminalView } from "@/thread/TerminalView";
 import { ThreadList } from "@/thread/ThreadList";
+import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { useThread, type Thread } from "@/thread/useThread";
 import { StatusBadge, type BadgeStatus } from "@/ui/StatusBadge";
 import { Text } from "@/ui/Text";
@@ -119,7 +120,9 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
           </Text>
         </View>
       ) : null}
-      <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />
+      <ThreadLogContext.Provider value={thread.ref?.log_path ? { hostId, logPath: thread.ref.log_path } : null}>
+        <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />
+      </ThreadLogContext.Provider>
     </View>
   );
 }
