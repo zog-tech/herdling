@@ -28,7 +28,12 @@ export default function ScanScreen() {
     done.current = true;
     router.dismissTo({
       pathname: "/hosts/pair",
-      params: { address: target.address, port: String(target.port), code: target.code },
+      params: {
+        address: target.address,
+        port: String(target.port),
+        code: target.code,
+        ...(target.fingerprint ? { fingerprint: target.fingerprint } : {}),
+      },
     });
   };
 

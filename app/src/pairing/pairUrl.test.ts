@@ -41,3 +41,24 @@ it("parse_pair_url_rejects_port_or_list_in_host", () => {
   expect(parsePairUrl("zogssh://pair?h=10.0.0.5:80&c=123456")).toBeNull();
   expect(parsePairUrl("zogssh://pair?h=10.0.0.5,10.0.0.6&c=123456")).toBeNull();
 });
+
+it("parse_pair_url_reads_fingerprint", () => {
+  const fp = "SHA256:" + "a+b/".repeat(10) + "xyz";
+  expect(parsePairUrl(`zogssh://pair?h=10.0.0.5&p=7790&c=123456&f=${encodeURIComponent(fp)}`)).toEqual({
+    address: "10.0.0.5",
+    port: 7790,
+    code: "123456",
+    fingerprint: fp,
+  });
+  // The companion's own encoding.
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5&c=123456&f=SHA256%3A" + "A%2BB%2F".repeat(10) + "xyz")?.fingerprint).toBe(
+    "SHA256:" + "A+B/".repeat(10) + "xyz",
+  );
+});
+
+it("parse_pair_url_rejects_bad_fingerprint", () => {
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5&c=123456&f=")).toBeNull();
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5&c=123456&f=SHA256%3Ashort")).toBeNull();
+  // An unencoded `+` reads as a space, so the value is not a fingerprint.
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5&c=123456&f=SHA256:" + "a+b/".repeat(10) + "xyz")).toBeNull();
+});

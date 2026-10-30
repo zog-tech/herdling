@@ -1,11 +1,19 @@
 /** Default pairing port of `zogsshd serve`. */
 export const DEFAULT_PAIR_PORT = 7790;
 
-export type PairTarget = { address: string; port: number; code: string };
+/**
+ * Where to pair. `fingerprint` is the host key fingerprint from the QR code: the `/pair`
+ * answer must report the same key, or pairing stops.
+ */
+export type PairTarget = { address: string; port: number; code: string; fingerprint?: string };
+
+/** `SHA256:` and the unpadded base64 of a 32-byte digest, as `ssh-keygen -lf` prints it. */
+export const FINGERPRINT_RE = /^SHA256:[A-Za-z0-9+/]{43}$/;
 
 /**
- * Reads a pairing QR / deep link: `zogssh://pair?h=<host>&p=<port>&c=<code>`.
- * `p` is optional (default 7790). Returns null for any other URL or a bad value.
+ * Reads a pairing QR / deep link: `zogssh://pair?h=<host>&p=<port>&c=<code>&f=<fingerprint>`.
+ * `p` is optional (default 7790). `f` is optional, but when present it must be a valid
+ * fingerprint. Returns null for any other URL or a bad value.
  * Parsed by hand: React Native's `URL` has no working `searchParams`.
  */
 export function parsePairUrl(url: string): PairTarget | null {
@@ -32,5 +40,8 @@ export function parsePairUrl(url: string): PairTarget | null {
     port = Number(portText);
     if (port < 1 || port > 65535) return null;
   }
-  return { address, port, code };
+  const fingerprint = params.get("f");
+  if (fingerprint === undefined) return { address, port, code };
+  if (!FINGERPRINT_RE.test(fingerprint)) return null;
+  return { address, port, code, fingerprint };
 }

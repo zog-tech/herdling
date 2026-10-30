@@ -3,8 +3,9 @@ import { Link2, QrCode } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { PairFailed, pairWithHost } from "@/pairing/pair";
-import { DEFAULT_PAIR_PORT } from "@/pairing/pairUrl";
+import { confirmHostKey } from "@/pairing/confirmHostKey";
+import { type HostKeyCheck, PairFailed, pairWithHost } from "@/pairing/pair";
+import { DEFAULT_PAIR_PORT, FINGERPRINT_RE } from "@/pairing/pairUrl";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -12,7 +13,8 @@ import { Field } from "@/ui/Field";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 
-type Params = { address?: string; port?: string; code?: string; name?: string };
+type Params = { address?: string; port?: string; code?: string; name?: string; fingerprint?: string };
+
 
 function portOf(text: string | undefined): number {
   const n = Number(text);
@@ -28,6 +30,11 @@ export default function PairScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const port = portOf(params.port);
+  // The QR key belongs to the scanned address only: an edited address falls back to manual confirmation.
+  const qrFingerprint =
+    params.fingerprint && FINGERPRINT_RE.test(params.fingerprint) && address.trim() === params.address
+      ? params.fingerprint
+      : undefined;
 
   // A scan returns here with new params.
   useEffect(() => {
@@ -42,7 +49,8 @@ export default function PairScreen() {
     setBusy(true);
     setError(undefined);
     try {
-      await pairWithHost({ address: address.trim(), port, code, name: params.name });
+      const check: HostKeyCheck = qrFingerprint ? { fingerprint: qrFingerprint } : { confirm: confirmHostKey };
+      await pairWithHost({ address: address.trim(), port, code, name: params.name, check });
       router.dismissTo("/");
     } catch (e) {
       setError(e instanceof PairFailed ? e.message : e instanceof Error ? e.message : String(e));
@@ -82,6 +90,11 @@ export default function PairScreen() {
           editable={!busy}
           onSubmitEditing={() => valid && !busy && void pair()}
         />
+        {qrFingerprint ? (
+          <Text variant="caption" muted mono selectable accessibilityLabel={`Host key from the QR code ${qrFingerprint}`}>
+            Host key {qrFingerprint}
+          </Text>
+        ) : null}
         {error ? (
           <Text color={colors.danger} accessibilityLiveRegion="polite">
             {error}

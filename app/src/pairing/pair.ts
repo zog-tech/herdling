@@ -2,11 +2,18 @@ import type { PairRequest, PairResponse } from "@zogssh/protocol";
 
 import { ensureKey } from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
-import { getExpoToken } from "../push/token";
 import { newHostId, useHosts, type Host } from "../hosts/store";
 import { DEFAULT_PAIR_PORT } from "./pairUrl";
 
-export type PairFailCode = "bad_code" | "no_window" | "too_many_attempts" | "unreachable" | "bad_request";
+export type PairFailCode =
+  | "bad_code"
+  | "no_window"
+  | "too_many_attempts"
+  | "unreachable"
+  | "bad_request"
+  | "host_key_mismatch"
+  | "host_key_changed"
+  | "not_confirmed";
 
 const TIMEOUT_MS = 10_000;
 
@@ -35,6 +42,12 @@ export function pairMessage(code: PairFailCode, target?: { address: string; port
         : "Can't reach the host. Is zogsshd serve running?";
     case "bad_request":
       return "The host rejected the pairing request.";
+    case "host_key_mismatch":
+      return "The host key is not the one in the QR code. Someone on the network may be intercepting the pairing. Nothing was saved.";
+    case "host_key_changed":
+      return "The host key is different from the saved one. Nothing was changed. To trust the new key, remove the host and pair again.";
+    case "not_confirmed":
+      return "Pairing stopped: the host key was not confirmed. Nothing was saved.";
   }
 }
 
@@ -55,30 +68,35 @@ function isPairResponse(v: unknown): v is PairResponse {
 }
 
 /**
+ * How the app checks the host key in the `/pair` answer, which comes over plain HTTP:
+ * - `fingerprint`: the key from the QR code. A different key (or none) stops pairing.
+ * - `confirm`: manual entry. The user compares the key with the one `zogsshd pair` prints;
+ *   `false` stops pairing. It gets `null` when the host reports no key.
+ */
+export type HostKeyCheck = { fingerprint: string } | { confirm: (fingerprint: string | null) => Promise<boolean> };
+
+/**
  * Pairs with `zogsshd serve` at `address:port` using the code it shows, then saves the host
  * with the user, SSH port and host key the companion reports. Throws `PairFailed`; nothing is saved then.
+ * The push token is not sent here: it goes only over the pinned SSH session (`push.register`).
  */
 export async function pairWithHost(
-  o: { address: string; port?: number; code: string; name?: string },
-  deps?: { fetch?: typeof fetch; expoToken?: () => Promise<string | null> },
+  o: { address: string; port?: number; code: string; name?: string; check: HostKeyCheck },
+  deps?: { fetch?: typeof fetch },
 ): Promise<Host> {
   const doFetch = deps?.fetch ?? fetch;
   const address = o.address.trim();
   const port = o.port ?? DEFAULT_PAIR_PORT;
   // Re-pairing a saved host keeps its id, so the companion's host_id matches.
   const id = useHosts.getState().hosts.find((h) => h.address === address)?.id ?? newHostId();
-  const [deviceId, key, expoToken] = await Promise.all([
-    getDeviceId(),
-    ensureKey(),
-    (deps?.expoToken ?? getExpoToken)().catch(() => null),
-  ]);
+  const [deviceId, key] = await Promise.all([getDeviceId(), ensureKey()]);
   const body: PairRequest = {
     code: o.code,
     device_id: deviceId,
     device_name: deviceName(),
     host_id: id,
     public_key: key.publicKey,
-    expo_token: expoToken,
+    expo_token: null,
   };
 
   const abort = new AbortController();
@@ -105,18 +123,29 @@ export async function pairWithHost(
   }
   if (!isPairResponse(json)) throw new PairFailed("bad_request");
 
-  const values = {
+  const reported = json.host_key_fingerprint;
+  const values: { address: string; port: number; user: string; fingerprint?: string } = {
     address,
     port: json.ssh_port,
     user: json.user,
-    fingerprint: json.host_key_fingerprint ?? undefined,
   };
+  // Never write `fingerprint: undefined`: that would unpin a saved host.
+  if (reported) values.fingerprint = reported;
+  const saved = savedHostFor(useHosts.getState().hosts, values);
+  // A pinned key never changes through pairing: the answer is unauthenticated.
+  if (saved?.fingerprint && saved.fingerprint !== reported) throw new PairFailed("host_key_changed");
+  if ("fingerprint" in o.check) {
+    if (reported !== o.check.fingerprint) throw new PairFailed("host_key_mismatch");
+  } else if (!(await o.check.confirm(reported))) {
+    throw new PairFailed("not_confirmed");
+  }
+
   const { hosts, addHost, updateHost } = useHosts.getState();
-  const saved = savedHostFor(hosts, values);
-  if (saved) {
+  const current = saved && hosts.find((h) => h.id === saved.id);
+  if (current) {
     // Keep the saved name: the user may have renamed the host.
-    updateHost(saved.id, values);
-    return useHosts.getState().hosts.find((h) => h.id === saved.id)!;
+    updateHost(current.id, values);
+    return useHosts.getState().hosts.find((h) => h.id === current.id)!;
   }
   // The id guessed from the address belongs to another saved host (for example another user): use a new one.
   const freeId = hosts.some((h) => h.id === id) ? newHostId() : id;
