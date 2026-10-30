@@ -2,6 +2,9 @@ import { NativeModule, requireNativeModule } from "expo";
 
 export type ConnectOptions = { host: string; port: number; user: string; fingerprint?: string };
 
+/** A `_zogssh._tcp` service seen on the local network. `address` is null when it did not resolve in 3 s. */
+export type FoundService = { name: string; address: string | null; pairPort: number; txt: Record<string, string> };
+
 export type SshEvents = {
   /** stdout text of an exec channel, cut at UTF-8 sequence boundaries (not at lines). */
   onData: (e: { channelId: string; data: string }) => void;
@@ -11,6 +14,10 @@ export type SshEvents = {
   onChannelClose: (e: { channelId: string; reason: string }) => void;
   /** The SSH connection dropped. Not sent after `disconnect()`. */
   onDisconnect: (e: { hostId: string; reason: string }) => void;
+  /** A Bonjour service was found (or found again with new data) while browsing. */
+  onServiceFound: (e: FoundService) => void;
+  /** A Bonjour service went away while browsing. */
+  onServiceLost: (e: { name: string }) => void;
 };
 
 declare class SshNativeModule extends NativeModule<SshEvents> {
@@ -20,6 +27,8 @@ declare class SshNativeModule extends NativeModule<SshEvents> {
   write(channelId: string, data: string): Promise<void>;
   closeChannel(channelId: string): Promise<void>;
   disconnect(hostId: string): Promise<void>;
+  startBrowse(): Promise<void>;
+  stopBrowse(): Promise<void>;
 }
 
 const Ssh = requireNativeModule<SshNativeModule>("SshModule");
@@ -55,6 +64,15 @@ export function closeChannel(channelId: string): Promise<void> {
 
 export function disconnect(hostId: string): Promise<void> {
   return Ssh.disconnect(hostId);
+}
+
+/** Starts browsing for `_zogssh._tcp` services (replaces a running browse). Results come as events. */
+export function startBrowse(): Promise<void> {
+  return Ssh.startBrowse();
+}
+
+export function stopBrowse(): Promise<void> {
+  return Ssh.stopBrowse();
 }
 
 export function addListener<E extends keyof SshEvents>(event: E, listener: SshEvents[E]): { remove(): void } {

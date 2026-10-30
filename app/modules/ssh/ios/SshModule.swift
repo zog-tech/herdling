@@ -14,11 +14,12 @@ struct ConnectOptions: Record {
 
 public class SshModule: Module {
   private let state = SshState()
+  private let browser = Browser()
 
   public func definition() -> ModuleDefinition {
     Name("SshModule")
 
-    Events("onData", "onStderr", "onChannelClose", "onDisconnect")
+    Events("onData", "onStderr", "onChannelClose", "onDisconnect", "onServiceFound", "onServiceLost")
 
     AsyncFunction("ensureKey") { () throws -> [String: String] in
       let key = try Keys.loadOrCreate()
@@ -48,7 +49,19 @@ public class SshModule: Module {
       await self.disconnect(hostId: hostId)
     }
 
+    AsyncFunction("startBrowse") {
+      self.browser.start(
+        onFound: { [weak self] service in self?.sendEvent("onServiceFound", service) },
+        onLost: { [weak self] name in self?.sendEvent("onServiceLost", ["name": name]) }
+      )
+    }
+
+    AsyncFunction("stopBrowse") {
+      self.browser.stop()
+    }
+
     OnDestroy {
+      self.browser.stop()
       for hostId in self.state.hostIds() {
         Task { await self.disconnect(hostId: hostId) }
       }
