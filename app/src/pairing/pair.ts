@@ -131,15 +131,36 @@ export async function pairWithHost(
   };
   // Never write `fingerprint: undefined`: that would unpin a saved host.
   if (reported) values.fingerprint = reported;
-  const saved = savedHostFor(useHosts.getState().hosts, values);
-  // A pinned key never changes through pairing: the answer is unauthenticated.
-  if (saved?.fingerprint && saved.fingerprint !== reported) throw new PairFailed("host_key_changed");
+  const saved = savedHostFor(values);
   if ("fingerprint" in o.check) {
     if (reported !== o.check.fingerprint) throw new PairFailed("host_key_mismatch");
   } else if (!(await o.check.confirm(reported))) {
     throw new PairFailed("not_confirmed");
   }
+  return saveHost(saved, { id, name: o.name?.trim() || json.host_name }, values);
+}
 
+/** Address, port, user and the host key (when known) of a host being paired or enrolled. */
+export type HostValues = { address: string; port: number; user: string; fingerprint?: string };
+
+/**
+ * The saved host that `v` belongs to: same pinned key first, else same address, port and user.
+ * Throws `PairFailed("host_key_changed")` when that host has a different pinned key:
+ * a pinned key never changes through pairing.
+ */
+export function savedHostFor(v: HostValues): Host | undefined {
+  const hosts = useHosts.getState().hosts;
+  const byKey = v.fingerprint ? hosts.find((h) => h.fingerprint === v.fingerprint) : undefined;
+  const saved = byKey ?? hosts.find((h) => h.address === v.address && h.port === v.port && h.user === v.user);
+  if (saved?.fingerprint && saved.fingerprint !== v.fingerprint) throw new PairFailed("host_key_changed");
+  return saved;
+}
+
+/**
+ * Saves `values`: updates `saved` (from `savedHostFor`) and keeps its name, else adds a host
+ * with `fresh.id` (a new id when another saved host already uses it) and `fresh.name`.
+ */
+export function saveHost(saved: Host | undefined, fresh: { id: string; name: string }, values: HostValues): Host {
   const { hosts, addHost, updateHost } = useHosts.getState();
   const current = saved && hosts.find((h) => h.id === saved.id);
   if (current) {
@@ -148,15 +169,6 @@ export async function pairWithHost(
     return useHosts.getState().hosts.find((h) => h.id === current.id)!;
   }
   // The id guessed from the address belongs to another saved host (for example another user): use a new one.
-  const freeId = hosts.some((h) => h.id === id) ? newHostId() : id;
-  return addHost({ id: freeId, name: o.name?.trim() || json.host_name, ...values });
-}
-
-/** The saved host a pairing answer belongs to: same pinned key first, else same address, port and user. */
-function savedHostFor(hosts: Host[], v: { address: string; port: number; user: string; fingerprint?: string }) {
-  if (v.fingerprint) {
-    const byKey = hosts.find((h) => h.fingerprint === v.fingerprint);
-    if (byKey) return byKey;
-  }
-  return hosts.find((h) => h.address === v.address && h.port === v.port && h.user === v.user);
+  const freeId = hosts.some((h) => h.id === fresh.id) ? newHostId() : fresh.id;
+  return addHost({ id: freeId, name: fresh.name, ...values });
 }

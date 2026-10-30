@@ -2,6 +2,22 @@ import { NativeModule, requireNativeModule } from "expo";
 
 export type ConnectOptions = { host: string; port: number; user: string; fingerprint?: string };
 
+/** One-shot password login for "Set up with password". The password is never stored or logged. */
+export type PasswordExecOptions = {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  command: string;
+  /** Written to the command's stdin after it starts. stdin is not closed, so end it with a newline. */
+  stdin: string;
+  /** When given, a different host key rejects with "host_key_mismatch" before the password is sent. */
+  expectedFingerprint?: string;
+  timeoutMs: number;
+};
+
+export type PasswordExecResult = { stdout: string; stderr: string; exitCode: number; hostFingerprint: string };
+
 /** A `_zogssh._tcp` service seen on the local network. `address` is null when it did not resolve in 3 s. */
 export type FoundService = { name: string; address: string | null; pairPort: number; txt: Record<string, string> };
 
@@ -32,6 +48,8 @@ declare class SshNativeModule extends NativeModule<SshEvents> {
   write(channelId: string, data: string): Promise<void>;
   closeChannel(channelId: string): Promise<void>;
   disconnect(hostId: string): Promise<void>;
+  probeHostKey(o: { host: string; port: number; timeoutMs: number }): Promise<{ fingerprint: string }>;
+  execWithPassword(o: PasswordExecOptions): Promise<PasswordExecResult>;
   startBrowse(): Promise<void>;
   stopBrowse(): Promise<void>;
 }
@@ -69,6 +87,23 @@ export function closeChannel(channelId: string): Promise<void> {
 
 export function disconnect(hostId: string): Promise<void> {
   return Ssh.disconnect(hostId);
+}
+
+/**
+ * Reads the host key (`SHA256:<base64>`) and closes the connection before any login.
+ * Error codes: "connect_failed", "timeout".
+ */
+export function probeHostKey(o: { host: string; port: number; timeoutMs: number }): Promise<{ fingerprint: string }> {
+  return Ssh.probeHostKey(o);
+}
+
+/**
+ * Logs in with a password, runs `command` on one exec channel, writes `stdin`, collects the output
+ * until the command ends, then disconnects. Not tied to a saved host. A non-zero exit is a result, not an error.
+ * Error codes: "host_key_mismatch", "auth_failed", "connect_failed", "exec_failed", "timeout".
+ */
+export function execWithPassword(o: PasswordExecOptions): Promise<PasswordExecResult> {
+  return Ssh.execWithPassword(o);
 }
 
 /** Starts browsing for `_zogssh._tcp` services (replaces a running browse). Results come as events. */

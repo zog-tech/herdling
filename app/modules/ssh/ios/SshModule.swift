@@ -49,6 +49,14 @@ public class SshModule: Module {
       await self.disconnect(hostId: hostId)
     }
 
+    AsyncFunction("probeHostKey") { (opts: ProbeOptions) async throws -> [String: String] in
+      try await PasswordSetup.probeHostKey(opts)
+    }
+
+    AsyncFunction("execWithPassword") { (opts: PasswordExecOptions) async throws -> [String: Any] in
+      try await PasswordSetup.execWithPassword(opts)
+    }
+
     AsyncFunction("startBrowse") {
       self.browser.start(
         onFound: { [weak self] service in self?.sendEvent("onServiceFound", service) },
@@ -218,14 +226,18 @@ public class SshModule: Module {
 // MARK: - Host key check
 
 /// Computes the server's SHA256 fingerprint and compares it with the pinned one (when given).
+/// With `rejectAll` it only records the fingerprint and fails the check, so the connection stops
+/// before any login (the host key probe).
 final class HostKeyCheck: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
   private let pinned: String?
+  private let rejectAll: Bool
   private let lock = NSLock()
   private var _seen: String?
   private var _mismatch = false
 
-  init(pinned: String?) {
+  init(pinned: String?, rejectAll: Bool = false) {
     self.pinned = pinned?.isEmpty == true ? nil : pinned
+    self.rejectAll = rejectAll
   }
 
   var seen: String? { lock.withLock { _seen } }
@@ -243,7 +255,7 @@ final class HostKeyCheck: NIOSSHClientServerAuthenticationDelegate, @unchecked S
       _seen = fingerprint
       _mismatch = !ok
     }
-    if ok {
+    if ok && !rejectAll {
       validationCompletePromise.succeed(())
     } else {
       validationCompletePromise.fail(HostKeyRejected())

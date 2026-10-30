@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { Check, ChevronRight, Keyboard, PenLine, Settings, TriangleAlert } from "lucide-react-native";
+import { Check, ChevronRight, Keyboard, KeyRound, PenLine, Settings, TriangleAlert } from "lucide-react-native";
 import { type ReactNode, useCallback, useState } from "react";
 import { ActivityIndicator, Linking, View } from "react-native";
 
@@ -140,6 +140,20 @@ export default function DiscoverScreen() {
       <Card style={{ paddingVertical: space.sm }}>
         <Divided>
           {[
+            <Row
+              key="password"
+              accessibilityLabel="Set up with password"
+              onPress={() => router.push("/hosts/password")}
+              trailing={<ChevronRight size={18} color={colors.textMuted} />}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <KeyRound size={18} color={colors.text} />
+                <Text bold>Set up with password</Text>
+              </View>
+              <Text variant="small" muted>
+                Log in once with the SSH password. Works over a VPN.
+              </Text>
+            </Row>,
             <Row
               key="pair"
               accessibilityLabel="Add by address"
