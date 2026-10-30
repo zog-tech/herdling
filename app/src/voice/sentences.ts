@@ -1,6 +1,6 @@
 /** Words that end with a period but do not end a sentence. Lower case, without the period. */
 const ABBREVIATIONS = new Set([
-  "e.g", "i.e", "etc", "vs", "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "no", "fig", "approx", "cf", "inc", "ltd",
+  "e.g", "i.e", "etc", "vs", "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "fig", "approx", "cf", "inc", "ltd",
 ]);
 
 /** A short sentence joins the next one, so a clip is never a single word. */
