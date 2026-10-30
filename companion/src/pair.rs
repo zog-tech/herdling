@@ -74,14 +74,24 @@ fn write_window(cfg_dir: &Path, w: &Window) -> std::io::Result<()> {
     fs::DirBuilder::new().recursive(true).mode(0o700).create(cfg_dir)?;
     let path = window_path(cfg_dir);
     let tmp = cfg_dir.join(format!("pair.json.{}.tmp", std::process::id()));
-    let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
-    f.write_all(&serde_json::to_vec(w)?)?;
-    f.sync_all()?;
-    fs::rename(&tmp, &path)
+    let res = (|| {
+        let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
+        f.write_all(&serde_json::to_vec(w)?)?;
+        f.sync_all()?;
+        fs::rename(&tmp, &path)
+    })();
+    if res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    res
 }
 
-fn close_window(cfg_dir: &Path) {
-    let _ = fs::remove_file(window_path(cfg_dir));
+/// Deletes `pair.json`. True when the file is gone afterwards.
+fn close_window(cfg_dir: &Path) -> bool {
+    match fs::remove_file(window_path(cfg_dir)) {
+        Ok(()) => true,
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+    }
 }
 
 /// Checks `code` against the open window. On success the window is closed, so a
@@ -102,8 +112,8 @@ pub fn take_window(cfg_dir: &Path, code: &str, now: u64) -> Result<(), PairError
         return Err(PairError::NoWindow);
     }
     if ct_eq(code.as_bytes(), w.code.as_bytes()) {
-        close_window(cfg_dir);
-        return Ok(());
+        // Single use: when the window cannot be closed, the code must not work.
+        return if close_window(cfg_dir) { Ok(()) } else { Err(PairError::NoWindow) };
     }
     w.wrong += 1;
     if w.wrong >= MAX_WRONG {
@@ -269,6 +279,23 @@ pub fn append_key(authorized_keys: &Path, line: &str) -> std::io::Result<bool> {
 /// Removes every line whose key blob equals the blob of `public_key` (`<type> <blob> [comment]`).
 /// Other lines stay byte for byte; the file keeps its mode. Returns the count removed.
 pub fn remove_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<usize> {
+    remove_lines(authorized_keys, public_key, false)
+}
+
+/// Like [`remove_key`], but removes only lines that end with a `zogssh:<device>` comment,
+/// so a line the user added for the same key stays.
+pub fn remove_zogssh_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<usize> {
+    remove_lines(authorized_keys, public_key, true)
+}
+
+fn is_zogssh_line(line: &str) -> bool {
+    line.trim_end_matches(['\r', '\n', ' ', '\t'])
+        .rsplit([' ', '\t'])
+        .next()
+        .is_some_and(|c| c.starts_with("zogssh:"))
+}
+
+fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> std::io::Result<usize> {
     let Some(blob) = public_key.split(' ').nth(1).filter(|b| !b.is_empty()) else { return Ok(0) };
     if !authorized_keys.exists() {
         return Ok(0);
@@ -283,7 +310,7 @@ pub fn remove_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<u
     let mut kept = String::with_capacity(text.len());
     let mut removed = 0;
     for l in text.split_inclusive('\n') {
-        if line_blob(l) == Some(blob) {
+        if line_blob(l) == Some(blob) && (!only_zogssh || is_zogssh_line(l)) {
             removed += 1;
         } else {
             kept.push_str(l);
@@ -294,12 +321,17 @@ pub fn remove_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<u
     }
     let perms = fs::metadata(&target)?.permissions();
     let tmp = target.with_file_name(format!(".authorized_keys.zogsshd.{}.tmp", std::process::id()));
-    let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
-    f.write_all(kept.as_bytes())?;
-    f.set_permissions(perms)?;
-    f.sync_all()?;
-    fs::rename(&tmp, &target)?;
-    Ok(removed)
+    let res = (|| {
+        let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
+        f.write_all(kept.as_bytes())?;
+        f.set_permissions(perms)?;
+        f.sync_all()?;
+        fs::rename(&tmp, &target)
+    })();
+    if res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    res.map(|()| removed)
 }
 
 /// `SHA256:<base64 no padding>` of the key in the first readable `.pub` file, as `ssh-keygen -lf` prints it.

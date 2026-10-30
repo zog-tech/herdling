@@ -270,9 +270,20 @@ async fn bad_json_is_bad_request() {
     let r = reqwest::Client::new().post(&s.url).body("{not json").send().await.unwrap();
     assert_eq!(r.status().as_u16(), 400);
     assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "bad_request"}));
-    let big = "x".repeat(20 * 1024);
-    let (status, resp) = post(&s, &body("123456", &format!("ssh-ed25519 {big}"), "Sam")).await;
+}
+
+#[tokio::test]
+async fn body_over_limit_is_rejected() {
+    let s = start().await;
+    let code = s.open();
+    // Valid in every field but too large: only the body limit can reject it.
+    let mut b = body(&code, &format!("ssh-ed25519 {}", ed25519_blob(1)), "Sam");
+    b["expo_token"] = json!("x".repeat(20 * 1024));
+    let (status, resp) = post(&s, &b).await;
     assert_eq!((status, resp), (400, json!({"error": "bad_request"})));
+    assert!(s.pair_json().exists());
+    assert_eq!(s.keys(), "");
+    assert!(config::load(&s.config_path()).unwrap().devices.is_empty());
 }
 
 #[tokio::test]
@@ -286,6 +297,45 @@ async fn duplicate_key_not_appended_twice() {
     }
     assert_eq!(s.keys().lines().count(), 1);
     assert_eq!(config::load(&s.config_path()).unwrap().devices.len(), 1);
+}
+
+/// Pairs device d1 once with each key fill, in order, each in a new window.
+async fn pair_d1(s: &Setup, fills: &[u8]) {
+    for &f in fills {
+        let code = s.open();
+        let (status, resp) = post(s, &body(&code, &format!("ssh-ed25519 {}", ed25519_blob(f)), "Sam iPhone")).await;
+        assert_eq!(status, 200, "{resp}");
+    }
+}
+
+#[tokio::test]
+async fn repair_with_new_key_replaces_old_line() {
+    let s = start().await;
+    pair_d1(&s, &[1]).await;
+    // A line the user added for key A without the zogssh comment stays.
+    let user_line = format!("ssh-ed25519 {} sam@laptop\n", ed25519_blob(1));
+    let first = s.keys();
+    std::fs::write(s.keys_path(), format!("{user_line}{first}")).unwrap();
+    pair_d1(&s, &[2]).await;
+    let keys = s.keys();
+    let zogssh: Vec<&str> = keys.lines().filter(|l| l.contains(" zogssh:")).collect();
+    assert_eq!(zogssh.len(), 1, "{keys}");
+    assert!(zogssh[0].contains(&format!("ssh-ed25519 {} zogssh:Sam-iPhone", ed25519_blob(2))));
+    assert!(!keys.contains(&format!("{} zogssh:", ed25519_blob(1))));
+    assert!(keys.starts_with(&user_line));
+    let c = config::load(&s.config_path()).unwrap();
+    assert_eq!(c.devices.len(), 1);
+    assert_eq!(c.devices[0].public_key.as_deref(), Some(format!("ssh-ed25519 {}", ed25519_blob(2)).as_str()));
+}
+
+#[tokio::test]
+async fn revoke_after_repair_leaves_no_line() {
+    let s = start().await;
+    pair_d1(&s, &[1, 2]).await;
+    let r = rpc_call(s.home(), "pair.revoke", json!({"device_id": "d1", "public_key": format!("ssh-ed25519 {}", ed25519_blob(2))})).await;
+    assert_eq!(r["result"], json!({"removed_keys": 1, "removed_device": true}), "{r}");
+    assert_eq!(s.keys(), "");
+    assert!(config::load(&s.config_path()).unwrap().devices.is_empty());
 }
 
 async fn rpc_call(home: &Path, method: &str, params: Value) -> Value {

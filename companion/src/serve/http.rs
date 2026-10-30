@@ -133,11 +133,24 @@ fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairRespon
     check_id(&req.device_id, "device_id")?;
     check_id(&req.host_id, "host_id")?;
     let public_key = pair::parse_public_key(&req.public_key)?;
-    let line = pair::key_line(&state.exe, &public_key, &req.device_name)?;
+    // The key is valid here, so a key_line error means the companion path is unsafe: a server fault.
+    let line = pair::key_line(&state.exe, &public_key, &req.device_name).map_err(|e| Failure::Internal(e.into()))?;
     let name = pair::sanitize_name(&req.device_name);
 
     let _guard = state.lock.lock().unwrap_or_else(|p| p.into_inner());
     pair::take_window(&state.cfg_dir, &req.code, now)?;
+    // Re-pairing a device with a new key: its old key line must go, or the old key keeps
+    // access that a later `pair.revoke` (which sends the current key) cannot remove.
+    let old_key = config::load(&state.config_path)
+        .map_err(Failure::Internal)?
+        .devices
+        .into_iter()
+        .find(|d| d.id == req.device_id)
+        .and_then(|d| d.public_key)
+        .filter(|k| *k != public_key);
+    if let Some(old) = old_key {
+        pair::remove_zogssh_key(&state.authorized_keys, &old).map_err(|e| Failure::Internal(e.into()))?;
+    }
     pair::append_key(&state.authorized_keys, &line).map_err(|e| Failure::Internal(e.into()))?;
     let device = Device {
         id: req.device_id,
