@@ -13,7 +13,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Zogssh connects to your computers on the local network over SSH."
-      }
+      },
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -68,7 +69,10 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/bfac8d0c-87ff-42be-877a-8907b4fe587c"
+      "url": "https://u.expo.dev/bfac8d0c-87ff-42be-877a-8907b4fe587c",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }
