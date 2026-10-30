@@ -85,6 +85,16 @@ async fn summary_nonzero_exit() {
 }
 
 #[tokio::test]
+async fn summary_chatty_stderr_still_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    // About 64 KiB of stderr, then a good answer and exit 0. A closed stderr pipe kills `tr`
+    // with SIGPIPE, and the script then exits 9, like a tool that dies on EPIPE.
+    with_script(dir.path(), "cat > /dev/null\nhead -c 65536 /dev/zero | tr '\\0' x >&2 || exit 9\necho 'Did X.'");
+    let r = summary(dir.path(), "hi", T).await;
+    assert_eq!(r["result"], json!({ "summary": "Did X." }), "{r}");
+}
+
+#[tokio::test]
 async fn summary_empty_output() {
     let dir = tempfile::tempdir().unwrap();
     with_script(dir.path(), "cat > /dev/null\necho '   '");

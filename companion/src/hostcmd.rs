@@ -67,15 +67,20 @@ pub async fn run(argv: &[String], input: Vec<u8>, timeout: Duration, max_out: us
             let _ = si.write_all(&input).await;
             let _ = si.shutdown().await;
         };
-        // Each reader owns its pipe, so a pipe closes when its cap is reached and a
-        // command that keeps writing gets EPIPE instead of blocking until the timeout.
+        // stdout over its cap is an error, so its pipe closes at the cap and a command that
+        // keeps writing gets EPIPE instead of running until the timeout.
         let read_out = async move {
             let mut out = Vec::new();
             so.take(max_out as u64 + 1).read_to_end(&mut out).await.map(|_| out)
         };
+        // stderr is only diagnostics: keep the start and drain the rest to EOF, so a chatty
+        // command (progress bars, warnings) never gets SIGPIPE.
         let read_err = async move {
+            let mut se = se;
             let mut errb = Vec::new();
-            se.take(STDERR_READ).read_to_end(&mut errb).await.map(|_| errb)
+            (&mut se).take(STDERR_READ).read_to_end(&mut errb).await?;
+            tokio::io::copy(&mut se, &mut tokio::io::sink()).await?;
+            Ok::<_, std::io::Error>(errb)
         };
         let ((), out, errb) = tokio::join!(feed, read_out, read_err);
         let (out, errb) = (out?, errb?);

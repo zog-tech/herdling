@@ -68,6 +68,16 @@ async fn tts_unset_gives_no_command() {
 }
 
 #[tokio::test]
+async fn tts_missing_program_names_only_the_program() {
+    let dir = tempfile::tempdir().unwrap();
+    set_command(dir.path(), Which::Tts, Some(vec!["/nonexistent/bin/speak-tool".into()]));
+    let r = tts(dir.path(), "secret input", T).await;
+    assert_eq!(r["error"]["code"], "command_failed");
+    let msg = r["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("speak-tool") && !msg.contains("secret"), "{msg}");
+}
+
+#[tokio::test]
 async fn tts_timeout_kills_child() {
     let dir = tempfile::tempdir().unwrap();
     let pids = dir.path().join("pids");
