@@ -20,9 +20,10 @@
         },
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Zogssh uses the microphone while you hold the mic button, to turn your speech into a prompt for the agent.",
-        "NSSpeechRecognitionUsageDescription": "Zogssh turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it."
+        "NSSpeechRecognitionUsageDescription": "Zogssh turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
+        "NSPhotoLibraryUsageDescription": "Zogssh does not read your photos. A library it includes needs this text to be present."
       },
-      "buildNumber": "2"
+      "buildNumber": "3"
     },
     "android": {
       "adaptiveIcon": {
