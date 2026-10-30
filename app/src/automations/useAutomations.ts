@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
+import { hasMethod } from "@/hosts/methods";
 import { RpcError } from "@/rpc/RpcClient";
 
 export const AUTOMATIONS_POLL_MS = 30_000;
@@ -11,6 +12,7 @@ export const AUTOMATIONS_POLL_MS = 30_000;
 export type AutomationsState =
   | { kind: "loading" }
   | { kind: "not_installed" }
+  | { kind: "outdated" }
   | { kind: "error"; message: string }
   | { kind: "ready"; automations: Automation[]; runs: AutomationRun[] };
 
@@ -25,7 +27,8 @@ export function useAutomations(hostId: string): {
   refresh: () => Promise<void>;
   approve: (a: Automation) => Promise<void>;
 } {
-  const { rpc } = useHostConn(hostId);
+  const { rpc, hello } = useHostConn(hostId);
+  const supported = hasMethod(hello, "automations.list") && hasMethod(hello, "automations.runs");
   const focused = useIsFocused();
   const [active, setActive] = useState(AppState.currentState === "active");
   const [state, setState] = useState<AutomationsState>({ kind: "loading" });
@@ -41,7 +44,8 @@ export function useAutomations(hostId: string): {
   }, [hostId]);
 
   useEffect(() => {
-    if (!rpc || !focused || !active) {
+    if (rpc && !supported) setState({ kind: "outdated" });
+    if (!rpc || !supported || !focused || !active) {
       readRef.current = async () => {};
       return;
     }
@@ -57,7 +61,8 @@ export function useAutomations(hostId: string): {
           if (!dead) setState({ kind: "ready", automations: sortAutomations(l.automations), runs: r.runs });
         } catch (e) {
           if (dead) return;
-          if (e instanceof RpcError && e.code === "not_installed") setState({ kind: "not_installed" });
+          if (e instanceof RpcError && e.code === "unknown_method") setState({ kind: "outdated" });
+          else if (e instanceof RpcError && e.code === "not_installed") setState({ kind: "not_installed" });
           else if (e instanceof RpcError && e.code !== "timeout" && e.code !== "disconnected") {
             setState({ kind: "error", message: e.message });
           }
@@ -75,7 +80,7 @@ export function useAutomations(hostId: string): {
       dead = true;
       clearInterval(t);
     };
-  }, [rpc, focused, active]);
+  }, [rpc, supported, focused, active]);
 
   const refresh = useCallback(() => readRef.current(), []);
   const approve = useCallback(

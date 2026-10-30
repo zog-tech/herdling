@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
+import { hasMethod } from "@/hosts/methods";
 
 import { setHostPreviews } from "./boardStore";
 
@@ -15,7 +16,8 @@ export const PREVIEW_POLL_MS = 3_000;
  * is asked again only after a reconnect.
  */
 export function usePreviewPolling(hostId: string, enabled: boolean): void {
-  const { rpc } = useHostConn(hostId);
+  const { rpc, hello } = useHostConn(hostId);
+  const supported = hasMethod(hello, "agents.preview");
   const [active, setActive] = useState(AppState.currentState !== "background" && AppState.currentState !== "inactive");
 
   useEffect(() => {
@@ -24,7 +26,7 @@ export function usePreviewPolling(hostId: string, enabled: boolean): void {
   }, []);
 
   useEffect(() => {
-    if (!rpc || !enabled || !active) return;
+    if (!rpc || !supported || !enabled || !active) return;
     let dead = false;
     let busy = false;
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -51,5 +53,5 @@ export function usePreviewPolling(hostId: string, enabled: boolean): void {
       dead = true;
       if (timer) clearInterval(timer);
     };
-  }, [rpc, hostId, enabled, active]);
+  }, [rpc, supported, hostId, enabled, active]);
 }

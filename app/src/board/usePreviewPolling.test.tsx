@@ -14,8 +14,9 @@ const mockRpc = {
     return { previews: [{ pane_id: "w1:p1", activity: "Thinking", status_since: 5, source: "log" }] };
   },
 };
+let mockMethods: string[] | undefined;
 jest.mock("@/hosts/connection", () => ({
-  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }),
+  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: mockMethods } }),
 }));
 
 function Probe({ enabled }: { enabled: boolean }) {
@@ -31,6 +32,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   mockCalls.length = 0;
   mockFail = undefined;
+  mockMethods = undefined;
   useBoard.setState({ previews: {} });
   useSnapshots.setState({ byHost: { "host-1": { agents: [{ pane_id: "w1:p1", agent_status: "working" }] } as any }, errors: {} });
 });
@@ -82,4 +84,14 @@ test("old_companion_without_method_is_not_asked_again", async () => {
   await act(async () => jest.advanceTimersByTime(PREVIEW_POLL_MS * 3));
   await flush();
   expect(mockCalls).toHaveLength(1);
+});
+
+test("does_not_poll_a_host_whose_method_list_lacks_agents_preview", async () => {
+  mockMethods = ["ping"];
+  await act(async () => {
+    tree = create(<Probe enabled />);
+  });
+  await flush();
+  await act(async () => jest.advanceTimersByTime(PREVIEW_POLL_MS * 3));
+  expect(mockCalls).toEqual([]);
 });

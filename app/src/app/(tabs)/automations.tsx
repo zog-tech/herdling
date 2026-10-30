@@ -164,6 +164,13 @@ function HostAutomations({
         <Text variant="small" muted>
           Loading…
         </Text>
+      ) : state.kind === "outdated" ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Info size={16} color={colors.textMuted} />
+          <Text variant="small" muted style={{ flex: 1 }}>
+            This host runs an older zogsshd. Update it to use automations.
+          </Text>
+        </View>
       ) : state.kind === "not_installed" ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Info size={16} color={colors.textMuted} />

@@ -17,6 +17,7 @@ import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
+import { needsZogsshdUpdate, UPDATE_ZOGSSHD_HINT } from "@/hosts/methods";
 import { getHostConn, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
@@ -65,6 +66,11 @@ function HostCard({ host }: { host: Host }) {
         <ConnBadge status={conn.status} />
       </View>
       {online ? <HostMeters hostId={host.id} /> : null}
+      {online && needsZogsshdUpdate(conn.hello) ? (
+        <Text variant="small" muted>
+          {UPDATE_ZOGSSHD_HINT}
+        </Text>
+      ) : null}
       {online && !snapshot ? (
         <Text muted variant="small">
           {error ? "Can't read herdr" : "Loading…"}

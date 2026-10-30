@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
+import { hasMethod } from "@/hosts/methods";
 
 /** The Claude usage endpoint has a strict rate limit, so the screen polls slowly; pull-to-refresh reads at once. */
 export const USAGE_POLL_MS = 5 * 60_000;
 
 /** Plan usage of one host (`usage.get`), refreshed every 5 min while the screen is focused and the app is active. `refresh` reads now. */
 export function useUsage(hostId: string): { usage: Usage | undefined; refresh: () => Promise<void> } {
-  const { rpc } = useHostConn(hostId);
+  const { rpc, hello } = useHostConn(hostId);
+  const supported = hasMethod(hello, "usage.get");
   const focused = useIsFocused();
   const [active, setActive] = useState(AppState.currentState === "active");
   const [usage, setUsage] = useState<Usage>();
@@ -26,7 +28,7 @@ export function useUsage(hostId: string): { usage: Usage | undefined; refresh: (
   }, [hostId]);
 
   useEffect(() => {
-    if (!rpc || !focused || !active) {
+    if (!rpc || !supported || !focused || !active) {
       readRef.current = async () => {};
       return;
     }
@@ -52,7 +54,7 @@ export function useUsage(hostId: string): { usage: Usage | undefined; refresh: (
       dead = true;
       clearInterval(t);
     };
-  }, [rpc, focused, active]);
+  }, [rpc, supported, focused, active]);
 
   const refresh = useCallback(() => readRef.current(), []);
   return { usage, refresh };

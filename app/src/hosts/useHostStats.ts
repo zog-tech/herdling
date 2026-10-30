@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
+import { hasMethod } from "@/hosts/methods";
 
 export const STATS_POLL_MS = 10_000;
 
 /** Host CPU and memory (`stats.get`), polled every 10 s while the screen is focused and the app is active. */
 export function useHostStats(hostId: string): Stats | undefined {
-  const { rpc } = useHostConn(hostId);
+  const { rpc, hello } = useHostConn(hostId);
+  const supported = hasMethod(hello, "stats.get");
   const focused = useIsFocused();
   const [active, setActive] = useState(AppState.currentState === "active");
   const [stats, setStats] = useState<Stats>();
@@ -24,7 +26,7 @@ export function useHostStats(hostId: string): Stats | undefined {
   }, [hostId]);
 
   useEffect(() => {
-    if (!rpc || !focused || !active) return;
+    if (!rpc || !supported || !focused || !active) return;
     let dead = false;
     let busy = false;
     const read = async () => {
@@ -45,7 +47,7 @@ export function useHostStats(hostId: string): Stats | undefined {
       dead = true;
       clearInterval(t);
     };
-  }, [rpc, focused, active]);
+  }, [rpc, supported, focused, active]);
 
   return stats;
 }

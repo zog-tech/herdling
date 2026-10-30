@@ -12,6 +12,8 @@ export type Hello = {
   herdr_ok: boolean;
   herdr_version?: string;
   herdr_protocol?: number;
+  /** Method names the host accepts. Missing on an older zogsshd. */
+  methods?: string[];
 };
 
 export type ThreadItem =
