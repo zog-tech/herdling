@@ -29,6 +29,7 @@ export function Composer({
   initialText,
   initialError,
   visible = true,
+  autoFocus,
 }: {
   hostId: string;
   paneId: string;
@@ -38,6 +39,8 @@ export function Composer({
   /** Text to start with, for example a first prompt that failed to send. */
   initialText?: string;
   initialError?: string;
+  /** Focus the prompt box (and raise the keyboard) on mount. */
+  autoFocus?: boolean;
 }) {
   const { rpc, status } = useHostConn(hostId);
   const [text, setText] = useState(initialText ?? "");
@@ -156,6 +159,7 @@ export function Composer({
             if (error) setError(undefined);
           }}
           editable={online}
+          autoFocus={autoFocus}
           multiline
           placeholder={online ? "Message the agent" : "Host offline"}
           placeholderTextColor={colors.textMuted}
