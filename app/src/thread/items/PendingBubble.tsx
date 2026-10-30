@@ -69,8 +69,11 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
   );
 });
 
-/** All pending prompts of a pane, in send order. Renders nothing when there are none. */
-export function PendingBubbles({ hostId, paneId }: { hostId: string; paneId: string }) {
+/**
+ * All pending prompts of a pane, in send order. Renders nothing when there are none. Memoized:
+ * the thread passes a new element on every update.
+ */
+export const PendingBubbles = memo(function PendingBubbles({ hostId, paneId }: { hostId: string; paneId: string }) {
   const list = usePendingList(hostId, paneId);
   if (list.length === 0) return null;
   return (
@@ -80,4 +83,4 @@ export function PendingBubbles({ hostId, paneId }: { hostId: string; paneId: str
       ))}
     </View>
   );
-}
+});

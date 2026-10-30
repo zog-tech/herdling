@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useHostConn } from "@/hosts/connection";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { PAGE_SIZE, type FollowData, codeOf, fetchOlder, followHandler, makeFail, messageOf } from "./followShared";
-import { mergeItems } from "./merge";
+import { mergeItems, prependOlder } from "./merge";
 import { reconcilePending, usePendingList } from "./pending";
 
 /**
@@ -207,7 +207,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         src.cursor = page.cursor;
         setHasOlder(page.cursor != null);
         // Newer copies of the same ids (already loaded) win.
-        setItems((prev) => mergeItems(page.items, prev));
+        setItems((prev) => prependOlder(page.items, prev));
       },
     });
   }, []);

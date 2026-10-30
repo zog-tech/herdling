@@ -433,3 +433,10 @@ test("recording_swaps_the_box_for_the_record_bar_and_the_text_lands_appended", a
   // The text is not sent.
   expect(mockCalls.filter((c) => c.method !== "pane.read")).toHaveLength(0);
 });
+
+test("composer_and_pending_bubbles_are_memoized", () => {
+  // The session screen re-renders on every thread update; these skip when their props are equal.
+  const { PendingBubbles } = jest.requireActual("./items/PendingBubble");
+  expect((Composer as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
+  expect((PendingBubbles as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
+});

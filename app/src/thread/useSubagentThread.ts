@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHostConn } from "@/hosts/connection";
 import { PAGE_SIZE, fetchOlder, followHandler, makeFail, type FollowData } from "./followShared";
-import { mergeItems } from "./merge";
+import { mergeItems, prependOlder } from "./merge";
 import type { FollowStatus } from "./useThread";
 
 /**
@@ -108,7 +108,7 @@ export function useSubagentThread(
       apply: (page) => {
         cursor.current = page.cursor;
         setHasOlder(page.cursor != null);
-        setItems((prev) => mergeItems(page.items, prev));
+        setItems((prev) => prependOlder(page.items, prev));
       },
     });
   }, [rpc, parentLog, agentId]);

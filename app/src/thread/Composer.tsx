@@ -1,6 +1,6 @@
 import { File } from "expo-file-system";
 import { ArrowUp, Check } from "lucide-react-native";
-import { useEffect, useRef, useState, type ComponentRef } from "react";
+import { memo, useEffect, useRef, useState, type ComponentRef } from "react";
 import { AppState, Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
@@ -48,8 +48,9 @@ export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the termi
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
  * The "+" button attaches photos (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. Typing `/` shows the matching commands.
+ * Memoized: the session screen re-renders on every thread update, and the props are plain values.
  */
-export function Composer({
+export const Composer = memo(function Composer({
   hostId,
   paneId,
   bottomInset,
@@ -452,4 +453,4 @@ export function Composer({
       ) : null}
     </View>
   );
-}
+});
