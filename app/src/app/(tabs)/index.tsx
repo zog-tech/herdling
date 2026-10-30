@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
-import { ListFilter, Moon, Plus, Server } from "lucide-react-native";
+import { CircleSlash, ListFilter, Loader, Moon, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -74,33 +74,55 @@ function HostCard({ host }: { host: Host }) {
   );
 }
 
-/** One line per host that is not fully there: offline, connecting, or herdr unreadable. Silent when all is well. */
-function HostProblems({ hosts }: { hosts: Host[] }) {
-  return (
-    <>
-      {hosts.map((h) => (
-        <HostProblem key={h.id} host={h} />
-      ))}
-    </>
-  );
+/** Hosts that are not fully there: not online, or online but herdr unreadable. */
+function useProblemHosts(hosts: Host[], online: Set<string>): Host[] {
+  const errors = useSnapshots((s) => s.errors);
+  const byHost = useSnapshots((s) => s.byHost);
+  return useMemo(() => hosts.filter((h) => !online.has(h.id) || (errors[h.id] && !byHost[h.id])), [hosts, online, errors, byHost]);
 }
 
-function HostProblem({ host }: { host: Host }) {
-  const conn = useHostConn(host.id);
-  const error = useSnapshots((s) => s.errors[host.id]);
-  const hasSnapshot = useSnapshots((s) => !!s.byHost[host.id]);
-  const online = conn.status === "online";
-  if (online && !(error && !hasSnapshot)) return null;
+/** Compact strip above the chips: one short sentence per host that is offline, connecting or can't read herdr. */
+function HostStrip({ hosts }: { hosts: Host[] }) {
+  if (hosts.length === 0) return null;
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.xs }}
+      style={{
+        marginHorizontal: space.lg,
+        marginTop: space.sm,
+        paddingHorizontal: space.md,
+        paddingVertical: space.xs,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.muted,
+        backgroundColor: colors.card,
+      }}
     >
-      <Server size={14} color={colors.textMuted} />
-      <Text variant="small" muted numberOfLines={1} style={{ flex: 1 }}>
-        {online ? `${host.name} · Can't read herdr` : host.name}
+      {hosts.map((h) => (
+        <HostStripRow key={h.id} host={h} />
+      ))}
+    </View>
+  );
+}
+
+function HostStripRow({ host }: { host: Host }) {
+  const conn = useHostConn(host.id);
+  const text =
+    conn.status === "online"
+      ? `${host.name} · can't read herdr`
+      : conn.status === "connecting"
+        ? `${host.name} is connecting…`
+        : conn.lastSeen
+          ? `${host.name} is offline · seen ${timeAgo(conn.lastSeen)}`
+          : `${host.name} is offline`;
+  const Icon = conn.status === "online" ? TriangleAlert : conn.status === "connecting" ? Loader : CircleSlash;
+  const color = conn.status === "online" ? colors.status.blocked : colors.textMuted;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 28 }}>
+      <Icon size={14} color={color} />
+      <Text variant="small" color={color} numberOfLines={1} style={{ flex: 1 }}>
+        {text}
       </Text>
-      {online ? null : <ConnBadge status={conn.status} />}
     </View>
   );
 }
@@ -165,6 +187,7 @@ export default function BoardScreen() {
   const seen = useSeen((s) => s.seen);
   const hydrated = useSeenHydrated();
   const online = useOnlineHostIds(hosts);
+  const problemHosts = useProblemHosts(hosts, online);
   const { previews, firstSeen, filter, groupBy } = useBoard();
   const now = useNow(CLOCK_MS, focused);
 
@@ -279,8 +302,8 @@ export default function BoardScreen() {
           )}
           ListHeaderComponent={
             <View>
+              <HostStrip hosts={problemHosts} />
               <BoardChips counts={counts} filter={filter} onChange={setFilter} />
-              <HostProblems hosts={hosts} />
               {quiet && filter === null ? <Calm text="All quiet. Nothing needs you." /> : null}
               {items.length === 0 && online.size > 0 ? <Calm text="No agents running." /> : null}
               {items.length > 0 && filter !== null && sections.length === 0 ? (

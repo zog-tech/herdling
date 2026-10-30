@@ -1,6 +1,7 @@
-import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+
+import { secureJSONStorage } from "@/secureStorage";
 
 /** "iphone": the device's voices (expo-speech). "host": the host's `tts_command` through `tts.make`. */
 export type VoiceEngine = "iphone" | "host";
@@ -9,11 +10,7 @@ export type VoiceSettings = { ttsDefault: boolean; mode: "full" | "summary"; eng
 
 type VoiceStore = VoiceSettings & { set: (patch: Partial<VoiceSettings>) => void };
 
-const storage = createJSONStorage(() => ({
-  getItem: (k) => SecureStore.getItemAsync(k),
-  setItem: (k, v) => SecureStore.setItemAsync(k, v),
-  removeItem: (k) => SecureStore.deleteItemAsync(k),
-}));
+const storage = secureJSONStorage();
 
 /** Text-to-speech settings. Persisted. Speech is off until the user turns it on. */
 export const useVoiceSettings = create<VoiceStore>()(

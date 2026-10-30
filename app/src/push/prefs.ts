@@ -1,7 +1,8 @@
 import type { PushPrefs } from "@zogssh/protocol";
-import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+
+import { secureJSONStorage } from "@/secureStorage";
 
 type PrefsStore = PushPrefs & { setPref: (key: keyof PushPrefs, value: boolean) => void };
 
@@ -15,11 +16,7 @@ export const useNotifPrefs = create<PrefsStore>()(
     }),
     {
       name: "zogssh.notif_prefs",
-      storage: createJSONStorage(() => ({
-        getItem: (k) => SecureStore.getItemAsync(k),
-        setItem: (k, v) => SecureStore.setItemAsync(k, v),
-        removeItem: (k) => SecureStore.deleteItemAsync(k),
-      })),
+      storage: secureJSONStorage(),
       partialize: (s) => ({ finished: s.finished, needs_you: s.needs_you }),
     },
   ),

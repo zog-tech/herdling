@@ -7,14 +7,15 @@ import Animated, { cubicBezier } from "react-native-reanimated";
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
-import { BUCKET_LABEL, type BoardItem } from "./buckets";
+import type { BoardItem } from "./buckets";
 import { BUCKET_META, kindIcon } from "./bucketMeta";
+import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
 import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
 /** Strong ease-out for press feedback. */
 const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
-type Actions = {
+export type CardActions = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
   onMarkRead: (item: BoardItem) => void;
@@ -61,7 +62,7 @@ function SwipeAction({
  * One agent on the Board. Tap opens the session, long-press peeks. Swipe right marks it read;
  * swipe left reveals Reply and Restart. VoiceOver gets the same actions as custom actions.
  */
-export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { item: BoardItem; now: number } & Actions) {
+export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { item: BoardItem; now: number } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
   const [pressed, setPressed] = useState(false);
   const { agent, bucket } = item;
@@ -71,6 +72,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
   const unread = bucket === "ready";
   const flagged = bucket === "needs_you" || bucket === "ready";
   const close = () => swipe.current?.close();
+  const label = cardLabel(item, now);
 
   return (
     <ReanimatedSwipeable
@@ -114,23 +116,10 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${title}, ${BUCKET_LABEL[bucket]}${unread ? ", unread" : ""}`}
+        accessibilityLabel={label}
         accessibilityHint="Opens the session. Long press to peek."
-        accessibilityActions={[
-          { name: "activate" },
-          { name: "longpress", label: "Peek" },
-          { name: "markRead", label: "Mark read" },
-          { name: "reply", label: "Reply" },
-          { name: "restart", label: "Restart" },
-        ]}
-        onAccessibilityAction={(e) => {
-          const a = e.nativeEvent.actionName;
-          if (a === "activate") actions.onOpen(item);
-          else if (a === "longpress") actions.onPeek(item);
-          else if (a === "markRead") actions.onMarkRead(item);
-          else if (a === "reply") actions.onReply(item);
-          else if (a === "restart") actions.onRestart(item);
-        }}
+        accessibilityActions={CARD_ACTIONS}
+        onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
         onPress={() => actions.onOpen(item)}
         onLongPress={() => actions.onPeek(item)}
         delayLongPress={350}

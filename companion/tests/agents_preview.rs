@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::preview::{self, log_preview, screen_line, strip_markdown, PreviewState, LINE_CAP};
+use zogsshd::preview::{self, log_preview, screen_line, screen_question, strip_markdown, PreviewState, LINE_CAP};
 use zogsshd::rpc::{self, Ctx};
 
 fn prompt(uuid: &str, text: &str) -> String {
@@ -178,19 +178,53 @@ fn read_log_reads_only_the_tail() {
     assert_eq!(p.activity.as_deref(), Some("Running cargo test"));
 }
 
+fn screen(name: &str) -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens").join(name)).unwrap()
+}
+
 #[test]
-fn screen_fallback_skips_chrome() {
-    let screen = "\
+fn screen_fallback_skips_the_input_box_and_footer() {
+    let boxed = "\
 • Ran tests: 12 passed\n\
 ╭──────────────────────────────╮\n\
 │ › Explain this codebase      │\n\
 ╰──────────────────────────────╯\n\
    ⠋  \n\
 \n";
-    assert_eq!(screen_line(screen).as_deref(), Some("Explain this codebase"));
+    assert_eq!(screen_line(boxed).as_deref(), Some("Ran tests: 12 passed"));
     assert_eq!(screen_line("$ \n> \n────\n"), None);
     let long = format!("{}\n", "y".repeat(400));
     assert!(screen_line(&long).unwrap().chars().count() <= LINE_CAP);
+}
+
+#[test]
+fn screen_fixtures_give_the_last_output_line() {
+    assert_eq!(
+        screen_line(&screen("codex_idle.txt")).as_deref(),
+        Some("The flaky test waited on a real timer. It now uses fake timers, and 12 tests pass.")
+    );
+    assert_eq!(screen_line(&screen("codex_working.txt")).as_deref(), Some("3 migrations applied"));
+    assert_eq!(
+        screen_line(&screen("gemini_idle.txt")).as_deref(),
+        Some("I updated the README with the pairing steps and the push setup.")
+    );
+    assert_eq!(
+        screen_line(&screen("rules_idle.txt")).as_deref(),
+        Some("Done. Both endpoints now return 404 for a missing user.")
+    );
+}
+
+#[test]
+fn screen_question_reads_the_dialog_box() {
+    let dialog = "\
+• Ran ls\n\
+╭──────────────────────────────────────╮\n\
+│ Do you want to run git push?         │\n\
+│ ❯ 1. Yes                             │\n\
+│   2. No, tell the agent what to do   │\n\
+╰──────────────────────────────────────╯\n\
+  esc to cancel\n";
+    assert_eq!(screen_question(dialog).as_deref(), Some("Do you want to run git push?"));
 }
 
 #[test]

@@ -1,6 +1,7 @@
-import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+
+import { secureJSONStorage } from "@/secureStorage";
 
 export type Host = {
   id: string;
@@ -44,11 +45,7 @@ export const useHosts = create<HostStore>()(
     }),
     {
       name: "zogssh.hosts",
-      storage: createJSONStorage(() => ({
-        getItem: (k) => SecureStore.getItemAsync(k),
-        setItem: (k, v) => SecureStore.setItemAsync(k, v),
-        removeItem: (k) => SecureStore.deleteItemAsync(k),
-      })),
+      storage: secureJSONStorage(),
       partialize: (s) => ({ hosts: s.hosts }),
     },
   ),

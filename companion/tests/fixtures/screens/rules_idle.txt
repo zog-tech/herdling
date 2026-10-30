@@ -1,0 +1,6 @@
+⏺ Done. Both endpoints now return 404 for a missing user.
+
+────────────────────────────────────────────────────────────
+> Try "refactor auth.ts"
+────────────────────────────────────────────────────────────
+  ? for shortcuts

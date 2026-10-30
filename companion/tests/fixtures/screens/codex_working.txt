@@ -1,0 +1,10 @@
+› run the migrations
+
+• Ran pnpm db:migrate
+  └ 3 migrations applied
+
+⠋ Working (12s • esc to interrupt)
+
+› Summarize recent commits
+
+  ⏎ send   ⌃J newline   ⌃T transcript   ⌃C quit

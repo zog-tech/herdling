@@ -1,7 +1,8 @@
-import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+
+import { secureJSONStorage } from "@/secureStorage";
 
 import { paneKey } from "./snapshot";
 
@@ -11,11 +12,7 @@ type SeenStore = { seen: Record<string, number> };
 export const useSeen = create<SeenStore>()(
   persist(() => ({ seen: {} }) as SeenStore, {
     name: "zogssh.seen",
-    storage: createJSONStorage(() => ({
-      getItem: (k) => SecureStore.getItemAsync(k),
-      setItem: (k, v) => SecureStore.setItemAsync(k, v),
-      removeItem: (k) => SecureStore.deleteItemAsync(k),
-    })),
+    storage: secureJSONStorage(),
   }),
 );
 

@@ -314,37 +314,98 @@ fn cap_chars(s: &str, max: usize) -> String {
     t
 }
 
-/// Last line of a screen that says something: box drawing, prompt markers and lines
-/// without a letter or digit are skipped.
+/// Last line of agent output on a screen. The input box at the bottom (a block framed by
+/// box drawing, or a bare prompt line) and everything below it are cut off; footer hints,
+/// spinners, echoed prompts and lines without a letter or digit are skipped.
 pub fn screen_line(text: &str) -> Option<String> {
-    text.lines().rev().find_map(clean_screen_line)
+    let lines: Vec<&str> = text.lines().collect();
+    let end = input_box_start(&lines);
+    lines[..end].iter().rev().find_map(|l| output_line(l))
 }
 
 /// For a blocked agent: the last line that asks something (ends with "?") among the last
-/// [`QUESTION_SCAN`] useful lines, else [`screen_line`].
+/// [`QUESTION_SCAN`] useful lines, else the last useful line. The bottom box is kept: a
+/// permission dialog is drawn there.
 pub fn screen_question(text: &str) -> Option<String> {
-    let useful: Vec<String> = text.lines().rev().filter_map(clean_screen_line).take(QUESTION_SCAN).collect();
+    let useful: Vec<String> = text.lines().rev().filter_map(output_line).take(QUESTION_SCAN).collect();
     useful.iter().find(|l| l.ends_with('?')).or(useful.first()).cloned()
 }
 
 /// Useful lines looked at for a question.
 const QUESTION_SCAN: usize = 15;
+/// Lines at the bottom of a screen searched for the input box.
+const INPUT_REGION: usize = 12;
+/// Footer and status hints of agent TUIs, lowercase. A line that contains one is chrome.
+const FOOTER_HINTS: &[&str] = &[
+    "⏎", "⌃", "for shortcuts", "esc to interrupt", "esc to cancel", "ctrl+", "context left",
+    "shift+tab", "accept edits", "bypass permissions", "plan mode", "auto-accept", "to cycle",
+    "enter to send", "for newline",
+];
+/// Markers that start an input line (or an echoed user prompt).
+const PROMPT_MARKERS: &[&str] = &["❯", "›", ">", "$", "%"];
+/// Markers that start an agent output line; removed from the result.
+const OUTPUT_MARKERS: &[&str] = &["•", "⏺", "●", "✦", "⎿", "◆", "✻"];
 
-fn clean_screen_line(raw: &str) -> Option<String> {
-    {
-        let cleaned: String = raw
-            .chars()
-            .map(|c| if is_chrome(c) { ' ' } else { c })
-            .collect();
-        let mut t = cleaned.trim();
-        for p in ["❯", "›", ">", "$", "%", "#"] {
-            t = t.strip_prefix(p).unwrap_or(t).trim_start();
-        }
-        if !t.chars().any(char::is_alphanumeric) {
-            return None;
-        }
-        Some(one_line(t))
+/// Text of a line with box drawing, block and spinner characters blanked, trimmed.
+fn strip_chrome(raw: &str) -> String {
+    raw.chars().map(|c| if is_chrome(c) { ' ' } else { c }).collect::<String>().trim().to_string()
+}
+
+/// A full-width rule: many box-drawing dashes and no text.
+fn is_rule(raw: &str) -> bool {
+    raw.chars().filter(|c| matches!(c, '─' | '━' | '═')).count() >= 8 && !raw.chars().any(char::is_alphanumeric)
+}
+
+fn starts_with_prompt(t: &str) -> bool {
+    PROMPT_MARKERS.iter().any(|p| t.starts_with(p))
+}
+
+/// Index where the input box at the bottom starts, or `lines.len()` when there is none.
+/// The box is the last rounded box (`╭`), the upper of two close rules, or a bare prompt line.
+fn input_box_start(lines: &[&str]) -> usize {
+    let region = lines.len().saturating_sub(INPUT_REGION);
+    let mut start = lines.len();
+    if let Some(i) = (region..lines.len()).rev().find(|&i| lines[i].trim_start().starts_with('╭')) {
+        start = start.min(i);
     }
+    let rules: Vec<usize> = (region..lines.len()).filter(|&i| is_rule(lines[i])).collect();
+    if let [.., upper, lower] = rules[..] {
+        if lower - upper <= 5 {
+            start = start.min(upper);
+        }
+    }
+    // A bare prompt line with only blank lines or hints below it.
+    for i in (region..start).rev() {
+        let t = strip_chrome(lines[i]);
+        if starts_with_prompt(&t) {
+            start = i;
+            break;
+        }
+        if output_line(lines[i]).is_some() {
+            break;
+        }
+    }
+    start
+}
+
+/// The text of one line of agent output, or None for chrome.
+fn output_line(raw: &str) -> Option<String> {
+    let t = strip_chrome(raw);
+    if starts_with_prompt(&t) {
+        return None;
+    }
+    let lower = t.to_lowercase();
+    if FOOTER_HINTS.iter().any(|h| lower.contains(h)) || lower.starts_with("using:") {
+        return None;
+    }
+    let mut t = t.as_str();
+    for m in OUTPUT_MARKERS {
+        t = t.strip_prefix(m).unwrap_or(t).trim_start();
+    }
+    if !t.chars().any(char::is_alphanumeric) {
+        return None;
+    }
+    Some(one_line(t))
 }
 
 /// Box drawing, block elements and braille spinner characters.

@@ -1,0 +1,7 @@
+✦ I updated the README with the pairing steps and the push setup.
+
+ Using: 1 GEMINI.md file
+╭──────────────────────────────────────────────────────────╮
+│ >   Type your message or @path/to/file                   │
+╰──────────────────────────────────────────────────────────╯
+~/proj (main*)          no sandbox (see /docs)        gemini-2.5-pro (98% context left)
