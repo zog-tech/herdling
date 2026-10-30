@@ -323,15 +323,19 @@ export default function SessionScreen() {
       {mode === "thread" ? (
         <ThreadBody thread={thread} hostId={hostId} paneId={paneId} />
       ) : (
-        <TerminalView hostId={hostId} paneId={paneId} />
+        // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.
+        <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} />
       )}
-      <Composer
-        hostId={hostId}
-        paneId={paneId}
-        bottomInset={keyboard ? 0 : insets.bottom}
-        initialText={promptError ? prompt : undefined}
-        initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
-      />
+      {/* Hidden, not unmounted, in Terminal mode: a half-typed prompt survives a mode switch. */}
+      <View style={{ display: mode === "thread" ? "flex" : "none" }}>
+        <Composer
+          hostId={hostId}
+          paneId={paneId}
+          bottomInset={keyboard ? 0 : insets.bottom}
+          initialText={promptError ? prompt : undefined}
+          initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
+        />
+      </View>
     </KeyboardAvoidingView>
   );
 }
