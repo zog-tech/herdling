@@ -17,10 +17,15 @@ pub struct AdvertInfo {
     pub fingerprint: Option<String>,
 }
 
+/// Host name cut at the first dot, so `studio.local` reads `studio`.
+pub fn short_host(host: &str) -> &str {
+    host.split('.').next().filter(|s| !s.is_empty()).unwrap_or(host)
+}
+
 /// TXT records of the advert. `fp` is left out when there is no fingerprint.
 pub fn txt(info: &AdvertInfo) -> Vec<(String, String)> {
     let mut out = vec![
-        ("host".to_string(), info.host.clone()),
+        ("host".to_string(), short_host(&info.host).to_string()),
         ("user".to_string(), info.user.clone()),
         ("ssh_port".to_string(), info.ssh_port.to_string()),
         ("ver".to_string(), info.version.clone()),
@@ -41,7 +46,7 @@ fn clean(s: &str) -> String {
 /// Values go as separate argv items and never through a shell.
 pub fn advert_command(os: &str, has_avahi: bool, info: &AdvertInfo) -> Option<(String, Vec<String>)> {
     let pairs = txt(info).into_iter().map(|(k, v)| format!("{k}={}", clean(&v)));
-    let name = clean(&info.host);
+    let name = clean(short_host(&info.host));
     let port = info.pair_port.to_string();
     match os {
         "macos" => {
@@ -111,7 +116,7 @@ fn advertise_mdns(info: &AdvertInfo) -> Result<ServiceDaemon> {
     let label = info.host.split('.').next().filter(|s| !s.is_empty()).unwrap_or("zogssh");
     let service = ServiceInfo::new(
         SERVICE_TYPE,
-        &info.host,
+        short_host(&info.host),
         &format!("{label}.local."),
         "",
         info.pair_port,

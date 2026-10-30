@@ -45,6 +45,16 @@ fn macos_uses_dns_sd() {
 }
 
 #[test]
+fn dotted_host_is_cut_at_first_dot() {
+    let mut i = info(None);
+    i.host = "studio.local".into();
+    let (_, args) = advert_command("macos", false, &i).unwrap();
+    assert_eq!(args[1], "studio");
+    assert!(args.contains(&"host=studio".to_string()));
+    assert!(!args.iter().any(|a| a.contains("local") && a != "local"));
+}
+
+#[test]
 fn fp_omitted_when_none() {
     let (_, args) = advert_command("macos", false, &info(None)).unwrap();
     assert!(!args.iter().any(|a| a.starts_with("fp=")));
