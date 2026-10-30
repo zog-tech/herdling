@@ -1,5 +1,5 @@
 import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
-import { act, create } from "react-test-renderer";
+import { act, create as createRenderer } from "react-test-renderer";
 
 import { useRecording } from "./recording";
 import { useSessionSpeak, useVoiceSettings } from "./settings";
@@ -24,6 +24,13 @@ function Probe(p: { status?: AgentStatus; items: ThreadItem[]; speakNow?: boolea
   return null;
 }
 
+const roots: { unmount: () => void }[] = [];
+const create = (el: React.ReactElement) => {
+  const r = createRenderer(el);
+  roots.push(r);
+  return r;
+};
+
 const flush = async () => {
   await act(async () => {
     jest.advanceTimersByTime(1000);
@@ -37,7 +44,10 @@ beforeEach(() => {
   useSessionSpeak.setState({ bySession: {} });
   useRecording.setState({ recording: false });
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  act(() => roots.splice(0).forEach((r) => r.unmount()));
+  jest.useRealTimers();
+});
 
 const items = [user("1"), asst("2", "**Hello** there")];
 
@@ -80,13 +90,63 @@ describe("useSpeakReplies", () => {
     expect(mockStop).toHaveBeenCalled();
   });
 
-  it("speakNow speaks once", async () => {
+  it("speakNow speaks once, after the settle delay", async () => {
     let r: any;
     await act(async () => {
       r = create(<Probe status="idle" items={items} speakNow />);
     });
+    expect(mockSpeak).not.toHaveBeenCalled();
     await act(async () => r.update(<Probe status="idle" items={[...items]} speakNow />));
+    await flush();
     expect(mockSpeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("speakNow while working speaks only the final reply, once", async () => {
+    const partial = [user("1"), asst("2", "Part")];
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={partial} speakNow />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={partial} speakNow />));
+    await act(async () => {
+      r.update(<Probe status="idle" items={[user("1"), asst("2", "Part"), asst("3", "Final")]} speakNow />);
+    });
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    expect(mockSpeak.mock.calls[0][0]).toBe("Part Final");
+  });
+
+  it("speakNow respects the speaker toggle", async () => {
+    useSessionSpeak.setState({ bySession: { "h:p": false } });
+    await act(async () => {
+      create(<Probe status="idle" items={items} speakNow />);
+    });
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
+  it("summary mode falls back to full", async () => {
+    useVoiceSettings.setState({ mode: "summary" });
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("turning the speaker off stops speech", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="idle" items={items} />);
+    });
+    mockStop.mockClear();
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: { "h:p": false } });
+    });
+    expect(mockStop).toHaveBeenCalledTimes(1);
+    await act(async () => r.unmount());
   });
 
   it("a new prompt and unmount stop speech", async () => {

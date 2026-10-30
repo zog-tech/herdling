@@ -4,6 +4,10 @@ describe("speechText", () => {
   it("code_block_becomes_marker", () => {
     expect(speechText("Run this:\n```sh\nls\n```\nDone.")).toBe("Run this: code block. Done.");
   });
+  it("multi_line_code_block_is_one_marker", () => {
+    expect(speechText("Run:\n```sh\nnpm i\n\nnpm test\nnpm run build\n```\nDone.")).toBe("Run: code block. Done.");
+    expect(speechText("A\n~~~\nx\ny\n~~~\nB\n```\nz\nw")).toBe("A code block. B code block.");
+  });
   it("table_becomes_marker", () => {
     expect(speechText("Totals:\n| a | b |\n|---|---|\n| 1 | 2 |\nEnd")).toBe("Totals: a table. End");
   });

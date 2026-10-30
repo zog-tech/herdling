@@ -68,6 +68,18 @@ actor Recognizer {
   /// True while dictation owns the audio session.
   var isBusy: Bool { run != nil || starting || finishing }
 
+  /// Switches to the speech audio session unless dictation runs. The check and the switch cannot be split by a start.
+  func activateSpeech() throws {
+    guard !isBusy else { throw DictationError.busy }
+    try AudioSession.activateForSpeech()
+  }
+
+  /// Ends the speech audio session unless dictation runs.
+  func releaseSpeech() {
+    guard !isBusy else { return }
+    AudioSession.deactivate()
+  }
+
   func start(localeId: String?) async throws {
     guard run == nil, !starting, !finishing else { throw DictationError.busy }
     guard AVAudioApplication.shared.recordPermission == .granted else {

@@ -2,7 +2,7 @@
 export function speechText(markdown: string): string {
   let t = markdown.replace(/\r\n?/g, "\n");
   // Fenced code (``` or ~~~), also when the fence never closes.
-  t = t.replace(/^[ \t]*(```|~~~)[^\n]*\n[\s\S]*?(?:\n[ \t]*\1[^\n]*(?=\n|$)|$)/gm, "\ncode block.\n");
+  t = t.replace(/^[ \t]*(```|~~~)[^\n]*\n[\s\S]*?(?:\n[ \t]*\1[^\n]*(?=\n|(?![\s\S]))|(?![\s\S]))/gm, "\ncode block.\n");
   // Tables: a run of lines that start with "|".
   t = t.replace(/(?:^[ \t]*\|.*(?:\n|$))+/gm, "\na table.\n");
   t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, "");

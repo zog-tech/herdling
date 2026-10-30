@@ -41,15 +41,15 @@ public class VoiceModule: Module {
     }
 
     AsyncFunction("setSpeechAudio") { () async throws in
-      if await self.recognizer.isBusy {
-        throw Exception(name: "DictationError", description: "Dictation is running", code: "busy")
+      do {
+        try await self.recognizer.activateSpeech()
+      } catch let e as DictationError {
+        throw Exception(name: "DictationError", description: e.message, code: e.code)
       }
-      try AudioSession.activateForSpeech()
     }
 
     AsyncFunction("releaseAudio") { () async in
-      if await self.recognizer.isBusy { return }
-      AudioSession.deactivate()
+      await self.recognizer.releaseSpeech()
     }
 
     OnDestroy {
