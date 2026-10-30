@@ -9,7 +9,7 @@ import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 
-import { useChoices, type Choice } from "./choices";
+import { answerChoice, useChoices, type Choice } from "./choices";
 import { PermissionButtons } from "./PermissionButtons";
 
 const LINE = Math.round(type.size.body * 1.35);
@@ -52,20 +52,36 @@ export function Composer({
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
   const choices = useChoices(hostId, paneId, blocked && online);
-  const showChoices = blocked && online && choices.length > 0;
+  /**
+   * The menu (array from `useChoices`) that was answered or found stale. Its buttons stay hidden;
+   * `useChoices` returns a new array only when the screen shows a different menu or the status changes.
+   */
+  const [answered, setAnswered] = useState<Choice[]>();
+  const showChoices = blocked && online && choices.length > 0 && choices !== answered;
   const [picking, setPicking] = useState(false);
+  /** Lock against a double tap: two taps can land before `picking` re-renders. */
+  const pickLock = useRef(false);
 
-  /** Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box). */
+  /**
+   * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).
+   * The screen is re-read first; a menu that changed or is gone gets no keys.
+   */
   const pick = async (c: Choice) => {
-    if (!rpc || !online || picking) return;
+    if (!rpc || !online || pickLock.current) return;
+    pickLock.current = true;
     setPicking(true);
     setError(undefined);
+    const shown = choices;
+    const stillBlocked = () =>
+      useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked";
     try {
-      await rpc.call("herdr.call", { method: "pane.send_keys", params: { pane_id: paneId, keys: [c.key] } });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const r = await answerChoice(rpc, paneId, shown, c, stillBlocked);
+      setAnswered(shown);
+      if (r === "sent") void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      pickLock.current = false;
       setPicking(false);
     }
   };

@@ -3,13 +3,15 @@ import { join } from "path";
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
+import { answerChoice, destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
 
 const mockCalls: { method: string; params: any }[] = [];
 let mockScreen = "";
+let mockReadFails = false;
 const mockRpc = {
   call: async (method: string, params: any) => {
     mockCalls.push({ method, params });
+    if (mockReadFails) throw new Error("herdr down");
     return { type: "pane_read", read: { text: mockScreen } };
   },
 };
@@ -26,6 +28,24 @@ describe("parseChoices", () => {
       { key: "2", label: "Yes, and don't ask again for git status commands in /home/sam/proj", selected: false },
       { key: "3", label: "No, and tell Claude what to do differently (esc)", selected: false },
     ]);
+  });
+
+  it("wrapped_labels_are_joined", () => {
+    expect(parseChoices(fixture("claude_bash_permission_wrapped"))).toEqual([
+      { key: "1", label: "Yes", selected: true },
+      { key: "2", label: "Yes, and don't ask again for git status commands in /home/sam/proj", selected: false },
+      { key: "3", label: "No, and tell Claude what to do differently (esc)", selected: false },
+    ]);
+  });
+
+  it("a wrapped boxed label is joined", () => {
+    const screen = ["│ ❯ 1. Yes                 │", "│   2. No, and tell Claude │", "│      what to do (esc)    │", "╰──────────────────────────╯"].join("\n");
+    expect(parseChoices(screen)[1].label).toBe("No, and tell Claude what to do (esc)");
+  });
+
+  it("text at the choice indent ends the block", () => {
+    expect(parseChoices("❯ 1. Yes\n  2. No\n  Esc to cancel")).toHaveLength(2);
+    expect(parseChoices("  1. a\n  2. b\n  later text\n❯")).toEqual([]);
   });
 
   it("edit_permission", () => {
@@ -107,6 +127,7 @@ describe("useChoices", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockCalls.length = 0;
+    mockReadFails = false;
     mockScreen = fixture("claude_bash_permission");
   });
   afterEach(() => {
@@ -148,5 +169,63 @@ describe("useChoices", () => {
     });
     expect(mockCalls).toHaveLength(n);
     expect(latest).toEqual([]);
+  });
+
+  it("clears the choices when a read fails", async () => {
+    await act(async () => {
+      tree = create(createElement(Probe, { blocked: true }));
+    });
+    await flush();
+    expect(latest).toHaveLength(3);
+    mockReadFails = true;
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await flush();
+    expect(latest).toEqual([]);
+  });
+});
+
+describe("answerChoice", () => {
+  class FakeRpc {
+    calls: { method: string; params: any }[] = [];
+    constructor(public screen: string) {}
+    async call<T>(_m: string, p: any): Promise<T> {
+      this.calls.push(p);
+      return (p.method === "pane.read" ? { read: { text: this.screen } } : {}) as T;
+    }
+  }
+  const shown = parseChoices(fixture("claude_bash_permission"));
+
+  it("re-reads the screen and sends the bare digit when the menu is unchanged", async () => {
+    const rpc = new FakeRpc(fixture("claude_bash_permission"));
+    await expect(answerChoice(rpc, "w1:p1", shown, shown[0], () => true)).resolves.toBe("sent");
+    expect(rpc.calls).toEqual([
+      { method: "pane.read", params: { pane_id: "w1:p1", source: "visible", format: "text" } },
+      { method: "pane.send_keys", params: { pane_id: "w1:p1", keys: ["1"] } },
+    ]);
+  });
+
+  it("sends when only the marker moved", async () => {
+    const rpc = new FakeRpc(fixture("claude_bash_permission").replace("❯ 1.", "  1.").replace("  2. Yes,", "❯ 2. Yes,"));
+    await expect(answerChoice(rpc, "w1:p1", shown, shown[2], () => true)).resolves.toBe("sent");
+  });
+
+  it("sends nothing when the menu is gone", async () => {
+    const rpc = new FakeRpc(fixture("claude_idle_prompt"));
+    await expect(answerChoice(rpc, "w1:p1", shown, shown[0], () => true)).resolves.toBe("stale");
+    expect(rpc.calls.map((c) => c.method)).toEqual(["pane.read"]);
+  });
+
+  it("sends nothing when the menu changed", async () => {
+    const rpc = new FakeRpc(fixture("claude_edit_permission"));
+    await expect(answerChoice(rpc, "w1:p1", shown, shown[0], () => true)).resolves.toBe("stale");
+    expect(rpc.calls.map((c) => c.method)).toEqual(["pane.read"]);
+  });
+
+  it("sends nothing when the agent is no longer blocked", async () => {
+    const rpc = new FakeRpc(fixture("claude_bash_permission"));
+    await expect(answerChoice(rpc, "w1:p1", shown, shown[0], () => false)).resolves.toBe("stale");
+    expect(rpc.calls.map((c) => c.method)).toEqual(["pane.read"]);
   });
 });
