@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
-import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -260,12 +260,12 @@ export function Composer({
             lineHeight: LINE,
             backgroundColor: colors.card,
             borderWidth: 1,
-            borderColor: colors.muted,
+            borderColor: colors.border,
             borderRadius: radius.lg,
             paddingHorizontal: space.md,
             paddingTop: PAD_V,
             paddingBottom: PAD_V,
-            opacity: online ? 1 : 0.6,
+            opacity: online ? 1 : state.offlineOpacity,
           }}
         />
         {visible ? (
@@ -289,7 +289,7 @@ export function Composer({
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: canSend ? colors.accent : colors.muted,
-            opacity: pressed ? 0.8 : 1,
+            opacity: pressed ? state.pressedFill : 1,
           })}
         >
           {sending ? (

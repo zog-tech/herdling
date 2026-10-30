@@ -6,7 +6,7 @@ import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "reac
 import Animated, { type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, motion, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -64,7 +64,7 @@ function SwipeAction({
         justifyContent: "center",
         gap: space.xs,
         backgroundColor: color,
-        opacity: pressed ? 0.8 : 1,
+        opacity: pressed ? state.pressedFill : 1,
       })}
     >
       <Icon size={20} color={colors.bg} />
@@ -150,7 +150,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
       renderLeftActions={(_p, drag) => (
         <>
           <SwipeHaptic drag={drag} at={ACTION_W * 0.8} />
-          <SwipeAction label="Read" color={colors.status.idle} Icon={MailOpen} />
+          <SwipeAction label="Read" color={colors.status.done} Icon={MailOpen} />
         </>
       )}
       renderRightActions={(_p, drag) => (
@@ -198,7 +198,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
                 backgroundColor: colors.card,
                 borderRadius: radius.lg,
                 borderWidth: 1,
-                borderColor: colors.muted,
+                borderColor: colors.edge,
                 overflow: "hidden",
               },
             ]}
@@ -225,14 +225,15 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
               <KindIcon size={18} color={colors.text} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.sm }}>
                 {unread ? (
                   <View
                     accessibilityElementsHidden
-                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.status.idle }}
+                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.status.done }}
                   />
                 ) : null}
-                <Text bold numberOfLines={1} style={{ flex: 1 }}>
+                {/* Two lines before the title truncates (Dynamic Type makes long names wrap). */}
+                <Text bold numberOfLines={2} style={{ flex: 1 }}>
                   {item.title}
                 </Text>
                 <StatusPill item={item} now={now} />
@@ -267,7 +268,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
             height: hitTarget,
             alignItems: "center",
             justifyContent: "center",
-            opacity: pressed ? 0.5 : 1,
+            opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
           <Ellipsis size={20} color={colors.textMuted} />

@@ -3,7 +3,7 @@ import { memo } from "react";
 import { Pressable, View } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
-import { colors, hitTarget, space } from "@/theme/tokens";
+import { colors, hitTarget, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -45,7 +45,7 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
             flexDirection: "row",
             alignItems: "center",
             gap: space.xs,
-            opacity: pressed ? 0.6 : 1,
+            opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
           <CircleAlert size={12} color={colors.danger} />

@@ -6,7 +6,7 @@ import type { HostConn } from "./connection";
 
 /** Connection state of a host: Online, Connecting or Offline. */
 export function ConnBadge({ status }: { status: HostConn["status"] }) {
-  if (status === "online") return <Badge label="Online" color={colors.status.idle} Icon={Check} />;
+  if (status === "online") return <Badge label="Online" color={colors.status.done} Icon={Check} />;
   if (status === "connecting") return <Badge label="Connecting" color={colors.status.working} Icon={Loader} />;
   return <StatusBadge status="offline" />;
 }

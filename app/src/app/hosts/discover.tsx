@@ -43,7 +43,7 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
       onPress={onPress}
       trailing={
         known ? (
-          <Badge label="Paired" color={colors.status.idle} Icon={Check} />
+          <Badge label="Paired" color={colors.status.done} Icon={Check} />
         ) : onPress ? (
           <ChevronRight size={18} color={colors.textMuted} />
         ) : null

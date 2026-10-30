@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { destructiveKey, type Choice } from "./choices";
@@ -47,7 +47,7 @@ export function PermissionButtons({
               borderWidth: 1,
               borderColor: destructive ? colors.danger : c.selected ? colors.accent : colors.border,
               backgroundColor: colors.card,
-              opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
+              opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
             })}
           >
             <Text mono bold color={fg}>

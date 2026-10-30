@@ -21,7 +21,7 @@ import { HostMeters } from "@/hosts/HostMeters";
 import { needsZogsshdUpdate, UPDATE_ZOGSSHD_HINT } from "@/hosts/methods";
 import { getHostConn, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Text } from "@/ui/Text";
@@ -52,7 +52,7 @@ function HostCard({ host }: { host: Host }) {
   const error = useSnapshots((s) => s.errors[host.id]);
   const online = conn.status === "online";
   return (
-    <Card style={online ? undefined : { opacity: 0.6 }}>
+    <Card style={online ? undefined : { opacity: state.offlineOpacity }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md }}>
         <View style={{ flex: 1 }}>
           <Text variant="title" numberOfLines={1}>
@@ -181,7 +181,7 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
             marginVertical: -space.md,
             alignItems: "center",
             justifyContent: "center",
-            opacity: pressed ? 0.5 : 1,
+            opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
           <Ellipsis size={18} color={colors.textMuted} />
@@ -412,7 +412,7 @@ export default function BoardScreen() {
           backgroundColor: colors.accent,
           alignItems: "center",
           justifyContent: "center",
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? state.pressedFill : 1,
         })}
       >
         <Plus color={colors.bg} size={28} />

@@ -5,7 +5,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 import Animated, { useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, radius, space } from "@/theme/tokens";
+import { colors, radius, space, state as uiState } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { CANCEL_DISTANCE, type HoldEvent } from "./holdToTalk";
@@ -129,9 +129,9 @@ export function MicButton({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: RING,
-            borderColor: holding ? colors.danger : colors.muted,
+            borderColor: holding ? colors.danger : colors.border,
             backgroundColor: armed ? colors.danger : holding ? colors.card : colors.muted,
-            opacity: disabled ? 0.5 : 1,
+            opacity: disabled ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? 1.08 : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],
             transitionDuration: reduced ? 0 : 150,

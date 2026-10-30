@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAutomations } from "@/automations/useAutomations";
 import { useHostConn } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state as uiState } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Screen } from "@/ui/Screen";
@@ -152,7 +152,7 @@ function HostAutomations({
   }, [host.id, refresh, register]);
   const names = state.kind === "ready" ? new Map(state.automations.map((a) => [a.id, a.name])) : undefined;
   return (
-    <Card style={online ? undefined : { opacity: 0.6 }}>
+    <Card style={online ? undefined : { opacity: uiState.offlineOpacity }}>
       <Text variant="title" numberOfLines={1}>
         {host.name}
       </Text>

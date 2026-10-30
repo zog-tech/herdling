@@ -82,7 +82,7 @@ export function CommandSheet({
               fontSize: type.size.body,
               backgroundColor: colors.card,
               borderWidth: 1,
-              borderColor: colors.muted,
+              borderColor: colors.border,
               borderRadius: radius.md,
               paddingHorizontal: space.md,
             }}

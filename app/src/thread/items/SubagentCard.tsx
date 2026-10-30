@@ -56,7 +56,7 @@ export const SubagentCard = memo(function SubagentCard({
       }
       style={{
         borderWidth: 1,
-        borderColor: colors.muted,
+        borderColor: colors.edge,
         backgroundColor: colors.card,
         borderRadius: radius.md,
         padding: space.md,

@@ -18,7 +18,7 @@ import { AnsiText } from "@/terminal/AnsiText";
 import { KeyRow } from "@/terminal/KeyRow";
 import { sendKey, sendLine } from "@/terminal/keys";
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { HScrollView } from "./HScrollView";
@@ -185,10 +185,10 @@ function TerminalControls({
             fontSize: type.size.small,
             backgroundColor: colors.card,
             borderWidth: 1,
-            borderColor: colors.muted,
+            borderColor: colors.border,
             borderRadius: radius.md,
             paddingHorizontal: space.md,
-            opacity: online ? 1 : 0.6,
+            opacity: online ? 1 : state.offlineOpacity,
           }}
         />
         <Pressable
@@ -204,7 +204,7 @@ function TerminalControls({
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: canSend ? colors.accent : colors.muted,
-            opacity: pressed ? 0.8 : 1,
+            opacity: pressed ? state.pressedFill : 1,
           })}
         >
           {sending ? <ActivityIndicator color={colors.bg} /> : <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />}

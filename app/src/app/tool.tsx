@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, space } from "@/theme/tokens";
+import { colors, hitTarget, space, state } from "@/theme/tokens";
 import { fullInputText, lastLines, toolTime, useToolView } from "@/thread/toolView";
 import { useTerminalText } from "@/thread/useTerminalText";
 import { LIVE_REFRESH_MS } from "@/thread/items/ToolCard";
@@ -32,7 +32,7 @@ function IconButton({ label, onPress, children }: { label: string; onPress: () =
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? state.pressedOpacity : 1 })}
     >
       {children}
     </Pressable>

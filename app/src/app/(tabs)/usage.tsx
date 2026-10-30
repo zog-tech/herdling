@@ -6,7 +6,7 @@ import { RefreshControl, View } from "react-native";
 import { useHostConn } from "@/hosts/connection";
 import { HostMeters } from "@/hosts/HostMeters";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, space } from "@/theme/tokens";
+import { colors, space, state } from "@/theme/tokens";
 import { useUsage } from "@/usage/useUsage";
 import { Card } from "@/ui/Card";
 import { formatResetIn } from "@/ui/format";
@@ -68,7 +68,7 @@ function HostUsage({ host, register }: { host: Host; register: (id: string, fn: 
   }, [host.id, refresh, register]);
   const nowS = Math.floor(Date.now() / 1000);
   return (
-    <Card style={online ? undefined : { opacity: 0.6 }}>
+    <Card style={online ? undefined : { opacity: state.offlineOpacity }}>
       <Text variant="title" numberOfLines={1}>
         {host.name}
       </Text>

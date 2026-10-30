@@ -2,7 +2,7 @@ import { ImagePlus, Plus, SquareSlash, X } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import type { Photo } from "./attachments";
@@ -27,7 +27,7 @@ export function PlusButton({ open, disabled, onPress }: { open: boolean; disable
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: colors.muted,
-        opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
+        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
       })}
     >
       {open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />}

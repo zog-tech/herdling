@@ -8,7 +8,7 @@ import type { Bucket } from "./buckets";
 /** Color + icon per bucket. Status is never shown by color alone. */
 export const BUCKET_META: Record<Bucket, { color: string; Icon: LucideIcon }> = {
   needs_you: { color: colors.status.blocked, Icon: Hand },
-  ready: { color: colors.status.idle, Icon: Inbox },
+  ready: { color: colors.status.done, Icon: Inbox },
   working: { color: colors.status.working, Icon: LoaderCircle },
   idle: { color: colors.status.unknown, Icon: Moon },
 };

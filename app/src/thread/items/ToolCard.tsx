@@ -4,7 +4,7 @@ import { memo, useContext, useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state as uiState, type } from "@/theme/tokens";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 
@@ -118,7 +118,7 @@ export const ToolCard = memo(function ToolCard({
   const stateLabel = running ? "running" : state === "ok" ? "done" : "failed";
   const stateColor = running ? colors.status.working : state === "ok" ? colors.status.done : colors.danger;
   return (
-    <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.muted, backgroundColor: colors.card }}>
+    <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.edge, backgroundColor: colors.card }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${time ? `, ${time}` : ""}`}
@@ -130,7 +130,7 @@ export const ToolCard = memo(function ToolCard({
           alignItems: "center",
           gap: space.sm,
           paddingHorizontal: space.md,
-          opacity: pressed ? 0.7 : 1,
+          opacity: pressed ? uiState.pressedOpacity : 1,
         })}
       >
         {running ? (
@@ -184,7 +184,7 @@ export const ToolCard = memo(function ToolCard({
                 height: hitTarget,
                 alignItems: "center",
                 justifyContent: "center",
-                opacity: pressed ? 0.6 : 1,
+                opacity: pressed ? uiState.pressedOpacity : 1,
               })}
             >
               <Maximize2 size={18} color={colors.textMuted} />

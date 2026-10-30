@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react-native";
 import { ActivityIndicator, Pressable } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "./Text";
 
 type Props = {
@@ -39,7 +39,7 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
         borderWidth: 1,
         borderColor: border,
         backgroundColor: bg,
-        opacity: off ? 0.5 : pressed ? 0.8 : 1,
+        opacity: off ? state.disabledOpacity : pressed ? state.pressedFill : 1,
       })}
     >
       {loading ? <ActivityIndicator color={fg} /> : Icon ? <Icon size={18} color={fg} /> : null}

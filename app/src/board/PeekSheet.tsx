@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHosts } from "@/hosts/store";
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { useThread } from "@/thread/useThread";
@@ -117,7 +117,7 @@ export function PeekSheet({
             borderRadius: radius.md,
             borderWidth: 1,
             borderColor: colors.border,
-            opacity: pressed ? 0.8 : 1,
+            opacity: pressed ? state.pressedFill : 1,
           })}
         >
           <ExternalLink size={16} color={colors.text} />

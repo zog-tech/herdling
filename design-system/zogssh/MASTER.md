@@ -1,233 +1,175 @@
-# Design System Master File
+# Zogssh design system (native iOS, dark first)
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+> A file in `design-system/zogssh/pages/<screen>.md` overrides this file for that screen.
+> The code source of truth is `app/src/theme/tokens.ts`. When this file and the tokens differ, fix one of them in the same change.
 
----
-
-**Project:** Zogssh
-**Generated:** 2026-10-29 13:49:18
-**Category:** Developer Tool / IDE
-**Design Dials:** Variance 3/10 (Centered / Minimal) | Motion 3/10 (Subtle) | Density 7/10 (Standard)
+**Product:** a phone remote for coding agents in herdr panes on your own hosts.
+**Platform:** iOS (Expo, React Native). No web rules apply: there is no hover, no cursor, no scroll reveal.
+**Dials:** variance 3/10 (calm, familiar), motion 3/10 (motion only where it explains), density 7/10.
 
 ---
 
-## Global Rules
+## 1. Color
 
-### Color Palette
+Dark first. The app has no light theme. Every value is a token in `colors`; components never use raw hex.
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#1E293B` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#334155` | `--color-secondary` |
-| On Secondary | `#FFFFFF` | `--color-on-secondary` |
-| Accent/CTA | `#22C55E` | `--color-accent` |
-| On Accent/CTA | `#0F172A` | `--color-on-accent` |
-| Background | `#0F172A` | `--color-background` |
-| Foreground | `#F8FAFC` | `--color-foreground` |
-| Card | `#1B2336` | `--color-card` |
-| Card Foreground | `#F8FAFC` | `--color-card-foreground` |
-| Muted | `#272F42` | `--color-muted` |
-| Muted Foreground | `#94A3B8` | `--color-muted-foreground` |
-| Border | `#475569` | `--color-border` |
-| Destructive | `#EF4444` | `--color-destructive` |
-| On Destructive | `#000000` | `--color-on-destructive` |
-| Ring | `#FFFFFF` | `--color-ring` |
+| Token | Hex | Use | Contrast |
+|---|---|---|---|
+| `bg` | `#0F172A` | Page | — |
+| `card` | `#1B2336` | Cards, sheets, the tab bar | — |
+| `muted` | `#272F42` | Raised fill (bubbles, icon tiles, pressed rows) and dividers | not an edge of a control |
+| `edge` | `#5B6B82` | Edge of a tappable card | 3.3:1 on `bg` |
+| `border` | `#64748B` | Edge of a control (input, outline button, mic) | 3.8:1 on `bg`, 3.3:1 on `card` |
+| `text` | `#F8FAFC` | Body text | 17:1 on `bg` |
+| `textMuted` | `#94A3B8` | Secondary text | 7.0:1 on `bg`, 6.1:1 on `card` |
+| `accent` | `#22C55E` | Primary action (send, new session) | text on it is `bg` |
+| `danger` | `#EF4444` | Destructive actions, errors | 4.2:1 on `card`; always with an icon or a label |
+| `scrim` | `rgba(0,0,0,0.6)` | Backdrop of a custom sheet | text behind drops to 3.4:1, so it does not compete |
 
-**Color Notes:** Code dark + run green
+**Status colors.** A status always shows icon + label + color. Color alone never carries the meaning.
 
-### Typography
+| Status | Color | Icon | Label |
+|---|---|---|---|
+| working | `#60A5FA` blue | spinning `LoaderCircle` | Working |
+| blocked (Board: needs you) | `#F59E0B` amber | `Hand` | Needs you |
+| done (Board: ready) | `#22C55E` green | `Check` / `Inbox` | Done / Ready |
+| idle | `#94A3B8` slate | `Check` / `Moon` | Idle |
+| unknown | `#7C8BA1` dim slate | `CircleHelp` | Unknown |
 
-- **Heading Font:** JetBrains Mono
-- **Body Font:** JetBrains Mono
-- **Mood:** terminal, cli, hacker, monospace, matrix, developer, retro-future, command line, precision, OLED
-- **Google Fonts:** [JetBrains Mono + JetBrains Mono](https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;1,400)
+Rules:
+- Text on any surface: 4.5:1 or more. Large text and non-text UI (icons, control edges): 3:1 or more.
+- Dividers that only group content use `muted`. Edges that show "you can tap this" use `edge` or `border`.
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap');
-```
+## 2. Elevation
 
-### Spacing Variables
+Shadows do not show on a dark page. Each step up is a lighter fill plus a 1 pt edge (`elevation` in tokens).
 
-*Density: 7/10 — Standard*
+| Level | Fill | Edge | Use |
+|---|---|---|---|
+| 0 | `bg` | none | Page |
+| 1 | `card` | `muted` | Static cards (host card), sheets |
+| tappable | `card` | `edge` | Agent card, tool card, subagent card |
+| 2 | `muted` | `border` | A control that sits on a card |
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+## 3. Type
 
-### Shadow Depths
+System font (SF Pro) for UI. JetBrains Mono for code, tool input and output, terminal text, IDs.
+Every text style is a role (`textRole`) and scales with Dynamic Type.
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+| Role | Size | Weight | Max scale |
+|---|---|---|---|
+| largeTitle | 28 | 700 | 1.6 |
+| title | 20 | 600 | 2 |
+| body | 16 | 400 | 3 |
+| callout | 14 | 400 | 2.5 |
+| caption | 12 | 400 | 2 |
+| mono | 13 | 400 | 2 |
 
----
+- Dense rows (status pills, chips, header labels) cap the scale lower (`denseScale.pill` 1.4, `denseScale.row` 1.6).
+- Titles wrap to 2 lines before they truncate. Timers and counters use tabular figures.
+- Line height is 1.5 times the size.
 
-## Component Specs
+## 4. Space, radius, icons, targets
 
-### Buttons
+- Space: 4, 8, 12, 16, 24, 32, 48 (`space.xs` to `space.xxxl`).
+- Radius: 6, 10, 16, pill.
+- Icons: lucide, outline, stroke 2. Sizes `icon.sm` 16, `icon.md` 20, `icon.header` 22 (header row), `icon.lg` 24.
+- Touch target: 44 × 44 pt minimum. A smaller visual gets `hitSlop` or padding, not a larger icon.
+- Keep 8 pt or more between two touch targets.
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #22C55E;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+## 5. Press states
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+There is no hover. Feedback starts on press-in, the action runs on release.
 
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #1E293B;
-  border: 2px solid #1E293B;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
+| Control | Pressed state | Time |
+|---|---|---|
+| Icon button, ghost button | opacity `state.pressedOpacity` 0.6 | instant |
+| Filled button | opacity `state.pressedFill` 0.85 | instant |
+| Card (Board) | scale 0.98, then toward 0.96 while a long press charges; light layer at 0.04 | 100 ms ease-out in, spring back (damping 15, stiffness 220) |
+| Row in a list or menu | fill `muted` | instant |
+| Disabled | opacity `state.disabledOpacity` 0.4, `accessibilityState.disabled`, no action | — |
+| Offline host content | opacity `state.offlineOpacity` 0.6 | — |
 
-### Cards
+Press feedback never changes layout bounds. Scale is a transform.
 
-```css
-.card {
-  background: #0F172A;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+## 6. Motion
 
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
+Tokens: `motion` in `tokens.ts`. Reanimated on the UI thread; never `setState` per frame.
 
-### Inputs
+- Press: 80-150 ms. State change (chip, toggle): 180 ms. A menu or sheet that enters without a finger: 240 ms.
+- Exit time is 65 % of enter time (`motion.exitRatio`).
+- A finger moved it: use a spring (`motion.spring.sheet`, `motion.spring.swipe`) and pass the gesture velocity.
+- Curves: ease-out `[0.23, 1, 0.32, 1]` for things that enter or react; ease-in-out `[0.77, 0, 0.175, 1]` for on-screen movement; linear only for constant rotation. Never ease-in.
+- Status: the working spinner turns once per second; "needs you" pulses once when it starts; finished work pops once.
+- Tabs never slide. Screen transitions use the native stack.
+- Reduce Motion: no scale, no rotation, no slide. Keep opacity and color changes that explain a state. Haptics still fire.
 
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
+## 7. Haptics
 
-.input:focus {
-  border-color: #1E293B;
-  outline: none;
-  box-shadow: 0 0 0 3px #1E293B20;
-}
-```
+`app/src/ui/haptics.ts` is the only module that calls expo-haptics. A "Haptics" setting (on by default) turns all of them off.
 
-### Modals
+| Function | Feel | When |
+|---|---|---|
+| `tap()` | selection | A chip or filter, the segmented control, a menu row, a toggle (speaker) |
+| `press()` | light impact | Open the "+" menu, open a session, recording stops |
+| `peek()` | medium impact | A long press opens the peek sheet; a swipe passes its action point (once per crossing); recording starts |
+| `commit()` | success | Approve, a prompt sent and accepted, a rename saved, a copy |
+| `warn()` | warning | Deny; a destructive confirm (close, restart) comes up |
+| `fail()` | error | Send, upload or rename failed |
+| `status()` | success / warning / selection | The open session or a Board card changes bucket: done → success, needs you → warning, else selection. At most one per 1.5 s |
 
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
+Rules: one haptic per user action, at the moment of the visual change. Never on scroll, on typing, or on a plain render. A haptic is never the only feedback.
 
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
+## 8. Sheets and modals
 
----
+- Use native sheets (`presentation: "formSheet"` with detents, or `"modal"`). The peek sheet has detents 0.6 and 1.
+- Every sheet has a visible close button as well as swipe-down.
+- Closing a sheet with a non-empty draft asks first ("Discard draft?").
+- The keyboard never covers the composer: the sheet content sits in a `KeyboardAvoidingView`.
+- Inside a sheet: header fixed at the top, content fills the middle (`flex: 1`, `minHeight: 0`), the composer is pinned at the bottom. Scroll views in a sheet use `contentInsetAdjustmentBehavior="never"`.
 
-## Style Guidelines
+## 9. Thread
 
-**Style:** Minimalism & Swiss Style
+- Assistant replies render as markdown. Code blocks and tables scroll sideways inside their own box; they never draw outside the message.
+- User prompts are right-aligned bubbles. A long prompt starts collapsed at 8 lines with "Show more".
+- Queued prompts: a sent prompt shows at once as a dimmed bubble at the end with a state line: "Sending…", then "Queued" (clock icon) until the log has the same text. A failed send shows "Not sent · Retry" (tap retries, long press removes).
+- Tool cards: name and summary in mono. Running: spinner and a ticking timer. Done: check or X with the run time. Opened: input and result; the newest running card shows live pane output. "Expand" opens the full tool view (pinch for text size, copy).
 
-**Keywords:** Clean, simple, spacious, functional, white space, high contrast, geometric, sans-serif, grid-based, essential
+## 10. Loading
 
-**Best For:** Enterprise apps, dashboards, documentation sites, SaaS platforms, professional tools
+- An action that ends in under 300 ms shows no spinner. A spinner shows only after 300 ms (`useDelayed`).
+- The first load of a thread shows a skeleton, not a spinner.
+- Every network wait has a timeout and then an error with a Retry.
 
-**Key Effects:** Subtle hover (200-250ms), smooth transitions, sharp shadows if any, clear type hierarchy, fast loading
+## 11. Empty, error and offline states
 
-### Page Pattern
+Each one has an icon, one sentence that says what is true, and an action when one exists.
 
-**Pattern Name:** FAQ/Documentation Landing
+| Where | State | Message + action |
+|---|---|---|
+| Board | no hosts | "No hosts yet." + Add a host |
+| Board | all quiet | "All quiet. Nothing needs you." |
+| Board | host offline | "<host> is offline · seen 5m ago" + Retry |
+| Usage, Automations | host offline or error | the cause + Retry |
+| Pairing, discovery | nothing found or failed | the cause + Retry / Add manually |
 
-- **Conversion Strategy:** Reduce support tickets. Track search analytics. Show related articles. Contact escalation path.
-- **CTA Placement:** Search bar prominent + Contact CTA for unresolved questions
-- **Section Order:** Hero with search bar > Popular categories > FAQ accordion > Contact/support CTA
+## 12. Accessibility
 
----
+- Every control has an `accessibilityLabel` and a role; icon buttons announce their state (selected, expanded, busy, disabled).
+- Gestures have a visible or VoiceOver alternative: the Board card has a "⋯" button and custom actions for swipe and long press.
+- Status changes on the Board are announced ("api moved to Needs you") without moving focus, at most one per 2 s.
+- Hold-to-talk also works as tap-to-toggle, and has a VoiceOver action.
+- Test at the largest accessibility text size and with Reduce Motion on before you ship.
 
-## Motion
+## Pre-delivery checklist
 
-**Scroll Reveal** (Subtle) — Trigger: scroll (viewport enter) | Duration: 300-400ms | Easing: `power1.out`
-
-```js
-gsap.from(el, { opacity: 0, y: 12, duration: 0.35, ease: 'power1.out', scrollTrigger: { trigger: el, start: 'top 90%', toggleActions: 'play none none reverse' } });
-```
-
-**Framework notes:** Requires the ScrollTrigger plugin registered once via gsap.registerPlugin(ScrollTrigger); Use matchMedia('(prefers-reduced-motion: reduce)') to skip non-essential motion and render the final state immediately
-
-- ✅ Keep the y offset small (8-16px) so it reads as a fade, not a slide
-- ❌ Don't reveal below-the-fold content needed for SEO/crawlers as invisible-by-default without a no-JS fallback
-- ⚡ toggleActions 'play none none reverse' avoids re-triggering on every scroll direction change
-
----
-
-## Anti-Patterns (Do NOT Use)
-
-- ❌ Light mode default
-- ❌ Slow performance
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- [ ] Only tokens: no raw hex, opacity, scale or duration in components.
+- [ ] Status shows icon + label + color.
+- [ ] Touch targets 44 pt; 8 pt between targets.
+- [ ] Press feedback in 150 ms or less; no layout shift on press.
+- [ ] Reduce Motion: no scale, rotation or slide.
+- [ ] Largest text size: titles wrap, dense rows stay readable, nothing overlaps.
+- [ ] Sheets: close button, draft confirm, keyboard does not cover the composer.
+- [ ] Haptics follow the table; none on scroll or typing.
+- [ ] Empty, error and offline states have a message and a Retry.
+- [ ] VoiceOver: labels, order, custom actions, live announcements.

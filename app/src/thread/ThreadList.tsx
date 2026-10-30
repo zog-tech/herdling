@@ -3,7 +3,7 @@ import { ArrowDown } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ActivityIndicator, FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 import { LiveToolContext, newestRunningTool } from "./LiveToolContext";
 import { ThreadRow } from "./ThreadRow";
@@ -109,7 +109,7 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
               paddingHorizontal: space.lg,
               borderRadius: radius.pill,
               backgroundColor: colors.accent,
-              opacity: pressed ? 0.85 : 1,
+              opacity: pressed ? state.pressedFill : 1,
             })}
             hitSlop={4}
           >

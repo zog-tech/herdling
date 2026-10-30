@@ -2,7 +2,7 @@ import { LayoutGrid } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { Pressable, ScrollView } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { BUCKETS, BUCKET_LABEL, toggleFilter, type Bucket, type Counts } from "./buckets";
@@ -38,9 +38,9 @@ function Chip({
         paddingHorizontal: space.md,
         borderRadius: radius.pill,
         borderWidth: 1,
-        borderColor: active ? color : colors.muted,
+        borderColor: active ? color : colors.edge,
         backgroundColor: active ? color : colors.card,
-        opacity: pressed ? 0.8 : 1,
+        opacity: pressed ? state.pressedFill : 1,
       })}
     >
       <Icon size={14} color={fg} />

@@ -8,7 +8,7 @@ import { timeAgo } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
 import { openResumedSession, resumeSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { colors, hitTarget, space } from "@/theme/tokens";
+import { colors, hitTarget, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 const RECENT_LIMIT = 30;
@@ -107,7 +107,7 @@ export default function ResumeScreen() {
                 paddingHorizontal: space.lg,
                 paddingVertical: space.sm,
                 backgroundColor: pressed ? colors.card : "transparent",
-                opacity: starting && starting !== item.session ? 0.5 : 1,
+                opacity: starting && starting !== item.session ? state.disabledOpacity : 1,
               })}
             >
               <View style={{ flex: 1, gap: 2 }}>
