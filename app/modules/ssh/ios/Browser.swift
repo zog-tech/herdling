@@ -12,17 +12,24 @@ final class Browser: @unchecked Sendable {
   private let queue = DispatchQueue(label: "zogssh.bonjour")
   private var onFound: ([String: Any]) -> Void = { _ in }
   private var onLost: (String) -> Void = { _ in }
+  /// Browse state: "ready", "waiting", "failed" or "stopped", and an error text.
+  private var onState: (String, String?) -> Void = { _, _ in }
 
   private var browser: NWBrowser?
   /// Open resolves by service name. A new result for the same name replaces the old resolve.
   private var resolves: [String: Resolve] = [:]
 
   /// Starts a browse that reports to the given handlers. A running browse is stopped first.
-  func start(onFound: @escaping ([String: Any]) -> Void, onLost: @escaping (String) -> Void) {
+  func start(
+    onFound: @escaping ([String: Any]) -> Void,
+    onLost: @escaping (String) -> Void,
+    onState: @escaping (String, String?) -> Void
+  ) {
     queue.async {
-      self.stopOnQueue()
+      self.stopOnQueue(report: false)
       self.onFound = onFound
       self.onLost = onLost
+      self.onState = onState
       let b = NWBrowser(for: .bonjourWithTXTRecord(type: Browser.serviceType, domain: nil), using: .tcp)
       b.browseResultsChangedHandler = { [weak self, weak b] results, changes in
         guard let self, let b, self.browser === b else { return }
@@ -30,7 +37,18 @@ final class Browser: @unchecked Sendable {
       }
       b.stateUpdateHandler = { [weak self, weak b] state in
         guard let self, let b, self.browser === b else { return }
-        if case .failed = state { self.stopOnQueue() }
+        switch state {
+        case .ready:
+          self.onState("ready", nil)
+        case .waiting(let error):
+          // NWBrowser waits here when local network access is denied.
+          self.onState("waiting", "\(error)")
+        case .failed(let error):
+          self.stopOnQueue(report: false)
+          self.onState("failed", "\(error)")
+        default:
+          break
+        }
       }
       self.browser = b
       b.start(queue: self.queue)
@@ -38,10 +56,12 @@ final class Browser: @unchecked Sendable {
   }
 
   func stop() {
-    queue.async { self.stopOnQueue() }
+    queue.async { self.stopOnQueue(report: true) }
   }
 
-  private func stopOnQueue() {
+  /// With `report`, a running browse sends "stopped". Callbacks of the old browser are ignored after this.
+  private func stopOnQueue(report: Bool) {
+    if report && browser != nil { onState("stopped", nil) }
     browser?.cancel()
     browser = nil
     resolves.values.forEach { $0.cancel() }

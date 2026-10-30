@@ -19,7 +19,7 @@ public class SshModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SshModule")
 
-    Events("onData", "onStderr", "onChannelClose", "onDisconnect", "onServiceFound", "onServiceLost")
+    Events("onData", "onStderr", "onChannelClose", "onDisconnect", "onServiceFound", "onServiceLost", "onBrowseState")
 
     AsyncFunction("ensureKey") { () throws -> [String: String] in
       let key = try Keys.loadOrCreate()
@@ -52,7 +52,12 @@ public class SshModule: Module {
     AsyncFunction("startBrowse") {
       self.browser.start(
         onFound: { [weak self] service in self?.sendEvent("onServiceFound", service) },
-        onLost: { [weak self] name in self?.sendEvent("onServiceLost", ["name": name]) }
+        onLost: { [weak self] name in self?.sendEvent("onServiceLost", ["name": name]) },
+        onState: { [weak self] state, error in
+          var body: [String: Any] = ["state": state]
+          if let error { body["error"] = error }
+          self?.sendEvent("onBrowseState", body)
+        }
       )
     }
 

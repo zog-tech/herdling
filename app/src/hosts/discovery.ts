@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { create } from "zustand";
 
-import { addListener, type FoundService, startBrowse, stopBrowse } from "../../modules/ssh";
+import { addListener, type BrowseState, type FoundService, startBrowse, stopBrowse } from "../../modules/ssh";
 import type { Host } from "./store";
 
 /** A zogsshd host found on the local network through Bonjour. */
@@ -66,22 +67,66 @@ export function knownHostFor(d: Discovered, hosts: Host[]): Host | undefined {
   );
 }
 
-/** Browses for zogsshd hosts while `active` is true. The list empties when browsing stops. */
-export function useDiscovery(active: boolean): Discovered[] {
-  const [list, setList] = useState<Discovered[]>([]);
+export type DiscoveryStatus = "stopped" | "starting" | "ready" | "waiting" | "failed";
 
+/** One list shared by every `useDiscovery` consumer. `error` is set with "waiting" or "failed". */
+export type DiscoveryState = { list: Discovered[]; status: DiscoveryStatus; error?: string };
+
+const STOPPED: DiscoveryState = { list: [], status: "stopped" };
+const useDiscoveryStore = create<DiscoveryState>(() => STOPPED);
+
+/** Active `useDiscovery` consumers. The native browse runs while this is above 0. */
+let consumers = 0;
+let subscriptions: { remove(): void }[] = [];
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function onBrowseState(e: BrowseState) {
+  if (e.state === "failed" || e.state === "stopped") {
+    useDiscoveryStore.setState({ list: [], status: e.state, error: e.error });
+  } else {
+    useDiscoveryStore.setState({ status: e.state, error: e.error });
+  }
+}
+
+function acquire() {
+  consumers += 1;
+  if (consumers > 1) return;
+  useDiscoveryStore.setState({ list: [], status: "starting", error: undefined });
+  subscriptions = [
+    addListener("onServiceFound", (s) => useDiscoveryStore.setState((st) => ({ list: applyFound(st.list, s) }))),
+    addListener("onServiceLost", (e) => useDiscoveryStore.setState((st) => ({ list: applyLost(st.list, e.name) }))),
+    addListener("onBrowseState", onBrowseState),
+  ];
+  startBrowse().catch((e) => {
+    if (consumers > 0) useDiscoveryStore.setState({ list: [], status: "failed", error: errorText(e) });
+  });
+}
+
+function release() {
+  consumers -= 1;
+  if (consumers > 0) return;
+  subscriptions.forEach((s) => s.remove());
+  subscriptions = [];
+  useDiscoveryStore.setState(STOPPED, true);
+  stopBrowse().catch((e) => {
+    if (consumers === 0) useDiscoveryStore.setState({ status: "failed", error: errorText(e) });
+  });
+}
+
+/**
+ * Browses for zogsshd hosts while `active` is true. All active consumers share one native
+ * browse and one list: the browse starts with the first consumer and stops with the last.
+ * An inactive consumer gets an empty, stopped state.
+ */
+export function useDiscovery(active: boolean): DiscoveryState {
   useEffect(() => {
     if (!active) return;
-    const found = addListener("onServiceFound", (s) => setList((l) => applyFound(l, s)));
-    const lost = addListener("onServiceLost", (e) => setList((l) => applyLost(l, e.name)));
-    startBrowse().catch(() => {});
-    return () => {
-      found.remove();
-      lost.remove();
-      stopBrowse().catch(() => {});
-      setList([]);
-    };
+    acquire();
+    return release;
   }, [active]);
-
-  return list;
+  const state = useDiscoveryStore();
+  return active ? state : STOPPED;
 }

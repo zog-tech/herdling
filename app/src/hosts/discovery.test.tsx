@@ -6,8 +6,8 @@ const mockSsh = {
   emit(event: string, payload: unknown) {
     this.listeners.get(event)?.forEach((l) => l(payload));
   },
-  startBrowse: jest.fn(async () => {}),
-  stopBrowse: jest.fn(async () => {}),
+  startBrowse: jest.fn(async (): Promise<void> => {}),
+  stopBrowse: jest.fn(async (): Promise<void> => {}),
   addListener(event: string, l: Listener) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
     this.listeners.get(event)!.add(l);
@@ -29,7 +29,7 @@ jest.mock("expo-secure-store", () => ({
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import type { FoundService } from "../../modules/ssh";
-import { applyFound, applyLost, type Discovered, knownHostFor, useDiscovery } from "./discovery";
+import { applyFound, applyLost, type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from "./discovery";
 import type { Host } from "./store";
 
 const MINI: FoundService = {
@@ -95,31 +95,98 @@ test("known_host_by_fingerprint_then_address", () => {
   expect(knownHostFor({ ...d, fingerprint: undefined }, [byAddress])?.id).toBe("a");
 });
 
-let latest: Discovered[] = [];
-function Probe({ active }: { active: boolean }) {
-  latest = useDiscovery(active);
+const latest: Record<string, DiscoveryState> = {};
+function Probe({ id, active }: { id: string; active: boolean }) {
+  latest[id] = useDiscovery(active);
   return null;
 }
 
-test("use_discovery_browses_only_while_active", async () => {
+const names = (id: string) => latest[id].list.map((d) => d.name);
+
+async function mount(el: React.ReactElement): Promise<ReactTestRenderer> {
   let tree!: ReactTestRenderer;
   await act(async () => {
-    tree = create(<Probe active={false} />);
+    tree = create(el);
   });
-  expect(mockSsh.startBrowse).not.toHaveBeenCalled();
+  return tree;
+}
 
-  await act(async () => tree.update(<Probe active />));
+beforeEach(() => {
+  mockSsh.listeners.clear();
+  mockSsh.startBrowse.mockReset().mockResolvedValue(undefined);
+  mockSsh.stopBrowse.mockReset().mockResolvedValue(undefined);
+});
+
+test("use_discovery_browses_only_while_active", async () => {
+  const tree = await mount(<Probe id="a" active={false} />);
+  expect(mockSsh.startBrowse).not.toHaveBeenCalled();
+  expect(latest.a.status).toBe("stopped");
+
+  await act(async () => tree.update(<Probe id="a" active />));
   expect(mockSsh.startBrowse).toHaveBeenCalledTimes(1);
+  expect(latest.a.status).toBe("starting");
   await act(async () => {
+    mockSsh.emit("onBrowseState", { state: "ready" });
     mockSsh.emit("onServiceFound", MINI);
     mockSsh.emit("onServiceFound", { ...MINI, name: "box" });
     mockSsh.emit("onServiceLost", { name: "mini" });
   });
-  expect(latest.map((d) => d.name)).toEqual(["box"]);
+  expect(latest.a.status).toBe("ready");
+  expect(names("a")).toEqual(["box"]);
 
-  await act(async () => tree.update(<Probe active={false} />));
+  await act(async () => tree.update(<Probe id="a" active={false} />));
   expect(mockSsh.stopBrowse).toHaveBeenCalledTimes(1);
-  expect(latest).toEqual([]);
+  expect(latest.a).toEqual({ list: [], status: "stopped" });
   expect(mockSsh.listeners.get("onServiceFound")?.size).toBe(0);
+  await act(async () => tree.unmount());
+});
+
+test("two_consumers_share_one_browse", async () => {
+  const tree = await mount(
+    <>
+      <Probe id="a" active />
+      <Probe id="b" active />
+    </>,
+  );
+  expect(mockSsh.startBrowse).toHaveBeenCalledTimes(1);
+  await act(async () => mockSsh.emit("onServiceFound", MINI));
+  expect(names("a")).toEqual(["mini"]);
+  expect(names("b")).toEqual(["mini"]);
+
+  // "a" stops: the browse goes on for "b".
+  await act(async () =>
+    tree.update(
+      <>
+        <Probe id="a" active={false} />
+        <Probe id="b" active />
+      </>,
+    ),
+  );
+  expect(mockSsh.stopBrowse).not.toHaveBeenCalled();
+  expect(names("a")).toEqual([]);
+  await act(async () => mockSsh.emit("onServiceFound", { ...MINI, name: "box" }));
+  expect(names("b")).toEqual(["box", "mini"]);
+
+  // The last consumer stops: the browse stops once.
+  await act(async () => tree.unmount());
+  expect(mockSsh.stopBrowse).toHaveBeenCalledTimes(1);
+  expect(mockSsh.startBrowse).toHaveBeenCalledTimes(1);
+});
+
+test("browse_failure_sets_failed_status", async () => {
+  mockSsh.startBrowse.mockRejectedValueOnce(new Error("no browser"));
+  let tree = await mount(<Probe id="a" active />);
+  expect(latest.a).toEqual({ list: [], status: "failed", error: "no browser" });
+  await act(async () => tree.unmount());
+
+  // A native "failed" event clears the list; "waiting" keeps it and shows the reason.
+  tree = await mount(<Probe id="a" active />);
+  await act(async () => mockSsh.emit("onServiceFound", MINI));
+  await act(async () => mockSsh.emit("onBrowseState", { state: "waiting", error: "-65570: PolicyDenied" }));
+  expect(latest.a.status).toBe("waiting");
+  expect(latest.a.error).toBe("-65570: PolicyDenied");
+  expect(names("a")).toEqual(["mini"]);
+  await act(async () => mockSsh.emit("onBrowseState", { state: "failed", error: "-65555: NoAuth" }));
+  expect(latest.a).toEqual({ list: [], status: "failed", error: "-65555: NoAuth" });
   await act(async () => tree.unmount());
 });

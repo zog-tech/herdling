@@ -5,6 +5,9 @@ export type ConnectOptions = { host: string; port: number; user: string; fingerp
 /** A `_zogssh._tcp` service seen on the local network. `address` is null when it did not resolve in 3 s. */
 export type FoundService = { name: string; address: string | null; pairPort: number; txt: Record<string, string> };
 
+/** State of the Bonjour browse. "waiting" is what iOS reports when local network access is denied. */
+export type BrowseState = { state: "ready" | "waiting" | "failed" | "stopped"; error?: string };
+
 export type SshEvents = {
   /** stdout text of an exec channel, cut at UTF-8 sequence boundaries (not at lines). */
   onData: (e: { channelId: string; data: string }) => void;
@@ -18,6 +21,8 @@ export type SshEvents = {
   onServiceFound: (e: FoundService) => void;
   /** A Bonjour service went away while browsing. */
   onServiceLost: (e: { name: string }) => void;
+  /** The browse changed state. After "failed" the browse is stopped. */
+  onBrowseState: (e: BrowseState) => void;
 };
 
 declare class SshNativeModule extends NativeModule<SshEvents> {
