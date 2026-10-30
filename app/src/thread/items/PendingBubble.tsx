@@ -1,14 +1,20 @@
 import { CircleAlert, Clock } from "lucide-react-native";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
+import Animated, { cubicBezier } from "react-native-reanimated";
 
 import { useHostConn } from "@/hosts/connection";
-import { colors, hitTarget, space, state } from "@/theme/tokens";
+import { colors, hitTarget, motion, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
 import { removePending, sendWithPending, usePendingList, type Pending } from "../pending";
 import { UserBubble } from "./UserBubble";
+
+/** A new state line fades in over the old one's place: Sending → Queued → Not sent. Opacity only. */
+const FADE_IN = { from: { opacity: 0 }, to: { opacity: 1 } };
+const FADE_EASE = cubicBezier(...motion.ease.out);
+const fadeIn = { animationName: FADE_IN, animationDuration: motion.crossfadeMs, animationTimingFunction: FADE_EASE } as const;
 
 export function pendingLabel(p: Pick<Pending, "state">): string {
   return p.state === "sending" ? "Sending…" : p.state === "queued" ? "Queued" : "Not sent · Retry";
@@ -28,6 +34,8 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
       <View style={{ opacity: failed ? 1 : 0.7 }}>
         <UserBubble text={p.text} />
       </View>
+      {/* Keyed by state: each change mounts the new line, which fades in. */}
+      <Animated.View key={p.state} style={fadeIn}>
       {failed ? (
         <Pressable
           accessibilityRole="button"
@@ -65,6 +73,7 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
           </Text>
         </View>
       )}
+      </Animated.View>
     </View>
   );
 });

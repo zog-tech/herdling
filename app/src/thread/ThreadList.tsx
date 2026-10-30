@@ -1,11 +1,14 @@
 import type { ThreadItem } from "@zogssh/protocol";
 import { ArrowDown } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
-import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
+
+import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
+import { Arrivals, ArrivalsContext } from "./arrivals";
 import { LiveToolContext, newestRunningTool, ThreadPaneContext } from "./LiveToolContext";
 import { ThreadRow } from "./ThreadRow";
 
@@ -23,8 +26,42 @@ type Props = {
   live?: { hostId: string; paneId: string; active: boolean };
 };
 
+// The list is inverted (each cell is flipped), so a negative offset starts the row below its place.
+const ARRIVE = {
+  from: { opacity: 0, transform: [{ translateY: -motion.arrive.rise }] },
+  to: { opacity: 1, transform: [{ translateY: 0 }] },
+};
+const ARRIVE_FADE = { from: { opacity: 0 }, to: { opacity: 1 } };
+const ARRIVE_EASE = cubicBezier(...motion.ease.out);
+
+/**
+ * A row that arrived while the user was at the bottom fades in and rises 6 pt (CSS animation, UI
+ * thread). Reduce Motion: a fade only. Rows of a loaded page show at once.
+ */
+function Arrive({ id, index, children }: { id: string; index: number; children: ReactNode }) {
+  const arrivals = useContext(ArrivalsContext);
+  const reduced = useReducedMotion();
+  const [animate] = useState(() => arrivals?.claim(id, index) ?? false);
+  if (!animate) return <>{children}</>;
+  return (
+    <Animated.View
+      style={{
+        animationName: reduced ? ARRIVE_FADE : ARRIVE,
+        animationDuration: motion.arrive.durationMs,
+        animationTimingFunction: ARRIVE_EASE,
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 const keyExtractor = (item: ThreadItem) => item.id;
-const renderItem = ({ item }: { item: ThreadItem }) => <ThreadRow item={item} />;
+const renderItem = ({ item, index }: { item: ThreadItem; index: number }) => (
+  <Arrive id={item.id} index={index}>
+    <ThreadRow item={item} />
+  </Arrive>
+);
 const Gap = () => <View style={{ height: space.md }} />;
 
 /**
@@ -38,6 +75,12 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
   const [unseen, setUnseen] = useState(false);
   const newestId = items.length > 0 ? items[items.length - 1].id : undefined;
   const lastNewest = useRef(newestId);
+  const [arrivals] = useState(() => new Arrivals());
+
+  // After each commit: these items are known, so a later mount of their row does not animate.
+  useEffect(() => {
+    arrivals.commit(items.map((i) => i.id));
+  }, [items, arrivals]);
 
   useEffect(() => {
     const prev = lastNewest.current;
@@ -48,8 +91,9 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const bottom = e.nativeEvent.contentOffset.y <= BOTTOM_SLOP;
     atBottom.current = bottom;
+    arrivals.atBottom = bottom;
     if (bottom) setUnseen(false);
-  }, []);
+  }, [arrivals]);
 
   const newestRunningId = useMemo(() => newestRunningTool(items), [items]);
   const liveValue = useMemo(
@@ -65,6 +109,7 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
   }, []);
 
   return (
+    <ArrivalsContext.Provider value={arrivals}>
     <ThreadPaneContext.Provider value={pane}>
       <LiveToolContext.Provider value={liveValue}>
         <View style={{ flex: 1 }}>
@@ -114,13 +159,14 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
                 gap: space.xs,
                 paddingHorizontal: space.lg,
                 borderRadius: radius.pill,
-                backgroundColor: colors.accent,
-                opacity: pressed ? state.pressedFill : 1,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: pressed ? colors.card : colors.raised,
               })}
               hitSlop={4}
             >
-              <ArrowDown size={16} color={colors.onAccent} />
-              <Text variant="small" bold color={colors.onAccent}>
+              <ArrowDown size={16} color={colors.text} />
+              <Text variant="small" bold>
                 New messages
               </Text>
             </Pressable>
@@ -128,5 +174,6 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
         </View>
       </LiveToolContext.Provider>
     </ThreadPaneContext.Provider>
+    </ArrivalsContext.Provider>
   );
 }

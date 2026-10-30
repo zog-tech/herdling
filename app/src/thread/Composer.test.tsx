@@ -54,7 +54,6 @@ jest.mock("@/voice/useDictation", () => ({
 jest.mock("expo-file-system", () => ({ File: class {} }));
 jest.mock("@/voice/RecordBar", () => ({ RecordBar: () => null }));
 const { RecordBar: MockRecordBar } = jest.requireMock("@/voice/RecordBar");
-jest.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
@@ -154,8 +153,8 @@ test("mic_and_send_have_the_same_size", async () => {
   });
   const mic = tree!.root.findAll((n) => n.type === MicButton)[0];
   expect(mic.props.size).toBe(hitTarget);
-  const send = tree!.root.find((n) => n.props.accessibilityLabel === "Send" && typeof n.props.style === "function");
-  const style = send.props.style({ pressed: false });
+  const send = tree!.root.find((n) => n.props.accessibilityLabel === "Send" && n.props.style?.width !== undefined);
+  const style = send.props.style;
   expect(style.width).toBe(hitTarget);
   expect(style.height).toBe(hitTarget);
 });
@@ -240,6 +239,7 @@ test("attach_photos_uploads_them_then_sends_the_paths", async () => {
   expect(byLabel(tree!, "Remove photo 2")).toHaveLength(1);
 
   await act(async () => prompt(tree!).props.onChangeText("What is wrong here?"));
+  jest.mocked(haptics.press).mockClear();
   await press(tree!, "Send");
   expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
     { name: "IMG_1.jpg", data_b64: "b64-IMG_1.HEIC" },
@@ -248,9 +248,10 @@ test("attach_photos_uploads_them_then_sends_the_paths", async () => {
   expect(prompts()).toEqual(["What is wrong here?\n/up/1-IMG_1.jpg\n/up/2-b.jpg"]);
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
   expect(prompt(tree!).props.value).toBe("");
-  // The sent prompt waits as a pending bubble; the accepted send gives one success haptic.
+  // The sent prompt waits as a pending bubble; the send gives one light haptic on the tap, no second one.
   expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["queued"]);
-  expect(haptics.commit).toHaveBeenCalledTimes(1);
+  expect(haptics.press).toHaveBeenCalledTimes(1);
+  expect(haptics.commit).not.toHaveBeenCalled();
 });
 
 test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {

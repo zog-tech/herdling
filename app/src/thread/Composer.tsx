@@ -6,7 +6,9 @@ import { AppState, Pressable, TextInput, useWindowDimensions, View } from "react
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
-import { colors, denseScale, hitTarget, radius, space, state, type } from "@/theme/tokens";
+import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
+
+import { colors, denseScale, hitTarget, motion, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -35,6 +37,7 @@ import { PasteChip, PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
+const SEND_EASE = cubicBezier(...motion.ease.out);
 const PAD_V = 10;
 /** Most matches the typed `/` menu renders. */
 const MENU_MAX = 50;
@@ -73,6 +76,7 @@ export const Composer = memo(function Composer({
   /** Called when the box gets or loses unsent text or photos (a sheet asks before it closes). */
   onDraftChange?: (hasDraft: boolean) => void;
 }) {
+  const reduced = useReducedMotion();
   const { rpc, status, hello } = useHostConn(hostId);
   // The box text scales with Dynamic Type up to the row cap. The 5-line limit scales with it.
   const inputScale = Math.min(useWindowDimensions().fontScale, denseScale.row);
@@ -235,8 +239,8 @@ export const Composer = memo(function Composer({
     }
     setSending(false);
     try {
+      // No success haptic here: the send already gave its one haptic on the tap.
       await sendWithPending(rpc, hostId, paneId, full);
-      haptics.commit();
     } catch (e) {
       haptics.fail();
       const code = (e as { code?: unknown })?.code;
@@ -244,7 +248,10 @@ export const Composer = memo(function Composer({
     }
   };
   const send = () => {
-    if (canSend) void sendPrompt(text, true);
+    if (!canSend) return;
+    // The one haptic of a send: a light tap at the moment the button dips.
+    haptics.press();
+    void sendPrompt(text, true);
   };
 
   const attachPhotos = async () => {
@@ -407,8 +414,7 @@ export const Composer = memo(function Composer({
               borderRadius: hitTarget / 2,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: colors.accent,
-              opacity: pressed ? state.pressedFill : 1,
+              backgroundColor: pressed ? colors.accentPressed : colors.accent,
             })}
           >
             <Check size={22} color={colors.onAccent} />
@@ -420,20 +426,30 @@ export const Composer = memo(function Composer({
           accessibilityState={{ disabled: !canSend, busy: sending }}
           disabled={!canSend}
           onPress={send}
-          style={({ pressed }) => ({
-            width: hitTarget,
-            height: hitTarget,
-            borderRadius: hitTarget / 2,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: canSend ? colors.accent : colors.raised,
-            opacity: pressed ? state.pressedFill : 1,
-          })}
+          style={{ width: hitTarget, height: hitTarget }}
         >
-          {sending ? (
-            <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={22} color={colors.onAccent} />} />
-          ) : (
-            <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
+          {({ pressed }) => (
+            // Quiet graphite when empty; gold fades in (CSS transition, UI thread) when there is text.
+            // A press dips it; Reduce Motion keeps the color change and drops the scale.
+            <Animated.View
+              style={{
+                flex: 1,
+                borderRadius: hitTarget / 2,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: canSend ? (pressed ? colors.accentPressed : colors.accent) : colors.raised,
+                transform: [{ scale: pressed && !reduced ? motion.send.pressScale : 1 }],
+                transitionProperty: ["backgroundColor", "transform"],
+                transitionDuration: [motion.send.fadeMs, motion.raisedPressMs],
+                transitionTimingFunction: SEND_EASE,
+              }}
+            >
+              {sending ? (
+                <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={22} color={colors.onAccent} />} />
+              ) : (
+                <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
+              )}
+            </Animated.View>
           )}
         </Pressable>
         )}

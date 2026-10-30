@@ -1,18 +1,31 @@
 import { Ellipsis, MailOpen, Reply, RotateCcw } from "lucide-react-native";
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { GestureDetector, useExclusiveGestures, useLongPressGesture, useTapGesture } from "react-native-gesture-handler";
 import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  type SharedValue,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { colors, denseScale, hitTarget, motion, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
+import { TopHighlight } from "@/ui/TopHighlight";
 
 import type { BoardItem } from "./buckets";
 import { BUCKET_META, kindIcon } from "./bucketMeta";
 import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
+import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
 import { StatusPill } from "./StatusPill";
 
@@ -22,6 +35,11 @@ const TITLE_MIN = 140;
 const TITLE_SCALE = 2;
 /** A finger that moves further than this is a swipe or a scroll, not a press. */
 const PRESS_SLOP = 10;
+/** Width of the ember glow at the left edge, and its peak opacity. */
+const EMBER_W = 56;
+const EMBER_PEAK = 0.45;
+const EASE_OUT = Easing.bezier(...motion.ease.out);
+const EASE_IN_OUT = Easing.bezier(...motion.ease.inOut);
 export type CardActions = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
@@ -112,6 +130,43 @@ function useCardPress(onTap: () => void, onLong: () => void) {
 }
 
 /**
+ * Board enter: the first cards of the first load per app launch fade in and rise, one after the
+ * other. Reduce Motion: opacity only. Cards that mount later show at once.
+ */
+function useEnter() {
+  const reduced = useReducedMotion();
+  const [delay] = useState(() => claimEnterDelay());
+  const progress = useSharedValue(delay === undefined ? 1 : 0);
+  useEffect(() => {
+    if (delay === undefined) return;
+    progress.set(withDelay(delay, withTiming(1, { duration: motion.boardEnter.durationMs, easing: EASE_OUT })));
+  }, [delay, progress]);
+  return useAnimatedStyle(() => ({
+    opacity: progress.get(),
+    transform: [{ translateY: reduced ? 0 : (1 - progress.get()) * motion.boardEnter.rise }],
+  }));
+}
+
+/** "Needs you": the ember edge glows once when the card moves into the bucket. No loop. */
+function useEmberPulse(needsYou: boolean) {
+  const glow = useSharedValue(0);
+  const prev = useRef(needsYou);
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = needsYou;
+    if (!needsYou || was) return;
+    const half = motion.emberPulseMs / 2;
+    glow.set(
+      withSequence(
+        withTiming(EMBER_PEAK, { duration: half, easing: EASE_OUT }),
+        withTiming(0, { duration: half, easing: EASE_IN_OUT }),
+      ),
+    );
+  }, [needsYou, glow]);
+  return useAnimatedStyle(() => ({ opacity: glow.get() }));
+}
+
+/**
  * One agent on the Board. Tap opens the session, long-press peeks. Swipe right marks it read;
  * swipe left reveals Reply and Restart. VoiceOver gets the same actions as custom actions.
  */
@@ -120,6 +175,8 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
   const { onOpen, onPeek } = actions;
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
   const press = useCardPress(open, peek);
+  const enterStyle = useEnter();
+  const emberStyle = useEmberPulse(item.bucket === "needs_you");
   const { agent, bucket } = item;
   const { color } = BUCKET_META[bucket];
   const KindIcon = kindIcon(agent.agent);
@@ -130,6 +187,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
   const label = cardLabel(item, now);
 
   return (
+    <Animated.View style={enterStyle}>
     <ReanimatedSwipeable
       ref={swipe}
       friction={1.5}
@@ -156,7 +214,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
           <SwipeHaptic drag={drag} at={ACTION_W * 0.6} />
           <SwipeAction
             label="Reply"
-            color={colors.status.working}
+            color={colors.accent}
             Icon={Reply}
             onPress={() => {
               close();
@@ -201,6 +259,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
               },
             ]}
           >
+            <TopHighlight inset={radius.lg} />
             {/* Pressed state: a light layer over the card, not a color swap. */}
             <Animated.View
               pointerEvents="none"
@@ -210,6 +269,18 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
             {flagged ? (
               <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: color }} />
             ) : null}
+            {/* The ember glow: one pulse from the left edge when the card starts to need you. */}
+            <Animated.View pointerEvents="none" style={[{ position: "absolute", left: 0, top: 0, bottom: 0, width: EMBER_W }, emberStyle]}>
+              <Svg width={EMBER_W} height="100%">
+                <Defs>
+                  <LinearGradient id="ember" x1="0" y1="0" x2="1" y2="0">
+                    <Stop offset="0" stopColor={colors.status.blocked} stopOpacity={1} />
+                    <Stop offset="1" stopColor={colors.status.blocked} stopOpacity={0} />
+                  </LinearGradient>
+                </Defs>
+                <Rect x="0" y="0" width={EMBER_W} height="100%" fill="url(#ember)" />
+              </Svg>
+            </Animated.View>
             <View
               style={{
                 width: 36,
@@ -275,5 +346,6 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
         </Pressable>
       </Animated.View>
     </ReanimatedSwipeable>
+    </Animated.View>
   );
 });

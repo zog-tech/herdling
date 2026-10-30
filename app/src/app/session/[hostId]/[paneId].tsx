@@ -18,7 +18,7 @@ import { renameItems } from "@/herdr/rename";
 import { closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
@@ -29,6 +29,7 @@ import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
+import { HorizonLine } from "@/ui/HorizonLine";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { StatusRow } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
@@ -124,16 +125,56 @@ function useKeyboardShown(): boolean {
   return shown;
 }
 
+const SEG_PAD = 3;
+
+/**
+ * Thread / Terminal. The selected pill is one absolute view that slides to the selected segment
+ * with a spring, on the UI thread. Reduce Motion: it moves at once.
+ */
 function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   const options: { id: Mode; label: string }[] = [
     { id: "thread", label: "Thread" },
     { id: "terminal", label: "Terminal" },
   ];
+  const reduced = useReducedMotion();
+  const [width, setWidth] = useState(0);
+  const segW = width > 0 ? (width - SEG_PAD * 2) / options.length : 0;
+  const index = Math.max(0, options.findIndex((o) => o.id === mode));
+  const x = useSharedValue(0);
+  const placed = useRef(false);
+  useEffect(() => {
+    const to = index * segW;
+    // The first layout places the pill; later changes slide it.
+    if (reduced || !placed.current) x.set(to);
+    else x.set(withSpring(to, motion.segment));
+    if (segW > 0) placed.current = true;
+  }, [index, segW, reduced, x]);
+  const pill = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   return (
     <View
       accessibilityRole="tablist"
-      style={{ flexDirection: "row", backgroundColor: colors.card, borderRadius: radius.md, padding: 3, marginHorizontal: space.lg }}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      style={{ flexDirection: "row", backgroundColor: colors.card, borderRadius: radius.md, padding: SEG_PAD, marginHorizontal: space.lg }}
     >
+      {segW > 0 ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: SEG_PAD,
+              bottom: SEG_PAD,
+              left: SEG_PAD,
+              width: segW,
+              borderRadius: radius.sm + 1,
+              backgroundColor: colors.raised,
+              borderTopWidth: 1,
+              borderTopColor: colors.hairline,
+            },
+            pill,
+          ]}
+        />
+      ) : null}
       {options.map((o) => {
         const active = o.id === mode;
         return (
@@ -152,7 +193,8 @@ function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void
               alignItems: "center",
               justifyContent: "center",
               borderRadius: radius.sm + 1,
-              backgroundColor: active ? colors.raised : "transparent",
+              // Before the first layout there is no pill: the selected segment carries its own fill.
+              backgroundColor: active && segW === 0 ? colors.raised : "transparent",
             }}
           >
             <Text variant="small" bold={active} muted={!active}>
@@ -325,7 +367,7 @@ export default function SessionScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.divider }}>
+      <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}>
           <Pressable
             accessibilityRole="button"
@@ -382,6 +424,8 @@ export default function SessionScreen() {
             {voiceNotice}
           </Text>
         ) : null}
+        {/* The horizon hairline: the header's bottom edge. */}
+        <HorizonLine style={{ position: "absolute", left: 0, right: 0, bottom: 0 }} />
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
