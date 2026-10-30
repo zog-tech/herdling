@@ -25,6 +25,65 @@ async fn shutdown_signal() {
     }
 }
 
+/// Rows of the large digits printed by `zogsshd pair`.
+const DIGITS: [[&str; 5]; 10] = [
+    ["███", "█ █", "█ █", "█ █", "███"],
+    ["  █", "  █", "  █", "  █", "  █"],
+    ["███", "  █", "███", "█  ", "███"],
+    ["███", "  █", "███", "  █", "███"],
+    ["█ █", "█ █", "███", "  █", "  █"],
+    ["███", "█  ", "███", "  █", "███"],
+    ["███", "█  ", "███", "█ █", "███"],
+    ["███", "  █", "  █", "  █", "  █"],
+    ["███", "█ █", "███", "█ █", "███"],
+    ["███", "█ █", "███", "  █", "███"],
+];
+
+fn big_digits(code: &str) -> String {
+    let glyphs: Vec<&[&str; 5]> = code.bytes().filter(u8::is_ascii_digit).map(|b| &DIGITS[usize::from(b - b'0')]).collect();
+    (0..5)
+        .map(|row| format!("  {}\n", glyphs.iter().map(|g| g[row]).collect::<Vec<_>>().join("  ")))
+        .collect()
+}
+
+/// First non-loopback IPv4 address of this machine.
+fn lan_ipv4() -> Option<std::net::Ipv4Addr> {
+    if_addrs::get_if_addrs().ok()?.into_iter().find_map(|i| match i.ip() {
+        std::net::IpAddr::V4(a) if !a.is_loopback() => Some(a),
+        _ => None,
+    })
+}
+
+/// `zogsshd pair`: opens the pairing window and shows the code and its QR code.
+fn pair_cmd(home: &std::path::Path) -> Result<()> {
+    use zogsshd::pair;
+    let config_path = config::default_path(home);
+    let cfg = config::load(&config_path)?;
+    let cfg_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| home.join(".config/zogsshd"));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+    let code = pair::open_window(&cfg_dir, now)?;
+
+    let local = std::net::SocketAddr::from(([127, 0, 0, 1], cfg.pair_port));
+    if std::net::TcpStream::connect_timeout(&local, Duration::from_secs(1)).is_err() {
+        eprintln!("warning: serve is not running — run zogsshd install");
+    }
+
+    println!("Pairing code (valid for {} minutes):\n", pair::WINDOW.as_secs() / 60);
+    print!("{}", big_digits(&code));
+    println!("\n  {code}\n");
+    match lan_ipv4() {
+        Some(ip) => {
+            let url = pair::pair_url(&ip.to_string(), cfg.pair_port, &code);
+            println!("Host: {ip}  port: {}\n", cfg.pair_port);
+            let qr = qrcode::QrCode::new(url.as_bytes())?;
+            println!("{}", qr.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
+            println!("Scan the code in Zogssh, or add the host by hand and type the code.");
+        }
+        None => println!("No LAN IPv4 address found. Add the host by hand in Zogssh and type the code."),
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
@@ -56,6 +115,10 @@ async fn main() -> Result<()> {
             };
             serve::run(ctx, shutdown_signal()).await
         }
-        _ => bail!("usage: zogsshd rpc | serve"),
+        Some("pair") => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            pair_cmd(&home)
+        }
+        _ => bail!("usage: zogsshd rpc | serve | pair"),
     }
 }

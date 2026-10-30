@@ -34,6 +34,8 @@ pub struct Ctx {
     pub home: PathBuf,
     /// Companion config file, written by `push.register`.
     pub config_path: PathBuf,
+    /// `~/.ssh/authorized_keys`, edited by `pair.revoke`.
+    pub authorized_keys: PathBuf,
     /// Bound for herdr connect and request/response. Long-lived streams are not bound by it.
     pub herdr_timeout: Duration,
     /// See [`IDLE_TIMEOUT`].
@@ -49,6 +51,7 @@ impl Ctx {
         Ctx {
             herdr_socket,
             config_path: crate::config::default_path(&home),
+            authorized_keys: home.join(".ssh/authorized_keys"),
             home,
             herdr_timeout: HERDR_TIMEOUT,
             idle_timeout: IDLE_TIMEOUT,
@@ -303,6 +306,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "sessions.recent" => sessions_recent(ctx, params).await,
         "fs.dirs" => fs_dirs(ctx, params).await,
         "push.register" => push_register(ctx, params).await,
+        "pair.revoke" => pair_revoke(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -370,7 +374,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
     serde_json::to_value(h).map_err(|e| err("internal", e.to_string()))
 }
 
-fn hostname() -> String {
+pub fn hostname() -> String {
     std::process::Command::new("hostname")
         .output()
         .ok()
@@ -537,4 +541,25 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     .map_err(|e| err("internal", e.to_string()))?
     .map_err(|e| err("io_error", format!("{e:#}")))?;
     Ok(json!({ "ok": true }))
+}
+
+/// Removes the device's key lines from `authorized_keys` and the device from the config.
+async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = str_param(&params, "device_id", "pair.revoke")?.to_string();
+    let key = str_param(&params, "public_key", "pair.revoke")?;
+    let key = crate::pair::parse_public_key(key).map_err(|e| err("bad_request", e.to_string()))?;
+    let (keys_path, config_path) = (ctx.authorized_keys.clone(), ctx.config_path.clone());
+    let (removed_keys, removed_device) = tokio::task::spawn_blocking(move || -> anyhow::Result<(usize, bool)> {
+        let removed_keys = crate::pair::remove_key(&keys_path, &key)?;
+        let removed_device = crate::config::update(&config_path, |c| {
+            let before = c.devices.len();
+            c.devices.retain(|d| d.id != id);
+            c.devices.len() != before
+        })?;
+        Ok((removed_keys, removed_device))
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?
+    .map_err(|e| err("io_error", format!("{e:#}")))?;
+    Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
 }

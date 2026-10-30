@@ -151,3 +151,21 @@ pub struct PushRegister {
     pub expo_token: Option<String>,
     pub prefs: PushPrefs,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairRequest {
+    pub code: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub host_id: String,
+    pub public_key: String,
+    pub expo_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairResponse {
+    pub host_name: String,
+    pub user: String,
+    pub ssh_port: u16,
+    pub host_key_fingerprint: Option<String>,
+}

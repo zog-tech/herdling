@@ -51,3 +51,18 @@ export type PushRegister = {
   expo_token: string | null;
   prefs: PushPrefs;
 };
+
+export type PairRequest = {
+  code: string;
+  device_id: string;
+  device_name: string;
+  host_id: string;
+  public_key: string;
+  expo_token: string | null;
+};
+export type PairResponse = {
+  host_name: string;
+  user: string;
+  ssh_port: number;
+  host_key_fingerprint: string | null;
+};

@@ -17,10 +17,15 @@ dirs = "6"
 toml = "0.8"
 fs4 = { version = "0.13", features = ["sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+axum = "0.8"
+rand = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+qrcode = { version = "0.14", default-features = false }
+if-addrs = "0.13"
 
 [dev-dependencies]
 tempfile = "3"
-axum = "0.8"
 
 [lib]
 name = "zogsshd"
