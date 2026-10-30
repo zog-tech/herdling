@@ -7,6 +7,7 @@ import { hitTarget } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { MicButton } from "@/voice/MicButton";
 
+import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 
 import { clearCommandsCache } from "./commands";
@@ -46,6 +47,16 @@ jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({
 jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
   UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" },
+}));
+// The test runtime has no ExpoClipboard native module: report it as present.
+jest.mock("expo", () => {
+  const actual = jest.requireActual("expo");
+  return { ...actual, requireOptionalNativeModule: (n: string) => (n === "ExpoClipboard" ? {} : actual.requireOptionalNativeModule(n)) };
+});
+jest.mock("expo-clipboard", () => ({
+  hasImageAsync: jest.fn(async () => false),
+  getImageAsync: jest.fn(),
+  addClipboardListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
 
@@ -305,4 +316,87 @@ test("commands_sheet_lists_by_source_and_a_tap_fills_the_name", async () => {
 
   await press(tree!, "/deploy");
   expect(prompt(tree!).props.value).toBe("/deploy ");
+});
+
+const focusPrompt = async (t: ReactTestRenderer) => {
+  await act(async () => prompt(t).props.onFocus());
+  await flush();
+};
+const clipboardHolds = (has: boolean) => (Clipboard.hasImageAsync as jest.Mock).mockResolvedValue(has);
+const mountWithPut = async () => {
+  idle();
+  mockHello = helloWith(["files.put"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+};
+
+test("paste_chip_shows_for_a_clipboard_image_and_hides_after_the_paste", async () => {
+  clipboardHolds(true);
+  (Clipboard.getImageAsync as jest.Mock).mockResolvedValue({ data: "data:image/jpeg;base64,QUJD", size: { width: 1, height: 1 } });
+  await mountWithPut();
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  await focusPrompt(tree!);
+  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
+  // Checking the types must not read the image (that shows the iOS prompt).
+  expect(Clipboard.getImageAsync).not.toHaveBeenCalled();
+
+  await press(tree!, "Paste image");
+  expect(haptics.tap).toHaveBeenCalledTimes(1);
+  expect(Clipboard.getImageAsync).toHaveBeenCalledWith({ format: "jpeg", jpegQuality: 0.8 });
+  expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  // The same image is still on the clipboard: the next focus does not bring the chip back.
+  await focusPrompt(tree!);
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+
+  await press(tree!, "Send");
+  expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
+    { name: "pasted-1.jpg", data_b64: "QUJD" },
+  ]);
+  // A clipboard change brings the chip back.
+  const onChange = (Clipboard.addClipboardListener as jest.Mock).mock.calls[0][0];
+  await act(async () => onChange({ contentTypes: ["image"] }));
+  await flush();
+  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
+});
+
+test("paste_image_row_is_in_the_plus_menu", async () => {
+  clipboardHolds(true);
+  await mountWithPut();
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
+});
+
+test("paste_stops_at_the_photo_max", async () => {
+  clipboardHolds(true);
+  (Clipboard.getImageAsync as jest.Mock).mockResolvedValue({ data: "data:image/jpeg;base64,QUJD", size: { width: 1, height: 1 } });
+  await mountWithPut();
+  pickerReturns(["a.jpg", "b.jpg", "c.jpg"]);
+  await press(tree!, "Add");
+  await press(tree!, "Photos");
+  await focusPrompt(tree!);
+  await press(tree!, "Paste image");
+  expect(byLabel(tree!, "Remove photo 4")).toHaveLength(1);
+  // Four photos: no chip, even after a clipboard change.
+  const onChange = (Clipboard.addClipboardListener as jest.Mock).mock.calls[0][0];
+  await act(async () => onChange({ contentTypes: ["image"] }));
+  await flush();
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+});
+
+test("paste_chip_is_hidden_without_files_put", async () => {
+  clipboardHolds(true);
+  idle();
+  mockHello = helloWith(["commands.list"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await focusPrompt(tree!);
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  expect(Clipboard.hasImageAsync).not.toHaveBeenCalled();
 });

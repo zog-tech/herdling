@@ -1,6 +1,6 @@
 import { ArrowUp } from "lucide-react-native";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
-import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
+import { AppState, Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
@@ -11,14 +11,23 @@ import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 import { DelayedSpinner } from "@/ui/Delayed";
 
-import { MAX_PHOTOS, photosAvailable, pickPhotos, uploadPhotos, withPaths, type Photo } from "./attachments";
+import {
+  clipboardHasImage,
+  MAX_PHOTOS,
+  pasteImage,
+  photosAvailable,
+  pickPhotos,
+  watchClipboard,
+  uploadPhotos, withPaths,
+  type Photo,
+} from "./attachments";
 import { answerChoice, destructiveKey, useChoices, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { filterCommands, slashQuery, useCommands } from "./commands";
 import { sendWithPending } from "./pending";
 import { PermissionButtons } from "./PermissionButtons";
-import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
+import { PasteChip, PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -103,7 +112,36 @@ export function Composer({
     query !== undefined && slash.supported && slash.commands ? filterCommands(slash.commands, query).slice(0, MENU_MAX) : [];
   const showMenu = visible && online && !showChoices && matches.length > 0;
   const canAttach = hasMethod(hello, "files.put") && photosAvailable();
+  /** True when the clipboard holds an image that the user did not paste yet. */
+  const [clipImage, setClipImage] = useState(false);
+  /** Set after a paste. The same image stays on the clipboard, so the chip waits for a change. */
+  const clipConsumed = useRef(false);
+  const pasteCount = useRef(0);
+  const canPaste = canAttach && clipImage && photos.length < MAX_PHOTOS;
   const showPlus = canAttach || slash.supported;
+
+  /** Checks the clipboard types only. This does not trigger the iOS paste prompt. */
+  const checkClipboard = async () => {
+    if (!canAttach) return;
+    const has = await clipboardHasImage();
+    setClipImage(has && !clipConsumed.current);
+  };
+  const checkClipboardRef = useRef(checkClipboard);
+  checkClipboardRef.current = checkClipboard;
+  useEffect(() => {
+    if (!canAttach || !visible) return;
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") void checkClipboardRef.current();
+    });
+    const stop = watchClipboard(() => {
+      clipConsumed.current = false;
+      void checkClipboardRef.current();
+    });
+    return () => {
+      sub.remove();
+      stop();
+    };
+  }, [canAttach, visible]);
 
   /**
    * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).
@@ -185,6 +223,18 @@ export function Composer({
       setError(`Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
+  /** Reads the clipboard image (this is the user tap, so the iOS prompt is fine) and attaches it. */
+  const pasteClipboard = async () => {
+    setPlusOpen(false);
+    clipConsumed.current = true;
+    setClipImage(false);
+    try {
+      const photo = await pasteImage(++pasteCount.current);
+      if (photo) setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
+    } catch (e) {
+      setError(`Could not paste the image: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   const openSheet = () => {
     setPlusOpen(false);
     setSheetKey((k) => k + 1);
@@ -228,9 +278,11 @@ export function Composer({
       {plusOpen && showPlus && !showMenu ? (
         <PlusMenu
           onPhotos={canAttach && photos.length < MAX_PHOTOS ? () => void attachPhotos() : undefined}
+          onPaste={canPaste ? () => void pasteClipboard() : undefined}
           onCommands={slash.supported ? openSheet : undefined}
         />
       ) : null}
+      {canPaste && !plusOpen ? <PasteChip disabled={sending} onPress={() => void pasteClipboard()} /> : null}
       {uploaded !== undefined ? (
         <Text variant="small" muted accessibilityLiveRegion="polite">
           Uploading photo {Math.min(uploaded + 1, photos.length)} of {photos.length}…
@@ -250,7 +302,10 @@ export function Composer({
             open={plusOpen}
             disabled={!online || sending}
             onPress={() => {
-              if (!plusOpen) haptics.press();
+              if (!plusOpen) {
+                haptics.press();
+                void checkClipboard();
+              }
               setPlusOpen((o) => !o);
             }}
           />
@@ -266,6 +321,7 @@ export function Composer({
           }}
           editable={online}
           autoFocus={autoFocus}
+          onFocus={() => void checkClipboard()}
           multiline
           placeholder={online ? "Message the agent" : "Host offline"}
           placeholderTextColor={colors.textMuted}
