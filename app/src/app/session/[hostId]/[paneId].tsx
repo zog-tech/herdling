@@ -1,11 +1,16 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { useHostConn } from "@/hosts/connection";
 import { useHosts } from "@/hosts/store";
+import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
 import { closeAgent, renameAgent, restartAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
@@ -179,6 +184,58 @@ function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void
   );
 }
 
+const SWIPE_DISTANCE = 80;
+const SWIPE_VELOCITY = 600;
+const SWIPE_FOLLOW = 0.3;
+
+/**
+ * Swipe left for the next agent of the workspace, right for the previous one. Wraps the thread only:
+ * the composer (mic hold) and the terminal sit outside. Horizontal intent only, so vertical scroll is untouched.
+ */
+function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; paneId: string; children: ReactNode }) {
+  const router = useRouter();
+  const reduced = useReducedMotion();
+  const snapshot = useSnapshots((s) => s.byHost[hostId]);
+  const { prev, next } = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
+  const x = useSharedValue(0);
+
+  const go = useCallback(
+    (target: string) => {
+      Haptics.selectionAsync().catch(() => {});
+      router.replace(`/session/${hostId}/${target}` as never);
+    },
+    [router, hostId],
+  );
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-30, 30])
+        .failOffsetY([-15, 15])
+        .onUpdate((e) => {
+          // Rubber-band toward a side with no neighbor; no translation at all under Reduce Motion.
+          if (reduced) return;
+          const open = e.translationX < 0 ? next : prev;
+          x.set(e.translationX * (open ? SWIPE_FOLLOW : SWIPE_FOLLOW / 3));
+        })
+        .onEnd((e) => {
+          const far = Math.abs(e.translationX) > SWIPE_DISTANCE || Math.abs(e.velocityX) > SWIPE_VELOCITY;
+          const target = e.translationX < 0 ? next : prev;
+          x.set(reduced ? 0 : withSpring(0, { duration: 300, dampingRatio: 0.8, velocity: e.velocityX }));
+          if (far && target) scheduleOnRN(go, target);
+        }),
+    [reduced, next, prev, go, x],
+  );
+
+  const style = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View style={[{ flex: 1 }, style]}>{children}</Animated.View>
+    </GestureDetector>
+  );
+}
+
 function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string; paneId: string }) {
   const { status, items } = thread;
   if (status === "no_session") {
@@ -321,7 +378,9 @@ export default function SessionScreen() {
         <Segmented mode={mode} onChange={setMode} />
       </View>
       {mode === "thread" ? (
-        <ThreadBody thread={thread} hostId={hostId} paneId={paneId} />
+        <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
+          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} />
+        </SwipeBetweenAgents>
       ) : (
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.
         <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} />
