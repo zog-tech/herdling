@@ -1,9 +1,9 @@
-import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as Voice from "../../modules/voice";
 import { holdReducer, IDLE, type HoldEffect, type HoldEvent, type HoldState } from "./holdToTalk";
 import { useRecording } from "./recording";
+import * as haptics from "@/ui/haptics";
 
 const errorText = (e: unknown): string | undefined => {
   const code = (e as { code?: unknown })?.code;
@@ -13,7 +13,6 @@ const errorText = (e: unknown): string | undefined => {
   return typeof message === "string" && message ? message : String(e);
 };
 
-const haptic = (p: Promise<void>) => void p.catch(() => {});
 
 /**
  * Runs the hold-to-talk reducer against the native voice module.
@@ -75,12 +74,13 @@ export function useDictation({ onSend, onPartial }: { onSend: (text: string) => 
       case "cancel":
         enqueue(Voice.cancelDictation).catch(() => {});
         return;
+      // Recording starts: medium. It stops and sends: light. Cancelled: warning.
       case "hapticStart":
-        return haptic(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+        return haptics.peek();
       case "hapticSend":
-        return haptic(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+        return haptics.press();
       case "hapticCancel":
-        return haptic(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
+        return haptics.warn();
     }
   }
 

@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
 import { CircleSlash, Ellipsis, ListFilter, Loader, Moon, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -6,6 +5,7 @@ import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AgentCard } from "@/board/AgentCard";
+import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
 import { setFilter, setGroupBy, updateFirstSeen, useBoard } from "@/board/boardStore";
 import { BUCKET_META } from "@/board/bucketMeta";
@@ -246,6 +246,7 @@ export default function BoardScreen() {
     [boardHosts, previews, hydrated, seen, firstSeen],
   );
   const counts = useMemo(() => countBuckets(items), [items]);
+  useBucketAnnouncements(items, focused);
   const sections = useMemo(() => groupBoard(filterBoard(items, filter), groupBy), [items, filter, groupBy]);
 
   const pickGroup = useCallback(() => {
@@ -281,8 +282,8 @@ export default function BoardScreen() {
     [router],
   );
   const onMarkRead = useCallback((i: BoardItem) => {
+    // No haptic here: the swipe gave one when it passed the action point.
     markSeen(i.hostId, i.agent.pane_id, i.agent.state_change_seq);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
   const onRestart = useCallback(
     async (i: BoardItem) => {

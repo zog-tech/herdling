@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { Check, ChevronRight, Keyboard, KeyRound, PenLine, Settings, TriangleAlert } from "lucide-react-native";
 import { type ReactNode, useCallback, useState } from "react";
-import { ActivityIndicator, Linking, View } from "react-native";
+import { Linking, View } from "react-native";
 
 import { type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from "@/hosts/discovery";
 import { useHosts, type Host } from "@/hosts/store";
@@ -12,6 +12,7 @@ import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { Badge } from "@/ui/StatusBadge";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 function Divided({ children }: { children: ReactNode[] }) {
   return (
@@ -100,7 +101,7 @@ function BrowseStatus({ state }: { state: DiscoveryState }) {
   }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-      <ActivityIndicator color={colors.textMuted} />
+      <DelayedSpinner color={colors.textMuted} />
       <Text muted>Searching the local network…</Text>
     </View>
   );

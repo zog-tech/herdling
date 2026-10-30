@@ -15,6 +15,7 @@ import { Card } from "@/ui/Card";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
+import * as haptics from "@/ui/haptics";
 import { useVoiceSettings } from "@/voice/settings";
 
 function HostRow({ host }: { host: Host }) {
@@ -62,6 +63,39 @@ function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you"; labe
         {detail}
       </Text>
     </Row>
+  );
+}
+
+/** "Feel": the Haptics switch. Off makes every haptic a no-op. Haptics stay on with Reduce Motion. */
+function FeelSection() {
+  const on = haptics.useFeelSettings((s) => s.haptics);
+  const set = haptics.useFeelSettings((s) => s.set);
+  return (
+    <>
+      <Text variant="small" muted>
+        FEEL
+      </Text>
+      <Card style={{ paddingVertical: space.sm }}>
+        <Row
+          trailing={
+            <Switch
+              accessibilityLabel="Haptics"
+              value={on}
+              onValueChange={(v) => {
+                set({ haptics: v });
+                if (v) haptics.tap();
+              }}
+              trackColor={{ false: colors.muted, true: colors.accent }}
+            />
+          }
+        >
+          <Text bold>Haptics</Text>
+          <Text variant="small" muted>
+            Taps you feel for send, approve, peek and status changes.
+          </Text>
+        </Row>
+      </Card>
+    </>
   );
 }
 
@@ -246,6 +280,7 @@ export default function SettingsScreen() {
         </View>
       </Card>
       <VoiceSection />
+      <FeelSection />
     </Screen>
   );
 }

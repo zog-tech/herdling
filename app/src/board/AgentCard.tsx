@@ -13,7 +13,7 @@ import { Text } from "@/ui/Text";
 import type { BoardItem } from "./buckets";
 import { BUCKET_META, kindIcon } from "./bucketMeta";
 import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
-import { makeCardPress } from "./cardPress";
+import { cardActions, makeCardPress } from "./cardPress";
 import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
@@ -115,12 +115,7 @@ function useCardPress(onTap: () => void, onLong: () => void) {
 export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { item: BoardItem; now: number } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
   const { onOpen, onPeek } = actions;
-  const open = useCallback(() => onOpen(item), [onOpen, item]);
-  // The haptic fires at the moment the long press fires, with the spring back.
-  const peek = useCallback(() => {
-    haptics.peek();
-    onPeek(item);
-  }, [onPeek, item]);
+  const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
   const press = useCardPress(open, peek);
   const { agent, bucket } = item;
   const { color } = BUCKET_META[bucket];

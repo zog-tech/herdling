@@ -17,7 +17,7 @@ jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }),
 }));
 jest.mock("expo-router", () => ({ useIsFocused: () => true }));
-jest.mock("expo-haptics", () => ({ selectionAsync: jest.fn(() => Promise.resolve()) }));
+jest.mock("@/ui/haptics", () => ({ tap: jest.fn() }));
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});

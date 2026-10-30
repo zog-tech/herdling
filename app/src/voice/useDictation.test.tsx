@@ -29,12 +29,7 @@ jest.mock("../../modules/voice", () => ({
     return { remove: () => (listeners[event] = listeners[event].filter((f) => f !== fn)) };
   },
 }));
-jest.mock("expo-haptics", () => ({
-  impactAsync: async () => {},
-  notificationAsync: async () => {},
-  ImpactFeedbackStyle: { Medium: "medium" },
-  NotificationFeedbackType: { Success: "success", Warning: "warning" },
-}));
+jest.mock("@/ui/haptics", () => ({ peek: jest.fn(), press: jest.fn(), warn: jest.fn() }));
 
 type Api = ReturnType<typeof useDictation>;
 

@@ -1,5 +1,4 @@
 import type { AgentStatus, ThreadItem, TtsAudio } from "@zogssh/protocol";
-import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
 
@@ -15,6 +14,7 @@ import { splitSentences } from "./sentences";
 import { speechText } from "./speechText";
 import { speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
 import { noticeHostVoiceFailed } from "./voiceNotice";
+import * as haptics from "@/ui/haptics";
 
 /** The log can land a moment after the status flips; wait before reading the reply. */
 const SETTLE_MS = 800;
@@ -194,7 +194,7 @@ export function useSpeakReplies(
     const before = prev.current;
     prev.current = status;
     // A real change of the open session's status; the first value is the baseline.
-    if (before !== undefined && status !== undefined && before !== status && latest.current.focused) quiet(Haptics.selectionAsync());
+    if (before !== undefined && status !== undefined && before !== status && latest.current.focused) haptics.status({ from: before, to: status });
     if (status === "working") clearTimeout(timer.current);
     if (!status) return;
     const fromPush = !!o?.speakNow && !pushDone.current && finished(status);

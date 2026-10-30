@@ -4,11 +4,13 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { hitTarget } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { MicButton } from "@/voice/MicButton";
 
 import * as ImagePicker from "expo-image-picker";
 
 import { clearCommandsCache } from "./commands";
+import { pendingOf, usePending } from "./pending";
 import { Composer } from "./Composer";
 
 const screen = readFileSync(join(__dirname, "__fixtures__", "claude_bash_permission.txt"), "utf8");
@@ -45,10 +47,7 @@ jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
   UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" },
 }));
-jest.mock("expo-haptics", () => ({
-  notificationAsync: jest.fn(() => Promise.resolve()),
-  NotificationFeedbackType: { Success: "success" },
-}));
+jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -60,6 +59,8 @@ const sends = () => mockCalls.filter((c) => c.method === "pane.send_keys");
 let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
   jest.useFakeTimers();
+  jest.clearAllMocks();
+  usePending.setState({ byPane: {} });
   mockCalls.length = 0;
   mockRpcCalls.length = 0;
   mockHello = undefined;
@@ -92,6 +93,9 @@ test("a double tap sends one digit and the answered menu hides", async () => {
   await flush();
   expect(sends()).toEqual([{ method: "pane.send_keys", params: { pane_id: "w1:p1", keys: ["1"] } }]);
   expect(choiceButtons(tree!)).toHaveLength(0);
+  // Approve: one success haptic.
+  expect(haptics.commit).toHaveBeenCalledTimes(1);
+  expect(haptics.warn).not.toHaveBeenCalled();
 
   // The same menu is still on screen at the next poll: the buttons stay hidden, so no second digit can go out.
   await act(async () => {
@@ -219,6 +223,9 @@ test("attach_photos_uploads_them_then_sends_the_paths", async () => {
   expect(prompts()).toEqual(["What is wrong here?\n/up/1-IMG_1.jpg\n/up/2-b.jpg"]);
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
   expect(prompt(tree!).props.value).toBe("");
+  // The sent prompt waits as a pending bubble; the accepted send gives one success haptic.
+  expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["queued"]);
+  expect(haptics.commit).toHaveBeenCalledTimes(1);
 });
 
 test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
@@ -289,11 +296,12 @@ test("commands_sheet_lists_by_source_and_a_tap_fills_the_name", async () => {
   await press(tree!, "Commands & skills");
   const headers = () =>
     tree!.root.findAll((n) => n.props.accessibilityRole === "header" && typeof n.props.children === "string").map((n) => n.props.children);
-  expect([...new Set(headers())]).toEqual(["Built-in", "User", "Plugins"]);
+  // The sheet title is a header too.
+  expect([...new Set(headers())]).toEqual(["Commands & skills", "Built-in", "User", "Plugins"]);
 
   const search = tree!.root.find((n) => n.props.accessibilityLabel === "Search commands" && !!n.props.onChangeText);
   await act(async () => search.props.onChangeText("dep"));
-  expect([...new Set(headers())]).toEqual(["User"]);
+  expect([...new Set(headers())]).toEqual(["Commands & skills", "User"]);
 
   await press(tree!, "/deploy");
   expect(prompt(tree!).props.value).toBe("/deploy ");

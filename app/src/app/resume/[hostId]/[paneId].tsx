@@ -2,7 +2,7 @@ import type { RecentSession } from "@zogssh/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronRight, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 
 import { timeAgo } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
@@ -10,6 +10,7 @@ import { openResumedSession, resumeSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 const RECENT_LIMIT = 30;
 
@@ -84,7 +85,7 @@ export default function ResumeScreen() {
       ) : !sessions ? (
         error ? null : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator color={colors.textMuted} />
+            <DelayedSpinner color={colors.textMuted} />
           </View>
         )
       ) : (
@@ -117,7 +118,7 @@ export default function ResumeScreen() {
                 </Text>
               </View>
               {starting === item.session ? (
-                <ActivityIndicator color={colors.textMuted} />
+                <DelayedSpinner color={colors.textMuted} />
               ) : (
                 <ChevronRight size={18} color={colors.textMuted} />
               )}

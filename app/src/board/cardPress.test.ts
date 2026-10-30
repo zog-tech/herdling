@@ -1,6 +1,10 @@
 import { motion } from "@/theme/tokens";
 
-import { makeCardPress } from "./cardPress";
+import * as haptics from "@/ui/haptics";
+
+import { cardActions, makeCardPress } from "./cardPress";
+
+jest.mock("@/ui/haptics", () => ({ press: jest.fn(), peek: jest.fn() }));
 
 const values = () => ({ scale: { set: jest.fn() }, overlay: { set: jest.fn() } });
 
@@ -35,4 +39,17 @@ test("reduce_motion_keeps_the_layer_but_never_scales", () => {
   p.release();
   expect(v.scale.set).not.toHaveBeenCalled();
   expect(v.overlay.set).toHaveBeenCalledTimes(2);
+});
+
+test("open_gives_a_light_haptic_and_peek_a_medium_one", () => {
+  const onOpen = jest.fn();
+  const onPeek = jest.fn();
+  const a = cardActions("card-1", onOpen, onPeek);
+  a.peek();
+  expect(haptics.peek).toHaveBeenCalledTimes(1);
+  expect(onPeek).toHaveBeenCalledWith("card-1");
+  expect(haptics.press).not.toHaveBeenCalled();
+  a.open();
+  expect(haptics.press).toHaveBeenCalledTimes(1);
+  expect(onOpen).toHaveBeenCalledWith("card-1");
 });

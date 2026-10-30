@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, TriangleAlert } from "lucide-react-native";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHosts } from "@/hosts/store";
@@ -8,6 +8,7 @@ import { colors, hitTarget, space } from "@/theme/tokens";
 import { ThreadList } from "@/thread/ThreadList";
 import { useSubagentThread } from "@/thread/useSubagentThread";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 export default function SubagentScreen() {
   const { hostId, agentId, log, title } = useLocalSearchParams<{ hostId: string; agentId: string; log: string; title?: string }>();
@@ -35,7 +36,7 @@ export default function SubagentScreen() {
             {note}
           </Text>
         ) : (
-          <ActivityIndicator color={colors.textMuted} />
+          <DelayedSpinner color={colors.textMuted} />
         )}
       </View>
     );

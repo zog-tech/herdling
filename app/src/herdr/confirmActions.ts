@@ -1,6 +1,7 @@
 import { ActionSheetIOS, Alert } from "react-native";
 
 import type { RpcClient } from "@/rpc/RpcClient";
+import * as haptics from "@/ui/haptics";
 
 import { closeAgent, restartAgent } from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
@@ -11,6 +12,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** A second sheet with one destructive button; resolves true when the user picks it. */
 export function confirmDestructive(title: string, detail: string, action: string): Promise<boolean> {
+  haptics.warn();
   return new Promise((resolve) =>
     ActionSheetIOS.showActionSheetWithOptions(
       { title, message: detail, options: [action, "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 },

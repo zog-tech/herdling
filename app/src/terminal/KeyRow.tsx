@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CornerDownLeft, type LucideIcon } from "lucide-react-native";
 import { Pressable, ScrollView } from "react-native";
 
@@ -7,6 +6,7 @@ import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { KEYS } from "./keys";
+import * as haptics from "@/ui/haptics";
 
 const ICONS: Record<string, LucideIcon> = {
   up: ArrowUp,
@@ -46,7 +46,7 @@ export function KeyRow({ onKey, disabled }: { onKey: (key: string) => void; disa
             accessibilityState={{ disabled: !!disabled }}
             disabled={disabled}
             onPress={() => {
-              void Haptics.selectionAsync().catch(() => {});
+              haptics.tap();
               onKey(key);
             }}
             style={({ pressed }) => ({

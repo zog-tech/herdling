@@ -7,8 +7,8 @@ import { useSpeakReplies } from "./useSpeakReplies";
 import { HOST_VOICE_FAILED, resetVoiceNotice, useVoiceNotice } from "./voiceNotice";
 
 const mockSpeak = jest.fn();
-const mockHaptic = jest.fn(async () => {});
-jest.mock("expo-haptics", () => ({ selectionAsync: () => mockHaptic() }));
+const mockHaptic = jest.fn((_c: unknown) => {});
+jest.mock("@/ui/haptics", () => ({ status: (c: unknown) => mockHaptic(c) }));
 const mockStop = jest.fn(async () => {});
 jest.mock("expo-speech", () => ({
   speak: (...a: unknown[]) => mockSpeak(...a),
@@ -95,6 +95,7 @@ describe("useSpeakReplies", () => {
     expect(mockHaptic).not.toHaveBeenCalled();
     await act(async () => r.update(<Probe status="blocked" items={items} />));
     expect(mockHaptic).toHaveBeenCalledTimes(1);
+    expect(mockHaptic).toHaveBeenLastCalledWith({ from: "working", to: "blocked" });
     await act(async () => r.update(<Probe status="idle" items={items} />));
     expect(mockHaptic).toHaveBeenCalledTimes(2);
   });

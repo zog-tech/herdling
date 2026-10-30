@@ -1,5 +1,5 @@
 import * as Notifications from "expo-notifications";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -9,6 +9,7 @@ import { startConnections } from "@/hosts/connection";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
+import { CloseButton } from "@/ui/CloseButton";
 
 SplashScreen.preventAutoHideAsync();
 startConnections();
@@ -26,6 +27,13 @@ const hostHeader = {
   headerShadowVisible: false,
   headerBackButtonDisplayMode: "minimal",
 } as const;
+
+/** Close button of a modal screen's header, next to swipe-down. */
+function ModalClose() {
+  const router = useRouter();
+  return <CloseButton onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} />;
+}
+const modalHeader = { ...hostHeader, presentation: "modal", headerLeft: () => <ModalClose /> } as const;
 
 /** Rendered inside the root layout so the router exists; routing waits for the navigator itself. */
 function NotificationRouting() {
@@ -49,8 +57,8 @@ export default function RootLayout() {
         <Stack.Screen name="hosts/scan" options={{ ...hostHeader, title: "Scan QR" }} />
         <Stack.Screen name="hosts/add" options={{ ...hostHeader, title: "Add manually" }} />
         <Stack.Screen name="hosts/password" options={{ ...hostHeader, title: "Set up with password" }} />
-        <Stack.Screen name="new" options={{ ...hostHeader, title: "New session", presentation: "modal" }} />
-        <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...hostHeader, title: "Resume session", presentation: "modal" }} />
+        <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
+        <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
         <Stack.Screen name="tool" options={{ presentation: "modal", contentStyle: { backgroundColor: colors.bg } }} />
         <Stack.Screen

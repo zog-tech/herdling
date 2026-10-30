@@ -1,4 +1,4 @@
-import { useNavigation, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { ChevronRight, Folder, FolderOpen, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
@@ -14,6 +14,7 @@ import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
+import { useDraftGuard } from "@/ui/draftGuard";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 
@@ -151,7 +152,6 @@ function FolderPicker({ hostId, onPick }: { hostId: string; onPick: (path: strin
 
 export default function NewSessionScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const hosts = useHosts((s) => s.hosts);
   const onlineKey = useOnlineHostKey(hosts.map((h) => h.id));
   const online = useMemo(() => hosts.filter((h) => onlineKey.split(",").includes(h.id)), [hosts, onlineKey]);
@@ -179,10 +179,9 @@ export default function NewSessionScreen() {
   useEffect(() => setNewWorkspace(false), [cwd]);
 
   const busy = progress !== undefined;
-  // Swiping the sheet away mid-start would leave a half-started session behind.
-  useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !busy });
-  }, [navigation, busy]);
+  // Swiping the sheet away mid-start would leave a half-started session behind (lock). A typed
+  // first prompt asks before the modal closes; a started session leaves without asking.
+  const allowLeave = useDraftGuard(prompt.trim().length > 0, { lock: busy });
   const start = useCallback(async () => {
     if (!rpc || !hostId || !cwd) return;
     setError(undefined);
@@ -198,6 +197,7 @@ export default function NewSessionScreen() {
         onProgress: setProgress,
       });
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
+      allowLeave();
       router.replace(
         (promptError
           ? { pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, prompt, promptError } }
@@ -207,7 +207,7 @@ export default function NewSessionScreen() {
       setError(e instanceof Error ? e.message : String(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, prompt, existing, newWorkspace, router]);
+  }, [rpc, hostId, cwd, kind, prompt, existing, newWorkspace, router, allowLeave]);
 
   const primary = AGENT_KINDS.slice(0, PRIMARY_KIND_COUNT);
   const rest = AGENT_KINDS.slice(PRIMARY_KIND_COUNT);

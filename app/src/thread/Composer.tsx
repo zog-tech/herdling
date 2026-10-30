@@ -1,6 +1,6 @@
 import { ArrowUp } from "lucide-react-native";
-import { useRef, useState, type ComponentRef } from "react";
-import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
+import { Pressable, TextInput, View } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
@@ -9,9 +9,10 @@ import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 import { MAX_PHOTOS, photosAvailable, pickPhotos, uploadPhotos, withPaths, type Photo } from "./attachments";
-import { answerChoice, useChoices, type Choice } from "./choices";
+import { answerChoice, destructiveKey, useChoices, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { filterCommands, slashQuery, useCommands } from "./commands";
@@ -41,6 +42,7 @@ export function Composer({
   initialError,
   visible = true,
   autoFocus,
+  onDraftChange,
 }: {
   hostId: string;
   paneId: string;
@@ -52,6 +54,8 @@ export function Composer({
   initialError?: string;
   /** Focus the prompt box (and raise the keyboard) on mount. */
   autoFocus?: boolean;
+  /** Called when the box gets or loses unsent text or photos (a sheet asks before it closes). */
+  onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const { rpc, status, hello } = useHostConn(hostId);
   const [text, setText] = useState(initialText ?? "");
@@ -74,6 +78,10 @@ export function Composer({
   const [sheetKey, setSheetKey] = useState(0);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const canSend = online && !sending && (text.trim().length > 0 || photos.length > 0);
+  const hasDraft = text.trim().length > 0 || photos.length > 0;
+  useEffect(() => {
+    onDraftChange?.(hasDraft);
+  }, [hasDraft, onDraftChange]);
   const blocked = useSnapshots(
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
@@ -110,7 +118,7 @@ export function Composer({
     try {
       const r = await answerChoice(rpc, paneId, shown, c, stillBlocked);
       setAnswered(shown);
-      if (r === "sent") haptics.commit();
+      if (r === "sent") (c.key === destructiveKey(shown) ? haptics.warn : haptics.commit)();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -235,7 +243,16 @@ export function Composer({
         </Text>
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
-        {showPlus ? <PlusButton open={plusOpen} disabled={!online || sending} onPress={() => setPlusOpen((o) => !o)} /> : null}
+        {showPlus ? (
+          <PlusButton
+            open={plusOpen}
+            disabled={!online || sending}
+            onPress={() => {
+              if (!plusOpen) haptics.press();
+              setPlusOpen((o) => !o);
+            }}
+          />
+        ) : null}
         <TextInput
           ref={inputRef}
           key={inputKey}
@@ -293,7 +310,7 @@ export function Composer({
           })}
         >
           {sending ? (
-            <ActivityIndicator color={colors.bg} />
+            <DelayedSpinner color={colors.bg} fallback={<ArrowUp size={22} color={colors.bg} />} />
           ) : (
             <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />
           )}

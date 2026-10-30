@@ -1,7 +1,7 @@
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +25,7 @@ import { TerminalView } from "@/thread/TerminalView";
 import { PendingBubbles } from "@/thread/items/PendingBubble";
 import { usePendingList } from "@/thread/pending";
 import { ThreadList } from "@/thread/ThreadList";
+import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
@@ -33,6 +34,7 @@ import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { useSpeakReplies } from "@/voice/useSpeakReplies";
 import { useVoiceNotice } from "@/voice/voiceNotice";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 type Mode = "thread" | "terminal";
 
@@ -138,7 +140,10 @@ function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void
             key={o.id}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            onPress={() => onChange(o.id)}
+            onPress={() => {
+              if (o.id !== mode) haptics.tap();
+              onChange(o.id);
+            }}
             hitSlop={{ top: 4, bottom: 4 }}
             style={{
               flex: 1,
@@ -227,6 +232,8 @@ function ThreadBody({ thread, hostId, paneId, focused }: { thread: Thread; hostI
       </View>
     );
   }
+  // First load: the shape of a thread, not a spinner.
+  if (items.length === 0 && pending.length === 0 && status === "loading") return <ThreadSkeleton />;
   if (items.length === 0 && pending.length === 0) {
     const note =
       status === "loading"
@@ -244,9 +251,7 @@ function ThreadBody({ thread, hostId, paneId, focused }: { thread: Thread; hostI
           <Text muted style={{ textAlign: "center" }}>
             {note}
           </Text>
-        ) : (
-          <ActivityIndicator color={colors.textMuted} />
-        )}
+        ) : null}
       </View>
     );
   }
@@ -314,14 +319,6 @@ export default function SessionScreen() {
   const kind = agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
   const since = useStatusSince(hostId, paneId, agent?.agent_status);
-
-  // A status change of the open session gets one haptic (the module throttles them).
-  const lastStatus = useRef(agent?.agent_status);
-  useEffect(() => {
-    const from = lastStatus.current;
-    lastStatus.current = agent?.agent_status;
-    if (from && agent?.agent_status && from !== agent.agent_status && focused) haptics.status({ from, to: agent.agent_status });
-  }, [agent?.agent_status, focused]);
   const back = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
   const menu = useSessionMenu(hostId, agent, back);
 
@@ -355,7 +352,10 @@ export default function SessionScreen() {
             accessibilityRole="switch"
             accessibilityLabel="Speak replies"
             accessibilityState={{ checked: speakOn }}
-            onPress={() => setSpeak(sessionKey(hostId, paneId), !speakOn)}
+            onPress={() => {
+              haptics.tap();
+              setSpeak(sessionKey(hostId, paneId), !speakOn);
+            }}
             style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
           >
             {speakOn ? <Volume2 size={22} color={colors.accent} /> : <VolumeX size={22} color={colors.textMuted} />}
@@ -369,7 +369,7 @@ export default function SessionScreen() {
             style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
           >
             {menu.busy ? (
-              <ActivityIndicator color={colors.textMuted} />
+              <DelayedSpinner color={colors.textMuted} />
             ) : (
               <Ellipsis size={22} color={menu.enabled ? colors.text : colors.textMuted} />
             )}

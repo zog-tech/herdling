@@ -1,10 +1,11 @@
 import type { ThreadItem } from "@zogssh/protocol";
 import { ArrowDown } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { ActivityIndicator, FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 import { LiveToolContext, newestRunningTool } from "./LiveToolContext";
 import { ThreadRow } from "./ThreadRow";
 
@@ -85,7 +86,9 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
           windowSize={11}
           ListFooterComponent={
             loadingOlder ? (
-              <ActivityIndicator color={colors.textMuted} style={{ padding: space.md }} />
+              <View style={{ padding: space.md, alignItems: "center" }}>
+                <DelayedSpinner color={colors.textMuted} />
+              </View>
             ) : !hasOlder && items.length > 0 ? (
               <Text variant="caption" muted style={{ textAlign: "center", padding: space.md }}>
                 Start of conversation

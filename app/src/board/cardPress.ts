@@ -2,6 +2,7 @@ import { Easing, type SharedValue, withSequence, withSpring, withTiming } from "
 import { scheduleOnRN } from "react-native-worklets";
 
 import { motion } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 
 type Settable = Pick<SharedValue<number>, "set">;
 
@@ -47,6 +48,23 @@ export function makeCardPress(
     long() {
       "worklet";
       scheduleOnRN(onLong);
+    },
+  };
+}
+
+/**
+ * The card's tap and long-press actions with their haptics: a tap opens the session (light), a long
+ * press peeks (medium, at the moment it fires). One haptic per gesture.
+ */
+export function cardActions<T>(item: T, onOpen: (i: T) => void, onPeek: (i: T) => void) {
+  return {
+    open: () => {
+      haptics.press();
+      onOpen(item);
+    },
+    peek: () => {
+      haptics.peek();
+      onPeek(item);
     },
   };
 }

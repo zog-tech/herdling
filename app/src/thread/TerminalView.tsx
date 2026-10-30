@@ -2,7 +2,6 @@ import { useIsFocused } from "expo-router";
 import { ArrowUp } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   TextInput,
@@ -20,6 +19,7 @@ import { sendKey, sendLine } from "@/terminal/keys";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 import { HScrollView } from "./HScrollView";
 import { useTerminalText } from "./useTerminalText";
@@ -207,7 +207,7 @@ function TerminalControls({
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          {sending ? <ActivityIndicator color={colors.bg} /> : <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />}
+          {sending ? <DelayedSpinner color={colors.bg} /> : <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />}
         </Pressable>
       </View>
     </View>

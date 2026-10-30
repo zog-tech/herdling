@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { markSeen, useSeen } from "@/herdr/seen";
@@ -10,7 +10,10 @@ import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { useThread } from "@/thread/useThread";
+import { CloseButton } from "@/ui/CloseButton";
+import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 import { StatusPill } from "./StatusPill";
 import { useBoard } from "./boardStore";
@@ -26,12 +29,16 @@ export function PeekSheet({
   paneId,
   focusComposer,
   onOpenSession,
+  onClose,
+  onDraftChange,
 }: {
   hostId: string;
   paneId: string;
   /** Raise the keyboard at once (the "Reply" swipe action). */
   focusComposer?: boolean;
   onOpenSession: () => void;
+  onClose?: () => void;
+  onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
@@ -83,7 +90,8 @@ export function PeekSheet({
           flexDirection: "row",
           alignItems: "center",
           gap: space.md,
-          paddingHorizontal: space.lg,
+          paddingLeft: space.lg,
+          paddingRight: space.sm,
           paddingTop: space.xl,
           paddingBottom: space.md,
         }}
@@ -107,7 +115,10 @@ export function PeekSheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Open session"
-          onPress={onOpenSession}
+          onPress={() => {
+            haptics.press();
+            onOpenSession();
+          }}
           style={({ pressed }) => ({
             minHeight: hitTarget,
             flexDirection: "row",
@@ -125,6 +136,7 @@ export function PeekSheet({
             Open
           </Text>
         </Pressable>
+        {onClose ? <CloseButton onPress={onClose} /> : null}
       </View>
 
       {!agent ? (
@@ -151,14 +163,14 @@ export function PeekSheet({
           {lastReply ? (
             <AssistantMessage markdown={lastReply} />
           ) : thread.status === "loading" ? (
-            <ActivityIndicator color={colors.textMuted} />
+            <DelayedSpinner color={colors.textMuted} />
           ) : (
             <Text muted>{preview?.last_reply ?? item?.line ?? "No reply yet."}</Text>
           )}
         </ScrollView>
       </View>
 
-      <Composer hostId={hostId} paneId={paneId} bottomInset={insets.bottom} autoFocus={focusComposer} />
+      <Composer hostId={hostId} paneId={paneId} bottomInset={insets.bottom} autoFocus={focusComposer} onDraftChange={onDraftChange} />
     </KeyboardAvoidingView>
   );
 }

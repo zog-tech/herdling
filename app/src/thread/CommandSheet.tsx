@@ -1,11 +1,13 @@
 import type { CommandInfo } from "@zogssh/protocol";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, SectionList, TextInput, View } from "react-native";
+import { Modal, SectionList, TextInput, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import { CloseButton } from "@/ui/CloseButton";
 import { Text } from "@/ui/Text";
+import { DelayedSpinner } from "@/ui/Delayed";
 
 import { CommandRow } from "./CommandMenu";
 import { filterCommands } from "./commands";
@@ -47,26 +49,22 @@ export function CommandSheet({
   const sections = useMemo(() => groupCommands(filterCommands(commands ?? [], search.trim())), [commands, search]);
 
   return (
+    // A native page sheet: swipe-down closes it (onRequestClose), and so does the close button.
     <Modal
       visible={visible}
-      animationType={reduced ? "none" : "slide"}
-      transparent
+      animationType={reduced ? "fade" : "slide"}
+      presentationStyle="pageSheet"
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1, backgroundColor: colors.scrim }} onPress={onClose} />
-      <View
-        style={{
-          backgroundColor: colors.bg,
-          borderTopLeftRadius: radius.lg,
-          borderTopRightRadius: radius.lg,
-          height: "75%",
-          paddingTop: space.lg,
-          paddingBottom: insets.bottom,
-        }}
-      >
+      <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: space.md, paddingBottom: insets.bottom }}>
         <View style={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm }}>
-          <Text variant="title">Commands & skills</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text variant="title" accessibilityRole="header">
+              Commands & skills
+            </Text>
+            <CloseButton onPress={onClose} />
+          </View>
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -89,7 +87,9 @@ export function CommandSheet({
           />
         </View>
         {commands === undefined ? (
-          <ActivityIndicator color={colors.textMuted} style={{ marginTop: space.xl }} />
+          <View style={{ marginTop: space.xl, alignItems: "center" }}>
+            <DelayedSpinner color={colors.textMuted} />
+          </View>
         ) : (
           <SectionList
             sections={sections}

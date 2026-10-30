@@ -8,10 +8,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAutomations } from "@/automations/useAutomations";
 import { useHostConn } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, hitTarget, radius, space, state as uiState } from "@/theme/tokens";
+import { colors, hitTarget, space, state as uiState } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Screen } from "@/ui/Screen";
+import { CloseButton } from "@/ui/CloseButton";
 import { Text } from "@/ui/Text";
 
 const RUN_LABEL: Record<AutomationRun["status"], string> = {
@@ -63,19 +64,16 @@ function ApproveSheet({
     }
   };
   return (
-    <Modal visible={!!a} animationType={reduced ? "none" : "slide"} transparent onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1, backgroundColor: colors.scrim }} onPress={onClose} />
-      <View
-        style={{
-          backgroundColor: colors.bg,
-          borderTopLeftRadius: radius.lg,
-          borderTopRightRadius: radius.lg,
-          maxHeight: "80%",
-          paddingBottom: space.lg + insets.bottom,
-        }}
-      >
+    // A native page sheet: swipe-down closes it (onRequestClose), and so does the close button.
+    <Modal visible={!!a} animationType={reduced ? "fade" : "slide"} presentationStyle="pageSheet" onRequestClose={busy ? () => {} : onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.bg, paddingBottom: space.lg + insets.bottom }}>
         <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
-          <Text variant="title">Approve {a?.name}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text variant="title" accessibilityRole="header" style={{ flex: 1 }}>
+              Approve {a?.name}
+            </Text>
+            <CloseButton onPress={onClose} />
+          </View>
           <Text variant="caption" muted>
             Plan
           </Text>

@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react-native";
 import { Pressable, ScrollView } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
 import { BUCKETS, BUCKET_LABEL, toggleFilter, type Bucket, type Counts } from "./buckets";
@@ -29,7 +30,10 @@ function Chip({
       accessibilityRole="button"
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       accessibilityState={{ selected: active }}
-      onPress={onPress}
+      onPress={() => {
+        haptics.tap();
+        onPress();
+      }}
       style={({ pressed }) => ({
         minHeight: hitTarget,
         flexDirection: "row",

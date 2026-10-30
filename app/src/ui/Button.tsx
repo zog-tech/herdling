@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react-native";
-import { ActivityIndicator, Pressable } from "react-native";
+import { Pressable } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { DelayedSpinner } from "@/ui/Delayed";
 import { Text } from "./Text";
 
 type Props = {
@@ -42,7 +43,7 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
         opacity: off ? state.disabledOpacity : pressed ? state.pressedFill : 1,
       })}
     >
-      {loading ? <ActivityIndicator color={fg} /> : Icon ? <Icon size={18} color={fg} /> : null}
+      {loading ? <DelayedSpinner color={fg} fallback={Icon ? <Icon size={18} color={fg} /> : null} /> : Icon ? <Icon size={18} color={fg} /> : null}
       {iconOnly ? null : (
         <Text color={fg} bold>
           {label}
