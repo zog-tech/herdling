@@ -45,7 +45,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
         justifyContent: "center",
       }}
     >
-      <Text bold color={selected ? colors.bg : colors.text}>
+      <Text bold color={selected ? colors.onAccent : colors.text}>
         {label}
       </Text>
     </Pressable>
@@ -293,7 +293,7 @@ export default function NewSessionScreen() {
                 borderRadius: radius.md,
                 borderWidth: 1,
                 borderColor: colors.border,
-                backgroundColor: colors.muted,
+                backgroundColor: colors.raised,
                 color: colors.text,
                 fontSize: type.size.body,
                 textAlignVertical: "top",

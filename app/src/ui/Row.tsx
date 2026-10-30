@@ -26,7 +26,7 @@ export function Row({ children, trailing, onPress, accessibilityLabel }: Props) 
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={({ pressed }) => [style, pressed && { backgroundColor: colors.muted }]}
+      style={({ pressed }) => [style, pressed && { backgroundColor: colors.raised }]}
     >
       {content}
     </Pressable>

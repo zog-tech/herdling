@@ -3,7 +3,7 @@ import { Text as RNText, type TextProps } from "react-native";
 import { fontFamily } from "@/theme/fonts";
 import { colors, textRole, type } from "@/theme/tokens";
 
-type Variant = "body" | "small" | "caption" | "title" | "heading";
+type Variant = "body" | "small" | "caption" | "title" | "heading" | "section";
 
 /** Each variant is one text role from the tokens. */
 const ROLE = {
@@ -12,6 +12,7 @@ const ROLE = {
   body: textRole.body,
   small: textRole.callout,
   caption: textRole.caption,
+  section: textRole.section,
 } as const;
 
 type Props = TextProps & {
@@ -42,11 +43,15 @@ export type TextVariant = Variant;
 /** The style of one text role, for a view that is not a `Text` (for example a read-only TextInput). */
 export function textStyle({ variant = "body", muted, bold, color }: { variant?: Variant; muted?: boolean; bold?: boolean; color?: string }) {
   const role = ROLE[variant];
+  const section = variant === "section";
   return {
-    color: color ?? (muted ? colors.textMuted : colors.text),
+    color: color ?? (muted || section ? colors.textMuted : colors.text),
     fontSize: role.size,
     lineHeight: Math.round(role.size * type.lineHeight.body),
     fontWeight: bold ? (role.weight === "700" ? "700" : "600") : role.weight,
+    letterSpacing: "letterSpacing" in role ? role.letterSpacing : undefined,
+    // Section headers read as small caps: uppercase with open tracking.
+    textTransform: section ? "uppercase" : undefined,
   } as const;
 }
 

@@ -61,7 +61,7 @@ const mdStyles = StyleSheet.create({
   code_inline: {
     fontFamily: fontFamily.mono,
     fontSize: CODE,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.raised,
     color: colors.text,
     borderRadius: radius.sm,
     paddingHorizontal: 4,
@@ -80,17 +80,17 @@ const mdStyles = StyleSheet.create({
     marginLeft: 0,
     marginBottom: space.sm,
   },
-  hr: { backgroundColor: colors.muted, height: 1, marginVertical: space.md },
-  table: { borderWidth: 1, borderColor: colors.muted, borderRadius: radius.sm, overflow: "hidden" },
+  hr: { backgroundColor: colors.divider, height: 1, marginVertical: space.md },
+  table: { borderWidth: 1, borderColor: colors.divider, borderRadius: radius.sm, overflow: "hidden" },
   thead: { backgroundColor: colors.card },
-  tr: { borderBottomWidth: 1, borderColor: colors.muted, flexDirection: "row" },
+  tr: { borderBottomWidth: 1, borderColor: colors.divider, flexDirection: "row" },
   // Fixed column width: the table scrolls sideways, and the columns of all rows line up.
   th: { width: TABLE_COL, padding: space.sm, fontWeight: "700" },
   td: { width: TABLE_COL, padding: space.sm },
 });
 
 const styles = StyleSheet.create({
-  codeScroll: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.muted, marginBottom: space.sm },
+  codeScroll: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
   codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
 });
 

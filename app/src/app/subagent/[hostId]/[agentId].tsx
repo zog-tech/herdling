@@ -62,7 +62,7 @@ export default function SubagentScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View
-        style={{ paddingTop: insets.top, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.muted, flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}
+        style={{ paddingTop: insets.top, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}
       >
         <Pressable
           accessibilityRole="button"

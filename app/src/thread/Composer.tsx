@@ -283,7 +283,7 @@ export const Composer = memo(function Composer({
     <View
       style={{
         borderTopWidth: 1,
-        borderTopColor: colors.muted,
+        borderTopColor: colors.divider,
         backgroundColor: colors.bg,
         paddingHorizontal: space.md,
         paddingTop: space.sm,
@@ -411,7 +411,7 @@ export const Composer = memo(function Composer({
               opacity: pressed ? state.pressedFill : 1,
             })}
           >
-            <Check size={22} color={colors.bg} />
+            <Check size={22} color={colors.onAccent} />
           </Pressable>
         ) : (
         <Pressable
@@ -426,14 +426,14 @@ export const Composer = memo(function Composer({
             borderRadius: hitTarget / 2,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: canSend ? colors.accent : colors.muted,
+            backgroundColor: canSend ? colors.accent : colors.raised,
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
           {sending ? (
-            <DelayedSpinner color={colors.bg} fallback={<ArrowUp size={22} color={colors.bg} />} />
+            <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={22} color={colors.onAccent} />} />
           ) : (
-            <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />
+            <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
           )}
         </Pressable>
         )}

@@ -115,7 +115,7 @@ export default function ToolScreen() {
           paddingRight: space.xs,
           paddingTop: space.sm,
           borderBottomWidth: 1,
-          borderBottomColor: colors.muted,
+          borderBottomColor: colors.divider,
         }}
       >
         {running ? <StatusIcon status="working" size={18} /> : null}

@@ -143,7 +143,7 @@ function TerminalControls({
     <View
       style={{
         borderTopWidth: 1,
-        borderTopColor: colors.muted,
+        borderTopColor: colors.divider,
         backgroundColor: colors.bg,
         paddingTop: space.sm,
         paddingBottom: space.sm + bottomInset,
@@ -203,11 +203,11 @@ function TerminalControls({
             borderRadius: hitTarget / 2,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: canSend ? colors.accent : colors.muted,
+            backgroundColor: canSend ? colors.accent : colors.raised,
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          {sending ? <DelayedSpinner color={colors.bg} /> : <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />}
+          {sending ? <DelayedSpinner color={colors.onAccent} /> : <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />}
         </Pressable>
       </View>
     </View>

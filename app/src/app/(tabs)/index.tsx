@@ -102,7 +102,7 @@ function HostStrip({ hosts }: { hosts: Host[] }) {
         paddingVertical: space.xs,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.muted,
+        borderColor: colors.divider,
         backgroundColor: colors.card,
       }}
     >
@@ -430,7 +430,7 @@ export default function BoardScreen() {
           opacity: pressed ? state.pressedFill : 1,
         })}
       >
-        <Plus color={colors.bg} size={28} />
+        <Plus color={colors.onAccent} size={28} />
       </Pressable>
     </View>
   );

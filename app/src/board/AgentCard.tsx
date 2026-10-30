@@ -70,8 +70,8 @@ function SwipeAction({
         opacity: pressed ? state.pressedFill : 1,
       })}
     >
-      <Icon size={20} color={colors.bg} />
-      <Text variant="caption" bold color={colors.bg}>
+      <Icon size={20} color={colors.onAccent} />
+      <Text variant="caption" bold color={colors.onAccent}>
         {label}
       </Text>
     </Pressable>
@@ -137,7 +137,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
       rightThreshold={ACTION_W * 0.6}
       overshootLeft={false}
       overshootRight={false}
-      containerStyle={{ borderRadius: radius.lg, backgroundColor: colors.muted }}
+      containerStyle={{ borderRadius: radius.lg, backgroundColor: colors.raised }}
       onSwipeableOpen={(dir) => {
         // Swiping right opens the left panel: that is "mark read", done on release.
         if (dir === SwipeDirection.RIGHT) {
@@ -215,7 +215,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
                 width: 36,
                 height: 36,
                 borderRadius: radius.md,
-                backgroundColor: colors.muted,
+                backgroundColor: colors.raised,
                 alignItems: "center",
                 justifyContent: "center",
               }}

@@ -152,7 +152,7 @@ function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void
               alignItems: "center",
               justifyContent: "center",
               borderRadius: radius.sm + 1,
-              backgroundColor: active ? colors.muted : "transparent",
+              backgroundColor: active ? colors.raised : "transparent",
             }}
           >
             <Text variant="small" bold={active} muted={!active}>
@@ -325,7 +325,7 @@ export default function SessionScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.muted }}>
+      <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.divider }}>
         <View style={{ flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}>
           <Pressable
             accessibilityRole="button"

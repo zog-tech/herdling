@@ -9,64 +9,86 @@
 
 ---
 
+## 0. Idea: "Night Watch"
+
+A shepherd keeps watch at night. The field is dark and quiet; the flock is the set of agents. One lantern burns while work happens, and its warm light is the only bright color. When an agent needs the shepherd, an ember glows. Everything else is calm stone and graphite. Premium means restraint: one accent, hairline edges, deep blacks, precise type, quiet motion. No decorative gradients, no glow on everything.
+
+Motif rules:
+- **Gold is scarce.** Gold marks only (a) the primary action (send, approve, pair, the primary button, the "+" new session button), (b) the "working" lantern, (c) the focus or selected state (tab bar, switches, a chosen option). Never decoration, never a large fill apart from the primary button.
+- **The lantern glow.** While an agent works, its status icon has a soft radial gold glow (`ui/LanternGlow`) that breathes: 2.4 s per breath, opacity 0.35 ↔ 0.7, on the UI thread. When work stops it fades out in 400 ms. Reduce Motion: static. Only on the Board card status pill and the session status row.
+- **The horizon hairline.** The bottom edge of a main screen header (the tab screens and the session screen) is a 1 pt line, gold at 35 % fading to clear, left to right (`ui/HorizonLine`). Other screens use a plain header.
+
 ## 1. Color
 
-Dark first. The app has no light theme. Every value is a token in `colors`; components never use raw hex.
+Dark only. Warm blacks, not blue slate. Every value is a token in `colors`; components never use raw hex.
+Contrast is measured on `bg` / `card` / `raised`.
 
 | Token | Hex | Use | Contrast |
 |---|---|---|---|
-| `bg` | `#0F172A` | Page | — |
-| `card` | `#1B2336` | Cards, sheets, the tab bar | — |
-| `muted` | `#272F42` | Raised fill (bubbles, icon tiles, pressed rows) and dividers | not an edge of a control |
-| `edge` | `#5B6B82` | Edge of a tappable card | 3.3:1 on `bg` |
-| `border` | `#64748B` | Edge of a control (input, outline button, mic) | 3.8:1 on `bg`, 3.3:1 on `card` |
-| `text` | `#F8FAFC` | Body text | 17:1 on `bg` |
-| `textMuted` | `#94A3B8` | Secondary text | 7.0:1 on `bg`, 6.1:1 on `card` |
-| `accent` | `#22C55E` | Primary action (send, new session) | text on it is `bg` |
-| `danger` | `#EF4444` | Destructive actions, errors | 4.2:1 on `card`; always with an icon or a label |
-| `scrim` | `rgba(0,0,0,0.6)` | Backdrop of a custom sheet | text behind drops to 3.4:1, so it does not compete |
+| `bg` | `#0A0A0B` | Page (night) | — |
+| `card` | `#141416` | Cards, sheets, the tab bar | — |
+| `raised` | `#1C1C1F` | Raised fill: bubbles, icon tiles, the pressed state | not an edge of a control |
+| `sunken` | `#070708` | Terminal, code blocks, tool output | — |
+| `divider` | `#2A2A2E` | Lines that only group content | not an edge of a control |
+| `hairline` | `rgba(255,255,255,0.06)` | 1 pt top highlight of a card | decorative |
+| `edge` | `#64605A` | Edge of a tappable card | 3.2:1 on `bg` |
+| `border` | `#706B62` | Edge of a control (input, outline button, mic) | 3.7 / 3.5 / 3.2:1 |
+| `text` | `#F5F2EA` | Body text (warm ivory) | 17.7 / 16.5 / 15.2:1 |
+| `textMuted` | `#A39E93` | Secondary text, section headers (warm stone) | 7.4 / 6.9 / 6.4:1 |
+| `accent` | `#D4A857` | Lantern gold: primary action, selected state | 8.4:1 on `card` |
+| `accentPressed` | `#B8903F` | A pressed gold control | `onAccent` on it 6.7:1 |
+| `onAccent` | `#0A0A0B` | Text and icons on gold and on status fills | 9.0:1 on `accent` |
+| `link` | `#F5F2EA` | Links in replies, always underlined | as `text` |
+| `danger` | `#E5484D` | Destructive actions, errors | 4.7:1 on `card`; always with an icon or a label |
+| `scrim` | `rgba(0,0,0,0.6)` | Backdrop of a custom sheet | text behind drops to 3.3:1, so it does not compete |
 
 **Status colors.** A status always shows icon + label + color. Color alone never carries the meaning.
 
 | Status | Color | Icon | Label |
 |---|---|---|---|
-| working | `#60A5FA` blue | spinning `LoaderCircle` | Working |
-| blocked (Board: needs you) | `#F59E0B` amber | `Hand` | Needs you |
-| done (Board: ready) | `#22C55E` green | `Check` / `Inbox` | Done / Ready |
-| idle | `#94A3B8` slate | `Check` / `Moon` | Idle |
-| unknown | `#7C8BA1` dim slate | `CircleHelp` | Unknown |
+| working | `#D4A857` lantern gold (+ lantern glow) | spinning `LoaderCircle` | Working |
+| blocked (Board: needs you) | `#E8794A` ember | `Hand` | Needs you |
+| done (Board: ready) | `#8DB580` pasture sage | `Check` / `Inbox` | Done / Ready |
+| idle | `#A39E93` stone | `Check` / `Moon` | Idle |
+| unknown | `#8A857B` dim stone | `CircleHelp` | Unknown |
+
+All status colors are 5:1 or more on `card`.
 
 Rules:
 - Text on any surface: 4.5:1 or more. Large text and non-text UI (icons, control edges): 3:1 or more.
-- Dividers that only group content use `muted`. Edges that show "you can tap this" use `edge` or `border`.
+- Dividers that only group content use `divider`. Edges that show "you can tap this" use `edge` or `border`.
+- The terminal uses `terminal.bg` (= `sunken`) and a warmed ANSI palette (black and white entries warmed).
 
 ## 2. Elevation
 
-Shadows do not show on a dark page. Each step up is a lighter fill plus a 1 pt edge (`elevation` in tokens).
+Depth by light, not shadow. Each step up is a little lighter, with a 1 pt edge. A card also has a 1 pt top highlight (`hairline`, `ui/TopHighlight`), like brushed metal under a lantern.
 
 | Level | Fill | Edge | Use |
 |---|---|---|---|
+| sunken | `sunken` | `divider` | Terminal, code blocks |
 | 0 | `bg` | none | Page |
-| 1 | `card` | `muted` | Static cards (host card), sheets |
-| tappable | `card` | `edge` | Agent card, tool card, subagent card |
-| 2 | `muted` | `border` | A control that sits on a card |
+| 1 | `card` + highlight | `divider` | Static cards (host card), sheets |
+| tappable | `card` + highlight | `edge` | Agent card, tool card, subagent card |
+| 2 | `raised` | `border` | A control that sits on a card |
 
 ## 3. Type
 
-System font (SF Pro) for UI. JetBrains Mono for code, tool input and output, terminal text, IDs.
+System font (SF Pro) for UI. JetBrains Mono for code, tool input and output, terminal text, IDs. No new font files (a font needs a native build).
 Every text style is a role (`textRole`) and scales with Dynamic Type.
 
-| Role | Size | Weight | Max scale |
-|---|---|---|---|
-| largeTitle | 28 | 700 | 1.6 |
-| title | 20 | 600 | 2 |
-| body | 16 | 400 | 3 |
-| callout | 14 | 400 | 2.5 |
-| caption | 12 | 400 | 2 |
-| mono | 13 | 400 | 2 |
+| Role | Size | Weight | Tracking | Max scale |
+|---|---|---|---|---|
+| largeTitle | 28 | 700 | -0.4 | 1.6 |
+| title | 20 | 600 | — | 2 |
+| body | 16 | 400 | — | 3 |
+| callout | 14 | 400 | — | 2.5 |
+| caption | 12 | 400 | — | 2 |
+| section | 12 | 600 | +0.8, uppercase, `textMuted` | 1.6 |
+| mono | 13 | 400 | — | 2 |
 
+- Section headers (Board groups, "Hosts", Settings groups) use `section`: the small caps editorial touch. On the Board the bucket icon keeps its color; the text stays stone.
 - Dense rows (status pills, chips, header labels) cap the scale lower (`denseScale.pill` 1.4, `denseScale.row` 1.6).
-- Titles wrap to 2 lines before they truncate. Timers and counters use tabular figures.
+- Titles wrap to 2 lines before they truncate. Timers, counters, CPU and usage use tabular figures.
 - Line height is 1.5 times the size.
 
 ## 4. Space, radius, icons, targets
@@ -86,7 +108,9 @@ There is no hover. Feedback starts on press-in, the action runs on release.
 | Icon button, ghost button | opacity `state.pressedOpacity` 0.6 | instant |
 | Filled button | opacity `state.pressedFill` 0.85 | instant |
 | Card (Board) | scale 0.98, then toward 0.96 while a long press charges; light layer at 0.04 | 100 ms ease-out in, spring back (damping 15, stiffness 220) |
-| Row in a list or menu | fill `muted` | instant |
+| Row in a list or menu, a chip, a choice button, a key | fill `raised` | instant |
+| Primary (gold) button | fill `accentPressed` | instant |
+| Send button | scale 0.94 + `accentPressed` | 120 ms (scale), 150 ms (color) |
 | Disabled | opacity `state.disabledOpacity` 0.4, `accessibilityState.disabled`, no action | — |
 | Offline host content | opacity `state.offlineOpacity` 0.6 | — |
 
@@ -101,6 +125,13 @@ Tokens: `motion` in `tokens.ts`. Reanimated on the UI thread; never `setState` p
 - A finger moved it: use a spring (`motion.spring.sheet`, `motion.spring.swipe`) and pass the gesture velocity.
 - Curves: ease-out `[0.23, 1, 0.32, 1]` for things that enter or react; ease-in-out `[0.77, 0, 0.175, 1]` for on-screen movement; linear only for constant rotation. Never ease-in.
 - Status: the working spinner turns once per second; "needs you" pulses once when it starts; finished work pops once.
+- Lantern glow: see section 0. Breathes 2.4 s, fades out 400 ms when work stops.
+- Board enter: the first Board load per app launch staggers the first 8 cards (opacity 0 → 1, rise 8 pt, 40 ms apart, 260 ms ease-out). Never on refresh or return.
+- Needs you: when a card moves to "needs you", its ember edge glows once (600 ms opacity pulse). No loop.
+- Thread: a new item that arrives while you are at the bottom fades in and rises 6 pt (200 ms ease-out). Loaded pages do not animate.
+- Pending prompt: the state line crossfades on a change (150 ms).
+- Segmented control: the selected pill slides with a spring (duration 300, dampingRatio 1).
+- Send button: gold fades in over 150 ms when there is text; graphite when empty.
 - Tabs never slide. Screen transitions use the native stack.
 - Reduce Motion: no scale, no rotation, no slide. Keep opacity and color changes that explain a state. Haptics still fire.
 
@@ -111,9 +142,9 @@ Tokens: `motion` in `tokens.ts`. Reanimated on the UI thread; never `setState` p
 | Function | Feel | When |
 |---|---|---|
 | `tap()` | selection | A chip or filter, the segmented control, a menu row, a toggle (speaker) |
-| `press()` | light impact | Open the "+" menu, open a session, recording stops |
+| `press()` | light impact | Send (on the tap), open the "+" menu, open a session, recording stops |
 | `peek()` | medium impact | A long press opens the peek sheet; a swipe passes its action point (once per crossing); recording starts |
-| `commit()` | success | Approve, a prompt sent and accepted, a rename saved, a copy |
+| `commit()` | success | Approve, a retried prompt accepted, a rename saved, a copy |
 | `warn()` | warning | Deny; a destructive confirm (close, restart) comes up |
 | `fail()` | error | Send, upload or rename failed |
 | `status()` | success / warning / selection | The open session or a Board card changes bucket: done → success, needs you → warning, else selection. At most one per 1.5 s |
@@ -164,6 +195,7 @@ Each one has an icon, one sentence that says what is true, and an action when on
 ## Pre-delivery checklist
 
 - [ ] Only tokens: no raw hex, opacity, scale or duration in components.
+- [ ] Gold only on a primary action, the working lantern, or a selected state.
 - [ ] Status shows icon + label + color.
 - [ ] Touch targets 44 pt; 8 pt between targets.
 - [ ] Press feedback in 150 ms or less; no layout shift on press.

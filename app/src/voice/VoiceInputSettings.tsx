@@ -40,7 +40,7 @@ function Progress({ fraction }: { fraction: number }) {
       accessibilityRole="progressbar"
       accessibilityLabel="Model download"
       accessibilityValue={{ min: 0, max: 100, now: pct, text: `${pct}%` }}
-      style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.muted, overflow: "hidden" }}
+      style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.raised, overflow: "hidden" }}
     >
       <View style={{ width: `${pct}%`, height: "100%", backgroundColor: colors.accent }} />
     </View>
@@ -155,7 +155,7 @@ export function VoiceInputSection() {
         {available ? (
           <>
             {MODELS.map((m) => (
-              <View key={m} style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm, paddingBottom: space.xs }}>
+              <View key={m} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm, paddingBottom: space.xs }}>
                 <ModelRow model={m} />
               </View>
             ))}
@@ -164,14 +164,14 @@ export function VoiceInputSection() {
                 {error}
               </Text>
             ) : null}
-            <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
               <Row
                 trailing={
                   <Switch
                     accessibilityLabel="Download over cellular"
                     value={allowCellular}
                     onValueChange={(v) => set({ allowCellular: v })}
-                    trackColor={{ false: colors.muted, true: colors.accent }}
+                    trackColor={{ false: colors.raised, true: colors.accent }}
                   />
                 }
               >

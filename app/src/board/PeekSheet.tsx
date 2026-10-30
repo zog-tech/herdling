@@ -97,7 +97,7 @@ export function PeekSheet({
         }}
       >
         <View
-          style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }}
+          style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.raised, alignItems: "center", justifyContent: "center" }}
         >
           <KindIcon size={20} color={colors.text} />
         </View>

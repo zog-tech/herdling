@@ -148,7 +148,7 @@ export function MicButton({
             justifyContent: "center",
             borderWidth: RING,
             borderColor: holding ? colors.danger : colors.border,
-            backgroundColor: armed ? colors.danger : holding ? colors.card : colors.muted,
+            backgroundColor: armed ? colors.danger : holding ? colors.card : colors.raised,
             opacity: off ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? motion.press.growScale : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],
@@ -157,7 +157,7 @@ export function MicButton({
           }}
         >
           {armed ? (
-            <X size={icon} color={colors.bg} />
+            <X size={icon} color={colors.onAccent} />
           ) : (
             <Mic size={icon} color={holding ? colors.danger : off ? colors.textMuted : colors.text} />
           )}

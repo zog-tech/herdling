@@ -19,7 +19,7 @@ export function CommandRow({ c, onPick }: { c: CommandInfo; onPick: (c: CommandI
         minHeight: hitTarget,
         justifyContent: "center",
         paddingHorizontal: space.md,
-        backgroundColor: pressed ? colors.muted : "transparent",
+        backgroundColor: pressed ? colors.raised : "transparent",
       })}
     >
       <Text variant="small" mono numberOfLines={1}>
@@ -43,7 +43,7 @@ export function CommandMenu({ commands, onPick }: { commands: CommandInfo[]; onP
         maxHeight: hitTarget * MENU_ROWS,
         backgroundColor: colors.card,
         borderWidth: 1,
-        borderColor: colors.muted,
+        borderColor: colors.divider,
         borderRadius: radius.md,
         overflow: "hidden",
       }}

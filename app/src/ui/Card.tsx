@@ -11,7 +11,7 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
           backgroundColor: colors.card,
           borderRadius: radius.lg,
           borderWidth: 1,
-          borderColor: colors.muted,
+          borderColor: colors.divider,
           padding: space.lg,
           gap: space.md,
         },

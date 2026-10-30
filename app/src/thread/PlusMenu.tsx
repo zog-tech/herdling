@@ -27,7 +27,7 @@ export function PlusButton({ open, disabled, onPress }: { open: boolean; disable
         borderRadius: hitTarget / 2,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: colors.muted,
+        backgroundColor: colors.raised,
         opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
       })}
     >
@@ -48,7 +48,7 @@ function MenuRow({ label, icon, onPress }: { label: string; icon: ReactNode; onP
         alignItems: "center",
         gap: space.md,
         paddingHorizontal: space.md,
-        backgroundColor: pressed ? colors.muted : "transparent",
+        backgroundColor: pressed ? colors.raised : "transparent",
       })}
     >
       {icon}
@@ -65,7 +65,7 @@ export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => v
       style={{
         backgroundColor: colors.card,
         borderWidth: 1,
-        borderColor: colors.muted,
+        borderColor: colors.divider,
         borderRadius: radius.md,
         overflow: "hidden",
       }}
@@ -99,7 +99,7 @@ export function PasteChip({ onPress, disabled }: { onPress: () => void; disabled
         gap: space.sm,
         paddingHorizontal: space.md,
         borderRadius: hitTarget / 2,
-        backgroundColor: colors.muted,
+        backgroundColor: colors.raised,
         opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
       })}
     >
@@ -118,7 +118,7 @@ export function PhotoStrip({ photos, onRemove, disabled }: { photos: Photo[]; on
           <Image
             source={{ uri: p.uri }}
             accessibilityLabel={`Photo ${i + 1}`}
-            style={{ width: THUMB, height: THUMB, borderRadius: radius.sm, backgroundColor: colors.muted }}
+            style={{ width: THUMB, height: THUMB, borderRadius: radius.sm, backgroundColor: colors.raised }}
           />
           <Pressable
             accessibilityRole="button"

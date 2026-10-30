@@ -19,7 +19,7 @@ function Divided({ children }: { children: ReactNode[] }) {
   return (
     <>
       {children.map((c, i) => (
-        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm } : undefined}>
+        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm } : undefined}>
           {c}
         </View>
       ))}

@@ -23,7 +23,7 @@ export const UserBubble = memo(function UserBubble({ text, images }: { text: str
       style={{
         alignSelf: "flex-end",
         maxWidth: "88%",
-        backgroundColor: colors.muted,
+        backgroundColor: colors.raised,
         borderRadius: radius.lg,
         borderBottomRightRadius: radius.sm,
         paddingHorizontal: space.md,

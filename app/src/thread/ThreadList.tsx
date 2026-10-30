@@ -119,8 +119,8 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
               })}
               hitSlop={4}
             >
-              <ArrowDown size={16} color={colors.bg} />
-              <Text variant="small" bold color={colors.bg}>
+              <ArrowDown size={16} color={colors.onAccent} />
+              <Text variant="small" bold color={colors.onAccent}>
                 New messages
               </Text>
             </Pressable>

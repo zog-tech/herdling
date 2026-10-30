@@ -1,59 +1,85 @@
 /**
- * Dark-first palette. Contrast (WCAG) is measured on `bg` #0F172A and `card` #1B2336:
- * text 17:1 / 15:1, textMuted 7.0:1 / 6.1:1, border 3.8:1 / 3.3:1, edge 3.3:1 on bg.
+ * "Night Watch" palette: warm blacks, graphite, ivory text and one lantern gold.
+ * Gold is scarce: only the primary action, the "working" lantern, and focus or selected state.
+ * Contrast (WCAG) measured on `bg` #0A0A0B / `card` #141416 / `raised` #1C1C1F:
+ * text 17.7 / 16.5 / 15.2, textMuted 7.4 / 6.9 / 6.4, border 3.7 / 3.5 / 3.2, edge 3.2 on bg.
  */
 export const colors = {
-  bg: "#0F172A",
-  card: "#1B2336",
-  /** Raised fill (bubbles, icon tiles, the pressed row) and dividers. Not an edge of a control. */
-  muted: "#272F42",
-  /** Edges of controls (inputs, outline buttons): 3:1 or more on bg and card. */
-  border: "#64748B",
-  /** Edge of tappable cards: 3:1 against the page around them, quieter than `border`. */
-  edge: "#5B6B82",
-  text: "#F8FAFC",
-  textMuted: "#94A3B8",
-  accent: "#22C55E",
-  danger: "#EF4444",
+  /** The night field: the page. */
+  bg: "#0A0A0B",
+  card: "#141416",
+  /** Raised fill (bubbles, icon tiles, the pressed row). Not an edge of a control. */
+  raised: "#1C1C1F",
+  /** Below the page: terminal and code blocks. */
+  sunken: "#070708",
+  /** Lines that only group content (dividers, table rules). Not an edge of a control. */
+  divider: "#2A2A2E",
+  /** 1 pt top highlight of a card, like brushed metal under a lantern. */
+  hairline: "rgba(255,255,255,0.06)",
+  /** Edges of controls (inputs, outline buttons): 3.7:1 on bg, 3.5:1 on card, 3.2:1 on raised. */
+  border: "#706B62",
+  /** Edge of tappable cards: 3.2:1 against the page around them, quieter than `border`. */
+  edge: "#64605A",
+  /** Warm ivory, not pure white. */
+  text: "#F5F2EA",
+  /** Warm stone. 6.9:1 on card. */
+  textMuted: "#A39E93",
+  /** Lantern gold: the primary action and the selected state. 8.4:1 on card. */
+  accent: "#D4A857",
+  /** A pressed gold control. `onAccent` on it is 6.7:1. */
+  accentPressed: "#B8903F",
+  /** Text and icons on gold and on other status fills: 9.0:1 on accent. */
+  onAccent: "#0A0A0B",
+  /** The horizon hairline under a main header: `accent` at this opacity, fading out to the right. */
+  horizonOpacity: 0.35,
+  /** Links in replies: ivory with an underline, so gold stays scarce. */
+  link: "#F5F2EA",
+  /** 4.7:1 on card; always with an icon or a label. */
+  danger: "#E5484D",
   /**
-   * Modal backdrop. Measured: at 0.6 the text behind drops to 3.4:1, so it no longer competes
-   * with the sheet (at 0.5 it was 4.7:1, still readable as content).
+   * Modal backdrop. Measured: at 0.6 the text behind drops to 3.3:1, so it no longer competes
+   * with the sheet (at 0.5 it is 4.7:1, still readable as content).
    */
   scrim: "rgba(0,0,0,0.6)",
   /** Every status also has its own icon and label; color is never the only cue. */
   status: {
-    working: "#60A5FA",
-    blocked: "#F59E0B",
-    /** Calm slate: an idle agent needs nothing. 6.1:1 on card. */
-    idle: "#94A3B8",
-    /** Green: finished work. 6.9:1 on card. */
-    done: "#22C55E",
-    /** Dimmer than idle; its icon is a question mark. 4.5:1 on card. */
-    unknown: "#7C8BA1",
+    /** The lantern: lit while work happens. Same gold as `accent`. 8.4:1 on card. */
+    working: "#D4A857",
+    /** Ember: the agent needs you. 6.4:1 on card. */
+    blocked: "#E8794A",
+    /** Calm stone: an idle agent needs nothing. 6.9:1 on card. */
+    idle: "#A39E93",
+    /** Pasture sage: finished work. 7.9:1 on card. */
+    done: "#8DB580",
+    /** Dimmer stone; its icon is a question mark. 5.0:1 on card. */
+    unknown: "#8A857B",
   },
-  /** Terminal view: screen background and default text color. */
+  /** Terminal view: screen background and default text color (15.7:1). */
   terminal: {
-    bg: "#0F172A",
-    fg: "#E2E8F0",
+    bg: "#070708",
+    fg: "#E8E3D8",
   },
-  /** ANSI 16-color palette: 0–7 normal (black, red, green, yellow, blue, magenta, cyan, white), 8–15 bright. */
+  /**
+   * ANSI 16-color palette: 0–7 normal (black, red, green, yellow, blue, magenta, cyan, white), 8–15 bright.
+   * Black and white entries are warmed. On `sunken` every entry but black is 4.2:1 or more.
+   */
   ansi: [
-    "#334155",
+    "#3D3935",
     "#EF4444",
     "#22C55E",
     "#EAB308",
     "#3B82F6",
     "#A855F7",
     "#06B6D4",
-    "#CBD5E1",
-    "#64748B",
+    "#D6D0C4",
+    "#77726A",
     "#F87171",
     "#4ADE80",
     "#FACC15",
     "#60A5FA",
     "#C084FC",
     "#22D3EE",
-    "#F8FAFC",
+    "#F5F2EA",
   ],
 } as const;
 
@@ -71,12 +97,15 @@ export const type = {
  * where a larger size breaks a dense row. A dense row may pass a lower cap.
  */
 export const textRole = {
-  largeTitle: { size: 28, weight: "700", maxScale: 1.6 },
+  /** Tight tracking at large sizes. */
+  largeTitle: { size: 28, weight: "700", maxScale: 1.6, letterSpacing: -0.4 },
   title: { size: 20, weight: "600", maxScale: 2 },
   body: { size: 16, weight: "400", maxScale: 3 },
   callout: { size: 14, weight: "400", maxScale: 2.5 },
   caption: { size: 12, weight: "400", maxScale: 2 },
   mono: { size: 13, weight: "400", maxScale: 2 },
+  /** Section header: small caps style, uppercase, in `textMuted`. */
+  section: { size: 12, weight: "600", maxScale: 1.6, letterSpacing: 0.8 },
 } as const;
 
 /** Caps for dense rows: card pills, chips, header labels. */
@@ -130,6 +159,25 @@ export const motion = {
   shimmerMs: 1200,
   /** Reduce Motion: the "Transcribing…" text fades between full and this opacity instead. */
   shimmerDim: 0.45,
+  /** A raised control (a menu row, a key, a chip): scale and fill on press. */
+  raisedPressMs: 120,
+  /** The send button: gold fades in when there is text, and it dips on press. */
+  send: { fadeMs: 150, pressScale: 0.94 },
+  /**
+   * The lantern glow behind a working status icon. One breath (0.35 → 0.7 → 0.35) takes `periodMs`.
+   * When work stops it fades out in `fadeOutMs`. Reduce Motion: static at `still`.
+   */
+  lantern: { periodMs: 2400, min: 0.35, max: 0.7, still: 0.5, fadeOutMs: 400, sizeRatio: 2.4 },
+  /** Board: the cards enter once per app launch, one after the other. */
+  boardEnter: { stepMs: 40, maxCards: 8, durationMs: 260, rise: 8 },
+  /** "Needs you": the ember edge of a card glows once when it starts. */
+  emberPulseMs: 600,
+  /** Thread: a new item at the bottom fades and rises into place. */
+  arrive: { durationMs: 200, rise: 6 },
+  /** The state line of a queued prompt crossfades on a change. */
+  crossfadeMs: 150,
+  /** The Thread/Terminal pill slides to the selected segment. */
+  segment: { duration: 300, dampingRatio: 1 },
   /** Status icon motion. */
   status: {
     /** One full turn of the working spinner (linear). */
@@ -154,17 +202,20 @@ export const state = {
   disabledOpacity: 0.4,
   /** A host that is offline: its content stays readable but steps back. */
   offlineOpacity: 0.6,
-  focusRing: { width: 2, color: "#F8FAFC" },
+  focusRing: { width: 2, color: colors.accent },
+  /** A pressed raised control: scale plus the `raised` fill. */
+  pressedScale: 0.97,
 } as const;
 
 /**
- * Elevation on dark: shadows do not show, so each step up is a lighter fill plus a 1 pt edge.
+ * Elevation on dark: depth by light, not shadow. Each step up is a lighter fill plus a 1 pt edge;
+ * a card also has a 1 pt top highlight (`colors.hairline`, see `ui/TopHighlight`).
  * 0 page, 1 card and sheet, 2 raised control on a card.
  */
 export const elevation = {
   0: { backgroundColor: colors.bg },
-  1: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.muted },
-  2: { backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border },
+  1: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.divider },
+  2: { backgroundColor: colors.raised, borderWidth: 1, borderColor: colors.border },
   /** A tappable card: level 1 with an edge that passes 3:1. */
   tappable: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.edge },
 } as const;

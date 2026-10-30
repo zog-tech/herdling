@@ -52,7 +52,7 @@ function Transcribing() {
             animationTimingFunction: "linear",
           }}
         >
-          <View style={{ width: "40%", height: "100%", backgroundColor: colors.muted }} />
+          <View style={{ width: "40%", height: "100%", backgroundColor: colors.raised }} />
         </Animated.View>
       )}
       <Animated.View

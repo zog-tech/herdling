@@ -24,7 +24,7 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
-  const fg = active ? colors.bg : count === 0 ? colors.textMuted : color;
+  const fg = active ? colors.onAccent : count === 0 ? colors.textMuted : color;
   return (
     <Pressable
       accessibilityRole="button"

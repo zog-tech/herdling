@@ -30,7 +30,7 @@ export function Meter({ label, value, detail }: { label: string; value: number; 
           {text}
         </Text>
       </View>
-      <View style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.muted, overflow: "hidden" }}>
+      <View style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.raised, overflow: "hidden" }}>
         <View style={{ width: `${v}%`, height: "100%", backgroundColor: meterColor(v) }} />
       </View>
     </View>

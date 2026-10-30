@@ -56,7 +56,7 @@ function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you"; labe
           accessibilityLabel={label}
           value={value}
           onValueChange={(v) => setPref(pref, v)}
-          trackColor={{ false: colors.muted, true: colors.accent }}
+          trackColor={{ false: colors.raised, true: colors.accent }}
         />
       }
     >
@@ -87,7 +87,7 @@ function FeelSection() {
                 set({ haptics: v });
                 if (v) haptics.tap();
               }}
-              trackColor={{ false: colors.muted, true: colors.accent }}
+              trackColor={{ false: colors.raised, true: colors.accent }}
             />
           }
         >
@@ -146,7 +146,7 @@ function VoiceSection() {
               accessibilityLabel="Speak replies by default"
               value={ttsDefault}
               onValueChange={(v) => set({ ttsDefault: v })}
-              trackColor={{ false: colors.muted, true: colors.accent }}
+              trackColor={{ false: colors.raised, true: colors.accent }}
             />
           }
         >
@@ -155,7 +155,7 @@ function VoiceSection() {
             Default for new sessions. Each session has its own speaker button.
           </Text>
         </Row>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row
             trailing={
               <View style={{ flexDirection: "row", gap: space.xs }}>
@@ -170,7 +170,7 @@ function VoiceSection() {
             </Text>
           </Row>
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row
             trailing={
               <View style={{ flexDirection: "row", gap: space.xs }}>
@@ -193,7 +193,7 @@ function VoiceSection() {
             </Text>
           </Row>
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row
             accessibilityLabel="Choose voice"
             onPress={() => setPicking((p) => !p)}
@@ -229,7 +229,7 @@ function VoiceSection() {
             </View>
           ) : null}
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row
             trailing={
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
@@ -244,7 +244,7 @@ function VoiceSection() {
             <Text bold>Speed</Text>
           </Row>
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row trailing={<Button label="Test voice" variant="secondary" onPress={() => (haptics.tap(), void testVoice(hosts[0]?.id))} />}>
             <Text bold>Test voice</Text>
             <Text variant="small" muted>
@@ -252,7 +252,7 @@ function VoiceSection() {
             </Text>
           </Row>
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <Row accessibilityLabel="Speech log" onPress={() => router.push("/speech-log" as never) /* typed routes regenerate on the next dev start */}>
             <Text bold>Speech log</Text>
             <Text variant="small" muted>
@@ -282,7 +282,7 @@ export default function SettingsScreen() {
           hosts.map((h, i) => (
             <View
               key={h.id}
-              style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm } : undefined}
+              style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm } : undefined}
             >
               <HostRow host={h} />
             </View>
@@ -295,7 +295,7 @@ export default function SettingsScreen() {
       </Text>
       <Card style={{ paddingVertical: space.sm }}>
         <PrefRow pref="finished" label="Finished" detail="An agent finished its turn." />
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <PrefRow pref="needs_you" label="Needs you" detail="An agent waits for your input." />
         </View>
       </Card>

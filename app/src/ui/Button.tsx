@@ -17,7 +17,7 @@ type Props = {
 };
 
 export function Button({ label, onPress, variant = "primary", Icon, loading, disabled, iconOnly }: Props) {
-  const fg = variant === "primary" ? colors.bg : variant === "danger" ? colors.danger : colors.text;
+  const fg = variant === "primary" ? colors.onAccent : variant === "danger" ? colors.danger : colors.text;
   const bg = variant === "primary" ? colors.accent : "transparent";
   const border = variant === "primary" ? colors.accent : variant === "danger" ? colors.danger : colors.border;
   const off = disabled || loading;

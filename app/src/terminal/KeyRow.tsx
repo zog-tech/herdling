@@ -58,7 +58,7 @@ export function KeyRow({ onKey, disabled }: { onKey: (key: string) => void; disa
               borderRadius: radius.sm,
               borderWidth: 1,
               borderColor: key === "ctrl+c" && !disabled ? colors.danger : colors.edge,
-              backgroundColor: pressed ? colors.muted : colors.card,
+              backgroundColor: pressed ? colors.raised : colors.card,
             })}
           >
             {Icon ? (

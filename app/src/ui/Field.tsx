@@ -27,7 +27,7 @@ export function Field({ label, mono, style, ...rest }: Props) {
             borderRadius: radius.md,
             borderWidth: 1,
             borderColor: colors.border,
-            backgroundColor: colors.muted,
+            backgroundColor: colors.raised,
             color: colors.text,
             fontSize: type.size.body,
             fontFamily: mono ? fontFamily.mono : undefined,
