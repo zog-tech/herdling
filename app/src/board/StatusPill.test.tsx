@@ -1,5 +1,7 @@
 import { act, create } from "react-test-renderer";
 
+jest.mock("@/ui/RollingText", () => ({ RollingText: () => null }));
+
 import { usePillNow } from "./StatusPill";
 
 function renderHook(fn: () => number) {

@@ -16,8 +16,14 @@ export function formatElapsed(seconds: number): string {
  * Without a start time only the label shows.
  */
 export function pillText(bucket: Bucket, since: number | undefined, now: number): string {
+  const { label, elapsed, suffix } = pillParts(bucket, since, now);
+  return [label, elapsed, suffix].filter(Boolean).join(" ");
+}
+
+/** The parts of the pill text, so the elapsed time can render apart from the label. */
+export function pillParts(bucket: Bucket, since: number | undefined, now: number): { label: string; elapsed?: string; suffix?: string } {
   const label = bucket === "needs_you" ? "needs you" : bucket;
-  if (since === undefined) return label;
-  const e = formatElapsed((now - since) / 1000);
-  return bucket === "ready" ? `${label} ${e} ago` : `${label} ${e}`;
+  if (since === undefined) return { label };
+  const elapsed = formatElapsed((now - since) / 1000);
+  return bucket === "ready" ? { label, elapsed, suffix: "ago" } : { label, elapsed };
 }

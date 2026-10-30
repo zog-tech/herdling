@@ -3,11 +3,12 @@ import { View } from "react-native";
 
 import { denseScale, radius, space } from "@/theme/tokens";
 import { StatusIcon } from "@/ui/StatusIcon";
-import { Text } from "@/ui/Text";
+import { RollingText } from "@/ui/RollingText";
+import { Text, textStyle } from "@/ui/Text";
 
 import type { BoardItem } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
-import { pillText } from "./elapsed";
+import { pillParts, pillText } from "./elapsed";
 
 /** Below this age the pill shows seconds, so it ticks every second on its own. */
 const SECONDS_UNTIL_MS = 60_000;
@@ -35,6 +36,8 @@ export function StatusPill({ item, now: boardNow }: { item: BoardItem; now: numb
   const { color, Icon } = BUCKET_META[item.bucket];
   const now = usePillNow(item.since, boardNow);
   const text = pillText(item.bucket, item.since, now);
+  const { label, elapsed, suffix } = pillParts(item.bucket, item.since, now);
+  const textProps = { variant: "caption", color, bold: true, maxFontSizeMultiplier: denseScale.pill } as const;
   return (
     <View
       accessible
@@ -52,9 +55,18 @@ export function StatusPill({ item, now: boardNow }: { item: BoardItem; now: numb
     >
       {/* Working: the same spinner as the session header (static under Reduce Motion). */}
       {item.bucket === "working" ? <StatusIcon status="working" size={12} color={color} /> : <Icon size={12} color={color} />}
-      <Text variant="caption" color={color} bold numberOfLines={1} maxFontSizeMultiplier={denseScale.pill} style={{ flexShrink: 1 }}>
-        {text}
+      <Text {...textProps} numberOfLines={1} style={{ flexShrink: 1 }}>
+        {label}
       </Text>
+      {/* The elapsed time rolls each changed digit. */}
+      {elapsed ? (
+        <RollingText
+          text={elapsed}
+          style={{ ...textStyle(textProps), fontVariant: ["tabular-nums"] }}
+          maxFontSizeMultiplier={textProps.maxFontSizeMultiplier}
+        />
+      ) : null}
+      {suffix ? <Text {...textProps}>{suffix}</Text> : null}
     </View>
   );
 }
