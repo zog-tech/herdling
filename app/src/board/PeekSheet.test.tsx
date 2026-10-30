@@ -54,7 +54,8 @@ test("peek_shows_last_reply_and_composer_and_marks_seen_on_close", () => {
   act(() => {
     tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} />);
   });
-  expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+  // The haptic comes from the long press on the card, not from the sheet.
+  expect(Haptics.impactAsync).not.toHaveBeenCalled();
   expect(tree!.root.findByType(AssistantMessage).props.markdown).toBe("**All tests pass.**");
   expect(tree!.root.findByType(Composer).props).toMatchObject({ hostId: "host-1", paneId: "w1:p1" });
   // Still open: not seen yet. A newer status while open is what gets marked.

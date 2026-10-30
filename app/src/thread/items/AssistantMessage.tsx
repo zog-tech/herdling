@@ -10,6 +10,8 @@ import { HScrollView } from "../HScrollView";
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
 const CODE = type.size.small - 1;
+/** Width of one table column. */
+const TABLE_COL = 140;
 
 const openLink = (url: string) => {
   if (/^(https?:|mailto:)/i.test(url)) Linking.openURL(url).catch(() => {});
@@ -30,6 +32,12 @@ function CodeBlock({ content }: { content: string }) {
 const rules: RenderRules = {
   fence: (node) => <CodeBlock key={node.key} content={node.content} />,
   code_block: (node) => <CodeBlock key={node.key} content={node.content} />,
+  // A table scrolls sideways inside its own box; it never draws outside the message.
+  table: (node, children, _parent, s) => (
+    <HScrollView key={node.key} showsHorizontalScrollIndicator={false} style={{ marginBottom: space.sm }}>
+      <View style={s.table}>{children}</View>
+    </HScrollView>
+  ),
   // A Text link (not the default Pressable) so it wraps with the paragraph; opens the system browser.
   link: (node, children, _parent, s) => (
     <Text key={node.key} style={s.link} accessibilityRole="link" onPress={() => openLink(String(node.attributes.href ?? ""))}>
@@ -73,11 +81,12 @@ const mdStyles = StyleSheet.create({
     marginBottom: space.sm,
   },
   hr: { backgroundColor: colors.muted, height: 1, marginVertical: space.md },
-  table: { borderWidth: 1, borderColor: colors.muted, borderRadius: radius.sm, marginBottom: space.sm },
+  table: { borderWidth: 1, borderColor: colors.muted, borderRadius: radius.sm, overflow: "hidden" },
   thead: { backgroundColor: colors.card },
   tr: { borderBottomWidth: 1, borderColor: colors.muted, flexDirection: "row" },
-  th: { flex: 1, padding: space.sm, fontWeight: "700" },
-  td: { flex: 1, padding: space.sm },
+  // Fixed column width: the table scrolls sideways, and the columns of all rows line up.
+  th: { width: TABLE_COL, padding: space.sm, fontWeight: "700" },
+  td: { width: TABLE_COL, padding: space.sm },
 });
 
 const styles = StyleSheet.create({

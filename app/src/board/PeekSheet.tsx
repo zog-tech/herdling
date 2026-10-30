@@ -1,7 +1,6 @@
-import * as Haptics from "expo-haptics";
 import { ExternalLink } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { markSeen, useSeen } from "@/herdr/seen";
@@ -17,9 +16,6 @@ import { StatusPill } from "./StatusPill";
 import { useBoard } from "./boardStore";
 import { kindIcon } from "./bucketMeta";
 import { mergeBoard } from "./buckets";
-
-/** Share of the screen height the last reply may take before it scrolls. */
-const REPLY_MAX = 0.4;
 
 /**
  * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
@@ -38,7 +34,6 @@ export function PeekSheet({
   onOpenSession: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const preview = useBoard((s) => s.previews[`${hostId}:${paneId}`]);
@@ -71,7 +66,6 @@ export function PeekSheet({
   const seq = useRef(agent?.state_change_seq);
   seq.current = agent?.state_change_seq ?? seq.current;
   useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     return () => {
       if (seq.current !== undefined) markSeen(hostId, paneId, seq.current);
     };
@@ -81,7 +75,9 @@ export function PeekSheet({
   const title = agent?.terminal_title_stripped || agent?.agent || paneId;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
+    // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
       <View
         style={{
           flexDirection: "row",
@@ -143,22 +139,26 @@ export function PeekSheet({
         </Text>
       ) : null}
 
-      <ScrollView
-        style={{ maxHeight: height * REPLY_MAX, flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.md }}
-        accessibilityLabel="Last reply"
-      >
-        {lastReply ? (
-          <AssistantMessage markdown={lastReply} />
-        ) : thread.status === "loading" ? (
-          <ActivityIndicator color={colors.textMuted} />
-        ) : (
-          <Text muted>{preview?.last_reply ?? item?.line ?? "No reply yet."}</Text>
-        )}
-      </ScrollView>
+      <View style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          // In a native sheet, automatic insets move the content up under the header.
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.md }}
+          accessibilityLabel="Last reply"
+        >
+          {lastReply ? (
+            <AssistantMessage markdown={lastReply} />
+          ) : thread.status === "loading" ? (
+            <ActivityIndicator color={colors.textMuted} />
+          ) : (
+            <Text muted>{preview?.last_reply ?? item?.line ?? "No reply yet."}</Text>
+          )}
+        </ScrollView>
+      </View>
 
-      <View style={{ flex: 1 }} />
       <Composer hostId={hostId} paneId={paneId} bottomInset={insets.bottom} autoFocus={focusComposer} />
-    </View>
+    </KeyboardAvoidingView>
   );
 }

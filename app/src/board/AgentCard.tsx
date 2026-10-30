@@ -1,20 +1,23 @@
 import { MailOpen, Reply, RotateCcw } from "lucide-react-native";
-import { memo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
+import { GestureDetector, useExclusiveGestures, useLongPressGesture, useTapGesture } from "react-native-gesture-handler";
 import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { cubicBezier } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
 import type { BoardItem } from "./buckets";
 import { BUCKET_META, kindIcon } from "./bucketMeta";
 import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
+import { makeCardPress } from "./cardPress";
 import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
-/** Strong ease-out for press feedback. */
-const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
+/** A finger that moves further than this is a swipe or a scroll, not a press. */
+const PRESS_SLOP = 10;
 export type CardActions = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
@@ -59,12 +62,52 @@ function SwipeAction({
 }
 
 /**
+ * Tap and long press of a card, with press feedback on the UI thread. Long press wins over tap
+ * (exclusive); moving the finger (a swipe or a scroll) fails both and the card springs back.
+ */
+function useCardPress(onTap: () => void, onLong: () => void) {
+  const reduced = useReducedMotion();
+  const scale = useSharedValue(1);
+  const overlay = useSharedValue(0);
+  // The worklets call stable functions that read the newest handlers, so a Board refresh does not
+  // replace the gesture callbacks while a finger is down.
+  const handlers = useRef({ onTap, onLong });
+  handlers.current = { onTap, onLong };
+  const tapNow = useCallback(() => handlers.current.onTap(), []);
+  const longNow = useCallback(() => handlers.current.onLong(), []);
+  const p = useMemo(() => makeCardPress({ scale, overlay }, reduced, tapNow, longNow), [scale, overlay, reduced, tapNow, longNow]);
+  const long = useLongPressGesture({
+    minDuration: motion.press.longPressMs,
+    maxDistance: PRESS_SLOP,
+    onBegin: p.begin,
+    onActivate: () => {
+      "worklet";
+      p.release();
+      p.long();
+    },
+    onFinalize: p.release,
+  });
+  const tap = useTapGesture({ maxDistance: PRESS_SLOP, onActivate: p.tap });
+  const gesture = useExclusiveGestures(long, tap);
+  const cardStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  const overlayStyle = useAnimatedStyle(() => ({ opacity: overlay.get() }));
+  return { gesture, cardStyle, overlayStyle };
+}
+
+/**
  * One agent on the Board. Tap opens the session, long-press peeks. Swipe right marks it read;
  * swipe left reveals Reply and Restart. VoiceOver gets the same actions as custom actions.
  */
 export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { item: BoardItem; now: number } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
-  const [pressed, setPressed] = useState(false);
+  const { onOpen, onPeek } = actions;
+  const open = useCallback(() => onOpen(item), [onOpen, item]);
+  // The haptic fires at the moment the long press fires, with the spring back.
+  const peek = useCallback(() => {
+    haptics.peek();
+    onPeek(item);
+  }, [onPeek, item]);
+  const press = useCardPress(open, peek);
   const { agent, bucket } = item;
   const { color } = BUCKET_META[bucket];
   const KindIcon = kindIcon(agent.agent);
@@ -114,36 +157,35 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
         </View>
       )}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityHint="Opens the session. Long press to peek."
-        accessibilityActions={CARD_ACTIONS}
-        onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
-        onPress={() => actions.onOpen(item)}
-        onLongPress={() => actions.onPeek(item)}
-        delayLongPress={350}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-      >
+      <GestureDetector gesture={press.gesture}>
         <Animated.View
-          style={{
-            flexDirection: "row",
-            gap: space.md,
-            padding: space.md,
-            paddingLeft: space.md + 3,
-            minHeight: hitTarget + space.lg,
-            backgroundColor: pressed ? colors.muted : colors.card,
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.muted,
-            overflow: "hidden",
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-            transitionProperty: ["transform", "backgroundColor"],
-            transitionDuration: 120,
-            transitionTimingFunction: EASE_OUT,
-          }}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint="Opens the session. Long press to peek."
+          accessibilityActions={CARD_ACTIONS}
+          onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
+          style={[
+            {
+              flexDirection: "row",
+              gap: space.md,
+              padding: space.md,
+              paddingLeft: space.md + 3,
+              minHeight: hitTarget + space.lg,
+              backgroundColor: colors.card,
+              borderRadius: radius.lg,
+              borderWidth: 1,
+              borderColor: colors.muted,
+              overflow: "hidden",
+            },
+            press.cardStyle,
+          ]}
         >
+          {/* Pressed state: a light layer over the card, not a color swap. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
+          />
           {/* Accent edge for cards that want attention; the pill still carries icon + label. */}
           {flagged ? (
             <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: color }} />
@@ -188,7 +230,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
             ) : null}
           </View>
         </Animated.View>
-      </Pressable>
+      </GestureDetector>
     </ReanimatedSwipeable>
   );
 });
