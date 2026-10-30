@@ -129,7 +129,7 @@ export function MicButton({
             opacity: disabled ? 0.5 : 1,
             transform: [{ scale: holding && !reduced ? 1.08 : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],
-            transitionDuration: 150,
+            transitionDuration: reduced ? 0 : 150,
             transitionTimingFunction: "ease-out",
           }}
         >

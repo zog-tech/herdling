@@ -2,6 +2,7 @@ import type { Automation, AutomationRun } from "@zogssh/protocol";
 import { CircleAlert, Clock, Info, ShieldCheck } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAutomations } from "@/automations/useAutomations";
@@ -40,6 +41,7 @@ function ApproveSheet({
   onApprove: (a: Automation) => Promise<void>;
 }) {
   const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -61,8 +63,8 @@ function ApproveSheet({
     }
   };
   return (
-    <Modal visible={!!a} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable accessibilityLabel="Close" style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} onPress={onClose} />
+    <Modal visible={!!a} animationType={reduced ? "none" : "slide"} transparent onRequestClose={onClose}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1, backgroundColor: colors.scrim }} onPress={onClose} />
       <View
         style={{
           backgroundColor: colors.bg,

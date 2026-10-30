@@ -42,7 +42,7 @@ export function Badge({ label, color, Icon }: BadgeProps) {
       }}
     >
       <Icon size={14} color={color} />
-      <Text variant="caption" color={color} bold>
+      <Text variant="caption" color={color} bold maxFontSizeMultiplier={1.5}>
         {label}
       </Text>
     </View>

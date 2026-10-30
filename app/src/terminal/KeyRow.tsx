@@ -64,7 +64,7 @@ export function KeyRow({ onKey, disabled }: { onKey: (key: string) => void; disa
             {Icon ? (
               <Icon size={18} color={tint} />
             ) : (
-              <Text style={{ fontFamily: fontFamily.mono, fontSize: type.size.small, color: tint }}>{label}</Text>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontFamily: fontFamily.mono, fontSize: type.size.small, color: tint }}>{label}</Text>
             )}
           </Pressable>
         );

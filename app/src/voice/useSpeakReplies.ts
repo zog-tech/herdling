@@ -1,4 +1,5 @@
 import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
+import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
 
@@ -56,6 +57,7 @@ const finished = (s: AgentStatus | undefined) => s === "idle" || s === "done";
  * summary (on-device model, else the host's `summary.make`, else the full text).
  * `speakNow` (opened from a push) speaks the reply once: at once if the agent is finished, else when it finishes.
  * Both go through one settle delay and dedupe by the last assistant item.
+ * A light haptic marks each real status change (not the first value).
  * Turning the speaker off, a new prompt, recording or leaving the screen stops speech.
  */
 export function useSpeakReplies(
@@ -141,6 +143,8 @@ export function useSpeakReplies(
   useEffect(() => {
     const before = prev.current;
     prev.current = status;
+    // A real change of the open session's status; the first value is the baseline.
+    if (before !== undefined && status !== undefined && before !== status) quiet(Haptics.selectionAsync());
     if (status === "working") clearTimeout(timer.current);
     if (!status) return;
     const fromPush = !!o?.speakNow && !pushDone.current && finished(status);

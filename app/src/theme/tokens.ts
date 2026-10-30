@@ -7,6 +7,8 @@ export const colors = {
   textMuted: "#94A3B8",
   accent: "#22C55E",
   danger: "#EF4444",
+  /** Modal backdrop. */
+  scrim: "rgba(0,0,0,0.5)",
   status: {
     working: "#60A5FA",
     blocked: "#F59E0B",

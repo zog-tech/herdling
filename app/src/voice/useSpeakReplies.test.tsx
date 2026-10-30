@@ -6,6 +6,8 @@ import { useSessionSpeak, useVoiceSettings } from "./settings";
 import { useSpeakReplies } from "./useSpeakReplies";
 
 const mockSpeak = jest.fn();
+const mockHaptic = jest.fn(async () => {});
+jest.mock("expo-haptics", () => ({ selectionAsync: () => mockHaptic() }));
 const mockStop = jest.fn(async () => {});
 jest.mock("expo-speech", () => ({
   speak: (...a: unknown[]) => mockSpeak(...a),
@@ -64,6 +66,20 @@ afterEach(() => {
 const items = [user("1"), asst("2", "**Hello** there")];
 
 describe("useSpeakReplies", () => {
+  it("taps a haptic on a real status change, not on mount or a repeat", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    expect(mockHaptic).not.toHaveBeenCalled();
+    await act(async () => r.update(<Probe status="working" items={[...items]} />));
+    expect(mockHaptic).not.toHaveBeenCalled();
+    await act(async () => r.update(<Probe status="blocked" items={items} />));
+    expect(mockHaptic).toHaveBeenCalledTimes(1);
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    expect(mockHaptic).toHaveBeenCalledTimes(2);
+  });
+
   it("speaks the reply when working turns idle", async () => {
     let r: any;
     await act(async () => {

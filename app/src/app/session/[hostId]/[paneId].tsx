@@ -340,6 +340,8 @@ export default function SessionScreen() {
           </Pressable>
           <Pressable
             onLongPress={menu.open}
+            accessibilityRole="button"
+            accessibilityLabel={title}
             accessibilityHint="Long press for session actions"
             style={{ flex: 1, minHeight: hitTarget, justifyContent: "center" }}
           >
