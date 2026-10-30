@@ -80,3 +80,24 @@ export type ProviderUsage = {
 };
 /** Always both providers, Claude first. */
 export type Usage = { providers: ProviderUsage[] };
+
+/** `automations.list` item (companion adapter for `herdr-automate`). `content_hash` is what `automations.approve` must echo. */
+export type Automation = {
+  id: string;
+  name: string;
+  schedule?: string;
+  enabled: boolean;
+  pending_approval: boolean;
+  plan?: string;
+  caps?: string[];
+  content_hash?: string;
+};
+/** `automations.runs` item. Times are unix seconds. */
+export type AutomationRun = {
+  id: string;
+  automation_id: string;
+  started_at: number;
+  finished_at: number | null;
+  status: "running" | "ok" | "failed" | "pending_approval";
+  summary?: string;
+};

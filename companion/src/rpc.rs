@@ -53,6 +53,8 @@ pub struct Ctx {
     pub usage_urls: crate::usage::UsageUrls,
     /// Whether `usage.get` may read the Claude token from the macOS keychain.
     pub usage_keychain: bool,
+    /// Directories searched for `herdr-automate`.
+    pub bin_dirs: Vec<PathBuf>,
 }
 
 impl Ctx {
@@ -61,6 +63,7 @@ impl Ctx {
             herdr_socket,
             config_path: crate::config::default_path(&home),
             authorized_keys: home.join(".ssh/authorized_keys"),
+            bin_dirs: crate::automations::default_bin_dirs(&home),
             home,
             herdr_timeout: HERDR_TIMEOUT,
             idle_timeout: IDLE_TIMEOUT,
@@ -322,6 +325,9 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "pair.revoke" => pair_revoke(ctx, params).await,
         "stats.get" => stats_get(ctx).await,
         "usage.get" => usage_get(ctx).await,
+        "automations.list" => automations_list(ctx).await,
+        "automations.runs" => automations_runs(ctx, params).await,
+        "automations.approve" => automations_approve(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -536,6 +542,25 @@ async fn stats_get(ctx: &Ctx) -> Result<Value, RpcError> {
 async fn usage_get(ctx: &Ctx) -> Result<Value, RpcError> {
     let usage = crate::usage::get(&ctx.home, &ctx.usage_urls, ctx.usage_keychain).await;
     serde_json::to_value(usage).map_err(|e| err("internal", e.to_string()))
+}
+
+async fn automations_list(ctx: &Ctx) -> Result<Value, RpcError> {
+    let automations = crate::automations::list(&ctx.bin_dirs).await?;
+    Ok(json!({ "automations": automations }))
+}
+
+async fn automations_runs(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = params.get("id").and_then(Value::as_str);
+    let limit = params.get("limit").and_then(Value::as_u64).unwrap_or(20).clamp(1, 200);
+    let runs = crate::automations::runs(&ctx.bin_dirs, id, limit).await?;
+    Ok(json!({ "runs": runs }))
+}
+
+async fn automations_approve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = str_param(&params, "id", "automations.approve")?;
+    let hash = str_param(&params, "content_hash", "automations.approve")?;
+    crate::automations::approve(&ctx.bin_dirs, id, hash).await?;
+    Ok(json!({ "approved": true }))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
