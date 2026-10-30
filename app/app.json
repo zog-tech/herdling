@@ -23,7 +23,7 @@
         "NSSpeechRecognitionUsageDescription": "Zogssh turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
         "NSPhotoLibraryUsageDescription": "Zogssh attaches photos you pick to prompts for your agents."
       },
-      "buildNumber": "5"
+      "buildNumber": "6"
     },
     "android": {
       "adaptiveIcon": {
