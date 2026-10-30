@@ -1,4 +1,5 @@
-import { ArrowUp } from "lucide-react-native";
+import { File } from "expo-file-system";
+import { ArrowUp, Check } from "lucide-react-native";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { AppState, Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
@@ -9,6 +10,9 @@ import { colors, denseScale, hitTarget, radius, space, state, type } from "@/the
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
+import { RecordBar } from "@/voice/RecordBar";
+import { appendDictation, hostTranscriber } from "@/voice/transcribe";
+import { useDictation } from "@/voice/useDictation";
 import { DelayedSpinner } from "@/ui/Delayed";
 
 import {
@@ -38,7 +42,9 @@ const MENU_MAX = 50;
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 
 /**
- * Prompt box: multiline, grows to 5 lines, plus hold-to-talk; send = herdr `agent.prompt`.
+ * Prompt box: multiline, grows to 5 lines, plus voice input; send = herdr `agent.prompt`.
+ * Voice input: the mic records, a record bar takes the place of the box (✕ discards, ✓ stops),
+ * and the text lands in the box after its text, for editing. It is not sent.
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
  * The "+" button attaches photos (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. Typing `/` shows the matching commands.
@@ -88,7 +94,32 @@ export function Composer({
   /** Bumped when the sheet opens: a new sheet starts with an empty search. */
   const [sheetKey, setSheetKey] = useState(0);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
-  const canSend = online && !sending && (text.trim().length > 0 || photos.length > 0);
+  const hostStt =
+    rpc && hasMethod(hello, "stt.make")
+      ? hostTranscriber(
+          (method, params, timeoutMs) => rpc.call(method, params, timeoutMs),
+          (uri) => new File(uri).base64(),
+        )
+      : undefined;
+  const dictation = useDictation({
+    onText: (t) => {
+      setText((cur) => appendDictation(cur, t));
+      if (error) setError(undefined);
+      inputRef.current?.focus();
+    },
+    onPartial: setPartial,
+    hostStt,
+  });
+  const voicePhase = dictation.state.phase;
+  /** The record bar takes the place of the "+" button and the prompt box. */
+  const voiceActive = voicePhase !== "idle";
+  const recordingNow = voicePhase === "recording" || voicePhase === "armedCancel";
+  // Terminal mode hides the composer: a recording must not run on behind it.
+  const voiceDispatch = dictation.dispatch;
+  useEffect(() => {
+    if (!visible) voiceDispatch({ type: "cancel", force: true });
+  }, [visible, voiceDispatch]);
+  const canSend = online && !sending && !voiceActive && (text.trim().length > 0 || photos.length > 0);
   const hasDraft = text.trim().length > 0 || photos.length > 0;
   useEffect(() => {
     onDraftChange?.(hasDraft);
@@ -119,6 +150,7 @@ export function Composer({
   const pasteCount = useRef(0);
   const canPaste = canAttach && clipImage && photos.length < MAX_PHOTOS;
   const showPlus = canAttach || slash.supported;
+
 
   /** Checks the clipboard types only. This does not trigger the iOS paste prompt. */
   const checkClipboard = async () => {
@@ -265,6 +297,14 @@ export function Composer({
         <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
           {error}
         </Text>
+      ) : dictation.error ? (
+        <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
+          {dictation.error}
+        </Text>
+      ) : dictation.caption ? (
+        <Text variant="caption" muted accessibilityLiveRegion="polite">
+          Transcribed with {dictation.caption}
+        </Text>
       ) : blocked && online && !showChoices ? (
         <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
           {BLOCKED_MESSAGE}
@@ -297,7 +337,15 @@ export function Composer({
         </Text>
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
-        {showPlus ? (
+        {voiceActive ? (
+          <RecordBar
+            phase={voicePhase}
+            onCancel={() => dictation.dispatch({ type: "cancel", force: true })}
+            onRetry={() => dictation.dispatch({ type: "retry" })}
+            onDiscard={() => dictation.dispatch({ type: "discard" })}
+          />
+        ) : null}
+        {!voiceActive && showPlus ? (
           <PlusButton
             open={plusOpen}
             disabled={!online || sending}
@@ -310,6 +358,7 @@ export function Composer({
             }}
           />
         ) : null}
+        {voiceActive ? null : (
         <TextInput
           ref={inputRef}
           key={inputKey}
@@ -344,14 +393,26 @@ export function Composer({
             opacity: online ? 1 : state.offlineOpacity,
           }}
         />
-        {visible ? (
-          <MicButton
-            onSend={(t) => void sendPrompt(t, false)}
-            onPartial={setPartial}
-            disabled={!online || sending}
-            size={hitTarget}
-          />
-        ) : null}
+        )}
+        {visible ? <MicButton dictation={dictation} disabled={!online || sending} size={hitTarget} hint={false} /> : null}
+        {recordingNow ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Stop and transcribe"
+            onPress={() => dictation.dispatch({ type: "toggle" })}
+            style={({ pressed }) => ({
+              width: hitTarget,
+              height: hitTarget,
+              borderRadius: hitTarget / 2,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.accent,
+              opacity: pressed ? state.pressedFill : 1,
+            })}
+          >
+            <Check size={22} color={colors.bg} />
+          </Pressable>
+        ) : (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
@@ -374,6 +435,7 @@ export function Composer({
             <ArrowUp size={22} color={canSend ? colors.bg : colors.textMuted} />
           )}
         </Pressable>
+        )}
       </View>
       {slash.supported ? (
         <CommandSheet

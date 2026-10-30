@@ -1,10 +1,11 @@
-# Voice: summaries and host speech
+# Voice: summaries, host speech and voice input
 
-Zogssh ships no AI provider. Spoken replies use the iPhone by default. The host can add two
+Zogssh ships no AI provider. Spoken replies use the iPhone by default. The host can add three
 optional commands in `~/.config/zogsshd/config.toml`:
 
 - `summary_command`: makes a short summary of a reply for Summary mode.
 - `tts_command`: makes speech audio when the app's voice engine is "Host voice command".
+- `stt_command`: makes text from a voice recording when the app's voice input is "Host".
 
 Any tool that reads stdin and writes stdout works. Each command is an argv array. The companion
 runs it with no shell: the first item is the program, the other items are its arguments.
@@ -37,6 +38,42 @@ iPhone voice" once per app run.
 The same events stop both engines: the speaker toggle turned off, a new prompt, holding the mic
 button, or leaving the session screen.
 
+## Voice input
+
+Tap the mic to record. The input row shows a waveform and the time. Tap ✓ to stop and
+transcribe, or ✕ to discard. Hold the mic to record and release it to stop. A recording stops
+by itself after 10 minutes, or when a call or Siri takes the microphone; the app keeps what was
+recorded and transcribes it. The text goes into the prompt box after the text that is there. The
+app does not send it: you edit it and tap send.
+
+Settings > Voice input > Engine:
+
+- **Parakeet** (on the iPhone): NVIDIA Parakeet TDT 0.6B through FluidAudio and Core ML. The
+  model downloads only when you tap Download in Settings: "English (Parakeet v2)" (about
+  465 MB) or "Multilingual (Parakeet v3)", 25 European languages (about 485 MB). The download
+  uses Wi-Fi only, unless you allow cellular. The model stays in Application Support and is not
+  in the iCloud backup. The app loads it on the first recording and unloads it when iOS needs the
+  memory or the app goes to the background.
+- **Host**: the app sends the recording (WAV, 16 kHz mono) to `stt.make`, which runs the host's
+  `stt_command`.
+- **Apple**: live recognition on the iPhone while you record (SpeechAnalyzer on iOS 26 when the
+  language model is installed, else SFSpeechRecognizer).
+
+The default is Parakeet when its model is installed, else Apple. App builds without file
+recording (build 5 and older) use Apple live dictation only and hide Parakeet. When the chosen engine fails,
+the app tries the next one: Parakeet, then Host. A caption shows the engine that made the text
+for 2 seconds. When every engine fails, the app keeps the recording and shows Retry and Discard.
+The app deletes the recording when the text lands or when you discard it.
+
+Native code: recording, levels and live recognition are in `app/modules/voice`. Parakeet is the
+native module `ParakeetModule` in `app/modules/ssh` (FluidAudio 0.17.7, exact version): React
+Native can build only one static pod with a Swift package, and the ssh pod already has Citadel.
+The JS side checks for both (`recordingAvailable()`, `parakeetAvailable()`), so an OTA update on an
+older build falls back to live dictation.
+
+Settings > Voice > Speech log also shows voice input events: the engine, the length of the
+recording, the time to transcribe it and errors.
+
 ## Contracts
 
 ### `summary_command`
@@ -52,6 +89,13 @@ button, or leaving the session screen.
 - stdout: audio bytes, at most 10 MiB: WAV, MP3 or Ogg. The companion finds the type from the
   first bytes. Use WAV or MP3: iOS may not play Ogg.
 - Time limit: 30 s. The app waits 35 s.
+
+### `stt_command`
+
+- stdin: the recording as WAV bytes (PCM 16-bit, 16 kHz, mono), at most 25 MiB.
+- stdout: the text, at most 64 KiB. The companion trims it.
+- Time limit: 120 s. The app waits 130 s.
+- A recording larger than 25 MiB gets `too_large`.
 
 ### Errors
 
@@ -118,6 +162,53 @@ trap 'rm -rf "$dir"' EXIT
   --model prince-canuma/Kokoro-82M --voice af_heart --audio_format wav \
   --file_prefix "$dir/out" --join_audio --text "$(cat)" >/dev/null 2>&1 || exit 1
 cat "$dir"/out*.wav
+```
+
+### STT
+
+These commands are examples to adapt. Most speech-to-text tools read a file, not stdin, so a
+small wrapper script writes stdin to a temporary file first.
+
+macOS (Apple silicon) with `parakeet-mlx`, installed with `uv tool install parakeet-mlx`. Check
+`parakeet-mlx --help` for the flags of your version. Wrapper script `/home/sam/bin/parakeet-stt`:
+
+```sh
+#!/bin/sh
+# Reads WAV on stdin, writes text on stdout.
+dir=$(mktemp -d) || exit 1
+trap 'rm -rf "$dir"' EXIT
+cat > "$dir/in.wav"
+/home/sam/.local/bin/parakeet-mlx "$dir/in.wav" --output-format txt --output-dir "$dir" >/dev/null 2>&1 || exit 1
+cat "$dir/in.txt"
+```
+
+```toml
+stt_command = ["/home/sam/bin/parakeet-stt"]
+```
+
+Linux with whisper.cpp (`whisper-cli` and a ggml model). `-nt` drops the timestamps and `-np`
+prints only the text:
+
+```sh
+#!/bin/sh
+# Reads WAV on stdin, writes text on stdout.
+dir=$(mktemp -d) || exit 1
+trap 'rm -rf "$dir"' EXIT
+cat > "$dir/in.wav"
+/opt/whisper.cpp/build/bin/whisper-cli -m /opt/whisper.cpp/models/ggml-base.en.bin -f "$dir/in.wav" -nt -np 2>/dev/null
+```
+
+Linux with faster-whisper in a virtual environment:
+
+```sh
+#!/bin/sh
+# Reads WAV on stdin, writes text on stdout.
+exec /home/sam/.venvs/stt/bin/python -c '
+import sys, io
+from faster_whisper import WhisperModel
+segments, _ = WhisperModel("small", compute_type="int8").transcribe(io.BytesIO(sys.stdin.buffer.read()))
+print(" ".join(s.text.strip() for s in segments))
+'
 ```
 
 For a comparison of open TTS models, see

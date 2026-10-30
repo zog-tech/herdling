@@ -22,14 +22,14 @@ test("press_starts", () => {
   expect(r.effects).toEqual(["start", "hapticStart"]);
 });
 
-test("release_sends_trimmed_final", () => {
+test("release_stops_and_gives_the_trimmed_text", () => {
   const recording = run([{ type: "press" }]).state;
   const released = holdReducer(recording, { type: "release" });
   expect(released.state.phase).toBe("finishing");
-  expect(released.effects).toEqual(["stop"]);
+  expect(released.effects).toEqual(["stop", "hapticStop"]);
   const done = holdReducer(released.state, { type: "final", text: "  hi there " });
   expect(done.state).toEqual(idle);
-  expect(done.effects).toEqual([{ send: "hi there" }, "hapticSend"]);
+  expect(done.effects).toEqual([{ text: "hi there" }]);
 });
 
 test("release_after_slide_away_cancels", () => {
@@ -47,7 +47,7 @@ test("slide_back_rearms", () => {
   const r = run([{ type: "press" }, { type: "move", dx: 0, dy: -81 }, { type: "move", dx: 0, dy: -10 }]);
   expect(r.state.phase).toBe("recording");
   const sent = run([{ type: "release" }, { type: "final", text: "ok" }], r.state);
-  expect(sends(sent.effects)).toEqual([{ send: "ok" }]);
+  expect(sends(sent.effects)).toEqual([{ text: "ok" }]);
 });
 
 test("cancel_distance_is_80_and_any_direction", () => {
@@ -60,7 +60,7 @@ test("empty_transcript_sends_nothing", () => {
   const r = run([{ type: "press" }, { type: "release" }, { type: "final", text: "   " }]);
   expect(r.state).toEqual(idle);
   expect(sends(r.effects)).toEqual([]);
-  expect(r.effects).not.toContain("hapticSend");
+  expect(r.effects).toEqual(["start", "hapticStart", "stop", "hapticStop"]);
 });
 
 test("error_sends_nothing", () => {
@@ -94,7 +94,7 @@ test("press_while_busy_is_ignored", () => {
   expect(holdReducer(finishing, { type: "press" })).toEqual({ state: finishing, effects: [] });
 });
 
-test("a_short_tap_latches_and_the_next_tap_sends", () => {
+test("a_short_tap_latches_and_the_next_tap_stops", () => {
   const latched = run([{ type: "press", at: 1000 }, { type: "release", at: 1200 }]);
   expect(latched.state).toMatchObject({ phase: "recording", latched: true });
   expect(latched.effects).toEqual(["start", "hapticStart"]);
@@ -102,14 +102,14 @@ test("a_short_tap_latches_and_the_next_tap_sends", () => {
   expect(run([{ type: "move", dx: 200, dy: 0 }, { type: "cancel" }], latched.state).state).toMatchObject({ phase: "recording", latched: true });
   const stopped = run([{ type: "press", at: 3000 }, { type: "release", at: 3100 }], latched.state);
   expect(stopped.state.phase).toBe("finishing");
-  expect(stopped.effects).toEqual(["stop"]);
-  expect(sends(holdReducer(stopped.state, { type: "final", text: "ship it" }).effects)).toEqual([{ send: "ship it" }]);
+  expect(stopped.effects).toEqual(["stop", "hapticStop"]);
+  expect(sends(holdReducer(stopped.state, { type: "final", text: "ship it" }).effects)).toEqual([{ text: "ship it" }]);
 });
 
-test("a_long_hold_still_sends_on_release", () => {
+test("a_long_hold_still_stops_on_release", () => {
   const r = run([{ type: "press", at: 1000 }, { type: "release", at: 1600 }]);
   expect(r.state.phase).toBe("finishing");
-  expect(r.effects).toEqual(["start", "hapticStart", "stop"]);
+  expect(r.effects).toEqual(["start", "hapticStart", "stop", "hapticStop"]);
 });
 
 test("voiceover_toggle_starts_and_stops", () => {
@@ -117,10 +117,37 @@ test("voiceover_toggle_starts_and_stops", () => {
   expect(on.state).toMatchObject({ phase: "recording", latched: true });
   const off = holdReducer(on.state, { type: "toggle" });
   expect(off.state.phase).toBe("finishing");
-  expect(off.effects).toEqual(["stop"]);
+  expect(off.effects).toEqual(["stop", "hapticStop"]);
 });
 
 test("force_cancel_ends_a_latched_recording", () => {
   const latched = run([{ type: "toggle" }]).state;
   expect(holdReducer(latched, { type: "cancel", force: true }).state.phase).toBe("idle");
+});
+
+test("failed_transcription_keeps_the_recording_until_retry_or_discard", () => {
+  const finishing = run([{ type: "toggle" }, { type: "toggle" }]).state;
+  const failed = holdReducer(finishing, { type: "failed" });
+  expect(failed.state.phase).toBe("failed");
+  expect(failed.effects).toEqual([]);
+  // The mic, a gesture cancel and a stray error do not touch it.
+  expect(run([{ type: "press" }, { type: "cancel" }, { type: "error" }], failed.state).state.phase).toBe("failed");
+  const retry = holdReducer(failed.state, { type: "retry" });
+  expect(retry.state.phase).toBe("finishing");
+  expect(retry.effects).toEqual(["retry"]);
+  expect(sends(holdReducer(retry.state, { type: "final", text: "ok" }).effects)).toEqual([{ text: "ok" }]);
+  const discard = holdReducer(failed.state, { type: "discard" });
+  expect(discard).toEqual({ state: idle, effects: ["discard"] });
+  // ✕ (a forced cancel) discards too.
+  expect(holdReducer(failed.state, { type: "cancel", force: true })).toEqual({ state: idle, effects: ["discard"] });
+});
+
+test("halt_stops_and_transcribes_what_was_recorded", () => {
+  const latched = run([{ type: "toggle" }]).state;
+  const halted = holdReducer(latched, { type: "halted" });
+  expect(halted.state).toMatchObject({ phase: "finishing", latched: false });
+  expect(halted.effects).toEqual(["stop"]);
+  // Too late (idle, finishing): nothing.
+  expect(holdReducer(halted.state, { type: "halted" }).effects).toEqual([]);
+  expect(holdReducer(idle, { type: "halted" })).toEqual({ state: idle, effects: [] });
 });

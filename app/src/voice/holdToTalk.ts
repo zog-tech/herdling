@@ -1,14 +1,16 @@
 /**
- * Hold-to-talk as a pure state machine. Press starts dictation, release sends the
- * trimmed final text, a slide of more than CANCEL_DISTANCE from the press point
- * arms cancel. It never sends after a cancel, an error or an empty transcript.
+ * Voice input as a pure state machine. Press starts recording, release stops it and the
+ * trimmed text goes to the prompt box (it is not sent), a slide of more than CANCEL_DISTANCE
+ * from the press point arms cancel. No text comes after a cancel, an error or an empty transcript.
  *
  * Tap-to-toggle: a release less than TAP_MS after the press keeps recording ("latched");
- * the next tap stops and sends. `toggle` (the VoiceOver action) starts latched or stops.
+ * the next tap (or ✓) stops. `toggle` (the VoiceOver action and ✓) starts latched or stops.
+ * When transcription fails, the recording stays ("failed") until `retry` or `discard`.
  */
 
 export type HoldState = {
-  phase: "idle" | "recording" | "armedCancel" | "finishing";
+  /** "finishing": the microphone is off and the text is on its way (transcribing). */
+  phase: "idle" | "recording" | "armedCancel" | "finishing" | "failed";
   partial: string;
   /** Recording goes on after the finger lifts; the next tap sends. */
   latched?: boolean;
@@ -31,9 +33,26 @@ export type HoldEvent =
   | { type: "cancel"; force?: boolean }
   | { type: "partial"; text: string }
   | { type: "final"; text: string }
-  | { type: "error" };
+  /** The microphone or recognition failed: nothing is kept. */
+  | { type: "error" }
+  /** The microphone stopped by itself (time limit, a call): transcribe what was recorded. */
+  | { type: "halted" }
+  /** Every engine failed to transcribe. The recording stays for a retry. */
+  | { type: "failed" }
+  | { type: "retry" }
+  | { type: "discard" };
 
-export type HoldEffect = "start" | "stop" | "cancel" | { send: string } | "hapticStart" | "hapticCancel" | "hapticSend";
+export type HoldEffect =
+  | "start"
+  | "stop"
+  | "cancel"
+  | "retry"
+  | "discard"
+  /** The text for the prompt box. */
+  | { text: string }
+  | "hapticStart"
+  | "hapticCancel"
+  | "hapticStop";
 
 /** pt from the press point. */
 export const CANCEL_DISTANCE = 80;
@@ -51,12 +70,12 @@ export function holdReducer(s: HoldState, e: HoldEvent): Result {
   switch (e.type) {
     case "press":
       if (s.phase === "idle") return { state: { phase: "recording", partial: "", pressedAt: e.at }, effects: ["start", "hapticStart"] };
-      // Second tap of tap-to-toggle: stop and send.
-      if (s.latched && s.phase === "recording") return { state: { ...s, phase: "finishing", latched: false }, effects: ["stop"] };
+      // Second tap of tap-to-toggle: stop and transcribe.
+      if (s.latched && s.phase === "recording") return { state: { ...s, phase: "finishing", latched: false }, effects: ["stop", "hapticStop"] };
       return same(s);
     case "toggle":
       if (s.phase === "idle") return { state: { phase: "recording", partial: "", latched: true }, effects: ["start", "hapticStart"] };
-      if (s.phase === "recording" || s.phase === "armedCancel") return { state: { ...s, phase: "finishing", latched: false }, effects: ["stop"] };
+      if (live) return { state: { ...s, phase: "finishing", latched: false }, effects: ["stop", "hapticStop"] };
       return same(s);
     case "move": {
       if (!live || s.latched) return same(s);
@@ -68,21 +87,30 @@ export function holdReducer(s: HoldState, e: HoldEvent): Result {
       if (s.phase === "recording" && e.at !== undefined && s.pressedAt !== undefined && e.at - s.pressedAt < TAP_MS) {
         return same({ ...s, latched: true });
       }
-      if (s.phase === "recording") return { state: { ...s, phase: "finishing" }, effects: ["stop"] };
+      if (s.phase === "recording") return { state: { ...s, phase: "finishing" }, effects: ["stop", "hapticStop"] };
       if (s.phase === "armedCancel") return { state: IDLE, effects: ["cancel", "hapticCancel"] };
       return same(s);
     case "cancel":
       // A latched recording outlives its touch; only a press, toggle or error ends it.
       if (s.latched && !e.force) return same(s);
+      if (s.phase === "failed" && e.force) return { state: IDLE, effects: ["discard"] };
       return live ? { state: IDLE, effects: ["cancel", "hapticCancel"] } : same(s);
     case "partial":
-      return s.phase === "idle" ? same(s) : same({ ...s, partial: e.text });
+      return live || s.phase === "finishing" ? same({ ...s, partial: e.text }) : same(s);
     case "final": {
       if (s.phase !== "finishing") return same(s);
       const text = e.text.trim();
-      return { state: IDLE, effects: text ? [{ send: text }, "hapticSend"] : [] };
+      return { state: IDLE, effects: text ? [{ text }] : [] };
     }
     case "error":
-      return s.phase === "idle" ? same(s) : { state: IDLE, effects: ["cancel"] };
+      return live || s.phase === "finishing" ? { state: IDLE, effects: ["cancel"] } : same(s);
+    case "halted":
+      return live ? { state: { ...s, phase: "finishing", latched: false }, effects: ["stop"] } : same(s);
+    case "failed":
+      return s.phase === "finishing" ? same({ ...s, phase: "failed", partial: "" }) : same(s);
+    case "retry":
+      return s.phase === "failed" ? { state: { ...s, phase: "finishing" }, effects: ["retry"] } : same(s);
+    case "discard":
+      return s.phase === "failed" ? { state: IDLE, effects: ["discard"] } : same(s);
   }
 }

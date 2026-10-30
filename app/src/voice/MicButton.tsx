@@ -9,7 +9,7 @@ import { colors, motion, radius, space, state as uiState } from "@/theme/tokens"
 import { Text } from "@/ui/Text";
 
 import { CANCEL_DISTANCE, type HoldEvent } from "./holdToTalk";
-import { useDictation } from "./useDictation";
+import type { Dictation } from "./useDictation";
 
 /** Default size. The composer passes `hitTarget` so the mic matches the send button. */
 export const MIC_SIZE = 64;
@@ -17,39 +17,45 @@ const RING = 3;
 const EASE_OUT = cubicBezier(...motion.ease.out);
 
 /**
- * Hold to talk: hold to dictate, release to send, slide more than CANCEL_DISTANCE away to cancel.
- * Or tap to toggle: a short tap starts, the next tap sends. VoiceOver activate does the same.
- * The final text goes to `onSend`; `onPartial` gets the live transcript ("" when it ends).
+ * The mic: hold to record, release to stop, slide more than CANCEL_DISTANCE away to cancel.
+ * Or tap to toggle: a short tap starts, the next tap stops. VoiceOver activate does the same.
+ * `dictation` (from `useDictation`) owns the state; the text goes to its `onText`.
+ * `hint`: show a bubble above the button with the state (screens without a record bar).
  */
 export function MicButton({
-  onSend,
-  onPartial,
+  dictation,
   disabled,
   size = MIC_SIZE,
+  hint: showHint = true,
 }: {
-  onSend: (text: string) => void;
-  onPartial?: (text: string) => void;
+  dictation: Dictation;
   disabled?: boolean;
   /** Diameter of the idle button in points. While held, the button grows a little. */
   size?: number;
+  hint?: boolean;
 }) {
   const icon = Math.min(28, Math.round(size / 2));
-  const { state, error, dispatch } = useDictation({ onSend, onPartial });
+  const { state, error, dispatch } = dictation;
   const reduced = useReducedMotion();
   const far = useSharedValue(false);
   const ended = useSharedValue(false);
 
-  // Disabled mid-hold (host went offline): drop the recording.
+  // Disabled mid-hold (host went offline): drop the recording. A failed one stays for a retry.
   useEffect(() => {
-    if (disabled) dispatch({ type: "cancel", force: true });
+    if (disabled && dictation.state.phase !== "failed") dispatch({ type: "cancel", force: true });
+    // Only a change of `disabled` cancels.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, dispatch]);
+  // While text is on its way (or failed), the mic waits.
+  const busy = state.phase === "finishing" || state.phase === "failed";
+  const off = !!disabled || busy;
 
   const gesture = useMemo(() => {
     // Press and release carry the time, so a short press counts as a tap (tap-to-toggle).
     const send = (e: HoldEvent) => dispatch(e.type === "press" || e.type === "release" ? { ...e, at: Date.now() } : e);
     return (
       Gesture.Pan()
-        .enabled(!disabled)
+        .enabled(!off)
         .minDistance(0)
         // A pan activates only on movement; a still finger would never get onEnd. Activate at once.
         .activateAfterLongPress(1)
@@ -75,21 +81,23 @@ export function MicButton({
           if (!ended.get()) scheduleOnRN(send, { type: "cancel" });
         })
     );
-  }, [disabled, dispatch, far, ended]);
+  }, [off, dispatch, far, ended]);
 
   const { phase } = state;
   const holding = phase === "recording" || phase === "armedCancel";
   const armed = phase === "armedCancel";
   const latched = !!state.latched && phase === "recording";
-  const hint = armed
-    ? "Release to cancel"
-    : latched
-      ? "Listening · tap to send"
-      : phase === "recording"
-        ? "Release to send · slide away to cancel"
-        : phase === "finishing"
-          ? "Transcribing…"
-          : error;
+  const hint = !showHint
+    ? undefined
+    : armed
+      ? "Release to cancel"
+      : latched
+        ? "Recording · tap to stop"
+        : phase === "recording"
+          ? "Release to stop · slide away to cancel"
+          : phase === "finishing"
+            ? "Transcribing…"
+            : (error ?? (dictation.caption ? `Transcribed with ${dictation.caption}` : undefined));
 
   return (
     <GestureHandlerRootView style={{ width: size, height: size }}>
@@ -125,12 +133,12 @@ export function MicButton({
         <Animated.View
           accessible
           accessibilityRole="button"
-          accessibilityLabel={holding ? "Stop and send dictation" : "Dictate"}
-          accessibilityHint="Double tap to start, double tap again to send. Or hold, speak and release."
-          accessibilityState={{ disabled: !!disabled, busy: phase === "finishing", selected: holding }}
+          accessibilityLabel={holding ? "Stop and transcribe" : "Dictate"}
+          accessibilityHint="Double tap to start recording, double tap again to stop. Or hold, speak and release. The text goes into the prompt box."
+          accessibilityState={{ disabled: off, busy: phase === "finishing", selected: holding }}
           accessibilityActions={[{ name: "activate" }]}
           onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === "activate" && !disabled) dispatch({ type: "toggle" });
+            if (e.nativeEvent.actionName === "activate" && !off) dispatch({ type: "toggle" });
           }}
           style={{
             width: size,
@@ -141,7 +149,7 @@ export function MicButton({
             borderWidth: RING,
             borderColor: holding ? colors.danger : colors.border,
             backgroundColor: armed ? colors.danger : holding ? colors.card : colors.muted,
-            opacity: disabled ? uiState.disabledOpacity : 1,
+            opacity: off ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? motion.press.growScale : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],
             transitionDuration: reduced ? 0 : motion.stateMs,
@@ -151,7 +159,7 @@ export function MicButton({
           {armed ? (
             <X size={icon} color={colors.bg} />
           ) : (
-            <Mic size={icon} color={holding ? colors.danger : disabled ? colors.textMuted : colors.text} />
+            <Mic size={icon} color={holding ? colors.danger : off ? colors.textMuted : colors.text} />
           )}
         </Animated.View>
       </GestureDetector>

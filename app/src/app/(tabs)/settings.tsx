@@ -18,6 +18,7 @@ import { Text } from "@/ui/Text";
 import * as haptics from "@/ui/haptics";
 import { useVoiceSettings } from "@/voice/settings";
 import { testVoice } from "@/voice/useSpeakReplies";
+import { VoiceInputSection } from "@/voice/VoiceInputSettings";
 
 function HostRow({ host }: { host: Host }) {
   const router = useRouter();
@@ -255,7 +256,7 @@ function VoiceSection() {
           <Row accessibilityLabel="Speech log" onPress={() => router.push("/speech-log" as never) /* typed routes regenerate on the next dev start */}>
             <Text bold>Speech log</Text>
             <Text variant="small" muted>
-              The last 20 speech events. It shows why a reply stays silent.
+              The last 20 speech and voice input events. It shows why a reply stays silent or a recording has no text.
             </Text>
           </Row>
         </View>
@@ -299,6 +300,7 @@ export default function SettingsScreen() {
         </View>
       </Card>
       <VoiceSection />
+      <VoiceInputSection />
       <FeelSection />
     </Screen>
   );

@@ -42,6 +42,18 @@ jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: mockHello }),
 }));
 jest.mock("@/voice/MicButton", () => ({ MicButton: () => null }));
+let mockVoicePhase = "idle";
+const mockVoiceDispatch = jest.fn();
+let mockOnText: ((t: string) => void) | undefined;
+jest.mock("@/voice/useDictation", () => ({
+  useDictation: (o: { onText: (t: string) => void }) => {
+    mockOnText = o.onText;
+    return { state: { phase: mockVoicePhase, partial: "" }, dispatch: mockVoiceDispatch, clearError: () => {} };
+  },
+}));
+jest.mock("expo-file-system", () => ({ File: class {} }));
+jest.mock("@/voice/RecordBar", () => ({ RecordBar: () => null }));
+const { RecordBar: MockRecordBar } = jest.requireMock("@/voice/RecordBar");
 jest.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("expo-image-picker", () => ({
@@ -76,6 +88,8 @@ beforeEach(() => {
   mockRpcCalls.length = 0;
   mockHello = undefined;
   mockUploadFails = false;
+  mockVoicePhase = "idle";
+  mockVoiceDispatch.mockClear();
   clearCommandsCache();
   useSnapshots.setState({ byHost: { "host-1": { agents: [{ pane_id: "w1:p1", agent_status: "blocked" }] } as any }, errors: {} });
 });
@@ -399,4 +413,23 @@ test("paste_chip_is_hidden_without_files_put", async () => {
   await press(tree!, "Add");
   expect(byLabel(tree!, "Paste image")).toHaveLength(0);
   expect(Clipboard.hasImageAsync).not.toHaveBeenCalled();
+});
+
+test("recording_swaps_the_box_for_the_record_bar_and_the_text_lands_appended", async () => {
+  mockVoicePhase = "recording";
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="fix the bug" />);
+  });
+  expect(tree!.root.findAll((n) => n.type === MockRecordBar)).toHaveLength(1);
+  expect(tree!.root.findAll((n) => n.props.accessibilityLabel === "Prompt" && !!n.props.onChangeText)).toHaveLength(0);
+  const check = tree!.root.find((n) => n.props.accessibilityLabel === "Stop and transcribe" && !!n.props.onPress);
+  act(() => check.props.onPress());
+  expect(mockVoiceDispatch).toHaveBeenCalledWith({ type: "toggle" });
+
+  mockVoicePhase = "idle";
+  await act(async () => tree!.update(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="fix the bug" />));
+  act(() => mockOnText!("in the parser"));
+  expect(prompt(tree!).props.value).toBe("fix the bug in the parser");
+  // The text is not sent.
+  expect(mockCalls.filter((c) => c.method !== "pane.read")).toHaveLength(0);
 });

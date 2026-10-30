@@ -1,3 +1,4 @@
+import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { ChevronRight, Folder, FolderOpen, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,7 +17,10 @@ import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { useDraftGuard } from "@/ui/draftGuard";
 import { Text } from "@/ui/Text";
+import { hasMethod } from "@/hosts/methods";
 import { MicButton } from "@/voice/MicButton";
+import { appendDictation, hostTranscriber } from "@/voice/transcribe";
+import { useDictation } from "@/voice/useDictation";
 
 type DirList = { path: string; dirs: string[]; recent_cwds: string[] };
 
@@ -173,7 +177,15 @@ export default function NewSessionScreen() {
   }, [online, hostId]);
   useEffect(() => setCwd(undefined), [hostId]);
 
-  const { rpc } = useHostConn(hostId ?? "");
+  const { rpc, hello } = useHostConn(hostId ?? "");
+  const dictation = useDictation({
+    onText: (t) => setPrompt((p) => appendDictation(p, t)),
+    onPartial: setHeard,
+    hostStt:
+      rpc && hasMethod(hello, "stt.make")
+        ? hostTranscriber((m, p, ms) => rpc.call(m, p, ms), (uri) => new File(uri).base64())
+        : undefined,
+  });
   const snapshot = useSnapshots((s) => (hostId ? s.byHost[hostId] : undefined));
   const existing = useMemo(() => (cwd ? workspaceForCwd(snapshot, cwd) : undefined), [snapshot, cwd]);
   useEffect(() => setNewWorkspace(false), [cwd]);
@@ -289,13 +301,9 @@ export default function NewSessionScreen() {
             />
             <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
               <Text variant="small" muted numberOfLines={3} style={{ flex: 1 }}>
-                {heard || "Hold the mic to dictate."}
+                {heard || "Tap or hold the mic to dictate."}
               </Text>
-              <MicButton
-                disabled={busy}
-                onPartial={setHeard}
-                onSend={(t) => setPrompt((p) => (p.trim() ? `${p.trimEnd()} ${t}` : t))}
-              />
+              <MicButton dictation={dictation} disabled={busy} />
             </View>
           </Section>
 

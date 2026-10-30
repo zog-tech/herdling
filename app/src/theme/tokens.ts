@@ -126,6 +126,10 @@ export const motion = {
     /** Movement that starts and ends on screen. */
     inOut: [0.77, 0, 0.175, 1] as const,
   },
+  /** Voice input: the "Transcribing…" shimmer crosses the bar once in this time (linear, looped). */
+  shimmerMs: 1200,
+  /** Reduce Motion: the "Transcribing…" text fades between full and this opacity instead. */
+  shimmerDim: 0.45,
   /** Status icon motion. */
   status: {
     /** One full turn of the working spinner (linear). */

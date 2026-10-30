@@ -10,6 +10,7 @@ import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRou
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
+import { refreshParakeet } from "@/voice/parakeet";
 
 SplashScreen.preventAutoHideAsync();
 startConnections();
@@ -46,6 +47,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
   }, [ready]);
+  // Voice input picks Parakeet only when its model is on disk: read that once at start.
+  useEffect(() => {
+    void refreshParakeet();
+  }, []);
   if (!ready) return null;
   // Gesture-handler gestures (the swipe between agents, horizontal scroll views) need this root view.
   return (
