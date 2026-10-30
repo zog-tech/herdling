@@ -2,7 +2,6 @@ import type { AgentStatus } from "@zogssh/protocol";
 import { Check, CircleHelp, CircleSlash, Hand, LoaderCircle } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -13,9 +12,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { colors, icon, motion, space } from "@/theme/tokens";
+import { colors, icon, motion } from "@/theme/tokens";
 import { formatDuration } from "./format";
-import { Text } from "./Text";
 
 export type BadgeStatus = AgentStatus | "offline";
 
@@ -83,7 +81,7 @@ export function StatusIcon({ status, size = icon.header, color }: { status: Badg
 }
 
 /** Seconds since `since` (epoch ms), ticking every second while `tick`. */
-function useElapsed(since: number | undefined, tick: boolean): number | undefined {
+export function useElapsed(since: number | undefined, tick: boolean): number | undefined {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!tick || since === undefined) return;
@@ -98,34 +96,4 @@ function useElapsed(since: number | undefined, tick: boolean): number | undefine
 export function statusText(status: BadgeStatus, elapsedS?: number): string {
   const label = STATUS_META[status].label;
   return status === "working" && elapsedS !== undefined ? `${label} ${formatDuration(elapsedS)}` : label;
-}
-
-/**
- * Header status: the animated icon at header icon size and a short label under the elapsed time.
- * Only the working state ticks; the clock lives here, so the screen does not re-render each second.
- */
-export function HeaderStatus({ status, since }: { status: BadgeStatus; since?: number }) {
-  const elapsed = useElapsed(status === "working" ? since : undefined, status === "working");
-  const { label, color } = STATUS_META[status];
-  const text = statusText(status, elapsed);
-  return (
-    <View
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={text}
-      style={{ flexDirection: "row", alignItems: "center", gap: space.xs, minHeight: 44 }}
-    >
-      <StatusIcon status={status} />
-      <View>
-        <Text variant="caption" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-          {label}
-        </Text>
-        {status === "working" && elapsed !== undefined ? (
-          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ fontVariant: ["tabular-nums"] }}>
-            {formatDuration(elapsed)}
-          </Text>
-        ) : null}
-      </View>
-    </View>
-  );
 }
