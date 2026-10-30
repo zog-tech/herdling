@@ -32,3 +32,12 @@ export function formatResetIn(resetsAt: number | null, nowS: number): string {
   if (h > 0) return `resets in ${h}h${min ? ` ${min}m` : ""}`;
   return `resets in ${min}m`;
 }
+
+/** Elapsed time with seconds: `12` -> `"12s"`, `72` -> `"1m 12s"`, `3720` -> `"1h 2m"`. Negative counts as 0. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}

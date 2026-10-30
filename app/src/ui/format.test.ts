@@ -1,4 +1,4 @@
-import { formatBytes, formatResetIn, pct } from "./format";
+import { formatBytes, formatDuration, formatResetIn, pct } from "./format";
 
 test("format_bytes", () => {
   expect(formatBytes(17179869184)).toBe("16 GB");
@@ -26,4 +26,12 @@ test("format_reset_in", () => {
   expect(formatResetIn(now + 3 * 86400 + 4 * 3600 + 120, now)).toBe("resets in 3d 4h");
   expect(formatResetIn(now + 2 * 86400, now)).toBe("resets in 2d");
   expect(formatResetIn(null, now)).toBe("");
+});
+
+test("format_duration_shows_seconds_under_an_hour", () => {
+  expect(formatDuration(0)).toBe("0s");
+  expect(formatDuration(12.7)).toBe("12s");
+  expect(formatDuration(72)).toBe("1m 12s");
+  expect(formatDuration(3720)).toBe("1h 2m");
+  expect(formatDuration(-5)).toBe("0s");
 });

@@ -53,3 +53,49 @@ export const type = {
 
 /** Minimum touch target in points. */
 export const hitTarget = 44;
+
+/**
+ * Motion tokens. Durations in ms. Springs use Reanimated's physics form (damping, stiffness).
+ * Curves are cubic-bezier control points: build them with `cubicBezier(...)` at the use site.
+ */
+export const motion = {
+  /** Press feedback on a card or a large control. */
+  press: {
+    /** Scale when the finger lands. */
+    scale: 0.98,
+    /** Scale the hold moves toward while a long press charges. */
+    holdScale: 0.96,
+    /** Time to reach `scale`. */
+    inMs: 100,
+    /** Opacity of the light layer on a pressed card. */
+    overlay: 0.04,
+    /** Hold time before a long press fires. */
+    longPressMs: 350,
+  },
+  spring: {
+    /** Snap back to rest after a press or a long press. */
+    release: { damping: 15, stiffness: 220 },
+  },
+  /** An exit takes this share of its enter time: leaving is faster than arriving. */
+  exitRatio: 0.65,
+  ease: {
+    /** Strong ease-out for UI that enters or reacts. */
+    out: [0.23, 1, 0.32, 1] as const,
+    /** Movement that starts and ends on screen. */
+    inOut: [0.77, 0, 0.175, 1] as const,
+  },
+  /** Status icon motion. */
+  status: {
+    /** One full turn of the working spinner (linear). */
+    spinMs: 1000,
+    /** Scale peak of the pop when work finishes, and of the pulse when the agent needs you. */
+    popScale: 1.25,
+    popInMs: 120,
+    pulseScale: 1.2,
+    pulseInMs: 150,
+    pulseOutMs: 250,
+  },
+} as const;
+
+/** Icon sizes (lucide) in points. `header` matches the icons of a screen header row. */
+export const icon = { sm: 16, md: 20, header: 22, lg: 24, strokeWidth: 2 } as const;
