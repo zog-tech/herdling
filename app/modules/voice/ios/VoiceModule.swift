@@ -40,6 +40,18 @@ public class VoiceModule: Module {
       await self.recognizer.cancel()
     }
 
+    AsyncFunction("setSpeechAudio") { () async throws in
+      if await self.recognizer.isBusy {
+        throw Exception(name: "DictationError", description: "Dictation is running", code: "busy")
+      }
+      try AudioSession.activateForSpeech()
+    }
+
+    AsyncFunction("releaseAudio") { () async in
+      if await self.recognizer.isBusy { return }
+      AudioSession.deactivate()
+    }
+
     OnDestroy {
       let recognizer = self.recognizer
       Task { await recognizer.cancel() }

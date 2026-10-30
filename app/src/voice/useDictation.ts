@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as Voice from "../../modules/voice";
 import { holdReducer, IDLE, type HoldEffect, type HoldEvent, type HoldState } from "./holdToTalk";
+import { useRecording } from "./recording";
 
 const errorText = (e: unknown): string | undefined => {
   const code = (e as { code?: unknown })?.code;
@@ -95,6 +96,12 @@ export function useDictation({ onSend, onPartial }: { onSend: (text: string) => 
       enqueue(Voice.cancelDictation).catch(() => {});
     };
   }, [dispatch, fail, enqueue]);
+
+  // Speech waits for the microphone and stops when it starts.
+  useEffect(() => {
+    useRecording.setState({ recording: state.phase !== "idle" });
+  }, [state.phase]);
+  useEffect(() => () => useRecording.setState({ recording: false }), []);
 
   useEffect(() => {
     handlers.current.onPartial?.(state.partial);

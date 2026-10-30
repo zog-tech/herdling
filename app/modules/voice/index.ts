@@ -12,6 +12,8 @@ declare class VoiceNativeModule extends NativeModule<VoiceEvents> {
   startDictation(o?: { locale?: string }): Promise<void>;
   stopDictation(): Promise<string>;
   cancelDictation(): Promise<void>;
+  setSpeechAudio(): Promise<void>;
+  releaseAudio(): Promise<void>;
 }
 
 const Voice = requireNativeModule<VoiceNativeModule>("VoiceModule");
@@ -37,6 +39,19 @@ export function stopDictation(): Promise<string> {
 /** Turns the microphone off and drops the transcript. */
 export function cancelDictation(): Promise<void> {
   return Voice.cancelDictation();
+}
+
+/**
+ * Prepares the audio session for speech: playback that ducks other audio and can use Bluetooth.
+ * Rejects with code "busy" while dictation runs.
+ */
+export function setSpeechAudio(): Promise<void> {
+  return Voice.setSpeechAudio();
+}
+
+/** Ends the speech audio session so other audio gets its volume back. Does nothing while dictation runs. */
+export function releaseAudio(): Promise<void> {
+  return Voice.releaseAudio();
 }
 
 export function addListener<E extends keyof VoiceEvents>(event: E, listener: VoiceEvents[E]): { remove(): void } {

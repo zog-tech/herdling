@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, TriangleAlert } from "lucide-react-native";
+import { ChevronLeft, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,6 +15,8 @@ import { ThreadList } from "@/thread/ThreadList";
 import { useThread, type Thread } from "@/thread/useThread";
 import { StatusBadge, type BadgeStatus } from "@/ui/StatusBadge";
 import { Text } from "@/ui/Text";
+import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
+import { useSpeakReplies } from "@/voice/useSpeakReplies";
 
 type Mode = "thread" | "terminal";
 
@@ -123,12 +125,14 @@ function ThreadBody({ thread, hostId, paneId }: { thread: Thread; hostId: string
 }
 
 export default function SessionScreen() {
-  const { hostId, paneId, prompt, promptError } = useLocalSearchParams<{
+  const { hostId, paneId, prompt, promptError, from } = useLocalSearchParams<{
     hostId: string;
     paneId: string;
     /** Set by New session when the first prompt failed after the agent started. */
     prompt?: string;
     promptError?: string;
+    /** "push" when a notification opened the session. */
+    from?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -138,6 +142,10 @@ export default function SessionScreen() {
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const agent = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId));
   const thread = useThread(hostId, paneId, agent?.agent_status);
+
+  const speakOn = useSpeakEnabled(hostId, paneId);
+  const setSpeak = useSessionSpeak((s) => s.setSpeak);
+  useSpeakReplies(hostId, paneId, agent?.agent_status, thread.items, { speakNow: from === "push" });
 
   // Opening the session, and every status change seen here, counts as seen.
   const seq = agent?.state_change_seq;
@@ -170,6 +178,15 @@ export default function SessionScreen() {
               {kind ? `${hostName} · ${kind}` : hostName}
             </Text>
           </View>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="Speak replies"
+            accessibilityState={{ checked: speakOn }}
+            onPress={() => setSpeak(sessionKey(hostId, paneId), !speakOn)}
+            style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
+          >
+            {speakOn ? <Volume2 size={22} color={colors.accent} /> : <VolumeX size={22} color={colors.textMuted} />}
+          </Pressable>
           <StatusBadge status={badge} />
         </View>
         <Segmented mode={mode} onChange={setMode} />

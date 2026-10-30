@@ -1,0 +1,53 @@
+import * as SecureStore from "expo-secure-store";
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+export type VoiceSettings = { ttsDefault: boolean; mode: "full" | "summary"; voice?: string; rate: number };
+
+type VoiceStore = VoiceSettings & { set: (patch: Partial<VoiceSettings>) => void };
+
+const storage = createJSONStorage(() => ({
+  getItem: (k) => SecureStore.getItemAsync(k),
+  setItem: (k, v) => SecureStore.setItemAsync(k, v),
+  removeItem: (k) => SecureStore.deleteItemAsync(k),
+}));
+
+/** Text-to-speech settings. Persisted. Speech is off until the user turns it on. */
+export const useVoiceSettings = create<VoiceStore>()(
+  persist(
+    (set) => ({
+      ttsDefault: false,
+      mode: "full",
+      voice: undefined,
+      rate: 1.0,
+      set: (patch) => set(patch),
+    }),
+    {
+      name: "zogssh.voice_settings",
+      storage,
+      partialize: (s) => ({ ttsDefault: s.ttsDefault, mode: s.mode, voice: s.voice, rate: s.rate }),
+    },
+  ),
+);
+
+type SessionSpeak = { bySession: Record<string, boolean>; setSpeak: (key: string, on: boolean) => void };
+
+/** Per-session speaker toggle, keyed `hostId:paneId`. Missing keys fall back to `ttsDefault`. Persisted. */
+export const useSessionSpeak = create<SessionSpeak>()(
+  persist(
+    (set) => ({
+      bySession: {},
+      setSpeak: (key, on) => set((s) => ({ bySession: { ...s.bySession, [key]: on } })),
+    }),
+    { name: "zogssh.session_speak", storage, partialize: (s) => ({ bySession: s.bySession }) },
+  ),
+);
+
+export const sessionKey = (hostId: string, paneId: string) => `${hostId}:${paneId}`;
+
+/** Whether this session speaks replies now. */
+export function useSpeakEnabled(hostId: string, paneId: string): boolean {
+  const def = useVoiceSettings((s) => s.ttsDefault);
+  const own = useSessionSpeak((s) => s.bySession[sessionKey(hostId, paneId)]);
+  return own ?? def;
+}

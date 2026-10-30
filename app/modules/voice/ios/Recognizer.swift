@@ -65,6 +65,9 @@ actor Recognizer {
     return mic && speech == .authorized
   }
 
+  /// True while dictation owns the audio session.
+  var isBusy: Bool { run != nil || starting || finishing }
+
   func start(localeId: String?) async throws {
     guard run == nil, !starting, !finishing else { throw DictationError.busy }
     guard AVAudioApplication.shared.recordPermission == .granted else {
@@ -196,7 +199,14 @@ enum AudioSession {
     try session.setActive(true)
   }
 
-  /// Lets other audio (and later text-to-speech) play again.
+  /// Playback for text-to-speech: ducks other audio, lets AirPods play it.
+  static func activateForSpeech() throws {
+    let session = AVAudioSession.sharedInstance()
+    try session.setCategory(.playback, mode: .default, options: [.duckOthers, .allowBluetoothA2DP])
+    try session.setActive(true)
+  }
+
+  /// Lets other audio and text-to-speech play again.
   static func deactivate() {
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
