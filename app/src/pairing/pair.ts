@@ -2,6 +2,7 @@ import type { PairRequest, PairResponse } from "@zogssh/protocol";
 
 import { ensureKey } from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
+import { getExpoToken } from "../push/token";
 import { newHostId, useHosts, type Host } from "../hosts/store";
 import { DEFAULT_PAIR_PORT } from "./pairUrl";
 
@@ -69,7 +70,7 @@ export async function pairWithHost(
   const [deviceId, key, expoToken] = await Promise.all([
     getDeviceId(),
     ensureKey(),
-    deps?.expoToken ? deps.expoToken().catch(() => null) : Promise.resolve(null),
+    (deps?.expoToken ?? getExpoToken)().catch(() => null),
   ]);
   const body: PairRequest = {
     code: o.code,

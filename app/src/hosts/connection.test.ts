@@ -41,6 +41,12 @@ jest.mock("expo-secure-store", () => {
   };
 });
 
+const mockRegisterPush = jest.fn(async (_rpc: unknown, _hostId: string) => {});
+jest.mock("../push/register", () => ({
+  registerPush: (rpc: unknown, hostId: string) => mockRegisterPush(rpc, hostId),
+}));
+
+import { useNotifPrefs } from "../push/prefs";
 import { ExecTransport, getHostConn, retryNow, startConnections, stopConnections } from "./connection";
 import { useHosts } from "./store";
 
@@ -93,6 +99,8 @@ beforeEach(() => {
     return { remove: () => {} } as any;
   });
   useHosts.setState({ hosts: [] });
+  mockRegisterPush.mockClear();
+  useNotifPrefs.setState({ finished: true, needs_you: true });
 });
 
 afterEach(() => {
@@ -375,4 +383,36 @@ test("retry_now_after_mismatch_retries_once", async () => {
 test("retry_now_unknown_host_returns_undefined", () => {
   startConnections();
   expect(retryNow("nope")).toBeUndefined();
+});
+
+test("hello_registers_push", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+  expect(mockRegisterPush).toHaveBeenCalledTimes(1);
+  expect(mockRegisterPush).toHaveBeenCalledWith(getHostConn("h1").rpc, "h1");
+});
+
+test("pref_change_reregisters_online_hosts", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  mockRegisterPush.mockClear();
+  useNotifPrefs.getState().setPref("finished", false);
+  expect(mockRegisterPush).toHaveBeenCalledTimes(1);
+  expect(mockRegisterPush).toHaveBeenCalledWith(getHostConn("h1").rpc, "h1");
+  // Setting the same value again sends nothing.
+  useNotifPrefs.getState().setPref("finished", false);
+  expect(mockRegisterPush).toHaveBeenCalledTimes(1);
+});
+
+test("pref_change_skips_offline_hosts", async () => {
+  addHost("SHA256:abc");
+  mockSsh.connect.mockRejectedValue(Object.assign(new Error("refused"), { code: "connect_failed" }));
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("offline");
+  useNotifPrefs.getState().setPref("needs_you", false);
+  expect(mockRegisterPush).not.toHaveBeenCalled();
 });

@@ -9,6 +9,7 @@ jest.mock("expo-secure-store", () => {
   };
 });
 jest.mock("expo-device", () => ({ deviceName: "Sam's iPhone" }));
+jest.mock("../push/token", () => ({ getExpoToken: async () => null }));
 
 import { getDeviceId } from "../device";
 import { useHosts } from "../hosts/store";

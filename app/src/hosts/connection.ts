@@ -3,6 +3,8 @@ import { AppState } from "react-native";
 import { create } from "zustand";
 
 import * as ssh from "../../modules/ssh";
+import { useNotifPrefs } from "../push/prefs";
+import { registerPush } from "../push/register";
 import { RpcClient } from "../rpc/RpcClient";
 import type { LineTransport } from "../rpc/transport";
 import { useHosts, type Host } from "./store";
@@ -284,6 +286,7 @@ class HostConnection {
       this.failures = 0;
       setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
       if (this.foreground) this.startPings();
+      void registerPush(rpc, host.id);
     } catch (e) {
       if (gen !== this.generation) return;
       this.teardown();
@@ -410,6 +413,17 @@ export function startConnections(): void {
 
   const sub = ssh.addListener("onDisconnect", (e) => state.conns.get(e.hostId)?.dropped(e.reason));
   state.cleanup.push(() => sub.remove());
+
+  // A changed notification pref goes to every online host.
+  state.cleanup.push(
+    useNotifPrefs.subscribe((p, prev) => {
+      if (p.finished === prev.finished && p.needs_you === prev.needs_you) return;
+      for (const id of state.conns.keys()) {
+        const conn = getHostConn(id);
+        if (conn.status === "online" && conn.rpc) void registerPush(conn.rpc, id);
+      }
+    }),
+  );
 }
 
 /**

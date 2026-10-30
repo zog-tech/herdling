@@ -1,11 +1,12 @@
 import { useRouter } from "expo-router";
 import { Plus, Trash2 } from "lucide-react-native";
-import { View } from "react-native";
+import { Switch, View } from "react-native";
 
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
 import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts, type Host } from "@/hosts/store";
+import { useNotifPrefs } from "@/push/prefs";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -39,6 +40,28 @@ function HostRow({ host }: { host: Host }) {
   );
 }
 
+function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you"; label: string; detail: string }) {
+  const value = useNotifPrefs((s) => s[pref]);
+  const setPref = useNotifPrefs((s) => s.setPref);
+  return (
+    <Row
+      trailing={
+        <Switch
+          accessibilityLabel={label}
+          value={value}
+          onValueChange={(v) => setPref(pref, v)}
+          trackColor={{ false: colors.muted, true: colors.accent }}
+        />
+      }
+    >
+      <Text bold>{label}</Text>
+      <Text variant="small" muted>
+        {detail}
+      </Text>
+    </Row>
+  );
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const hosts = useHosts((s) => s.hosts);
@@ -64,6 +87,15 @@ export default function SettingsScreen() {
         )}
       </Card>
       <Button label="Add host" Icon={Plus} onPress={() => router.push("/hosts/discover")} />
+      <Text variant="small" muted>
+        NOTIFICATIONS
+      </Text>
+      <Card style={{ paddingVertical: space.sm }}>
+        <PrefRow pref="finished" label="Finished" detail="An agent finished its turn." />
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.muted, paddingTop: space.sm }}>
+          <PrefRow pref="needs_you" label="Needs you" detail="An agent waits for your input." />
+        </View>
+      </Card>
     </Screen>
   );
 }

@@ -1,14 +1,24 @@
+import * as Notifications from "expo-notifications";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 
 import { startConnections } from "@/hosts/connection";
+import { useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
 
 SplashScreen.preventAutoHideAsync();
 startConnections();
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const hostHeader = {
   headerShown: true,
@@ -17,6 +27,12 @@ const hostHeader = {
   headerShadowVisible: false,
   headerBackButtonDisplayMode: "minimal",
 } as const;
+
+/** Rendered inside the root layout so the router exists; routing waits for the navigator itself. */
+function NotificationRouting() {
+  useNotificationRouting();
+  return null;
+}
 
 export default function RootLayout() {
   const ready = useAppFonts();
@@ -35,6 +51,7 @@ export default function RootLayout() {
         <Stack.Screen name="new" options={{ ...hostHeader, title: "New session", presentation: "modal" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
       </Stack>
+      <NotificationRouting />
     </>
   );
 }

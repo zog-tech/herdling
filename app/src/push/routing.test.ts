@@ -1,0 +1,110 @@
+import { act, create } from "react-test-renderer";
+import { createElement } from "react";
+
+const mockPush = jest.fn();
+let mockNavKey: string | undefined = "root";
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
+  useRootNavigationState: () => (mockNavKey ? { key: mockNavKey } : undefined),
+}));
+
+let mockLast: unknown = null;
+let mockListener: ((r: unknown) => void) | undefined;
+const mockRemove = jest.fn();
+const mockClear = jest.fn();
+jest.mock("expo-notifications", () => ({
+  getLastNotificationResponse: () => mockLast,
+  clearLastNotificationResponse: () => mockClear(),
+  addNotificationResponseReceivedListener: (cb: (r: unknown) => void) => {
+    mockListener = cb;
+    return { remove: mockRemove };
+  },
+}));
+
+import { notificationTarget, useNotificationRouting } from "./useNotificationRouting";
+
+function response(id: string, data: unknown) {
+  return { notification: { request: { identifier: id, content: { data } } } };
+}
+
+function Probe() {
+  useNotificationRouting();
+  return null;
+}
+
+beforeEach(() => {
+  mockPush.mockReset();
+  mockClear.mockReset();
+  mockRemove.mockReset();
+  mockLast = null;
+  mockListener = undefined;
+  mockNavKey = "root";
+});
+
+describe("notificationTarget", () => {
+  it("target_from_data", () => {
+    expect(notificationTarget({ hostId: "h_1", paneId: "w1:p1" })).toBe("/session/h_1/w1%3Ap1?from=push");
+  });
+
+  it("target_encodes_host_id", () => {
+    expect(notificationTarget({ hostId: "h 1/x", paneId: "p" })).toBe("/session/h%201%2Fx/p?from=push");
+  });
+
+  it("target_rejects_bad_data", () => {
+    expect(notificationTarget({ hostId: "h_1" })).toBeNull();
+    expect(notificationTarget({ hostId: "h_1", paneId: 7 })).toBeNull();
+    expect(notificationTarget({ hostId: 1, paneId: "w1:p1" })).toBeNull();
+    expect(notificationTarget({ hostId: "", paneId: "w1:p1" })).toBeNull();
+    expect(notificationTarget(null)).toBeNull();
+    expect(notificationTarget("h_1")).toBeNull();
+    expect(notificationTarget(undefined)).toBeNull();
+  });
+});
+
+describe("useNotificationRouting", () => {
+  it("routes_cold_start_response_once", () => {
+    mockLast = response("n1", { hostId: "h_1", paneId: "w1:p1" });
+    let r: ReturnType<typeof create> | undefined;
+    act(() => {
+      r = create(createElement(Probe));
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith("/session/h_1/w1%3Ap1?from=push");
+    expect(mockClear).toHaveBeenCalled();
+    // The same response through the listener does not route a second time.
+    act(() => mockListener?.(response("n1", { hostId: "h_1", paneId: "w1:p1" })));
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    act(() => r?.unmount());
+    expect(mockRemove).toHaveBeenCalled();
+  });
+
+  it("routes_tap_while_running", () => {
+    act(() => {
+      create(createElement(Probe));
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+    act(() => mockListener?.(response("n2", { hostId: "h_2", paneId: "w2:p3" })));
+    expect(mockPush).toHaveBeenCalledWith("/session/h_2/w2%3Ap3?from=push");
+  });
+
+  it("ignores_response_with_bad_data", () => {
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(response("n3", { paneId: "w1:p1" })));
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("waits_for_navigation_before_routing", () => {
+    mockNavKey = undefined;
+    mockLast = response("n4", { hostId: "h_1", paneId: "p" });
+    let r: ReturnType<typeof create> | undefined;
+    act(() => {
+      r = create(createElement(Probe));
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+    mockNavKey = "root";
+    act(() => r?.update(createElement(Probe)));
+    expect(mockPush).toHaveBeenCalledWith("/session/h_1/p?from=push");
+  });
+});
