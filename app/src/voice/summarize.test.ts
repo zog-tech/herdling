@@ -1,12 +1,12 @@
 import { RpcError } from "../rpc/RpcClient";
-import { speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
+import { clipEnd, LOCAL_MAX_CHARS, LOCAL_TIMEOUT_MS, speakableReply, SUMMARY_INSTRUCTIONS } from "./summarize";
 import { speechText } from "./speechText";
 
 const md = "**Done.** Edited `main.rs`.\n\n```rust\nfn main() {}\n```\nShould I run the tests?";
 
-function deps(o: { available?: boolean; local?: () => Promise<string>; rpc?: () => Promise<unknown> | null } = {}) {
+function deps(o: { available?: boolean; local?: (t: string) => Promise<string>; rpc?: () => Promise<unknown> | null } = {}) {
   const available = jest.fn(async () => o.available ?? true);
-  const summarize = jest.fn(o.local ?? (async () => "Local summary."));
+  const summarize = jest.fn(o.local ?? (async (_t: string) => "Local summary."));
   const call = jest.fn(o.rpc ?? (async () => ({ summary: "Host summary." })));
   return { available, summarize, call, d: { local: { available, summarize }, rpc: { call: call as any } } };
 }
@@ -49,6 +49,52 @@ describe("speakableReply", () => {
     const x = deps();
     x.available.mockRejectedValueOnce(new Error("no module"));
     await expect(speakableReply(md, "summary", x.d)).resolves.toEqual({ text: "Host summary.", source: "host" });
+  });
+
+  it("falls back to the host when the local model never answers", async () => {
+    jest.useFakeTimers();
+    try {
+      const x = deps({ local: () => new Promise<string>(() => {}) });
+      const p = speakableReply(md, "summary", x.d);
+      await jest.advanceTimersByTimeAsync(LOCAL_TIMEOUT_MS - 1);
+      expect(x.call).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(p).resolves.toEqual({ text: "Host summary.", source: "host" });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("bounds a never-answering availability check too", async () => {
+    jest.useFakeTimers();
+    try {
+      const x = deps();
+      x.available.mockImplementationOnce(() => new Promise<boolean>(() => {}));
+      const p = speakableReply(md, "summary", x.d);
+      await jest.advanceTimersByTimeAsync(LOCAL_TIMEOUT_MS);
+      await expect(p).resolves.toEqual({ text: "Host summary.", source: "host" });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("clips the local input to its end, but sends the host the whole text", async () => {
+    const long = `${"a".repeat(9_997)}END`;
+    const x = deps();
+    await speakableReply(long, "summary", x.d);
+    const sent = x.summarize.mock.calls[0][0] as string;
+    expect(sent.length).toBe(LOCAL_MAX_CHARS);
+    expect(sent.endsWith("END")).toBe(true);
+    const y = deps({ available: false });
+    await speakableReply(long, "summary", y.d);
+    expect(y.call).toHaveBeenCalledWith("summary.make", { text: long }, expect.any(Number));
+  });
+
+  it("clipEnd never splits a surrogate pair", () => {
+    expect(clipEnd("short", 10)).toBe("short");
+    const clipped = clipEnd("\u{1F600}".repeat(5), 3);
+    expect(Array.from(clipped)).toHaveLength(3);
+    expect(clipped).toBe("\u{1F600}".repeat(3));
   });
 
   it("full_mode_skips_summary", async () => {

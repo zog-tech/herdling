@@ -10,6 +10,10 @@ export const SUMMARY_INSTRUCTIONS =
 
 /** The companion waits up to 15 s for the Messages API; give it a little more. */
 const HOST_TIMEOUT_MS = 20_000;
+/** Bound for the on-device check plus summary. A slower model falls to the host. */
+export const LOCAL_TIMEOUT_MS = 8_000;
+/** The on-device model has a ~4096-token window; longer input keeps its end. */
+export const LOCAL_MAX_CHARS = 6_000;
 
 export type SummaryDeps = {
   local: { available(): Promise<boolean>; summarize(t: string): Promise<string> };
@@ -18,9 +22,31 @@ export type SummaryDeps = {
 
 const filled = (s: unknown) => (typeof s === "string" && s.trim() ? s.trim() : undefined);
 
+/** The last `max` characters of `text`, counted by code point so a surrogate pair is never split. */
+export function clipEnd(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const chars = Array.from(text);
+  return chars.length <= max ? text : chars.slice(-max).join("");
+}
+
+/** Rejects when `p` takes longer than `ms`. */
+function within<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function localSummary(local: SummaryDeps["local"], text: string): Promise<string | undefined> {
+  if (!(await local.available())) return undefined;
+  return filled(await local.summarize(clipEnd(text, LOCAL_MAX_CHARS)));
+}
+
 /**
  * The text to speak for a reply. Summary mode tries the on-device model, then the host's
- * `summary.make`, then the full text. A step that throws or gives no text falls to the next.
+ * `summary.make`, then the full text. A step that throws, gives no text, or (on device) takes
+ * longer than `LOCAL_TIMEOUT_MS` falls to the next. The on-device input is clipped to its end.
  */
 export async function speakableReply(
   markdown: string,
@@ -30,10 +56,8 @@ export async function speakableReply(
   const text = speechText(markdown);
   if (mode === "full" || !text) return { text, source: "full" };
   try {
-    if (await deps.local.available()) {
-      const s = filled(await deps.local.summarize(text));
-      if (s) return { text: s, source: "local" };
-    }
+    const s = await within(localSummary(deps.local, text), LOCAL_TIMEOUT_MS);
+    if (s) return { text: s, source: "local" };
   } catch {
     // Fall through to the host.
   }
