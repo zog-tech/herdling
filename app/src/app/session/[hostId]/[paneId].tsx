@@ -326,7 +326,7 @@ export default function SessionScreen() {
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.
         <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} />
       )}
-      {/* Hidden, not unmounted, in Terminal mode: a half-typed prompt survives a mode switch. */}
+      {/* Hidden, not unmounted, in Terminal mode: a half-typed prompt survives a mode switch. Hidden, it polls nothing. */}
       <View style={{ display: mode === "thread" ? "flex" : "none" }}>
         <Composer
           hostId={hostId}
@@ -334,6 +334,7 @@ export default function SessionScreen() {
           bottomInset={keyboard ? 0 : insets.bottom}
           initialText={promptError ? prompt : undefined}
           initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
+          visible={mode === "thread"}
         />
       </View>
     </KeyboardAvoidingView>

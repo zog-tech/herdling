@@ -78,3 +78,12 @@ test("tabs_expand_and_controls_drop", () => {
 test("bad_extended_colors_are_ignored", () => {
   expect(parseAnsi("\x1b[38;5;300ma\x1b[38;2;1;2mb", palette)).toEqual([[{ text: "ab" }]]);
 });
+
+test("malformed_csi_keeps_text_after_newline", () => {
+  expect(parseAnsi("a\x1b[3\nbcd", palette)).toEqual([[{ text: "a" }], [{ text: "bcd" }]]);
+  expect(parseAnsi("a\x1b[3\x07b", palette)).toEqual([[{ text: "ab" }]]);
+});
+
+test("unterminated_osc_drops_only_to_end_of_line", () => {
+  expect(parseAnsi("a\x1b]0;title\nb\x1b[31mc", palette)).toEqual([[{ text: "a" }], [{ text: "b" }, { text: "c", fg: palette[1] }]]);
+});

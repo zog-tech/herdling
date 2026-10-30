@@ -3,6 +3,7 @@ import { join } from "path";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { MicButton } from "@/voice/MicButton";
 
 import { Composer } from "./Composer";
 
@@ -70,4 +71,21 @@ test("a double tap sends one digit and the answered menu hides", async () => {
   await flush();
   expect(choiceButtons(tree!)).toHaveLength(0);
   expect(sends()).toHaveLength(1);
+});
+
+test("hidden_composer_polls_nothing_and_has_no_mic", async () => {
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} visible={false} />);
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(3_000);
+  });
+  await flush();
+  expect(mockCalls).toHaveLength(0);
+  expect(tree!.root.findAll((n) => n.type === MicButton)).toHaveLength(0);
+
+  await act(async () => tree!.update(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} visible />));
+  await flush();
+  expect(mockCalls.filter((c) => c.method === "pane.read").length).toBeGreaterThan(0);
+  expect(tree!.root.findAll((n) => n.type === MicButton)).toHaveLength(1);
 });

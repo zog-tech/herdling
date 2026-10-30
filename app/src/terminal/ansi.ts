@@ -125,21 +125,27 @@ export function parseAnsi(text: string, palette: readonly string[]): Line[] {
       const kind = text[i + 1];
       if (kind === undefined) break;
       if (kind === "[") {
-        // CSI: parameter/intermediate bytes, then one final byte 0x40–0x7E.
+        // CSI: parameter and intermediate bytes 0x20–0x3F, then one final byte 0x40–0x7E.
         let j = i + 2;
-        while (j < n && (text.charCodeAt(j) < 0x40 || text.charCodeAt(j) > 0x7e)) j++;
+        while (j < n && text.charCodeAt(j) >= 0x20 && text.charCodeAt(j) <= 0x3f) j++;
         if (j >= n) break;
+        const fin = text.charCodeAt(j);
+        if (fin < 0x40 || fin > 0x7e) {
+          // Malformed: drop ESC [ and its parameters, keep the byte that broke it (a newline, for example).
+          i = j;
+          continue;
+        }
         if (text[j] === "m") {
           const params = text.slice(i + 2, j);
           if (/^[\d;]*$/.test(params)) setStyle(applySgr(params, style, palette));
         }
         i = j + 1;
       } else if (kind === "]" || kind === "P" || kind === "_" || kind === "^" || kind === "X") {
-        // OSC / DCS / APC / PM / SOS: up to BEL or ESC \.
+        // OSC / DCS / APC / PM / SOS: up to BEL or ESC \. Unterminated: dropped only to the end of the line.
         let j = i + 2;
-        while (j < n && text[j] !== BEL && !(text[j] === ESC && text[j + 1] === "\\")) j++;
+        while (j < n && text[j] !== BEL && text[j] !== "\n" && !(text[j] === ESC && text[j + 1] === "\\")) j++;
         if (j >= n) break;
-        i = text[j] === BEL ? j + 1 : j + 2;
+        i = text[j] === BEL ? j + 1 : text[j] === "\n" ? j : j + 2;
       } else {
         // Other escapes: optional intermediates 0x20–0x2F, then one final byte.
         let j = i + 1;

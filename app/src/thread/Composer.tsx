@@ -28,10 +28,13 @@ export function Composer({
   bottomInset,
   initialText,
   initialError,
+  visible = true,
 }: {
   hostId: string;
   paneId: string;
   bottomInset: number;
+  /** False while the screen shows something else (Terminal mode): no menu polling, and the mic is unmounted. */
+  visible?: boolean;
   /** Text to start with, for example a first prompt that failed to send. */
   initialText?: string;
   initialError?: string;
@@ -51,7 +54,7 @@ export function Composer({
   const blocked = useSnapshots(
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
-  const choices = useChoices(hostId, paneId, blocked && online);
+  const choices = useChoices(hostId, paneId, blocked && online && visible);
   /**
    * The menu (array from `useChoices`) that was answered or found stale. Its buttons stay hidden;
    * `useChoices` returns a new array only when the screen shows a different menu or the status changes.
@@ -174,7 +177,9 @@ export function Composer({
             opacity: online ? 1 : 0.6,
           }}
         />
-        <MicButton onSend={(t) => void sendPrompt(t, false)} onPartial={setPartial} disabled={!online || sending} />
+        {visible ? (
+          <MicButton onSend={(t) => void sendPrompt(t, false)} onPartial={setPartial} disabled={!online || sending} />
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
