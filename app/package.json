@@ -57,6 +57,9 @@
   "private": true,
   "jest": {
     "preset": "jest-expo",
+    "setupFiles": [
+      "react-native-gesture-handler/jestSetup"
+    ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",
       "^lucide-react-native$": "<rootDir>/../node_modules/lucide-react-native/dist/cjs/lucide-react-native.js"

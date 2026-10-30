@@ -3,7 +3,7 @@ import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-r
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
@@ -18,6 +18,7 @@ import type { RpcClient } from "@/rpc/RpcClient";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
+import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
@@ -191,6 +192,9 @@ const SWIPE_FOLLOW = 0.3;
 /**
  * Swipe left for the next agent of the workspace, right for the previous one. Wraps the thread only:
  * the composer (mic hold) and the terminal sit outside. Horizontal intent only, so vertical scroll is untouched.
+ * Horizontal scroll views inside block the pan (see `HScrollView`). This is more robust than an
+ * edge-only swipe: the left edge belongs to the iOS back gesture, and the relation is explicit,
+ * not a race between the pan and the native scroll view.
  */
 function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; paneId: string; children: ReactNode }) {
   const router = useRouter();
@@ -207,32 +211,32 @@ function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; pane
     [router, hostId],
   );
 
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-30, 30])
-        .failOffsetY([-15, 15])
-        .onUpdate((e) => {
-          // Rubber-band toward a side with no neighbor; no translation at all under Reduce Motion.
-          if (reduced) return;
-          const open = e.translationX < 0 ? next : prev;
-          x.set(e.translationX * (open ? SWIPE_FOLLOW : SWIPE_FOLLOW / 3));
-        })
-        .onEnd((e) => {
-          const far = Math.abs(e.translationX) > SWIPE_DISTANCE || Math.abs(e.velocityX) > SWIPE_VELOCITY;
-          const target = e.translationX < 0 ? next : prev;
-          x.set(reduced ? 0 : withSpring(0, { duration: 300, dampingRatio: 0.8, velocity: e.velocityX }));
-          if (far && target) scheduleOnRN(go, target);
-        }),
-    [reduced, next, prev, go, x],
-  );
+  const gesture = usePanGesture({
+    activeOffsetX: [-30, 30],
+    failOffsetY: [-15, 15],
+    onUpdate: (e) => {
+      // Rubber-band toward a side with no neighbor; no translation at all under Reduce Motion.
+      if (reduced) return;
+      const open = e.translationX < 0 ? next : prev;
+      x.set(e.translationX * (open ? SWIPE_FOLLOW : SWIPE_FOLLOW / 3));
+    },
+    onDeactivate: (e) => {
+      const far = Math.abs(e.translationX) > SWIPE_DISTANCE || Math.abs(e.velocityX) > SWIPE_VELOCITY;
+      const target = e.translationX < 0 ? next : prev;
+      x.set(reduced ? 0 : withSpring(0, { duration: 300, dampingRatio: 0.8, velocity: e.velocityX }));
+      if (!e.canceled && far && target) scheduleOnRN(go, target);
+    },
+  });
 
   const style = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
 
   return (
-    <GestureDetector gesture={gesture}>
-      <Animated.View style={[{ flex: 1 }, style]}>{children}</Animated.View>
-    </GestureDetector>
+    // Horizontal scroll views inside (code blocks, tool output, the terminal fallback) block this pan.
+    <SwipePanContext.Provider value={gesture}>
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[{ flex: 1 }, style]}>{children}</Animated.View>
+      </GestureDetector>
+    </SwipePanContext.Provider>
   );
 }
 

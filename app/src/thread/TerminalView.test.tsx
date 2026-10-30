@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { Text } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { colors } from "@/theme/tokens";
 
@@ -36,7 +37,7 @@ afterEach(() => {
 
 test("renders_colored_screen", async () => {
   await act(async () => {
-    tree = create(<TerminalView hostId="host-1" paneId="w1:p1" />);
+    tree = create(<GestureHandlerRootView><TerminalView hostId="host-1" paneId="w1:p1" /></GestureHandlerRootView>);
   });
   await flush();
   const red = tree!.root.findAll((n) => n.type === Text && n.props.children === "red");
@@ -47,7 +48,7 @@ test("renders_colored_screen", async () => {
 
 test("key_press_sends_and_rereads", async () => {
   await act(async () => {
-    tree = create(<TerminalView hostId="host-1" paneId="w1:p1" controls />);
+    tree = create(<GestureHandlerRootView><TerminalView hostId="host-1" paneId="w1:p1" controls /></GestureHandlerRootView>);
   });
   await flush();
   const before = reads();
@@ -60,7 +61,7 @@ test("key_press_sends_and_rereads", async () => {
 
 test("text_box_sends_line_then_enter", async () => {
   await act(async () => {
-    tree = create(<TerminalView hostId="host-1" paneId="w1:p1" controls />);
+    tree = create(<GestureHandlerRootView><TerminalView hostId="host-1" paneId="w1:p1" controls /></GestureHandlerRootView>);
   });
   await flush();
   const input = tree!.root.find((n) => n.props.accessibilityLabel === "Terminal input" && !!n.props.onChangeText);

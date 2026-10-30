@@ -1,10 +1,12 @@
 import { Check, ChevronDown, ChevronRight, CircleX, Loader, Wrench } from "lucide-react-native";
 import { memo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+
+import { HScrollView } from "../HScrollView";
 
 type Result = { ok: boolean; text: string; truncated: boolean };
 
@@ -22,7 +24,7 @@ function Block({ label, text, color }: { label: string; text: string; color?: st
       <Text variant="caption" muted>
         {label}
       </Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: colors.bg, borderRadius: radius.sm }}>
+      <HScrollView showsHorizontalScrollIndicator={false} style={{ backgroundColor: colors.bg, borderRadius: radius.sm }}>
         <Text
           selectable
           style={{
@@ -35,7 +37,7 @@ function Block({ label, text, color }: { label: string; text: string; color?: st
         >
           {text}
         </Text>
-      </ScrollView>
+      </HScrollView>
     </View>
   );
 }

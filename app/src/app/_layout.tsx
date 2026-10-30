@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { startConnections } from "@/hosts/connection";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
@@ -38,8 +39,9 @@ export default function RootLayout() {
     if (ready) SplashScreen.hideAsync();
   }, [ready]);
   if (!ready) return null;
+  // Gesture-handler gestures (the swipe between agents, horizontal scroll views) need this root view.
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="hosts/discover" options={{ ...hostHeader, title: "Add host" }} />
@@ -51,6 +53,6 @@ export default function RootLayout() {
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
       </Stack>
       <NotificationRouting />
-    </>
+    </GestureHandlerRootView>
   );
 }

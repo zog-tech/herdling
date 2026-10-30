@@ -21,6 +21,7 @@ import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
+import { HScrollView } from "./HScrollView";
 import { useTerminalText } from "./useTerminalText";
 
 /** Most lines kept on screen; older ones are cut so a long scrollback cannot stall the JS thread. */
@@ -72,7 +73,7 @@ export function TerminalView({
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <HScrollView showsHorizontalScrollIndicator={false}>
           {lines ? (
             <AnsiText lines={lines} style={{ fontSize: type.size.caption, lineHeight: LINE_HEIGHT }} />
           ) : (
@@ -80,7 +81,7 @@ export function TerminalView({
               {error ? `Can't read the terminal: ${error}` : "Loading…"}
             </Text>
           )}
-        </ScrollView>
+        </HScrollView>
       </ScrollView>
       {lines && error ? (
         <Text variant="caption" color={colors.status.blocked} numberOfLines={1} style={{ paddingHorizontal: space.lg }}>

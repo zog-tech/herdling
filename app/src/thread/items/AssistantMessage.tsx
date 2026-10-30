@@ -1,9 +1,11 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
 import { memo } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
 import { colors, radius, space, type } from "@/theme/tokens";
+
+import { HScrollView } from "../HScrollView";
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
@@ -17,16 +19,11 @@ const openLink = (url: string) => {
 function CodeBlock({ content }: { content: string }) {
   const text = content.endsWith("\n") ? content.slice(0, -1) : content;
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.codeScroll}
-      contentContainerStyle={{ padding: space.md }}
-    >
+    <HScrollView showsHorizontalScrollIndicator={false} style={styles.codeScroll} contentContainerStyle={{ padding: space.md }}>
       <Text selectable style={styles.codeText}>
         {text}
       </Text>
-    </ScrollView>
+    </HScrollView>
   );
 }
 
