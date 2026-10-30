@@ -7,6 +7,7 @@ import { getExpoToken } from "./token";
 
 /**
  * Tells the companion behind `rpc` this phone's push token and prefs (`push.register`).
+ * When the token lookup throws, nothing is sent, so the companion keeps the token it has.
  * Never throws: a failure is logged, and the host connection is not affected.
  */
 export async function registerPush(
@@ -16,7 +17,7 @@ export async function registerPush(
 ): Promise<void> {
   try {
     const token = deps?.token ?? getExpoToken;
-    const [deviceId, expoToken] = await Promise.all([getDeviceId(), token().catch(() => null)]);
+    const [deviceId, expoToken] = await Promise.all([getDeviceId(), token()]);
     const params: PushRegister = {
       device_id: deviceId,
       host_id: hostId,

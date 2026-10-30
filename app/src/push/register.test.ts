@@ -43,14 +43,32 @@ describe("registerPush", () => {
     expect(rpc.call.mock.calls[0][1]).toMatchObject({ prefs: { finished: false, needs_you: true } });
   });
 
-  it("register_token_error_sends_null_token", async () => {
+  it("register_token_error_skips_register", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const rpc = fakeRpc();
     await registerPush(rpc, "h_1", {
       token: async () => {
         throw new Error("no aps-environment");
       },
     });
-    expect(rpc.call.mock.calls[0][1]).toMatchObject({ expo_token: null });
+    expect(rpc.call).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("failure_after_good_token_does_not_send_null", async () => {
+    const rpc = fakeRpc();
+    let fail = false;
+    const token = async () => {
+      if (fail) throw new Error("network down");
+      return "ExponentPushToken[test]";
+    };
+    await registerPush(rpc, "h_1", { token });
+    fail = true;
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    await registerPush(rpc, "h_1", { token });
+    warn.mockRestore();
+    expect(rpc.call).toHaveBeenCalledTimes(1);
+    expect(rpc.call.mock.calls.every(([, p]) => (p as { expo_token: unknown }).expo_token !== null)).toBe(true);
   });
 
   it("register_rpc_error_is_logged_not_thrown", async () => {
