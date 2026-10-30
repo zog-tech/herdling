@@ -1,0 +1,472 @@
+//! `agents.preview`: one short line per agent for the app's Agent Board.
+//!
+//! Claude panes are read from the tail of their session log (activity, last reply,
+//! pending permission). Other agents fall back to the last useful line of the screen.
+
+use std::collections::{HashMap, HashSet};
+use std::io::{self, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use serde_json::{json, Value};
+use tokio::task::JoinSet;
+
+use crate::claude;
+use crate::herdr::{self, HerdrError};
+use crate::tail::read_offset_lines_before;
+use crate::types::{AgentPreview, ThreadItem};
+
+/// Bytes read from the end of a Claude log.
+pub const TAIL_BYTES: u64 = 256 * 1024;
+/// Most lines parsed from that tail.
+const TAIL_LINES: usize = 400;
+/// Longest preview line in chars.
+pub const LINE_CAP: usize = 140;
+/// Chars of a Bash command shown in "Running <cmd>".
+const CMD_CAP: usize = 40;
+/// Bound for one pane's work. A pane that takes longer is left out of the result.
+pub const PANE_TIMEOUT: Duration = Duration::from_millis(1200);
+/// How long a resolved log path is reused before `thread.resolve` runs again.
+const RESOLVE_TTL: Duration = Duration::from_secs(15);
+
+/// The last status of a pane and when it began (unix s), if known.
+type StatusStart = (String, Option<i64>);
+/// A resolved Claude log (None: the pane has none) and when it was resolved.
+type ResolvedLog = (Option<PathBuf>, Instant);
+
+/// State kept by one rpc process between `agents.preview` calls.
+#[derive(Clone, Default)]
+pub struct PreviewState {
+    /// Per pane: the last status seen and when it began (unix s), if known.
+    since: Arc<Mutex<HashMap<String, StatusStart>>>,
+    /// Per pane: the resolved Claude log (None: not a Claude log) and when it was resolved.
+    logs: Arc<Mutex<HashMap<String, ResolvedLog>>>,
+}
+
+fn now_s() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+impl PreviewState {
+    /// Records a `pane.agent_status_changed` event line: the status began now.
+    /// Other event lines are ignored, except `pane_closed`, which forgets the pane.
+    pub fn observe_event(&self, ev: &Value) {
+        if let Some(pane) = crate::events::closed_pane_id(ev) {
+            self.since.lock().unwrap().remove(pane);
+            self.logs.lock().unwrap().remove(pane);
+            return;
+        }
+        if crate::events::event_name(ev).as_deref() != Some("pane_agent_status_changed") {
+            return;
+        }
+        let Some(data) = ev.get("data") else { return };
+        let (Some(pane), Some(status)) =
+            (data.get("pane_id").and_then(Value::as_str), data.get("agent_status").and_then(Value::as_str))
+        else {
+            return;
+        };
+        self.observe_status(pane, status, Some(now_s()));
+    }
+
+    /// Records `status` for `pane`. A change sets the start to `at`; the same status keeps
+    /// the start it has.
+    fn observe_status(&self, pane: &str, status: &str, at: Option<i64>) {
+        let mut g = self.since.lock().unwrap();
+        match g.get_mut(pane) {
+            Some((s, _)) if s == status => {}
+            Some(entry) => *entry = (status.to_string(), at),
+            None => {
+                g.insert(pane.to_string(), (status.to_string(), at));
+            }
+        }
+    }
+
+    /// Start of the status seen in a snapshot. The first sighting of a pane has no known
+    /// start; a change since the last call (an event was missed) starts now.
+    pub fn status_since(&self, pane: &str, status: &str) -> Option<i64> {
+        let known = self.since.lock().unwrap().contains_key(pane);
+        self.observe_status(pane, status, known.then(now_s));
+        self.since.lock().unwrap().get(pane).and_then(|(_, at)| *at)
+    }
+
+    fn cached_log(&self, pane: &str) -> Option<Option<PathBuf>> {
+        let g = self.logs.lock().unwrap();
+        g.get(pane).filter(|(_, at)| at.elapsed() < RESOLVE_TTL).map(|(p, _)| p.clone())
+    }
+
+    fn cache_log(&self, pane: &str, log: Option<PathBuf>) {
+        self.logs.lock().unwrap().insert(pane.to_string(), (log, Instant::now()));
+    }
+}
+
+/// What a Claude log says about the agent right now.
+#[derive(Debug, Default, PartialEq)]
+pub struct LogPreview {
+    /// The tool call or thinking in progress, as a short phrase.
+    pub activity: Option<String>,
+    /// The last assistant text, one line.
+    pub last_reply: Option<String>,
+    /// The pending tool call phrased as a permission question.
+    pub question: Option<String>,
+}
+
+/// Reads the last [`TAIL_BYTES`] of a Claude log and summarizes them.
+pub fn read_log(path: &Path) -> io::Result<LogPreview> {
+    let mut f = std::fs::File::open(path)?;
+    let len = f.seek(SeekFrom::End(0))?;
+    let start = len.saturating_sub(TAIL_BYTES);
+    f.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::with_capacity((len - start) as usize);
+    f.take(TAIL_BYTES).read_to_end(&mut buf)?;
+    if start > 0 {
+        // The first line is cut off. Drop it.
+        match buf.iter().position(|c| *c == b'\n') {
+            Some(i) => {
+                buf.drain(..=i);
+            }
+            None => return Ok(LogPreview::default()),
+        }
+    }
+    let lines = read_offset_lines_before(io::Cursor::new(buf), None, TAIL_LINES)?;
+    Ok(log_preview(lines.iter().map(|(_, l)| l.as_str())))
+}
+
+/// Summarizes log lines (oldest first). A line still being written is not valid JSON
+/// and gives nothing.
+pub fn log_preview<'a>(lines: impl IntoIterator<Item = &'a str>) -> LogPreview {
+    let mut items: Vec<ThreadItem> = Vec::new();
+    let mut done: HashSet<String> = HashSet::new();
+    for line in lines {
+        done.extend(claude::parse_results(line).into_iter().map(|(id, _)| id));
+        items.extend(claude::parse_line(line));
+    }
+    let last_reply = items.iter().rev().find_map(|i| match i {
+        ThreadItem::Assistant { markdown, .. } => Some(one_line(&strip_markdown(markdown))),
+        _ => None,
+    });
+    let last_reply = last_reply.filter(|s| !s.is_empty());
+
+    // The current turn: items after the last user prompt.
+    let turn_start = items.iter().rposition(|i| matches!(i, ThreadItem::User { .. })).map_or(0, |i| i + 1);
+    let turn = &items[turn_start..];
+    let pending: Vec<&ThreadItem> = turn
+        .iter()
+        .filter(|i| match i {
+            ThreadItem::Tool { id, .. } | ThreadItem::Subagent { id, .. } => !done.contains(id),
+            _ => false,
+        })
+        .collect();
+    let (activity, question) = match pending.last() {
+        Some(last) => (Some(activity_of(last, &pending)), question_of(last)),
+        None => match turn.last() {
+            Some(ThreadItem::Thinking { .. }) => (Some("Thinking".to_string()), None),
+            _ => (None, None),
+        },
+    };
+    LogPreview { activity, last_reply, question }
+}
+
+fn input_str<'a>(input: &'a Value, key: &str) -> &'a str {
+    input.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn basename(path: &str) -> &str {
+    path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path)
+}
+
+/// Short name of a tool: `mcp__server__do_thing` becomes `do_thing`.
+fn tool_label(name: &str) -> &str {
+    if name.starts_with("mcp__") {
+        name.rsplit("__").next().unwrap_or(name)
+    } else {
+        name
+    }
+}
+
+/// "Running pnpm test", "Editing auth.ts", "Reading 3 files", …
+fn activity_of(item: &ThreadItem, pending: &[&ThreadItem]) -> String {
+    let ThreadItem::Tool { name, input, .. } = item else { return "Running a subagent".into() };
+    let s = match name.as_str() {
+        "Bash" => format!("Running {}", cap_chars(&one_line(input_str(input, "command")), CMD_CAP)),
+        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
+            let path = [input_str(input, "file_path"), input_str(input, "notebook_path")].into_iter().find(|p| !p.is_empty());
+            format!("Editing {}", basename(path.unwrap_or("")))
+        }
+        "Read" => {
+            let reads = pending.iter().filter(|i| matches!(i, ThreadItem::Tool { name, .. } if name == "Read")).count();
+            if reads > 1 {
+                format!("Reading {reads} files")
+            } else {
+                format!("Reading {}", basename(input_str(input, "file_path")))
+            }
+        }
+        "Grep" | "Glob" => "Searching".into(),
+        "WebFetch" | "WebSearch" => "Browsing".into(),
+        other => format!("Using {}", tool_label(other)),
+    };
+    cap_chars(s.trim(), LINE_CAP)
+}
+
+/// The pending call as the question Claude asks before running it.
+fn question_of(item: &ThreadItem) -> Option<String> {
+    let ThreadItem::Tool { name, input, .. } = item else { return None };
+    let q = match name.as_str() {
+        "Bash" => format!("Allow {}?", cap_chars(&one_line(input_str(input, "command")), LINE_CAP - 7)),
+        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
+            let path = [input_str(input, "file_path"), input_str(input, "notebook_path")].into_iter().find(|p| !p.is_empty());
+            format!("Allow edit to {}?", basename(path.unwrap_or("")))
+        }
+        "WebFetch" => format!("Allow fetch of {}?", input_str(input, "url")),
+        other => format!("Allow {}?", tool_label(other)),
+    };
+    Some(cap_chars(&q, LINE_CAP))
+}
+
+/// Markdown reduced to its text: no fences, headings, quotes, list markers, emphasis or link targets.
+pub fn strip_markdown(md: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for line in md.lines() {
+        let t = line.trim();
+        // Code blocks say little in one line: drop them whole.
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if t.chars().all(|c| matches!(c, '-' | '*' | '_' | '|' | ':' | ' ')) && t.len() >= 3 {
+            continue;
+        }
+        let t = t.trim_start_matches('#').trim_start_matches('>').trim_start();
+        let t = strip_list_marker(t);
+        out.push(strip_inline(t));
+    }
+    out.join("\n")
+}
+
+fn strip_list_marker(t: &str) -> &str {
+    for m in ["- [ ] ", "- [x] ", "- ", "* ", "+ "] {
+        if let Some(rest) = t.strip_prefix(m) {
+            return rest;
+        }
+    }
+    let digits = t.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0 {
+        if let Some(rest) = t[digits..].strip_prefix(". ").or_else(|| t[digits..].strip_prefix(") ")) {
+            return rest;
+        }
+    }
+    t
+}
+
+/// Inline markdown to text: `[text](url)` keeps the text; `**`, `__`, `*`, `` ` `` and `~~` go.
+fn strip_inline(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '!' if chars.get(i + 1) == Some(&'[') => i += 1,
+            '[' => {
+                // A link: keep the text, skip the target.
+                if let Some(close) = chars[i..].iter().position(|&x| x == ']').map(|p| p + i) {
+                    if chars.get(close + 1) == Some(&'(') {
+                        if let Some(end) = chars[close..].iter().position(|&x| x == ')').map(|p| p + close) {
+                            out.extend(&chars[i + 1..close]);
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
+                out.push(c);
+                i += 1;
+            }
+            '*' | '`' => i += 1,
+            '_' if chars.get(i + 1) == Some(&'_') => i += 2,
+            '~' if chars.get(i + 1) == Some(&'~') => i += 2,
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// All whitespace runs as one space, trimmed, capped at [`LINE_CAP`] chars.
+pub fn one_line(s: &str) -> String {
+    let joined = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    cap_chars(&joined, LINE_CAP)
+}
+
+/// `s` cut to at most `max` chars; a cut line ends with "…" (counted in `max`).
+fn cap_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(max.saturating_sub(1)).collect();
+    t.truncate(t.trim_end().len());
+    t.push('…');
+    t
+}
+
+/// Last line of a screen that says something: box drawing, prompt markers and lines
+/// without a letter or digit are skipped.
+pub fn screen_line(text: &str) -> Option<String> {
+    text.lines().rev().find_map(clean_screen_line)
+}
+
+/// For a blocked agent: the last line that asks something (ends with "?") among the last
+/// [`QUESTION_SCAN`] useful lines, else [`screen_line`].
+pub fn screen_question(text: &str) -> Option<String> {
+    let useful: Vec<String> = text.lines().rev().filter_map(clean_screen_line).take(QUESTION_SCAN).collect();
+    useful.iter().find(|l| l.ends_with('?')).or(useful.first()).cloned()
+}
+
+/// Useful lines looked at for a question.
+const QUESTION_SCAN: usize = 15;
+
+fn clean_screen_line(raw: &str) -> Option<String> {
+    {
+        let cleaned: String = raw
+            .chars()
+            .map(|c| if is_chrome(c) { ' ' } else { c })
+            .collect();
+        let mut t = cleaned.trim();
+        for p in ["❯", "›", ">", "$", "%", "#"] {
+            t = t.strip_prefix(p).unwrap_or(t).trim_start();
+        }
+        if !t.chars().any(char::is_alphanumeric) {
+            return None;
+        }
+        Some(one_line(t))
+    }
+}
+
+/// Box drawing, block elements and braille spinner characters.
+fn is_chrome(c: char) -> bool {
+    matches!(c as u32, 0x2500..=0x259F | 0x2800..=0x28FF)
+}
+
+/// One agent of `session.snapshot`.
+struct Agent {
+    pane_id: String,
+    kind: String,
+    status: String,
+}
+
+fn snapshot_agents(snap: &Value) -> Vec<Agent> {
+    let s = snap.get("snapshot").unwrap_or(snap);
+    let Some(list) = s.get("agents").and_then(Value::as_array) else { return vec![] };
+    list.iter()
+        .filter_map(|a| {
+            Some(Agent {
+                pane_id: a.get("pane_id")?.as_str()?.to_string(),
+                kind: a.get("agent").and_then(Value::as_str).unwrap_or("unknown").to_string(),
+                status: a.get("agent_status").and_then(Value::as_str).unwrap_or("unknown").to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Previews of the agents in herdr's snapshot (only `pane_ids` when given). Panes whose
+/// work fails or takes longer than `pane_timeout` are left out. Only a failed snapshot is an error.
+pub async fn previews(
+    socket: &Path,
+    timeout: Duration,
+    home: &Path,
+    state: &PreviewState,
+    pane_ids: Option<Vec<String>>,
+    pane_timeout: Duration,
+) -> Result<Vec<AgentPreview>, HerdrError> {
+    let snap = herdr::Client::connect(socket, timeout).await?.call("session.snapshot", json!({})).await?;
+    let wanted: Option<HashSet<String>> = pane_ids.map(|v| v.into_iter().collect());
+    let agents: Vec<Agent> =
+        snapshot_agents(&snap).into_iter().filter(|a| wanted.as_ref().is_none_or(|w| w.contains(&a.pane_id))).collect();
+
+    let mut set = JoinSet::new();
+    for (order, a) in agents.into_iter().enumerate() {
+        let since = state.status_since(&a.pane_id, &a.status);
+        let (socket, home, state) = (socket.to_path_buf(), home.to_path_buf(), state.clone());
+        set.spawn(async move {
+            let work = one_pane(&socket, timeout, &home, &state, &a);
+            let got = tokio::time::timeout(pane_timeout, work).await.ok().flatten();
+            got.map(|mut p| {
+                p.status_since = since;
+                (order, p)
+            })
+        });
+    }
+    let mut out = Vec::new();
+    while let Some(r) = set.join_next().await {
+        if let Ok(Some(p)) = r {
+            out.push(p);
+        }
+    }
+    out.sort_by_key(|(order, _)| *order);
+    Ok(out.into_iter().map(|(_, p)| p).collect())
+}
+
+/// One pane's preview: from its Claude log when there is one, else from its screen.
+async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &PreviewState, a: &Agent) -> Option<AgentPreview> {
+    let mut p = AgentPreview {
+        pane_id: a.pane_id.clone(),
+        activity: None,
+        last_reply: None,
+        question: None,
+        status_since: None,
+        source: "screen".into(),
+    };
+    if a.kind == "claude" {
+        let log = match state.cached_log(&a.pane_id) {
+            Some(l) => l,
+            None => {
+                let r = claude::resolve(socket, timeout, home, &a.pane_id).await.ok()?;
+                let l = r.log_path.map(PathBuf::from);
+                state.cache_log(&a.pane_id, l.clone());
+                l
+            }
+        };
+        if let Some(path) = log {
+            if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_log(&path)).await {
+                p.source = "log".into();
+                p.last_reply = lp.last_reply;
+                match a.status.as_str() {
+                    "working" => p.activity = lp.activity,
+                    "blocked" => p.question = lp.question,
+                    _ => {}
+                }
+                // A blocked agent whose log shows no pending call: ask the screen.
+                if a.status == "blocked" && p.question.is_none() {
+                    p.question = read_screen_line(socket, timeout, &a.pane_id, true).await;
+                }
+                return Some(p);
+            }
+        }
+    }
+    let line = read_screen_line(socket, timeout, &a.pane_id, a.status == "blocked").await?;
+    match a.status.as_str() {
+        "working" => p.activity = Some(line),
+        "blocked" => p.question = Some(line),
+        _ => p.last_reply = Some(line),
+    }
+    Some(p)
+}
+
+async fn read_screen_line(socket: &Path, timeout: Duration, pane: &str, blocked: bool) -> Option<String> {
+    let mut c = herdr::Client::connect(socket, timeout).await.ok()?;
+    let r = c
+        .call("pane.read", json!({ "pane_id": pane, "source": "visible", "format": "text", "strip_ansi": true }))
+        .await
+        .ok()?;
+    let text = r.get("read").and_then(|x| x.get("text")).and_then(Value::as_str)?;
+    if blocked {
+        screen_question(text)
+    } else {
+        screen_line(text)
+    }
+}

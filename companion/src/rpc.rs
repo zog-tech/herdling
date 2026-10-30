@@ -59,6 +59,8 @@ pub struct Ctx {
     pub summary_timeout: Duration,
     /// Bound for one `tts_command` run.
     pub tts_timeout: Duration,
+    /// Status start times and resolved logs kept for `agents.preview`.
+    pub preview: crate::preview::PreviewState,
 }
 
 impl Ctx {
@@ -79,6 +81,7 @@ impl Ctx {
             usage_keychain: cfg!(target_os = "macos"),
             summary_timeout: crate::summary::TIMEOUT,
             tts_timeout: crate::tts::TIMEOUT,
+            preview: crate::preview::PreviewState::default(),
         }
     }
 }
@@ -336,6 +339,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "automations.approve" => automations_approve(ctx, params).await,
         "summary.make" => summary_make(ctx, params).await,
         "tts.make" => tts_make(ctx, params).await,
+        "agents.preview" => agents_preview(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -450,10 +454,12 @@ async fn herdr_subscribe(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, R
     let mut events = crate::events::subscribe(&ctx.herdr_socket, ctx.herdr_timeout, events).await.map_err(herdr_err)?;
 
     let out = out.clone();
+    let preview = ctx.preview.clone();
     let stream = ctx.streams.spawn("herdr", move |id| async move {
         loop {
             match events.next().await {
                 Some(ev) => {
+                    preview.observe_event(&ev);
                     if !notify(&out, &id, ev).await {
                         return;
                     }
@@ -600,6 +606,31 @@ async fn tts_make(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("no_command", "no tts_command in the companion config"))?;
     let audio = crate::tts::make(argv, text, ctx.tts_timeout).await?;
     serde_json::to_value(audio).map_err(|e| err("internal", e.to_string()))
+}
+
+/// One preview line per agent (only `pane_ids` when given). See [`crate::preview`].
+async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let pane_ids: Option<Vec<String>> = match params.get("pane_ids") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(a)) => Some(
+            a.iter()
+                .map(|v| v.as_str().map(String::from))
+                .collect::<Option<_>>()
+                .ok_or_else(|| err("bad_request", "pane_ids must be an array of strings"))?,
+        ),
+        Some(_) => return Err(err("bad_request", "pane_ids must be an array of strings")),
+    };
+    let previews = crate::preview::previews(
+        &ctx.herdr_socket,
+        ctx.herdr_timeout,
+        &ctx.home,
+        &ctx.preview,
+        pane_ids,
+        crate::preview::PANE_TIMEOUT,
+    )
+    .await
+    .map_err(herdr_err)?;
+    Ok(json!({ "previews": previews }))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

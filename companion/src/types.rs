@@ -302,3 +302,22 @@ pub struct AutomationRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
 }
+
+/// `agents.preview` item: one short line per agent for the Agent Board.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentPreview {
+    pub pane_id: String,
+    /// While working: what the agent does now ("Running pnpm test").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
+    /// The last assistant text, markdown stripped, one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reply: Option<String>,
+    /// While blocked: the permission question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    /// Unix seconds when the current herdr status began; null when unknown.
+    pub status_since: Option<i64>,
+    /// "log" (Claude session log) or "screen" (last line of the pane).
+    pub source: String,
+}

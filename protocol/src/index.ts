@@ -121,3 +121,17 @@ export type AutomationRun = {
   status: "running" | "ok" | "failed" | "pending_approval";
   summary?: string;
 };
+
+/** `agents.preview` item: one short line per agent for the Agent Board. */
+export type AgentPreview = {
+  pane_id: string;
+  /** While working: "Running pnpm test", "Editing auth.ts", "Thinking". */
+  activity?: string;
+  /** First ~140 chars of the last assistant text, markdown stripped, one line. */
+  last_reply?: string;
+  /** While blocked: the permission question ("Allow git push?"). */
+  question?: string;
+  /** Unix seconds when the current herdr status began; null when unknown. */
+  status_since?: number | null;
+  source: "log" | "screen";
+};

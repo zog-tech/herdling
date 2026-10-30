@@ -8,6 +8,7 @@ pub mod herdr;
 pub mod hostcmd;
 pub mod install;
 pub mod pair;
+pub mod preview;
 pub mod push;
 pub mod rpc;
 pub mod serve;
