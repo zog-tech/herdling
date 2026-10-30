@@ -1,7 +1,7 @@
 //! The long-running `zogsshd serve` process.
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -25,8 +25,27 @@ pub struct ServeCtx {
     pub exe: PathBuf,
 }
 
+/// Takes the exclusive `serve.lock` next to the config, so a second `serve` (for example a
+/// manual one next to the launchd unit) exits instead of sending every push twice.
+/// The lock lasts as long as the returned file.
+pub fn take_serve_lock(config_path: &Path) -> Result<std::fs::File> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let dir = config_path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).mode(0o600).open(dir.join("serve.lock"))?;
+    if !fs4::fs_std::FileExt::try_lock_exclusive(&file)? {
+        anyhow::bail!("another zogsshd serve is running (lock {} is held)", dir.join("serve.lock").display());
+    }
+    Ok(file)
+}
+
 pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()> {
+    let _lock = take_serve_lock(&ctx.config_path)?;
     let config = config::load(&ctx.config_path)?;
+    let fingerprint = crate::pair::host_fingerprint(&ctx.host_key_paths);
+    if fingerprint.is_none() {
+        eprintln!("zogsshd serve: warning: no host key found, so pairing sends no host key fingerprint and the phone trusts the first key it sees");
+    }
     let port = ctx.pair_port.unwrap_or(config.pair_port);
     // The phone reaches the pairing endpoint over the LAN, so listen on every interface.
     // Without the port the watcher still runs; only pairing is unavailable.
@@ -48,7 +67,7 @@ pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()
         ssh_port: config.ssh_port,
         pair_port: port,
         version: env!("CARGO_PKG_VERSION").into(),
-        fingerprint: crate::pair::host_fingerprint(&ctx.host_key_paths),
+        fingerprint,
     })
     .map_err(|e| eprintln!("zogsshd serve: bonjour advert failed: {e:#}"))
     .ok();

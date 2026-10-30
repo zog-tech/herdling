@@ -54,14 +54,17 @@ fn lan_ipv4() -> Option<std::net::Ipv4Addr> {
     })
 }
 
-/// `zogsshd pair`: opens the pairing window and shows the code and its QR code.
-fn pair_cmd(home: &std::path::Path) -> Result<()> {
+/// `zogsshd pair`: opens the pairing window, shows the code, the host key fingerprint and
+/// the QR code, then stays until the window is used or closes and prints each device it paired.
+async fn pair_cmd(home: &std::path::Path) -> Result<()> {
     use zogsshd::pair;
     let config_path = config::default_path(home);
     let cfg = config::load(&config_path)?;
+    let before = cfg.devices.clone();
     let cfg_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| home.join(".config/zogsshd"));
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
-    let code = pair::open_window(&cfg_dir, now)?;
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let code = pair::open_window(&cfg_dir, now())?;
+    let fingerprint = pair::host_fingerprint(&pair::default_host_key_paths());
 
     let local = std::net::SocketAddr::from(([127, 0, 0, 1], cfg.pair_port));
     if std::net::TcpStream::connect_timeout(&local, Duration::from_secs(1)).is_err() {
@@ -71,9 +74,13 @@ fn pair_cmd(home: &std::path::Path) -> Result<()> {
     println!("Pairing code (valid for {} minutes):\n", pair::WINDOW.as_secs() / 60);
     print!("{}", big_digits(&code));
     println!("\n  {code}\n");
+    match &fingerprint {
+        Some(fp) => println!("Host key: {fp}\nIf you type the code by hand, check that Zogssh shows this key.\n"),
+        None => eprintln!("warning: no host key found, so Zogssh cannot check the host key while pairing\n"),
+    }
     match lan_ipv4() {
         Some(ip) => {
-            let url = pair::pair_url(&ip.to_string(), cfg.pair_port, &code);
+            let url = pair::pair_url(&ip.to_string(), cfg.pair_port, &code, fingerprint.as_deref());
             println!("Host: {ip}  port: {}\n", cfg.pair_port);
             let qr = qrcode::QrCode::new(url.as_bytes())?;
             println!("{}", qr.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
@@ -81,7 +88,40 @@ fn pair_cmd(home: &std::path::Path) -> Result<()> {
         }
         None => println!("No LAN IPv4 address found. Add the host by hand in Zogssh and type the code."),
     }
-    Ok(())
+    println!("Waiting for the phone. Press Ctrl-C to close the window.");
+
+    let mut tick = tokio::time::interval(Duration::from_millis(500));
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {}
+            _ = tokio::signal::ctrl_c() => {
+                pair::close_window(&cfg_dir);
+                println!("\nPairing window closed.");
+                return Ok(());
+            }
+        }
+        match pair::window_state(&cfg_dir, now()) {
+            pair::WindowState::Open(_) => continue,
+            pair::WindowState::Expired => {
+                pair::close_window(&cfg_dir);
+                println!("Pairing window closed with no new device.");
+                return Ok(());
+            }
+            pair::WindowState::Closed => {
+                // Give serve a moment to save the device after it took the window.
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let after = config::load(&config_path)?.devices;
+                let paired = pair::new_devices(&before, &after);
+                if paired.is_empty() {
+                    println!("Pairing window closed with no new device.");
+                }
+                for (name, fp) in paired {
+                    println!("Paired {name}  key {fp}");
+                }
+                return Ok(());
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -110,14 +150,14 @@ async fn main() -> Result<()> {
                 push_url: "https://exp.host/--/api/v2/push/send".into(),
                 debounce: Duration::from_secs(5),
                 pair_port: None,
-                host_key_paths: vec![PathBuf::from("/etc/ssh/ssh_host_ed25519_key.pub")],
+                host_key_paths: zogsshd::pair::default_host_key_paths(),
                 exe: std::env::current_exe()?.canonicalize()?,
             };
             serve::run(ctx, shutdown_signal()).await
         }
         Some("pair") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-            pair_cmd(&home)
+            pair_cmd(&home).await
         }
         Some("install") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));

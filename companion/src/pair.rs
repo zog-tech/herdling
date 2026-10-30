@@ -87,7 +87,7 @@ fn write_window(cfg_dir: &Path, w: &Window) -> std::io::Result<()> {
 }
 
 /// Deletes `pair.json`. True when the file is gone afterwards.
-fn close_window(cfg_dir: &Path) -> bool {
+pub fn close_window(cfg_dir: &Path) -> bool {
     match fs::remove_file(window_path(cfg_dir)) {
         Ok(()) => true,
         Err(e) => e.kind() == std::io::ErrorKind::NotFound,
@@ -334,6 +334,11 @@ fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> 
     res.map(|()| removed)
 }
 
+/// Where `serve` and `pair` look for the host key.
+pub fn default_host_key_paths() -> Vec<PathBuf> {
+    vec![PathBuf::from("/etc/ssh/ssh_host_ed25519_key.pub")]
+}
+
 /// `SHA256:<base64 no padding>` of the key in the first readable `.pub` file, as `ssh-keygen -lf` prints it.
 pub fn host_fingerprint(paths: &[PathBuf]) -> Option<String> {
     paths.iter().find_map(|p| {
@@ -344,8 +349,60 @@ pub fn host_fingerprint(paths: &[PathBuf]) -> Option<String> {
     })
 }
 
-pub fn pair_url(addr: &str, port: u16, code: &str) -> String {
-    format!("zogssh://pair?h={addr}&p={port}&c={code}")
+/// `SHA256:<base64 no padding>` of the key blob of `public_key` (`<type> <blob> [comment]`),
+/// as `ssh-keygen -lf` prints it. Safe to log: it is not the key.
+pub fn key_fingerprint(public_key: &str) -> Option<String> {
+    let raw = STANDARD.decode(public_key.split_whitespace().nth(1)?).ok()?;
+    Some(format!("SHA256:{}", STANDARD_NO_PAD.encode(Sha256::digest(&raw))))
+}
+
+/// State of the pairing window file at `now`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum WindowState {
+    /// Open, with the seconds left.
+    Open(u64),
+    /// Still on disk, but past its end or out of attempts.
+    Expired,
+    /// No window file: a pairing used it, or it was closed.
+    Closed,
+}
+
+pub fn window_state(cfg_dir: &Path, now: u64) -> WindowState {
+    let Ok(text) = fs::read(window_path(cfg_dir)) else { return WindowState::Closed };
+    match serde_json::from_slice::<Window>(&text) {
+        Ok(w) if now < w.expires_at && w.wrong < MAX_WRONG => WindowState::Open(w.expires_at - now),
+        _ => WindowState::Expired,
+    }
+}
+
+/// Devices in `after` that are new or have a new key compared to `before`, as
+/// `(name, key fingerprint)`. Used to print what a pairing window added.
+pub fn new_devices(before: &[crate::config::Device], after: &[crate::config::Device]) -> Vec<(String, String)> {
+    after
+        .iter()
+        .filter(|d| !before.iter().any(|b| b.id == d.id && b.public_key == d.public_key))
+        .filter_map(|d| Some((d.name.clone(), key_fingerprint(d.public_key.as_deref()?)?)))
+        .collect()
+}
+
+/// Percent-encodes everything except RFC 3986 unreserved characters.
+fn url_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => char::from(b).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// The QR / deep link. `fingerprint` is the host key fingerprint the app must see in the `/pair` answer.
+pub fn pair_url(addr: &str, port: u16, code: &str, fingerprint: Option<&str>) -> String {
+    let mut url = format!("zogssh://pair?h={}&p={port}&c={}", url_encode(addr), url_encode(code));
+    if let Some(fp) = fingerprint {
+        url.push_str("&f=");
+        url.push_str(&url_encode(fp));
+    }
+    url
 }
 
 #[cfg(test)]

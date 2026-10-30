@@ -617,23 +617,32 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "ok": true }))
 }
 
-/// Removes the device's key lines from `authorized_keys` and the device from the config.
+/// Removes the device's `zogssh:` key line from `authorized_keys` and the device from the
+/// config. The device must be paired and the key must be the one saved for it, so a call
+/// can never remove a line the user added (for example a laptop key).
 async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let id = str_param(&params, "device_id", "pair.revoke")?.to_string();
     let key = str_param(&params, "public_key", "pair.revoke")?;
     let key = crate::pair::parse_public_key(key).map_err(|e| err("bad_request", e.to_string()))?;
     let (keys_path, config_path) = (ctx.authorized_keys.clone(), ctx.config_path.clone());
-    let (removed_keys, removed_device) = tokio::task::spawn_blocking(move || -> anyhow::Result<(usize, bool)> {
-        let removed_keys = crate::pair::remove_key(&keys_path, &key)?;
+    tokio::task::spawn_blocking(move || -> Result<Value, RpcError> {
+        let io = |e: anyhow::Error| err("io_error", format!("{e:#}"));
+        let cfg = crate::config::load(&config_path).map_err(io)?;
+        let Some(device) = cfg.devices.iter().find(|d| d.id == id) else {
+            return Err(err("not_found", "pair.revoke: no paired device with this device_id"));
+        };
+        if device.public_key.as_deref() != Some(key.as_str()) {
+            return Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device"));
+        }
+        let removed_keys = crate::pair::remove_zogssh_key(&keys_path, &key).map_err(|e| io(e.into()))?;
         let removed_device = crate::config::update(&config_path, |c| {
             let before = c.devices.len();
             c.devices.retain(|d| d.id != id);
             c.devices.len() != before
-        })?;
-        Ok((removed_keys, removed_device))
+        })
+        .map_err(io)?;
+        Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
     })
     .await
     .map_err(|e| err("internal", e.to_string()))?
-    .map_err(|e| err("io_error", format!("{e:#}")))?;
-    Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
 }

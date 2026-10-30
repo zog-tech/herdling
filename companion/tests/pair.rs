@@ -364,19 +364,8 @@ async fn revoke_removes_only_that_key() {
     let third = format!("command=\"echo {mine}\" ssh-ed25519 {other2}   spaced comment \n");
     std::fs::write(&keys, format!("{first}{line_mine}\n{third}")).unwrap();
     config::update(&config::default_path(home), |c| {
-        for id in ["d1", "d2"] {
-            config::upsert_device(
-                c,
-                Device {
-                    id: id.into(),
-                    name: "Sam".into(),
-                    host_id: "h_1".into(),
-                    public_key: None,
-                    expo_token: None,
-                    prefs: Prefs::default(),
-                },
-            );
-        }
+        config::upsert_device(c, device("d1", "Sam", Some(format!("ssh-ed25519 {mine}"))));
+        config::upsert_device(c, device("d2", "Sam", Some(format!("ssh-ed25519 {other2}"))));
     })
     .unwrap();
 
@@ -386,11 +375,65 @@ async fn revoke_removes_only_that_key() {
     let c = config::load(&config::default_path(home)).unwrap();
     assert_eq!(c.devices.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["d2"]);
 
+    // The device is gone now: a second revoke is an error.
     let r = rpc_call(home, "pair.revoke", json!({"device_id": "d1", "public_key": format!("ssh-ed25519 {mine}")})).await;
-    assert_eq!(r["result"], json!({"removed_keys": 0, "removed_device": false}));
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
 
     let r = rpc_call(home, "pair.revoke", json!({"device_id": "d2", "public_key": "ssh-ed25519 AAAA\nx"})).await;
     assert_eq!(r["error"]["code"], "bad_request");
+}
+
+/// Temp home with a user key line, a zogssh line for the same key, and device d1 paired with it.
+fn revoke_home(stored: Option<String>) -> (tempfile::TempDir, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = dir.path().join(".ssh/authorized_keys");
+    std::fs::create_dir_all(keys.parent().unwrap()).unwrap();
+    let (phone, laptop) = (ed25519_blob(1), ed25519_blob(2));
+    let user_lines = format!("ssh-ed25519 {phone} sam@laptop\nssh-ed25519 {laptop} sam@laptop\n");
+    let line = pair::key_line(Path::new(EXE), &format!("ssh-ed25519 {phone}"), "Sam iPhone").unwrap();
+    std::fs::write(&keys, format!("{user_lines}{line}\n")).unwrap();
+    config::update(&config::default_path(dir.path()), |c| config::upsert_device(c, device("d1", "Sam", stored))).unwrap();
+    (dir, phone, laptop)
+}
+
+#[tokio::test]
+async fn revoke_keeps_user_line_with_same_key() {
+    let (dir, phone, laptop) = revoke_home(Some(format!("ssh-ed25519 {}", ed25519_blob(1))));
+    let keys = dir.path().join(".ssh/authorized_keys");
+    let r = rpc_call(dir.path(), "pair.revoke", json!({"device_id": "d1", "public_key": format!("ssh-ed25519 {phone}")})).await;
+    assert_eq!(r["result"], json!({"removed_keys": 1, "removed_device": true}), "{r}");
+    assert_eq!(std::fs::read_to_string(keys).unwrap(), format!("ssh-ed25519 {phone} sam@laptop\nssh-ed25519 {laptop} sam@laptop\n"));
+}
+
+#[tokio::test]
+async fn revoke_other_key_or_unknown_device_removes_nothing() {
+    let (dir, phone, laptop) = revoke_home(Some(format!("ssh-ed25519 {}", ed25519_blob(1))));
+    let keys = dir.path().join(".ssh/authorized_keys");
+    let before = std::fs::read_to_string(&keys).unwrap();
+    // The laptop key is not the key saved for d1.
+    let r = rpc_call(dir.path(), "pair.revoke", json!({"device_id": "d1", "public_key": format!("ssh-ed25519 {laptop}")})).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    let r = rpc_call(dir.path(), "pair.revoke", json!({"device_id": "d9", "public_key": format!("ssh-ed25519 {phone}")})).await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+    assert_eq!(std::fs::read_to_string(&keys).unwrap(), before);
+    assert_eq!(config::load(&config::default_path(dir.path())).unwrap().devices.len(), 1);
+
+    // A device with no saved key cannot revoke anything.
+    let (dir, phone, _) = revoke_home(None);
+    let before = std::fs::read_to_string(dir.path().join(".ssh/authorized_keys")).unwrap();
+    let r = rpc_call(dir.path(), "pair.revoke", json!({"device_id": "d1", "public_key": format!("ssh-ed25519 {phone}")})).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    assert_eq!(std::fs::read_to_string(dir.path().join(".ssh/authorized_keys")).unwrap(), before);
+}
+
+#[test]
+fn serve_lock_is_exclusive() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = config::default_path(dir.path());
+    let held = zogsshd::serve::take_serve_lock(&path).unwrap();
+    assert!(zogsshd::serve::take_serve_lock(&path).is_err());
+    drop(held);
+    assert!(zogsshd::serve::take_serve_lock(&path).is_ok());
 }
 
 #[test]
@@ -435,5 +478,72 @@ fn host_fingerprint_skips_unreadable() {
 
 #[test]
 fn pair_url_format() {
-    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456"), "zogssh://pair?h=10.0.0.5&p=7790&c=123456");
+    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456", None), "zogssh://pair?h=10.0.0.5&p=7790&c=123456");
+    // `+`, `/` and `:` in the fingerprint are percent-encoded, so the app reads it back exactly.
+    assert_eq!(
+        pair::pair_url("10.0.0.5", 7790, "123456", Some("SHA256:ab+c/d")),
+        "zogssh://pair?h=10.0.0.5&p=7790&c=123456&f=SHA256%3Aab%2Bc%2Fd"
+    );
+}
+
+#[test]
+fn key_fingerprint_is_sha256_of_blob() {
+    let blob = ed25519_blob(5);
+    let fp = format!("SHA256:{}", STANDARD_NO_PAD.encode(Sha256::digest(STANDARD.decode(&blob).unwrap())));
+    assert_eq!(pair::key_fingerprint(&format!("ssh-ed25519 {blob}")), Some(fp.clone()));
+    assert_eq!(pair::key_fingerprint(&format!("ssh-ed25519 {blob} zogssh:Sam")), Some(fp.clone()));
+    assert!(!fp.contains(&blob));
+    assert_eq!(pair::key_fingerprint("ssh-ed25519"), None);
+    assert_eq!(pair::key_fingerprint("ssh-ed25519 !!!"), None);
+}
+
+fn device(id: &str, name: &str, key: Option<String>) -> Device {
+    Device { id: id.into(), name: name.into(), host_id: "h_1".into(), public_key: key, expo_token: None, prefs: Prefs::default() }
+}
+
+#[test]
+fn new_devices_lists_added_and_rekeyed() {
+    let (k1, k2, k3) = (format!("ssh-ed25519 {}", ed25519_blob(1)), format!("ssh-ed25519 {}", ed25519_blob(2)), format!("ssh-ed25519 {}", ed25519_blob(3)));
+    let before = vec![device("d1", "Sam-iPhone", Some(k1.clone())), device("d2", "Sam-iPad", Some(k2.clone()))];
+    let after = vec![
+        device("d1", "Sam-iPhone", Some(k1)),
+        device("d2", "Sam-iPad", Some(k3.clone())),
+        device("d3", "Other", Some(k2.clone())),
+        device("d4", "NoKey", None),
+    ];
+    let got = pair::new_devices(&before, &after);
+    assert_eq!(
+        got,
+        vec![
+            ("Sam-iPad".to_string(), pair::key_fingerprint(&k3).unwrap()),
+            ("Other".to_string(), pair::key_fingerprint(&k2).unwrap()),
+        ]
+    );
+}
+
+#[test]
+fn window_state_tracks_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(pair::window_state(dir.path(), now()), pair::WindowState::Closed);
+    let t = now();
+    let code = pair::open_window(dir.path(), t).unwrap();
+    assert_eq!(pair::window_state(dir.path(), t + 10), pair::WindowState::Open(pair::WINDOW.as_secs() - 10));
+    assert_eq!(pair::window_state(dir.path(), t + pair::WINDOW.as_secs()), pair::WindowState::Expired);
+    pair::take_window(dir.path(), &code, t + 1).unwrap();
+    assert_eq!(pair::window_state(dir.path(), t + 2), pair::WindowState::Closed);
+}
+
+#[tokio::test]
+async fn repair_without_token_keeps_saved_token_and_prefs() {
+    let s = start().await;
+    pair_d1(&s, &[1]).await;
+    config::update(&s.config_path(), |c| c.devices[0].prefs.finished = false).unwrap();
+    let code = s.open();
+    let mut b = body(&code, &format!("ssh-ed25519 {}", ed25519_blob(2)), "Sam iPhone");
+    b["expo_token"] = Value::Null;
+    let (status, resp) = post(&s, &b).await;
+    assert_eq!(status, 200, "{resp}");
+    let c = config::load(&s.config_path()).unwrap();
+    assert_eq!(c.devices[0].expo_token.as_deref(), Some("ExponentPushToken[test]"));
+    assert!(!c.devices[0].prefs.finished);
 }

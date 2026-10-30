@@ -15,7 +15,7 @@ use serde_json::json;
 use tokio::net::TcpListener;
 
 use super::ServeCtx;
-use crate::config::{self, Device, Prefs};
+use crate::config::{self, Device};
 use crate::pair::{self, PairError};
 use crate::types::{PairRequest, PairResponse};
 
@@ -141,13 +141,12 @@ fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairRespon
     pair::take_window(&state.cfg_dir, &req.code, now)?;
     // Re-pairing a device with a new key: its old key line must go, or the old key keeps
     // access that a later `pair.revoke` (which sends the current key) cannot remove.
-    let old_key = config::load(&state.config_path)
+    let existing = config::load(&state.config_path)
         .map_err(Failure::Internal)?
         .devices
         .into_iter()
-        .find(|d| d.id == req.device_id)
-        .and_then(|d| d.public_key)
-        .filter(|k| *k != public_key);
+        .find(|d| d.id == req.device_id);
+    let old_key = existing.as_ref().and_then(|d| d.public_key.clone()).filter(|k| *k != public_key);
     if let Some(old) = old_key {
         pair::remove_zogssh_key(&state.authorized_keys, &old).map_err(|e| Failure::Internal(e.into()))?;
     }
@@ -156,16 +155,19 @@ fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairRespon
         id: req.device_id,
         name: name.clone(),
         host_id: req.host_id,
-        public_key: Some(public_key),
-        expo_token: req.expo_token,
-        prefs: Prefs::default(),
+        public_key: Some(public_key.clone()),
+        // The app sends the push token only over the pinned SSH session (`push.register`),
+        // so a re-pair with no token keeps the one already saved, and the prefs.
+        expo_token: req.expo_token.or_else(|| existing.as_ref().and_then(|d| d.expo_token.clone())),
+        prefs: existing.map(|d| d.prefs).unwrap_or_default(),
     };
     let ssh_port = config::update(&state.config_path, |c| {
         config::upsert_device(c, device);
         c.ssh_port
     })
     .map_err(Failure::Internal)?;
-    eprintln!("zogsshd serve: paired device {name}");
+    let key_fp = pair::key_fingerprint(&public_key).unwrap_or_default();
+    eprintln!("zogsshd serve: paired device {name}  key {key_fp}");
     Ok(PairResponse {
         host_name: state.host_name.clone(),
         user: state.user.clone(),
