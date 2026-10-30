@@ -79,6 +79,8 @@ export function useBucketAnnouncements(items: BoardItem[], focused: boolean): vo
     const text = announcement(changes);
     if (!text) return;
     throttle.current.push(text);
-    haptics.status({ from: changes[0].from, to: changes[0].to });
+    // With many agents, a haptic per change is too much: the Board vibrates only when an agent needs you.
+    const needsYou = changes.find((c) => c.to === "needs_you");
+    if (needsYou) haptics.status({ from: needsYou.from, to: needsYou.to });
   }, [items, focused]);
 }
