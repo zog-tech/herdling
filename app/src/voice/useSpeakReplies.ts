@@ -150,9 +150,17 @@ export function useSpeakReplies(
     if (recording) stopSpeech();
   }, [recording]);
 
-  // The speaker turned off.
+  // The speaker turned off stops speech. Turned on while the agent is finished, it speaks the last reply.
+  const wasEnabled = useRef(enabled);
   useEffect(() => {
+    const before = wasEnabled.current;
+    wasEnabled.current = enabled;
     if (!enabled) stopSpeech();
+    else if (!before && finished(status)) {
+      spokenId.current = undefined;
+      settleThenSpeak();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   // Another screen covers this one: stop speech and drop a pending speak.

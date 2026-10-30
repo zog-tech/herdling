@@ -118,8 +118,10 @@ describe("useSpeakReplies", () => {
     await act(async () => r.update(<Probe status="idle" items={items} />));
     await flush();
     expect(mockSpeak).not.toHaveBeenCalled();
-    useSessionSpeak.setState({ bySession: {} });
     await act(async () => r.update(<Probe status="blocked" items={items} />));
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: {} });
+    });
     await act(async () => r.update(<Probe status="idle" items={items} />));
     await flush();
     expect(mockSpeak).not.toHaveBeenCalled();
@@ -289,6 +291,40 @@ describe("useSpeakReplies", () => {
     expect(mockLocalAvailable).not.toHaveBeenCalled();
     expect(mockCall).not.toHaveBeenCalled();
     expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.anything());
+  });
+
+  it("turning the speaker on speaks the last reply of a finished agent, again after off and on", async () => {
+    useSessionSpeak.setState({ bySession: { "h:p": false } });
+    await act(async () => {
+      create(<Probe status="idle" items={items} />);
+    });
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: { "h:p": true } });
+    });
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: { "h:p": false } });
+    });
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: { "h:p": true } });
+    });
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledTimes(2);
+  });
+
+  it("turning the speaker on while the agent works speaks nothing yet", async () => {
+    useSessionSpeak.setState({ bySession: { "h:p": false } });
+    await act(async () => {
+      create(<Probe status="working" items={items} />);
+    });
+    await act(async () => {
+      useSessionSpeak.setState({ bySession: { "h:p": true } });
+    });
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
   });
 
   it("turning the speaker off stops speech", async () => {
