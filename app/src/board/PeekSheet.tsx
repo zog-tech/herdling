@@ -47,7 +47,7 @@ export function PeekSheet({
     if (!agent || !snapshot) return undefined;
     const key = `${hostId}:${paneId}`;
     return mergeBoard(
-      [{ hostId, hostName, agents: [agent], workspaces: snapshot.workspaces }],
+      [{ hostId, hostName, agents: [agent], workspaces: snapshot.workspaces, tabs: snapshot.tabs, panes: snapshot.panes }],
       preview ? { [key]: preview } : {},
       seen,
       firstSeen,
@@ -72,7 +72,7 @@ export function PeekSheet({
   }, [hostId, paneId]);
 
   const KindIcon = kindIcon(agent?.agent ?? thread.ref?.kind ?? "");
-  const title = agent?.terminal_title_stripped || agent?.agent || paneId;
+  const title = item?.title ?? paneId;
 
   return (
     // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
@@ -99,7 +99,7 @@ export function PeekSheet({
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
             <Text variant="caption" muted numberOfLines={1} style={{ flexShrink: 1 }}>
-              {item ? `${hostName} · ${item.workspace}` : hostName}
+              {item ? item.subtitle : hostName}
             </Text>
             {item ? <StatusPill item={item} now={now} /> : null}
           </View>

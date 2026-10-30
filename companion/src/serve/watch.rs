@@ -115,8 +115,8 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
         }
     };
     let snap = snapshot(ctx).await.unwrap_or(Value::Null);
-    let (title, workspace) = describe(&snap, pane);
-    let msgs = push::messages(&cfg, notice, pane, &title, &workspace);
+    let (title, body) = push::describe(&snap, pane);
+    let msgs = push::messages(&cfg, notice, pane, &title, &body);
     if msgs.is_empty() {
         return;
     }
@@ -168,29 +168,4 @@ fn str_field<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 fn status_field(v: &Value) -> Option<AgentStatus> {
     let s = v.get("agent_status")?;
     Some(serde_json::from_value(s.clone()).unwrap_or(AgentStatus::Unknown))
-}
-
-/// Push title and workspace label of `pane`: the terminal title, else the agent kind,
-/// else the pane id; the workspace label, else "".
-fn describe(snap: &Value, pane: &str) -> (String, String) {
-    let Some(agent) = agents(snap).find(|a| str_field(a, "pane_id") == Some(pane)) else {
-        return (pane.to_string(), String::new());
-    };
-    let title = [str_field(agent, "terminal_title_stripped"), str_field(agent, "agent")]
-        .into_iter()
-        .flatten()
-        .find(|s| !s.is_empty())
-        .unwrap_or(pane)
-        .to_string();
-    let workspace = str_field(agent, "workspace_id")
-        .and_then(|id| {
-            snap.get("workspaces")
-                .and_then(Value::as_array)?
-                .iter()
-                .find(|w| str_field(w, "workspace_id") == Some(id))
-        })
-        .and_then(|w| str_field(w, "label"))
-        .unwrap_or("")
-        .to_string();
-    (title, workspace)
 }

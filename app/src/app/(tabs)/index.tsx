@@ -201,7 +201,16 @@ export default function BoardScreen() {
     () =>
       hosts.flatMap((h) =>
         online.has(h.id) && byHost[h.id]
-          ? [{ hostId: h.id, hostName: h.name, agents: byHost[h.id].agents, workspaces: byHost[h.id].workspaces }]
+          ? [
+              {
+                hostId: h.id,
+                hostName: h.name,
+                agents: byHost[h.id].agents,
+                workspaces: byHost[h.id].workspaces,
+                tabs: byHost[h.id].tabs,
+                panes: byHost[h.id].panes,
+              },
+            ]
           : [],
       ),
     [hosts, byHost, online],

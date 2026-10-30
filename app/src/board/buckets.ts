@@ -1,6 +1,7 @@
 import type { AgentPreview, AgentStatus } from "@zogssh/protocol";
 
-import type { AgentInfo } from "@/herdr/snapshot";
+import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
+import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
 /** Where an agent sits on the Board. */
 export type Bucket = "needs_you" | "ready" | "working" | "idle";
@@ -43,6 +44,12 @@ export type BoardItem = {
   hostId: string;
   hostName: string;
   workspace: string;
+  /** Name as herdr shows it: agent name, else workspace [· tab] (see `agentTitle`). */
+  title: string;
+  /** "<host> · <agent kind>". */
+  subtitle: string;
+  /** The terminal title, when it adds to the title. Shown only when there is no preview line. */
+  terminalTitle?: string;
   agent: AgentInfo;
   bucket: Bucket;
   /** Epoch ms when the current status began, if known. */
@@ -68,7 +75,9 @@ export type BoardHost = {
   hostId: string;
   hostName: string;
   agents: AgentInfo[];
-  workspaces: { workspace_id: string; label: string }[];
+  workspaces: (Pick<WorkspaceInfo, "workspace_id" | "label"> & Partial<WorkspaceInfo>)[];
+  tabs?: TabInfo[];
+  panes?: PaneInfo[];
 };
 
 /**
@@ -91,11 +100,15 @@ export function mergeBoard(
       const raw = previews[key];
       const p = raw && raw.status === agent.agent_status ? raw : undefined;
       const local = firstSeen[key]?.status === agent.agent_status ? firstSeen[key].at : undefined;
+      const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
       out.push({
         key,
         hostId: h.hostId,
         hostName: h.hostName,
         workspace: h.workspaces.find((w) => w.workspace_id === agent.workspace_id)?.label ?? agent.workspace_id,
+        title: agentTitle(names, agent),
+        subtitle: agentSubtitle(h.hostName, agent),
+        terminalTitle: secondaryTitle(names, agent),
         agent,
         bucket,
         since: p?.status_since != null ? p.status_since * 1000 : local,

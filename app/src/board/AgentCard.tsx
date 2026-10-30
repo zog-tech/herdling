@@ -111,7 +111,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
   const { agent, bucket } = item;
   const { color } = BUCKET_META[bucket];
   const KindIcon = kindIcon(agent.agent);
-  const title = agent.terminal_title_stripped || agent.agent;
+  const line = item.line ?? item.terminalTitle;
   const unread = bucket === "ready";
   const flagged = bucket === "needs_you" || bucket === "ready";
   const close = () => swipe.current?.close();
@@ -211,21 +211,21 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
                 />
               ) : null}
               <Text bold numberOfLines={1} style={{ flex: 1 }}>
-                {title}
+                {item.title}
               </Text>
               <StatusPill item={item} now={now} />
             </View>
             <Text variant="caption" muted numberOfLines={1}>
-              {`${item.hostName} · ${item.workspace}`}
+              {item.subtitle}
             </Text>
-            {item.line ? (
+            {line ? (
               <Text
                 variant="small"
                 numberOfLines={2}
                 color={bucket === "needs_you" ? colors.status.blocked : bucket === "idle" ? colors.textMuted : colors.text}
-                mono={bucket === "working"}
+                mono={bucket === "working" && !!item.line}
               >
-                {item.line}
+                {line}
               </Text>
             ) : null}
           </View>

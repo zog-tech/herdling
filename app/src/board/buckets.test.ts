@@ -113,6 +113,8 @@ test("unknown_start_sorts_last_in_bucket", () => {
     hostId: "a",
     hostName: "A",
     workspace: "api",
+    title: "api",
+    subtitle: "A · claude",
     agent: agent(key, "working"),
     bucket: "working",
     since,
@@ -152,4 +154,21 @@ test("first_seen_starts_on_change_and_drops_gone_panes", () => {
   expect(trackFirstSeen(a, [{ key: "h:p1", status: "working" }], 20)).toBe(a);
   expect(trackFirstSeen(a, [{ key: "h:p1", status: "idle" }], 30)).toEqual({ "h:p1": { status: "idle", at: 30 } });
   expect(trackFirstSeen(a, [], 40)).toEqual({});
+});
+
+test("cards_use_herdr_names", () => {
+  const h: BoardHost = {
+    hostId: "a",
+    hostName: "studio",
+    agents: [{ ...agent("p1", "working"), terminal_title_stripped: "Fix login" }, { ...agent("p2", "idle"), name: "reviewer", tab_id: "t2" }],
+    workspaces: [{ workspace_id: "w1", label: "api", tab_count: 2 }],
+    tabs: [
+      { tab_id: "t1", workspace_id: "w1", label: "main", number: 1, agent_status: "working" },
+      { tab_id: "t2", workspace_id: "w1", label: "review", number: 2, agent_status: "idle" },
+    ],
+  };
+  const items = mergeBoard([h], {}, {}, {});
+  const p1 = items.find((i) => i.agent.pane_id === "p1")!;
+  expect([p1.title, p1.subtitle, p1.terminalTitle]).toEqual(["api · main", "studio · claude", "Fix login"]);
+  expect(items.find((i) => i.agent.pane_id === "p2")!.title).toBe("reviewer");
 });

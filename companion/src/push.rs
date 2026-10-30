@@ -24,7 +24,7 @@ pub struct PushData {
 }
 
 /// One message per device that has a push token and wants `notice`.
-pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, workspace: &str) -> Vec<PushMessage> {
+pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &str) -> Vec<PushMessage> {
     let title = match notice {
         Notice::Finished => format!("{title} finished"),
         Notice::NeedsYou => format!("{title} needs you"),
@@ -40,7 +40,7 @@ pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, workspace
             Some(PushMessage {
                 to,
                 title: title.clone(),
-                body: workspace.to_string(),
+                body: body.to_string(),
                 sound: "default",
                 data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string() },
             })
@@ -72,4 +72,45 @@ pub async fn send(client: &reqwest::Client, url: &str, msgs: &[PushMessage]) -> 
         .filter(|(_, t)| t.pointer("/details/error").and_then(Value::as_str) == Some("DeviceNotRegistered"))
         .map(|(m, _)| m.to.clone())
         .collect())
+}
+
+fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+    v.get(key).and_then(Value::as_str).filter(|s| !s.trim().is_empty())
+}
+
+fn list<'a>(snap: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
+    snap.get(key).and_then(Value::as_array).into_iter().flatten()
+}
+
+/// Push title and body of `pane`, with the names the herdr apps use.
+/// Title: the agent's own name, else the pane label, else the workspace label (plus
+/// " · <tab label>" when the workspace has more than one tab), else the terminal title, the
+/// agent kind or the pane id. Body: the agent kind, plus the terminal title when it is not the title.
+pub fn describe(snap: &Value, pane: &str) -> (String, String) {
+    let Some(agent) = list(snap, "agents").find(|a| text(a, "pane_id") == Some(pane)) else {
+        return (pane.to_string(), String::new());
+    };
+    let pane_label = list(snap, "panes").find(|p| text(p, "pane_id") == Some(pane)).and_then(|p| text(p, "label"));
+    let ws_id = text(agent, "workspace_id");
+    let ws = list(snap, "workspaces").find(|w| ws_id.is_some() && text(w, "workspace_id") == ws_id);
+    let tab_id = text(agent, "tab_id");
+    let tab = list(snap, "tabs").find(|t| tab_id.is_some() && text(t, "tab_id") == tab_id);
+    let tab_count = ws
+        .and_then(|w| w.get("tab_count").and_then(Value::as_u64))
+        .unwrap_or_else(|| list(snap, "tabs").filter(|t| ws_id.is_some() && text(t, "workspace_id") == ws_id).count() as u64);
+    let place = ws.and_then(|w| text(w, "label")).map(|w| match tab.and_then(|t| text(t, "label")) {
+        Some(t) if tab_count > 1 => format!("{w} · {t}"),
+        _ => w.to_string(),
+    });
+    let terminal = text(agent, "terminal_title_stripped");
+    let kind = text(agent, "display_agent").or_else(|| text(agent, "agent"));
+    let title = text(agent, "name")
+        .or(pane_label)
+        .map(String::from)
+        .or(place)
+        .or_else(|| terminal.map(String::from))
+        .or_else(|| kind.map(String::from))
+        .unwrap_or_else(|| pane.to_string());
+    let body = [kind, terminal.filter(|t| *t != title)].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+    (title, body)
 }

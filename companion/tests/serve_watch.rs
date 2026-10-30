@@ -108,7 +108,8 @@ async fn pushes_finished_to_expo() {
     let body = s.next_body().await;
     assert_eq!(
         body,
-        json!([{"to": TOKEN, "title": "api finished", "body": "zogssh", "sound": "default",
+        // Title: the workspace label, as herdr shows it. Body: agent kind · terminal title.
+        json!([{"to": TOKEN, "title": "zogssh finished", "body": "claude · api", "sound": "default",
                 "data": {"hostId": "h_1", "paneId": "w1:p1"}}])
     );
     s.assert_no_body(Duration::from_millis(300)).await;
@@ -149,7 +150,7 @@ async fn reconnects_after_herdr_restart() {
     s.wait_subscribed().await;
     s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
     let body = s.next_body().await;
-    assert_eq!(body[0]["title"], "api finished");
+    assert_eq!(body[0]["title"], "zogssh finished");
     assert_eq!(body.as_array().unwrap().len(), 1);
     s.assert_no_body(Duration::from_millis(300)).await;
 }

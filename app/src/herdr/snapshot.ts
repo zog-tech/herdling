@@ -10,12 +10,17 @@ export type AgentInfo = {
   cwd?: string;
   state_change_seq: number;
   terminal_title_stripped?: string;
+  /** The agent's own name (`agent.rename`); null or missing when it has none. */
+  name?: string | null;
+  /** Agent kind as herdr shows it, when it differs from `agent`. */
+  display_agent?: string | null;
 };
 export type WorkspaceInfo = {
   workspace_id: string;
   label: string;
   number: number;
   agent_status: AgentStatus;
+  tab_count?: number;
 };
 export type TabInfo = {
   tab_id: string;
@@ -24,7 +29,13 @@ export type TabInfo = {
   number: number;
   agent_status: AgentStatus;
 };
-export type PaneInfo = { pane_id: string; tab_id: string; workspace_id: string };
+export type PaneInfo = {
+  pane_id: string;
+  tab_id: string;
+  workspace_id: string;
+  /** The pane's own label (`pane.rename`); null or missing when it has none. */
+  label?: string | null;
+};
 
 export type Snapshot = {
   agents: AgentInfo[];

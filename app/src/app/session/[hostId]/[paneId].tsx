@@ -9,6 +9,7 @@ import { scheduleOnRN } from "react-native-worklets";
 
 import { useHostConn } from "@/hosts/connection";
 import { useHosts } from "@/hosts/store";
+import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
 import { useStatusSince } from "@/herdr/statusSince";
@@ -314,8 +315,9 @@ export default function SessionScreen() {
     if (seq !== undefined) markSeen(hostId, paneId, seq);
   }, [hostId, paneId, seq]);
 
-  const title = agent?.terminal_title_stripped || agent?.agent || thread.ref?.kind || paneId;
-  const kind = agent?.agent ?? thread.ref?.kind;
+  const snapshot = useSnapshots((s) => s.byHost[hostId]);
+  const title = agent && snapshot ? agentTitle(snapshot, agent) : thread.ref?.kind || paneId;
+  const kind = agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
   const since = useStatusSince(hostId, paneId, agent?.agent_status);
 

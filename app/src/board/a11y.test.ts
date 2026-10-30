@@ -8,6 +8,9 @@ const item = (over: Partial<BoardItem>): BoardItem => ({
   hostId: "h",
   hostName: "studio",
   workspace: "api",
+  title: "api",
+  subtitle: "studio · claude",
+  terminalTitle: "api-auth",
   agent: { pane_id: "p1", tab_id: "t", workspace_id: "w1", agent: "claude", agent_status: "blocked", state_change_seq: 1, terminal_title_stripped: "api-auth" } as AgentInfo,
   bucket: "needs_you",
   since: 970_000,
@@ -16,9 +19,11 @@ const item = (over: Partial<BoardItem>): BoardItem => ({
 });
 
 test("card_label_reads_status_place_preview_and_unread", () => {
-  expect(cardLabel(item({}), 1_000_000)).toBe("api-auth, needs you 30s, studio · api, Allow git push?");
-  expect(cardLabel(item({ bucket: "ready", line: "Done.", since: undefined }), 1_000_000)).toBe("api-auth, ready, studio · api, Done., unread");
-  expect(cardLabel(item({ line: undefined }), 1_000_000)).toBe("api-auth, needs you 30s, studio · api");
+  expect(cardLabel(item({}), 1_000_000)).toBe("api, needs you 30s, studio · claude, Allow git push?");
+  expect(cardLabel(item({ bucket: "ready", line: "Done.", since: undefined }), 1_000_000)).toBe("api, ready, studio · claude, Done., unread");
+  // No preview: the terminal title takes its place.
+  expect(cardLabel(item({ line: undefined }), 1_000_000)).toBe("api, needs you 30s, studio · claude, api-auth");
+  expect(cardLabel(item({ line: undefined, terminalTitle: undefined }), 1_000_000)).toBe("api, needs you 30s, studio · claude");
 });
 
 test("voiceover_actions_mirror_tap_peek_and_swipes", () => {
