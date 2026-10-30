@@ -1,9 +1,10 @@
-import { MailOpen, Reply, RotateCcw } from "lucide-react-native";
+import { Ellipsis, MailOpen, Reply, RotateCcw } from "lucide-react-native";
 import { memo, useCallback, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
 import { GestureDetector, useExclusiveGestures, useLongPressGesture, useTapGesture } from "react-native-gesture-handler";
 import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
+import Animated, { type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
@@ -24,7 +25,20 @@ export type CardActions = {
   onMarkRead: (item: BoardItem) => void;
   onReply: (item: BoardItem) => void;
   onRestart: (item: BoardItem) => void;
+  /** The "⋯" button: all actions of the card in one menu. */
+  onMenu: (item: BoardItem) => void;
 };
+
+/** One peek haptic each time a swipe passes `at` points outward (the point where release acts). */
+function SwipeHaptic({ drag, at }: { drag: SharedValue<number>; at: number }) {
+  useAnimatedReaction(
+    () => Math.abs(drag.get()) >= at,
+    (past, was) => {
+      if (past && was === false) scheduleOnRN(haptics.peek);
+    },
+  );
+  return null;
+}
 
 function SwipeAction({
   label,
@@ -133,9 +147,15 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
           close();
         }
       }}
-      renderLeftActions={() => <SwipeAction label="Read" color={colors.status.idle} Icon={MailOpen} />}
-      renderRightActions={() => (
+      renderLeftActions={(_p, drag) => (
+        <>
+          <SwipeHaptic drag={drag} at={ACTION_W * 0.8} />
+          <SwipeAction label="Read" color={colors.status.idle} Icon={MailOpen} />
+        </>
+      )}
+      renderRightActions={(_p, drag) => (
         <View style={{ flexDirection: "row" }}>
+          <SwipeHaptic drag={drag} at={ACTION_W * 0.6} />
           <SwipeAction
             label="Reply"
             color={colors.status.working}
@@ -157,80 +177,102 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
         </View>
       )}
     >
-      <GestureDetector gesture={press.gesture}>
-        <Animated.View
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          accessibilityHint="Opens the session. Long press to peek."
-          accessibilityActions={CARD_ACTIONS}
-          onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
-          style={[
-            {
-              flexDirection: "row",
-              gap: space.md,
-              padding: space.md,
-              paddingLeft: space.md + 3,
-              minHeight: hitTarget + space.lg,
-              backgroundColor: colors.card,
-              borderRadius: radius.lg,
-              borderWidth: 1,
-              borderColor: colors.muted,
-              overflow: "hidden",
-            },
-            press.cardStyle,
-          ]}
-        >
-          {/* Pressed state: a light layer over the card, not a color swap. */}
+      <Animated.View style={press.cardStyle}>
+        <GestureDetector gesture={press.gesture}>
           <Animated.View
-            pointerEvents="none"
-            style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
-          />
-          {/* Accent edge for cards that want attention; the pill still carries icon + label. */}
-          {flagged ? (
-            <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: color }} />
-          ) : null}
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: radius.md,
-              backgroundColor: colors.muted,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityHint="Opens the session. Long press to peek."
+            accessibilityActions={CARD_ACTIONS}
+            onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
+            style={[
+              {
+                flexDirection: "row",
+                gap: space.md,
+                padding: space.md,
+                paddingLeft: space.md + 3,
+                minHeight: hitTarget + space.lg,
+                // Room for the "⋯" button on the right.
+                paddingRight: hitTarget,
+                backgroundColor: colors.card,
+                borderRadius: radius.lg,
+                borderWidth: 1,
+                borderColor: colors.muted,
+                overflow: "hidden",
+              },
+            ]}
           >
-            <KindIcon size={18} color={colors.text} />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-              {unread ? (
-                <View
-                  accessibilityElementsHidden
-                  style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.status.idle }}
-                />
-              ) : null}
-              <Text bold numberOfLines={1} style={{ flex: 1 }}>
-                {item.title}
-              </Text>
-              <StatusPill item={item} now={now} />
-            </View>
-            <Text variant="caption" muted numberOfLines={1}>
-              {item.subtitle}
-            </Text>
-            {line ? (
-              <Text
-                variant="small"
-                numberOfLines={2}
-                color={bucket === "needs_you" ? colors.status.blocked : bucket === "idle" ? colors.textMuted : colors.text}
-                mono={bucket === "working" && !!item.line}
-              >
-                {line}
-              </Text>
+            {/* Pressed state: a light layer over the card, not a color swap. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
+            />
+            {/* Accent edge for cards that want attention; the pill still carries icon + label. */}
+            {flagged ? (
+              <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: color }} />
             ) : null}
-          </View>
-        </Animated.View>
-      </GestureDetector>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: radius.md,
+                backgroundColor: colors.muted,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <KindIcon size={18} color={colors.text} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                {unread ? (
+                  <View
+                    accessibilityElementsHidden
+                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.status.idle }}
+                  />
+                ) : null}
+                <Text bold numberOfLines={1} style={{ flex: 1 }}>
+                  {item.title}
+                </Text>
+                <StatusPill item={item} now={now} />
+              </View>
+              <Text variant="caption" muted numberOfLines={1}>
+                {item.subtitle}
+              </Text>
+              {line ? (
+                <Text
+                  variant="small"
+                  numberOfLines={2}
+                  color={bucket === "needs_you" ? colors.status.blocked : bucket === "idle" ? colors.textMuted : colors.text}
+                  mono={bucket === "working" && !!item.line}
+                >
+                  {line}
+                </Text>
+              ) : null}
+            </View>
+          </Animated.View>
+        </GestureDetector>
+        {/* A sibling, not a child, of the card: its touches never reach the card's tap and long press. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="More actions"
+          onPress={() => actions.onMenu(item)}
+          hitSlop={4}
+          style={({ pressed }) => ({
+            position: "absolute",
+            right: 0,
+            top: 0,
+            width: hitTarget,
+            height: hitTarget,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? 0.5 : 1,
+          })}
+        >
+          <Ellipsis size={20} color={colors.textMuted} />
+        </Pressable>
+      </Animated.View>
     </ReanimatedSwipeable>
   );
 });

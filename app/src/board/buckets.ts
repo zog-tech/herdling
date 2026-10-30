@@ -150,7 +150,14 @@ export function toggleFilter(current: Bucket | null, tapped: Bucket): Bucket | n
 }
 
 export type GroupBy = "status" | "host" | "workspace";
-export type BoardSection = { key: string; title: string; bucket?: Bucket; data: BoardItem[] };
+export type BoardSection = {
+  key: string;
+  title: string;
+  bucket?: Bucket;
+  /** Set when grouped by workspace: the workspace the section shows. */
+  workspace?: { hostId: string; workspaceId: string };
+  data: BoardItem[];
+};
 
 /** Sections in display order. Items keep their sorted order inside a section. */
 export function groupBoard(items: BoardItem[], by: GroupBy): BoardSection[] {
@@ -163,7 +170,9 @@ export function groupBoard(items: BoardItem[], by: GroupBy): BoardSection[] {
   for (const i of items) {
     const key = by === "host" ? i.hostId : `${i.hostId}:${i.agent.workspace_id}`;
     const title = by === "host" ? i.hostName : `${i.hostName} · ${i.workspace}`;
-    const s = sections.get(key) ?? { key, title, data: [] };
+    const s =
+      sections.get(key) ??
+      (by === "workspace" ? { key, title, workspace: { hostId: i.hostId, workspaceId: i.agent.workspace_id }, data: [] } : { key, title, data: [] });
     s.data.push(i);
     sections.set(key, s);
   }

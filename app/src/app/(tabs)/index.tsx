@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
-import { CircleSlash, ListFilter, Loader, Moon, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { CircleSlash, Ellipsis, ListFilter, Loader, Moon, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,7 @@ import { BUCKET_META } from "@/board/bucketMeta";
 import { countBuckets, filterBoard, groupBoard, mergeBoard, type BoardItem, type GroupBy } from "@/board/buckets";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
+import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
@@ -151,11 +152,10 @@ function useNow(ms: number, on: boolean): number {
   return now;
 }
 
-function SectionHeader({ title, bucket }: { title: string; bucket?: BoardItem["bucket"] }) {
+function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: BoardItem["bucket"]; onMenu?: () => void }) {
   const meta = bucket ? BUCKET_META[bucket] : undefined;
   return (
     <View
-      accessibilityRole="header"
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -167,9 +167,26 @@ function SectionHeader({ title, bucket }: { title: string; bucket?: BoardItem["b
       }}
     >
       {meta ? <meta.Icon size={14} color={meta.color} /> : <Server size={14} color={colors.textMuted} />}
-      <Text variant="small" bold color={meta?.color ?? colors.textMuted}>
+      <Text accessibilityRole="header" variant="small" bold color={meta?.color ?? colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
         {title.toUpperCase()}
       </Text>
+      {onMenu ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Workspace actions for ${title}`}
+          onPress={onMenu}
+          style={({ pressed }) => ({
+            width: hitTarget,
+            height: hitTarget,
+            marginVertical: -space.md,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? 0.5 : 1,
+          })}
+        >
+          <Ellipsis size={18} color={colors.textMuted} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -280,6 +297,37 @@ export default function BoardScreen() {
     [router],
   );
 
+  const onMenu = useCallback(
+    (i: BoardItem) => {
+      const { rpc } = getHostConn(i.hostId);
+      const menu: MenuItem[] = [
+        { label: "Reply", onPick: () => onReply(i) },
+        { label: "Peek", onPick: () => onPeek(i) },
+      ];
+      if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
+      if (rpc) menu.push(...renameItems(rpc, i.hostId, i.agent));
+      menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: i.title,
+          options: [...menu.map((m) => m.label), "Cancel"],
+          cancelButtonIndex: menu.length,
+          destructiveButtonIndex: menu.flatMap((m, k) => (m.destructive ? [k] : [])),
+        },
+        (k) => menu[k]?.onPick(),
+      );
+    },
+    [onReply, onPeek, onMarkRead, onRestart],
+  );
+
+  const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string) => {
+    const { rpc } = getHostConn(hostId);
+    if (!rpc) return;
+    ActionSheetIOS.showActionSheetWithOptions({ options: ["Rename workspace", "Cancel"], cancelButtonIndex: 1 }, (k) => {
+      if (k === 0) promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" });
+    });
+  }, []);
+
   const quiet = items.length > 0 && counts.needs_you + counts.ready + counts.working === 0;
 
   return (
@@ -301,7 +349,16 @@ export default function BoardScreen() {
           keyExtractor={(i) => i.key}
           stickySectionHeadersEnabled
           contentInsetAdjustmentBehavior="automatic"
-          renderSectionHeader={({ section }) => <SectionHeader title={section.title} bucket={section.bucket} />}
+          renderSectionHeader={({ section }) => {
+            const ws = section.workspace;
+            return (
+              <SectionHeader
+                title={section.title}
+                bucket={section.bucket}
+                onMenu={ws && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
+              />
+            );
+          }}
           renderItem={({ item }) => (
             <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
               <AgentCard
@@ -312,6 +369,7 @@ export default function BoardScreen() {
                 onMarkRead={onMarkRead}
                 onReply={onReply}
                 onRestart={onRestart}
+                onMenu={onMenu}
               />
             </View>
           )}

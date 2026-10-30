@@ -14,7 +14,8 @@ import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
 import { useStatusSince } from "@/herdr/statusSince";
 import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
-import { closeAgent, renameAgent } from "@/herdr/sessionActions";
+import { renameItems } from "@/herdr/rename";
+import { closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
@@ -37,7 +38,7 @@ type Mode = "thread" | "terminal";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Restart, Resume (Claude only), Rename and Close for the session's agent. */
+/** Restart, Resume (Claude only), the three renames and Close for the session's agent. */
 function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () => void) {
   const router = useRouter();
   const { rpc } = useHostConn(hostId);
@@ -79,14 +80,7 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
       });
     }
     items.push(
-      {
-        label: "Rename",
-        onPick: () =>
-          Alert.prompt("Rename agent", "Lowercase letters, digits, - or _. Start with a letter.", (name) => {
-            const next = name?.trim();
-            if (next) run("Renaming…", "Can't rename", () => renameAgent(rpc, agent.pane_id, next));
-          }),
-      },
+      ...renameItems(rpc, hostId, agent),
       {
         label: "Close",
         destructive: true,
