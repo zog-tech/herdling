@@ -316,7 +316,33 @@ fn err(code: &str, message: impl Into<String>) -> RpcError {
     RpcError { code: code.into(), message: message.into() }
 }
 
-/// Add new methods here.
+/// Every method name that `dispatch` accepts. `hello` sends this list to the app.
+/// Add a new method here and in `dispatch`. A test keeps the two the same.
+pub const METHODS: &[&str] = &[
+    "hello",
+    "ping",
+    "herdr.call",
+    "herdr.subscribe",
+    "rpc.cancel",
+    "thread.get",
+    "thread.subagent",
+    "thread.resolve",
+    "thread.follow",
+    "sessions.recent",
+    "fs.dirs",
+    "push.register",
+    "pair.revoke",
+    "stats.get",
+    "usage.get",
+    "automations.list",
+    "automations.runs",
+    "automations.approve",
+    "summary.make",
+    "tts.make",
+    "agents.preview",
+];
+
+/// Add new methods to `METHODS` too.
 async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<Value, RpcError> {
     match method {
         "hello" => hello(ctx).await,
@@ -398,6 +424,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         herdr_ok: false,
         herdr_version: None,
         herdr_protocol: None,
+        methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
     };
     if let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await {
         if let Ok(snap) = c.call("session.snapshot", json!({})).await {

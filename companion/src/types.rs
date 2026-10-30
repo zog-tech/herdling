@@ -60,6 +60,9 @@ pub struct Hello {
     pub herdr_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub herdr_protocol: Option<u64>,
+    /// Method names this zogsshd accepts. An older zogsshd does not send the field.
+    #[serde(default)]
+    pub methods: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -136,3 +136,35 @@ async fn ping_returns_empty_object() {
     assert_eq!(r["result"], json!({}));
     assert!(r.get("error").is_none());
 }
+
+#[tokio::test]
+async fn hello_lists_methods_and_methods_match_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    s.send(r#"{"id":1,"method":"hello"}"#).await;
+    let r = s.recv().await;
+    let listed: Vec<&str> = r["result"]["methods"].as_array().unwrap().iter().map(|m| m.as_str().unwrap()).collect();
+    assert_eq!(listed, rpc::METHODS);
+
+    // Bad params may give `bad_request`; only `unknown_method` is a failure here.
+    for (i, m) in rpc::METHODS.iter().enumerate() {
+        let id = 100 + i;
+        s.send(&format!(r#"{{"id":{id},"method":"{m}","params":{{}}}}"#)).await;
+        let r = loop {
+            let r = s.recv().await;
+            if r["id"] == id {
+                break r;
+            }
+        };
+        assert_ne!(r["error"]["code"], "unknown_method", "{m} is listed but dispatch does not accept it");
+    }
+
+    s.send(r#"{"id":999,"method":"not.a.method","params":{}}"#).await;
+    let r = loop {
+        let r = s.recv().await;
+        if r["id"] == 999 {
+            break r;
+        }
+    };
+    assert_eq!(r["error"]["code"], "unknown_method");
+}
