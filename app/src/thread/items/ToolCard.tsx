@@ -5,8 +5,10 @@ import { Pressable, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, state as uiState, type } from "@/theme/tokens";
-import { StatusIcon } from "@/ui/StatusIcon";
+import { spokenDuration } from "@/ui/format";
+import { StatusIcon, useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
+import { SPOKEN_TICK_MS, TickingDuration } from "@/ui/TickingDuration";
 
 import { HScrollView } from "../HScrollView";
 import { LiveToolContext } from "../LiveToolContext";
@@ -49,18 +51,6 @@ function Block({ label, text, color }: { label: string; text: string; color?: st
   );
 }
 
-/** Wall clock that ticks every second while `on`. */
-function useSecondClock(on: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!on) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(t);
-  }, [on]);
-  return now;
-}
-
 /** The last lines of the agent's pane, read while `enabled`. */
 function LiveOutput({ hostId, paneId, enabled }: { hostId: string; paneId: string; enabled: boolean }) {
   const { text, error } = useTerminalText(hostId, paneId, enabled, { refreshMs: LIVE_REFRESH_MS, lines: LIVE_LINES });
@@ -100,8 +90,12 @@ export const ToolCard = memo(function ToolCard({
   const Chevron = open ? ChevronDown : ChevronRight;
   const state = !result ? "running" : result.ok ? "ok" : "failed";
   const running = state === "running";
-  const now = useSecondClock(running && (live?.active ?? true));
-  const time = toolTime(ts, result, now);
+  const ticking = running && ts > 0;
+  const clockOn = ticking && (live?.active ?? true);
+  // The timer on screen ticks on the UI thread. This coarse JS clock is for the VoiceOver label.
+  const elapsed = useElapsed(ticking ? ts : undefined, clockOn, SPOKEN_TICK_MS);
+  const time = running ? undefined : toolTime(ts, result, Date.now());
+  const spokenTime = running ? (elapsed !== undefined ? spokenDuration(elapsed) : undefined) : time;
   const polls = !!live && open && running && live.active && live.newestRunningId === id;
 
   // Keep the full view fresh when it shows this tool.
@@ -121,7 +115,7 @@ export const ToolCard = memo(function ToolCard({
     <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.edge, backgroundColor: colors.card }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${time ? `, ${time}` : ""}`}
+        accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${spokenTime ? `, ${spokenTime}` : ""}`}
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((o) => !o)}
         style={({ pressed }) => ({
@@ -149,8 +143,10 @@ export const ToolCard = memo(function ToolCard({
             Failed
           </Text>
         ) : null}
-        {time ? (
-          <Text variant="caption" color={running ? stateColor : colors.textMuted} style={{ fontVariant: ["tabular-nums"] }}>
+        {ticking ? (
+          <TickingDuration since={ts} active={clockOn} muted={false} color={stateColor} accessible={false} />
+        ) : time ? (
+          <Text variant="caption" color={colors.textMuted} style={{ fontVariant: ["tabular-nums"] }}>
             {time}
           </Text>
         ) : null}

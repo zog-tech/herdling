@@ -13,7 +13,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { colors, icon, motion } from "@/theme/tokens";
-import { formatDuration } from "./format";
+import { formatDuration, spokenDuration } from "./format";
 
 export type BadgeStatus = AgentStatus | "offline";
 
@@ -80,15 +80,20 @@ export function StatusIcon({ status, size = icon.header, color }: { status: Badg
   );
 }
 
-/** Seconds since `since` (epoch ms), ticking every second while `tick`. */
-export function useElapsed(since: number | undefined, tick: boolean): number | undefined {
+/**
+ * Seconds since `since` (epoch ms), from a JS clock that ticks every `everyMs` while `tick`.
+ * For coarse text, such as an accessibility label. A clock on screen uses `TickingDuration`.
+ * A new `since` does not restart the interval: the interval only reads the time.
+ */
+export function useElapsed(since: number | undefined, tick: boolean, everyMs = 1_000): number | undefined {
   const [now, setNow] = useState(() => Date.now());
+  const has = since !== undefined;
   useEffect(() => {
-    if (!tick || since === undefined) return;
+    if (!tick || !has) return;
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1_000);
+    const t = setInterval(() => setNow(Date.now()), everyMs);
     return () => clearInterval(t);
-  }, [tick, since]);
+  }, [tick, has, everyMs]);
   return since === undefined ? undefined : Math.max(0, (now - since) / 1000);
 }
 
@@ -96,4 +101,10 @@ export function useElapsed(since: number | undefined, tick: boolean): number | u
 export function statusText(status: BadgeStatus, elapsedS?: number): string {
   const label = STATUS_META[status].label;
   return status === "working" && elapsedS !== undefined ? `${label} ${formatDuration(elapsedS)}` : label;
+}
+
+/** What VoiceOver says: "Working, 2 minutes", "Working, under a minute", "Needs you". */
+export function statusSpoken(status: BadgeStatus, elapsedS?: number): string {
+  const label = STATUS_META[status].label;
+  return status === "working" && elapsedS !== undefined ? `${label}, ${spokenDuration(elapsedS)}` : label;
 }

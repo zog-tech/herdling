@@ -28,21 +28,27 @@ type Props = TextProps & {
  * cap; a dense row can pass a lower `maxFontSizeMultiplier`.
  */
 export function Text({ variant = "body", muted, mono, bold, color, style, maxFontSizeMultiplier, ...rest }: Props) {
-  const role = ROLE[variant];
   return (
     <RNText
       {...rest}
-      maxFontSizeMultiplier={maxFontSizeMultiplier ?? role.maxScale}
-      style={[
-        {
-          color: color ?? (muted ? colors.textMuted : colors.text),
-          fontSize: role.size,
-          lineHeight: Math.round(role.size * type.lineHeight.body),
-          fontWeight: bold ? (role.weight === "700" ? "700" : "600") : role.weight,
-        },
-        mono && { fontFamily: bold ? fontFamily.monoBold : fontFamily.mono, fontWeight: undefined },
-        style,
-      ]}
+      maxFontSizeMultiplier={maxFontSizeMultiplier ?? ROLE[variant].maxScale}
+      style={[textStyle({ variant, muted, bold, color }), mono && { fontFamily: bold ? fontFamily.monoBold : fontFamily.mono, fontWeight: undefined }, style]}
     />
   );
 }
+
+export type TextVariant = Variant;
+
+/** The style of one text role, for a view that is not a `Text` (for example a read-only TextInput). */
+export function textStyle({ variant = "body", muted, bold, color }: { variant?: Variant; muted?: boolean; bold?: boolean; color?: string }) {
+  const role = ROLE[variant];
+  return {
+    color: color ?? (muted ? colors.textMuted : colors.text),
+    fontSize: role.size,
+    lineHeight: Math.round(role.size * type.lineHeight.body),
+    fontWeight: bold ? (role.weight === "700" ? "700" : "600") : role.weight,
+  } as const;
+}
+
+/** The Dynamic Type cap of one text role. */
+export const maxScaleOf = (variant: Variant = "body") => ROLE[variant].maxScale;

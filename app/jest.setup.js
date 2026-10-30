@@ -16,6 +16,9 @@ jest.mock("react-native-reanimated", () => {
     useAnimatedStyle: (fn) => fn(),
     useDerivedValue: (fn) => sv(fn()),
     useAnimatedReaction: () => {},
+    useAnimatedProps: (fn) => fn(),
+    // No frames run in tests: a frame callback never fires.
+    useFrameCallback: () => ({ setActive: () => {}, isActive: false, callbackId: -1 }),
     useReducedMotion: () => false,
     withTiming: (v) => v,
     withSpring: (v) => v,

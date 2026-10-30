@@ -65,15 +65,18 @@ test("newest_running_tool_is_the_last_without_a_result", () => {
   expect(newestRunningTool([])).toBeUndefined();
 });
 
+const clock = (t: ReactTestRenderer) => t.root.findAll((n) => typeof n.type === "string" && n.props.testID === "ticking-duration");
+
 test("running_card_ticks_and_done_card_shows_its_duration", () => {
   act(() => {
     tree = create(card("t2"));
   });
-  expect(header(tree!).props.accessibilityLabel).toBe("Bash pnpm test, running, 12s");
-  act(() => jest.advanceTimersByTime(1000));
-  expect(texts(tree!)).toContain("13s");
+  // The running timer is the UI-thread clock; VoiceOver hears whole minutes.
+  expect(clock(tree!)[0].props.defaultValue).toBe("12s");
+  expect(header(tree!).props.accessibilityLabel).toBe("Bash pnpm test, running, under a minute");
   act(() => tree!.update(card("t2", { ok: true, text: "ok", truncated: false, ts: T0 + 20_000 })));
   expect(header(tree!).props.accessibilityLabel).toBe("Bash pnpm test, done, 20s");
+  expect(clock(tree!)).toHaveLength(0);
   act(() => jest.advanceTimersByTime(5000));
   expect(texts(tree!)).toContain("20s");
 });

@@ -16,6 +16,7 @@ import { LIVE_REFRESH_MS } from "@/thread/items/ToolCard";
 import * as haptics from "@/ui/haptics";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
+import { TickingDuration } from "@/ui/TickingDuration";
 
 /** Font size range of the pinch zoom, in points. */
 export const FONT_MIN = 10;
@@ -91,7 +92,9 @@ export default function ToolScreen() {
         : "Reading live output…";
   const outLabel = view.result ? (view.result.ok ? (view.result.truncated ? "Result (truncated)" : "Result") : "Error") : "Live output";
   const input = fullInputText(view.input) || "(none)";
-  const time = toolTime(view.ts, view.result, Date.now());
+  // A running tool shows a clock that ticks on the UI thread; a finished one shows its run time.
+  const ticking = running && view.ts > 0;
+  const time = ticking ? undefined : toolTime(view.ts, view.result, Date.now());
   const mono = { fontFamily: fontFamily.mono, fontSize: font, lineHeight: Math.round(font * 1.4), color: colors.text };
 
   const copy = async () => {
@@ -120,9 +123,21 @@ export default function ToolScreen() {
           <Text bold numberOfLines={1} accessibilityRole="header" style={{ fontFamily: fontFamily.monoBold }}>
             {view.name}
           </Text>
-          <Text variant="caption" muted numberOfLines={1}>
-            {[running ? "Running" : view.result?.ok ? "Done" : "Failed", time, `${font} pt`].filter(Boolean).join(" · ")}
-          </Text>
+          {ticking ? (
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text variant="caption" muted numberOfLines={1}>
+                {"Running · "}
+              </Text>
+              <TickingDuration since={view.ts} active={focused} />
+              <Text variant="caption" muted numberOfLines={1}>
+                {` · ${font} pt`}
+              </Text>
+            </View>
+          ) : (
+            <Text variant="caption" muted numberOfLines={1}>
+              {[running ? "Running" : view.result?.ok ? "Done" : "Failed", time, `${font} pt`].filter(Boolean).join(" · ")}
+            </Text>
+          )}
         </View>
         <IconButton label="Reset text size" onPress={() => setFont(FONT_DEFAULT)}>
           <RotateCcw size={20} color={font === FONT_DEFAULT ? colors.textMuted : colors.text} />

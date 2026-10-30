@@ -35,9 +35,23 @@ export function formatResetIn(resetsAt: number | null, nowS: number): string {
 
 /** Elapsed time with seconds: `12` -> `"12s"`, `72` -> `"1m 12s"`, `3720` -> `"1h 2m"`. Negative counts as 0. */
 export function formatDuration(seconds: number): string {
+  "worklet"; // Also runs on the UI thread (TickingDuration).
   const s = Math.max(0, Math.floor(seconds));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/**
+ * Elapsed time for VoiceOver, in whole minutes: `30` -> `"under a minute"`, `72` -> `"1 minute"`,
+ * `3720` -> `"1 hour 2 minutes"`. Minutes, so a label does not change every second.
+ */
+export function spokenDuration(seconds: number): string {
+  const m = Math.floor(Math.max(0, seconds) / 60);
+  if (m < 1) return "under a minute";
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  if (m < 60) return plural(m, "minute");
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${plural(h, "hour")} ${plural(m % 60, "minute")}` : plural(h, "hour");
 }

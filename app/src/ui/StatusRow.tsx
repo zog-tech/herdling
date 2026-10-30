@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { colors, motion, space } from "@/theme/tokens";
-import { STATUS_META, StatusIcon, statusText, useElapsed, type BadgeStatus } from "./StatusIcon";
-import { formatDuration } from "./format";
+import { STATUS_META, StatusIcon, statusSpoken, useElapsed, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
+import { SPOKEN_TICK_MS, TickingDuration } from "./TickingDuration";
 
 /** Only these states show a row. Idle, done and unknown hide it. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
@@ -23,9 +23,10 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
 /**
  * Agent status above the composer, like the "thinking" line of a chat app. Working shows the icon,
  * "Working" and a ticking clock. The row fades and slides in and out and takes no height when hidden.
- * The clock lives here, so the screen does not re-render each second.
+ * The clock ticks on the UI thread (`TickingDuration`), so a busy JS thread does not freeze it, and
+ * it pauses while the row is hidden. VoiceOver reads the time in whole minutes.
  */
-export function StatusRow({ status, since }: { status: BadgeStatus; since?: number }) {
+export const StatusRow = memo(function StatusRow({ status, since }: { status: BadgeStatus; since?: number }) {
   const reduced = useReducedMotion();
   const visible = SHOWN.includes(status);
   // Keep the last shown state, so the content stays while the row fades out.
@@ -51,9 +52,10 @@ export function StatusRow({ status, since }: { status: BadgeStatus; since?: numb
   }, [status]);
 
   const working = status === "working";
-  const elapsed = useElapsed(working ? since : undefined, working);
+  // Coarse JS clock, for the VoiceOver label only.
+  const elapsed = useElapsed(working ? since : undefined, working, SPOKEN_TICK_MS);
   const { label, color } = STATUS_META[shown];
-  const text = statusText(shown, shown === "working" ? elapsed : undefined);
+  const text = statusSpoken(shown, shown === "working" ? elapsed : undefined);
 
   const style = useAnimatedStyle(() => ({
     height: progress.get() * ROW_HEIGHT,
@@ -78,12 +80,10 @@ export function StatusRow({ status, since }: { status: BadgeStatus; since?: numb
         <Text variant="caption" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {label}
         </Text>
-        {shown === "working" && elapsed !== undefined ? (
-          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ fontVariant: ["tabular-nums"] }}>
-            {formatDuration(elapsed)}
-          </Text>
+        {shown === "working" && since !== undefined ? (
+          <TickingDuration since={since} active={working} maxFontSizeMultiplier={1.3} accessible={false} />
         ) : null}
       </View>
     </Animated.View>
   );
-}
+});

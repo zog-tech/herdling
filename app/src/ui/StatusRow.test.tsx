@@ -5,16 +5,22 @@ import { announcement, StatusRow } from "./StatusRow";
 
 const label = (t: ReactTestRenderer) => t.root.findByProps({ accessibilityRole: "text" }).props.accessibilityLabel;
 
-test("status_row_ticks_and_keeps_its_label", () => {
+const clock = (t: ReactTestRenderer) => t.root.findAll((n) => typeof n.type === "string" && n.props.testID === "ticking-duration");
+
+test("status_row_shows_the_clock_and_keeps_its_label", () => {
   jest.useFakeTimers();
   const since = Date.now() - 71_000;
   let t!: ReactTestRenderer;
   act(() => {
     t = create(<StatusRow status="working" since={since} />);
   });
-  expect(label(t)).toBe("Working 1m 11s");
+  expect(clock(t)[0].props.defaultValue).toBe("1m 11s");
+  // VoiceOver hears whole minutes, so the label does not change every second.
+  expect(label(t)).toBe("Working, 1 minute");
   act(() => jest.advanceTimersByTime(1000));
-  expect(label(t)).toBe("Working 1m 12s");
+  expect(label(t)).toBe("Working, 1 minute");
+  act(() => jest.advanceTimersByTime(60_000));
+  expect(label(t)).toBe("Working, 2 minutes");
   act(() => t.update(<StatusRow status="blocked" since={since} />));
   expect(label(t)).toBe("Needs you");
   act(() => t.update(<StatusRow status="offline" />));
