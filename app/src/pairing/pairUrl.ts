@@ -24,7 +24,7 @@ export function parsePairUrl(url: string): PairTarget | null {
   const address = params.get("h")?.trim() ?? "";
   const code = params.get("c") ?? "";
   const portText = params.get("p");
-  if (!address || /[\s/?#@]/.test(address)) return null;
+  if (!address || /[\s/?#@:,]/.test(address)) return null;
   if (!/^\d{6}$/.test(code)) return null;
   let port = DEFAULT_PAIR_PORT;
   if (portText !== undefined) {

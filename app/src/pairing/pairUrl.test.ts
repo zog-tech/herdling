@@ -36,3 +36,8 @@ describe("parsePairUrl", () => {
     });
   });
 });
+
+it("parse_pair_url_rejects_port_or_list_in_host", () => {
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5:80&c=123456")).toBeNull();
+  expect(parsePairUrl("zogssh://pair?h=10.0.0.5,10.0.0.6&c=123456")).toBeNull();
+});

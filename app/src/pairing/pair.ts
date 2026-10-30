@@ -64,7 +64,8 @@ export async function pairWithHost(
   const doFetch = deps?.fetch ?? fetch;
   const address = o.address.trim();
   const port = o.port ?? DEFAULT_PAIR_PORT;
-  const id = newHostId();
+  // Re-pairing a saved host keeps its id, so the companion's host_id matches.
+  const id = useHosts.getState().hosts.find((h) => h.address === address)?.id ?? newHostId();
   const [deviceId, key, expoToken] = await Promise.all([
     getDeviceId(),
     ensureKey(),
@@ -103,12 +104,29 @@ export async function pairWithHost(
   }
   if (!isPairResponse(json)) throw new PairFailed("bad_request");
 
-  return useHosts.getState().addHost({
-    id,
-    name: o.name?.trim() || json.host_name,
+  const values = {
     address,
     port: json.ssh_port,
     user: json.user,
     fingerprint: json.host_key_fingerprint ?? undefined,
-  });
+  };
+  const { hosts, addHost, updateHost } = useHosts.getState();
+  const saved = savedHostFor(hosts, values);
+  if (saved) {
+    // Keep the saved name: the user may have renamed the host.
+    updateHost(saved.id, values);
+    return useHosts.getState().hosts.find((h) => h.id === saved.id)!;
+  }
+  // The id guessed from the address belongs to another saved host (for example another user): use a new one.
+  const freeId = hosts.some((h) => h.id === id) ? newHostId() : id;
+  return addHost({ id: freeId, name: o.name?.trim() || json.host_name, ...values });
+}
+
+/** The saved host a pairing answer belongs to: same pinned key first, else same address, port and user. */
+function savedHostFor(hosts: Host[], v: { address: string; port: number; user: string; fingerprint?: string }) {
+  if (v.fingerprint) {
+    const byKey = hosts.find((h) => h.fingerprint === v.fingerprint);
+    if (byKey) return byKey;
+  }
+  return hosts.find((h) => h.address === v.address && h.port === v.port && h.user === v.user);
 }

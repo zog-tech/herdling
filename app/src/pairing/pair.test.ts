@@ -125,3 +125,49 @@ describe("getDeviceId", () => {
     expect(await getDeviceId()).toBe(a);
   });
 });
+
+describe("pairWithHost re-pair", () => {
+  const ok = (body: object) =>
+    jest.fn(async (_url: string, _init?: RequestInit) => response(200, body)) as jest.Mock;
+  const bodyOf = (f: jest.Mock) => JSON.parse(String((f.mock.calls[0][1] as RequestInit).body));
+
+  it("pair_again_same_fingerprint_updates_host", async () => {
+    const old = useHosts.getState().addHost({
+      name: "Work",
+      address: "10.0.0.9",
+      port: 22,
+      user: "sam",
+      fingerprint: "SHA256:abc",
+    });
+    const fetch = ok({ host_name: "mini", user: "sam", ssh_port: 2222, host_key_fingerprint: "SHA256:abc" });
+    const host = await pairWithHost({ address: "10.0.0.5", code: "123456" }, { fetch: fetch as never });
+
+    const saved = useHosts.getState().hosts;
+    expect(saved).toHaveLength(1);
+    expect(host.id).toBe(old.id);
+    expect(saved[0]).toMatchObject({ id: old.id, name: "Work", address: "10.0.0.5", port: 2222, fingerprint: "SHA256:abc" });
+  });
+
+  it("pair_again_same_address_port_user_updates_host", async () => {
+    const old = useHosts.getState().addHost({ name: "mini", address: "10.0.0.5", port: 22, user: "sam" });
+    const fetch = ok({ host_name: "mini", user: "sam", ssh_port: 22, host_key_fingerprint: "SHA256:abc" });
+    const host = await pairWithHost({ address: "10.0.0.5", code: "123456" }, { fetch: fetch as never });
+
+    expect(bodyOf(fetch).host_id).toBe(old.id);
+    const saved = useHosts.getState().hosts;
+    expect(saved).toHaveLength(1);
+    expect(host.id).toBe(old.id);
+    expect(saved[0]).toMatchObject({ id: old.id, fingerprint: "SHA256:abc" });
+  });
+
+  it("pair_same_address_other_user_adds_host_with_unique_id", async () => {
+    const other = useHosts.getState().addHost({ name: "root box", address: "10.0.0.5", port: 22, user: "root" });
+    const fetch = ok({ host_name: "mini", user: "sam", ssh_port: 22, host_key_fingerprint: null });
+    const host = await pairWithHost({ address: "10.0.0.5", code: "123456" }, { fetch: fetch as never });
+
+    const saved = useHosts.getState().hosts;
+    expect(saved).toHaveLength(2);
+    expect(host.id).not.toBe(other.id);
+    expect(new Set(saved.map((h) => h.id)).size).toBe(2);
+  });
+});
