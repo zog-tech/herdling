@@ -5,6 +5,16 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd 0.1.0] - 2026-10-31
+
+The first public release of `herdlingd`, the companion that runs on your computer.
+
+- Serves the Herdling app over SSH with a restricted key per phone, and talks to herdr.
+- Chat view for Claude Code, Codex, Pi and OpenCode sessions, with command lists for each agent.
+- Push notifications when an agent finishes or needs you, and quiet while you use the computer.
+- Install and pair from the phone, and update from the phone with one tap (`herdlingd update`).
+- Builds for macOS (Apple silicon, Intel) and Linux (x86_64, arm64).
+
 ## [Unreleased]
 
 Herdling is in early development. The app is in beta on TestFlight, and the App Store and
