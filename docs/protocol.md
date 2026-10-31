@@ -19,7 +19,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`.
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -68,6 +68,40 @@ Error codes:
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
+
+## Git views: `git.status` and `git.diff`
+
+The app checks `hello.methods` before it calls these methods. Both take `{"cwd": "/abs/path"}` or
+`{"pane_id": "..."}` (herdlingd asks herdr for the folder of the pane). herdlingd runs only read-only
+git commands, with a timeout of 10 s each, with optional locks off and with no external diff,
+text conversion or fsmonitor program.
+
+`git.status` result:
+
+```json
+{"is_repo": true, "root": "/home/sam/app", "branch": "main", "head": "3f9c2ab", "upstream": "origin/main",
+ "ahead": 2, "behind": 0, "truncated": false,
+ "files": [{"path": "src/a.ts", "status": "M", "staged": false, "unstaged": true, "added": 4, "deleted": 1, "binary": false}]}
+```
+
+- A folder that is not in a git work tree gives `is_repo: false` and empty fields. It is not an error.
+- `status` is one letter: `M` changed, `A` added, `D` deleted, `R` renamed, `C` copied, `U` conflict, `?` untracked.
+- `added` and `deleted` count the staged and the unstaged lines together. They are null for a
+  binary file or a large untracked file. `orig_path` is set for a renamed or copied file.
+- At most 1000 files. `truncated` is true when there are more.
+
+`git.diff` params: the folder, and `"path"?: "src/a.ts"` (relative to the repo root),
+`"staged"?: true | false`. Without `staged` the diff shows the staged and the unstaged changes
+together (against HEAD). An untracked `path` shows as a new file. Result:
+
+```json
+{"diff": "diff --git a/src/a.ts b/src/a.ts\n...", "truncated": false, "root": "/home/sam/app"}
+```
+
+- The diff text is at most 512 KiB, cut at a line end. `truncated` is true when it was cut.
+- A binary file shows as one `Binary files a/x and b/x differ` line.
+- A `path` that is absolute, has `..`, or goes out of the repo through a symbolic link gives `bad_request`.
+- A folder that is not in a repo gives `not_a_repo`. No `git` program gives `not_installed`.
 
 ## Compatibility rules
 

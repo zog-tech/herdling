@@ -23,6 +23,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Changes and diffs.** The session menu has "Changes": the branch, the changed files with their
+  status and line counts, and a diff view for each file (line colors, hunk headers, sideways
+  scroll, large diffs in pages). New read-only methods `git.status` and `git.diff`. Needs the new
+  herdlingd. The demo host shows changes for its projects.
 - **Install and update herdlingd from the phone.** "Set up with password" installs herdlingd when it
   is missing ("Install and pair"), with the installer `https://herdling.zog-tech.com/install.sh`.
   The app shows "Update available" and updates herdlingd with one tap (`update.check`,

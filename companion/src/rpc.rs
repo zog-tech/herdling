@@ -354,6 +354,8 @@ pub const METHODS: &[&str] = &[
     "stt.make",
     "update.check",
     "update.apply",
+    "git.status",
+    "git.diff",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -385,6 +387,8 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "stt.make" => stt_make(ctx, params).await,
         "update.check" => update_check(ctx, params).await,
         "update.apply" => update_apply(ctx, params).await,
+        "git.status" => git_status(ctx, params).await,
+        "git.diff" => git_diff(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -789,6 +793,47 @@ async fn files_put(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .await
         .map_err(|e| err("internal", e.to_string()))??;
     Ok(json!({ "path": path.to_string_lossy() }))
+}
+
+/// The folder of a git call: `cwd`, else the folder of `pane_id` from herdr.
+async fn git_cwd(ctx: &Ctx, params: &Value, method: &str) -> Result<std::path::PathBuf, RpcError> {
+    if let Some(cwd) = params.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()) {
+        let p = match cwd.strip_prefix("~/") {
+            Some(rest) => ctx.home.join(rest),
+            None if cwd == "~" => ctx.home.clone(),
+            None => std::path::PathBuf::from(cwd),
+        };
+        if !p.is_absolute() {
+            return Err(err("bad_request", format!("{method}: cwd must be an absolute path")));
+        }
+        return Ok(p);
+    }
+    let pane = params
+        .get("pane_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| err("bad_request", format!("{method} requires cwd or pane_id")))?;
+    let (cwd, _) = pane_info(ctx, pane).await;
+    cwd.map(std::path::PathBuf::from).ok_or_else(|| err("not_found", format!("{method}: herdr did not report the folder of the pane")))
+}
+
+/// Branch and changed files of the repo that holds the folder. See [`crate::git::status`].
+async fn git_status(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let cwd = git_cwd(ctx, &params, "git.status").await?;
+    let s = crate::git::status(&cwd).await?;
+    serde_json::to_value(s).map_err(|e| err("internal", e.to_string()))
+}
+
+/// The unified diff of the repo, or of one file. See [`crate::git::diff`].
+async fn git_diff(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let cwd = git_cwd(ctx, &params, "git.diff").await?;
+    let path = match params.get("path") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(p)) => Some(p.as_str()),
+        Some(_) => return Err(err("bad_request", "git.diff: path must be a string")),
+    };
+    let staged = params.get("staged").and_then(Value::as_bool);
+    let d = crate::git::diff(&cwd, path, staged).await?;
+    serde_json::to_value(d).map_err(|e| err("internal", e.to_string()))
 }
 
 /// The folder and the agent kind of a pane from herdr `pane.get`. Both `None` when herdr does not answer.

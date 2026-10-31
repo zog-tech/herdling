@@ -28,6 +28,8 @@ export const APP_METHODS = [
   "stt.make",
   "update.check",
   "update.apply",
+  "git.status",
+  "git.diff",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

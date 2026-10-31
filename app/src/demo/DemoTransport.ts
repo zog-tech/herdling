@@ -14,6 +14,7 @@ import type {
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
 
+import { demoGitDiff, demoGitStatus } from "./demoGit";
 import { DEMO_HOST_NAME } from "./demoHost";
 import { CHAT_KINDS, DemoError, DemoScenario, type DemoNotice } from "./scenario";
 
@@ -245,6 +246,10 @@ export class DemoTransport implements LineTransport {
         const name = (str(p, "name") ?? "upload").replace(/[^\w.-]+/g, "_");
         return { path: `~/.cache/herdling/uploads/${Date.now()}-${name}` } satisfies FilePut;
       }
+      case "git.status":
+        return demoGitStatus(this.gitCwd(p, method));
+      case "git.diff":
+        return demoGitDiff(this.gitCwd(p, method), str(p, "path"));
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":
@@ -254,6 +259,13 @@ export class DemoTransport implements LineTransport {
       default:
         throw new DemoError("unknown_method", `unknown method: ${method}`);
     }
+  }
+
+  /** The folder of a git call: `cwd`, else the folder of the agent in `pane_id`. */
+  private gitCwd(p: Params, method: string): string | null {
+    const cwd = str(p, "cwd");
+    if (cwd) return cwd;
+    return this.scenario.resolve(need(p, "pane_id", method)).cwd;
   }
 
   /** The herdr methods the app calls, through `herdr.call`. */

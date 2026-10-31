@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { useHostConn } from "@/hosts/connection";
+import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
@@ -91,6 +92,9 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${agent.pane_id}` as never),
       });
+    }
+    if (listsMethod(hello, "git.status")) {
+      items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${agent.pane_id}` as never) });
     }
     items.push(
       ...renameItems(rpc, hostId, agent),

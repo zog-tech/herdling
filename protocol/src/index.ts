@@ -205,3 +205,57 @@ export type CommandList = { commands: CommandInfo[] };
 
 /** `files.put` result: where the host saved the file (`~/.cache/herdling/uploads/...`). */
 export type FilePut = { path: string };
+
+/** Params of `git.status`: a folder, or a pane whose folder herdr reports. */
+export type GitStatusParams = { cwd: string } | { pane_id: string };
+
+/** One changed file in `git.status`. */
+export type GitChangedFile = {
+  /** Path from the repo root, with `/`. */
+  path: string;
+  /** The old path of a renamed or copied file. */
+  orig_path?: string;
+  /** `M` changed, `A` added, `D` deleted, `R` renamed, `C` copied, `U` conflict, `?` untracked. */
+  status: string;
+  /** The index has changes of this file. */
+  staged: boolean;
+  /** The work tree has changes of this file that are not in the index. */
+  unstaged: boolean;
+  /** Lines added and deleted, staged and unstaged together. Null when unknown (binary or too large). */
+  added: number | null;
+  deleted: number | null;
+  binary: boolean;
+};
+
+/** Result of `git.status`. When `is_repo` is false, the other fields are empty. */
+export type GitStatus = {
+  is_repo: boolean;
+  /** The root of the work tree. */
+  root?: string;
+  /** Null when HEAD is detached or the folder is not a repo. */
+  branch: string | null;
+  /** Short commit id of HEAD. Null before the first commit. */
+  head: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  /** At most 1000 files. */
+  files: GitChangedFile[];
+  /** True when there were more changed files than the list holds. */
+  truncated: boolean;
+};
+
+/**
+ * Params of `git.diff`. `path` limits the diff to one file (relative to the repo root).
+ * `staged`: true gives the index against HEAD, false the work tree against the index, missing both.
+ */
+export type GitDiffParams = ({ cwd: string } | { pane_id: string }) & { path?: string; staged?: boolean };
+
+/** Result of `git.diff`: unified diff text, at most 512 KiB. A binary file is one `Binary files ... differ` line. */
+export type GitDiff = { diff: string; truncated: boolean; root: string };
+
+/** Params of `git.worktree_add`: the repo folder (or a pane in it) and the new branch name. */
+export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & { branch: string };
+
+/** Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`. */
+export type GitWorktree = { path: string; branch: string; root: string };
