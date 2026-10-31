@@ -366,3 +366,29 @@ fn queued_task_notification_is_not_a_user_item() {
     });
     assert!(parse_line(&line.to_string()).is_empty());
 }
+
+#[test]
+fn pasted_content_tags_are_removed_from_a_prompt() {
+    let prompt = "<pasted_content id=\"48b2\">\nline one\nline two\n</pasted_content id=\"48b2\">";
+    let line = json!({
+        "type": "attachment", "uuid": "q3", "timestamp": "2026-10-30T23:19:40.688Z",
+        "attachment": { "type": "queued_command", "prompt": prompt, "commandMode": "prompt",
+            "origin": { "kind": "human" }, "humanTurn": true }
+    });
+    match &parse_line(&line.to_string())[0] {
+        ThreadItem::User { text, .. } => assert_eq!(text, "line one\nline two"),
+        other => panic!("expected a user item, got {other:?}"),
+    }
+}
+
+#[test]
+fn pasted_content_keeps_the_typed_words_around_it() {
+    let line = json!({
+        "type": "user", "uuid": "u9", "timestamp": "2026-10-30T23:19:40.688Z",
+        "message": { "role": "user", "content": "Look:\n<pasted_content id=\"a1\">\nlog\n</pasted_content id=\"a1\">\nwhy?" }
+    });
+    match &parse_line(&line.to_string())[0] {
+        ThreadItem::User { text, .. } => assert_eq!(text, "Look:\nlog\nwhy?"),
+        other => panic!("expected a user item, got {other:?}"),
+    }
+}

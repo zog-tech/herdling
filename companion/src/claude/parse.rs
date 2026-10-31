@@ -197,9 +197,41 @@ fn classify_user_text(text: &str) -> UserText {
     if t.starts_with("<system-reminder>") {
         let rest = strip_tag_blocks(t, "system-reminder");
         let rest = rest.trim();
-        return if rest.is_empty() { UserText::Drop } else { UserText::Prompt(rest.to_string()) };
+        return if rest.is_empty() { UserText::Drop } else { UserText::Prompt(unwrap_pasted(rest)) };
     }
-    UserText::Prompt(text.to_string())
+    UserText::Prompt(unwrap_pasted(text))
+}
+
+/// `s` without the `<pasted_content id="…">` and `</pasted_content …>` tags that Claude Code puts
+/// around pasted text. The text inside stays. The line break next to each tag goes with it, so the
+/// prompt reads as the user typed it and matches the app's pending bubble.
+fn unwrap_pasted(s: &str) -> String {
+    const OPEN: &str = "<pasted_content";
+    const CLOSE: &str = "</pasted_content";
+    if !s.contains(OPEN) {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    loop {
+        let open = rest.find(OPEN);
+        let close = rest.find(CLOSE);
+        let (i, is_open) = match (open, close) {
+            (Some(o), Some(c)) if c < o => (c, false),
+            (Some(o), _) => (o, true),
+            (None, Some(c)) => (c, false),
+            (None, None) => break,
+        };
+        let Some(end) = rest[i..].find('>') else { break };
+        let before = &rest[..i];
+        out.push_str(if is_open { before } else { before.strip_suffix('\n').unwrap_or(before) });
+        rest = &rest[i + end + 1..];
+        if is_open {
+            rest = rest.strip_prefix('\n').unwrap_or(rest);
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Trimmed text between the first `<name>` and the next `</name>`.
