@@ -9,8 +9,14 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.zogtech.herdling",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "infoPlist": {
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ],
         "NSLocalNetworkUsageDescription": "Herdling connects to your computers on the local network over SSH and finds the ones that run herdlingd.",
         "NSBonjourServices": [
           "_herdling._tcp"

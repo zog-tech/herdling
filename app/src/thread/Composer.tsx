@@ -12,6 +12,7 @@ import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated
 import { colors, denseScale, hitTarget, motion, space, state, type } from "@/theme/tokens";
 import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
+import { useKeyCommand } from "@/ui/keyCommands";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 import { RecordBar } from "@/voice/RecordBar";
@@ -285,6 +286,8 @@ export const Composer = memo(function Composer({
     haptics.press();
     void sendPrompt(text, true);
   };
+  // ⌘↩ on a hardware keyboard sends, also while the prompt box has the focus.
+  useKeyCommand("send", send, { enabled: visible });
 
   const attachPhotos = async () => {
     setPlusOpen(false);

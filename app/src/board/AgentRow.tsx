@@ -182,8 +182,17 @@ function useEmberPulse(needsYou: boolean) {
  * Tap opens the session, long-press peeks. Swipe right marks it read; swipe left reveals Reply and
  * Restart. VoiceOver gets the same actions as custom actions.
  */
-export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: BoardItem } & CardActions) {
+export const AgentRow = memo(function AgentRow({
+  item,
+  selected = false,
+  ...actions
+}: {
+  item: BoardItem;
+  /** The row's session shows in the detail column (two-column layout only). */
+  selected?: boolean;
+} & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
+  const [hovered, setHovered] = useState(false);
   const { onOpen, onPeek } = actions;
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
   const press = useCardPress(open, peek);
@@ -250,8 +259,11 @@ export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: Boa
               accessibilityRole="button"
               accessibilityLabel={label}
               accessibilityHint="Opens the session. Long press to peek."
+              accessibilityState={selected ? { selected: true } : undefined}
               accessibilityActions={CARD_ACTIONS}
               onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
+              onPointerEnter={() => setHovered(true)}
+              onPointerLeave={() => setHovered(false)}
               style={{
                 gap: 3,
                 paddingVertical: space.md + 2,
@@ -268,6 +280,16 @@ export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: Boa
                 pointerEvents="none"
                 style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
               />
+              {/* Selected (two columns) or under the pointer: a light layer, under the content. */}
+              {selected || hovered ? (
+                <View
+                  pointerEvents="none"
+                  style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: selected ? state.selectedFill : state.hoverFill }}
+                />
+              ) : null}
+              {selected && !needsYou ? (
+                <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: MARKER_W, backgroundColor: colors.accent }} />
+              ) : null}
               {/* The ember marker: the one loud edge on the Board. The status word still says "Needs you". */}
               {needsYou ? (
                 <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: MARKER_W, backgroundColor: color }} />

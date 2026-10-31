@@ -35,6 +35,19 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **iPad layout.** On a window that is 700 pt wide or more (iPad, Android tablets, foldables),
+  Overview shows two columns: the board on the left and the selected session on the right. The
+  board stays while you move from agent to agent. When the window becomes narrow (Split View, Stage
+  Manager), the app changes to the phone layout and the session stays open as its own screen.
+  Pushes and links open the session in the right column. On iPad the tab bar can turn into a
+  sidebar, and the app turns to all four orientations. iPhone keeps the portrait phone layout.
+- **Keyboard shortcuts.** With a hardware keyboard: ⌘1 to ⌘4 change tabs, ⌘[ and ⌘] go to the
+  previous or next agent, ⌘↩ sends the prompt, ⌘. sends Ctrl-C, ⌘T changes between Thread and
+  Terminal, ⌘N starts a new session, ⌘R reconnects offline hosts, and Esc goes to the pane in
+  Terminal mode. Hold ⌘ on iPad to see the list. Needs the new native build (the `keys` module);
+  older builds ignore the shortcuts.
+- **Pointer hover.** Board rows, filter chips and outline buttons show a light layer under an iPad
+  trackpad or a mouse.
 - **Faster typing over cellular.** The terminal follows the screen with `pane.watch`: herdlingd
   reads the pane every 80 ms on the computer and sends only changed screens, in place of a 1 s poll.
   A sent line is one call (`pane.send_input`) and shows at once, dimmed, until the computer echoes

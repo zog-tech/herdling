@@ -24,7 +24,10 @@ jest.mock("expo-notifications", () => ({
   },
 }));
 
-import { isPushSession, notificationTarget, showBannerFor, useNotificationRouting } from "./useNotificationRouting";
+let mockLayout: "compact" | "regular" = "compact";
+jest.mock("@/ui/layout", () => ({ useLayoutClass: () => mockLayout }));
+
+import { columnTarget, isPushSession, notificationTarget, setColumnPane, showBannerFor, useNotificationRouting } from "./useNotificationRouting";
 
 function response(id: string, data: unknown) {
   return { notification: { request: { identifier: id, content: { data } } } };
@@ -44,6 +47,8 @@ beforeEach(() => {
   mockLast = null;
   mockListener = undefined;
   mockNavKey = "root";
+  mockLayout = "compact";
+  setColumnPane(null);
 });
 
 describe("notificationTarget", () => {
@@ -146,5 +151,32 @@ describe("push for the open session", () => {
     });
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(false);
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p2" })).toBe(true);
+  });
+});
+
+describe("two-column layout", () => {
+  it("column_target_selects_the_pane_in_overview", () => {
+    expect(columnTarget({ hostId: "h_1", paneId: "w1:p1" })).toEqual({
+      pathname: "/",
+      params: { host: "h_1", pane: "w1:p1", from: "push" },
+    });
+    expect(columnTarget({ hostId: "h_1" })).toBeNull();
+  });
+
+  it("tap_in_regular_width_opens_the_pane_in_the_column", () => {
+    mockLayout = "regular";
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(response("n7", { hostId: "h_1", paneId: "w1:p1" })));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/", params: { host: "h_1", pane: "w1:p1", from: "push" } });
+  });
+
+  it("no_banner_while_the_column_shows_that_pane", () => {
+    setColumnPane({ hostId: "h_1", paneId: "w1:p1" });
+    expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(false);
+    expect(showBannerFor({ hostId: "h_1", paneId: "w1:p2" })).toBe(true);
+    setColumnPane(null);
+    expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(true);
   });
 });

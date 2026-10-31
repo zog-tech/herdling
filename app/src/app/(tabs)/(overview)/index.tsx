@@ -1,7 +1,8 @@
-import { useIsFocused, useNavigation, useRouter } from "expo-router";
-import { CircleSlash, Ellipsis, ListFilter, Loader, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
+import { CircleSlash, Ellipsis, ListFilter, Loader, PanelRight, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { Alert, Pressable, SectionList, View } from "react-native";
+import { Alert, Platform, Pressable, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AgentRow } from "@/board/AgentRow";
@@ -24,10 +25,14 @@ import { HostMeters } from "@/hosts/HostMeters";
 import { UpdateNotice } from "@/hosts/UpdateNotice";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
+import { setColumnPane } from "@/push/useNotificationRouting";
 import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
+import { SessionDetail } from "@/thread/SessionDetail";
 import { Button } from "@/ui/Button";
 import { GlassButton } from "@/ui/GlassButton";
 import { Divider } from "@/ui/Group";
+import { useKeyCommand } from "@/ui/keyCommands";
+import { BOARD_COLUMN_WIDTH, selectionFromParams, stepKey, useLayoutClass, type PaneRef } from "@/ui/layout";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
@@ -216,10 +221,81 @@ function Calm({ text }: { text: string }) {
   );
 }
 
+/** Overview search params: the pane in the detail column (regular width), and the session route params it carries. */
+type OverviewParams = { host?: string; pane?: string; from?: string; prompt?: string; promptError?: string };
+
+/**
+ * The right column in regular width: the selected session, or a short hint. The native header of
+ * Overview is transparent on iOS, so the column starts below it.
+ */
+function DetailColumn({
+  selection,
+  params,
+  onSelect,
+  onClear,
+}: {
+  selection: PaneRef | null;
+  params: OverviewParams;
+  onSelect: (pane: PaneRef) => void;
+  onClear: () => void;
+}) {
+  const headerHeight = useHeaderHeight();
+  const top = Platform.OS === "ios" ? headerHeight : 0;
+  if (!selection) {
+    return (
+      <View style={{ flex: 1, paddingTop: top, alignItems: "center", justifyContent: "center", gap: space.md, padding: space.xl }}>
+        <PanelRight size={32} color={colors.textMuted} />
+        <Text muted style={{ textAlign: "center" }}>
+          Select an agent to see its session here.
+        </Text>
+      </View>
+    );
+  }
+  const { hostId, paneId } = selection;
+  return (
+    <View style={{ flex: 1, paddingTop: top }}>
+      {/* A new pane gets a new component: no state (draft, mode, search) leaks from one pane to the next. */}
+      <SessionDetail
+        key={`${hostId}:${paneId}`}
+        hostId={hostId}
+        paneId={paneId}
+        prompt={params.prompt}
+        promptError={params.promptError}
+        from={params.from}
+        active
+        header="inline"
+        onOpenPane={(target) => onSelect({ hostId, paneId: target })}
+        onClosed={onClear}
+      />
+    </View>
+  );
+}
+
 export default function BoardScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const focused = useIsFocused();
+  const layout = useLayoutClass();
+  const regular = layout === "regular";
+  const params = useLocalSearchParams<OverviewParams>();
+  const selection = useMemo(
+    () => (regular ? selectionFromParams({ host: params.host, pane: params.pane }) : null),
+    [regular, params.host, params.pane],
+  );
+  const selectedKey = selection ? `${selection.hostId}:${selection.paneId}` : undefined;
+  const select = useCallback(
+    (p: PaneRef) => router.setParams({ host: p.hostId, pane: p.paneId, from: undefined, prompt: undefined, promptError: undefined }),
+    [router],
+  );
+  const clearSelection = useCallback(
+    () => router.setParams({ host: undefined, pane: undefined, from: undefined, prompt: undefined, promptError: undefined }),
+    [router],
+  );
+  // A push for the pane in the column shows no banner, as on the session screen.
+  useEffect(() => {
+    setColumnPane(focused ? selection : null);
+    return () => setColumnPane(null);
+  }, [focused, selection]);
   const hosts = useHosts((s) => s.hosts);
   const byHost = useSnapshots((s) => s.byHost);
   const seen = useSeen((s) => s.seen);
@@ -296,7 +372,29 @@ export default function BoardScreen() {
     });
   }, [navigation, groupBy, pickGroup]);
 
-  const onOpen = useCallback((i: BoardItem) => router.push(`/session/${i.hostId}/${i.agent.pane_id}` as never), [router]);
+  // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
+  const openPane = useCallback(
+    (hostId: string, paneId: string) => (regular ? select({ hostId, paneId }) : router.push(`/session/${hostId}/${paneId}` as never)),
+    [regular, select, router],
+  );
+  const onOpen = useCallback((i: BoardItem) => openPane(i.hostId, i.agent.pane_id), [openPane]);
+
+  // ⌘[ and ⌘] move the selection on the board, in the order the board shows.
+  const order = useMemo(
+    () =>
+      new Map<string, PaneRef>(
+        sections.flatMap((s) => s.data.map((i): [string, PaneRef] => [`${i.hostId}:${i.agent.pane_id}`, { hostId: i.hostId, paneId: i.agent.pane_id }])),
+      ),
+    [sections],
+  );
+  const stepSelection = (dir: 1 | -1) => {
+    const key = stepKey([...order.keys()], selectedKey, dir);
+    const pane = key === undefined || key === selectedKey ? undefined : order.get(key);
+    if (pane) select(pane);
+  };
+  useKeyCommand("prevAgent", () => stepSelection(-1), { enabled: focused && regular });
+  useKeyCommand("nextAgent", () => stepSelection(1), { enabled: focused && regular });
+  useKeyCommand("refresh", () => problemHosts.forEach((h) => retryNow(h.id)), { enabled: focused });
   const onPeek = useCallback((i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}` as never), [router]);
   const onReply = useCallback(
     (i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}?reply=1` as never),
@@ -311,12 +409,12 @@ export default function BoardScreen() {
       const { rpc } = getHostConn(i.hostId);
       if (!rpc || !(await confirmRestart())) return;
       try {
-        await restartConfirmed(rpc, i.agent, (paneId) => router.push(`/session/${i.hostId}/${paneId}` as never));
+        await restartConfirmed(rpc, i.agent, (paneId) => openPane(i.hostId, paneId));
       } catch (e) {
         Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
       }
     },
-    [router],
+    [openPane],
   );
 
   const onMenu = useCallback(
@@ -352,11 +450,8 @@ export default function BoardScreen() {
 
   const quiet = items.length > 0 && counts.needs_you + counts.ready + counts.working === 0;
 
-  return (
+  const board = (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {hosts.map((h) => (
-        <HostWatcher key={h.id} hostId={h.id} focused={focused} />
-      ))}
       {hosts.length === 0 ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.lg, padding: space.xl }}>
           <Server size={32} color={colors.textMuted} />
@@ -385,9 +480,11 @@ export default function BoardScreen() {
             );
           }}
           ItemSeparatorComponent={Divider}
+          extraData={selectedKey}
           renderItem={({ item }) => (
             <AgentRow
               item={item}
+              selected={selectedKey === `${item.hostId}:${item.agent.pane_id}`}
               onOpen={onOpen}
               onPeek={onPeek}
               onMarkRead={onMarkRead}
@@ -435,6 +532,25 @@ export default function BoardScreen() {
           style={{ margin: space.lg }}
         />
       </SafeAreaView>
+    </View>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {hosts.map((h) => (
+        <HostWatcher key={h.id} hostId={h.id} focused={focused} />
+      ))}
+      {regular ? (
+        // Two columns: the board at a fixed width, the selected session in the rest.
+        // The iPad sidebar floats over the content and sets the left safe area: keep the board clear of it.
+        <SafeAreaView edges={["left", "right"]} style={{ flex: 1, flexDirection: "row" }}>
+          <View style={{ width: BOARD_COLUMN_WIDTH }}>{board}</View>
+          <View style={{ width: 1, backgroundColor: colors.divider }} />
+          <DetailColumn selection={selection} params={params} onSelect={select} onClear={clearSelection} />
+        </SafeAreaView>
+      ) : (
+        board
+      )}
     </View>
   );
 }

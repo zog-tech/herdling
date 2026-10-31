@@ -2,6 +2,8 @@ import * as Notifications from "expo-notifications";
 import { usePathname, useRootNavigationState, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
 
+import { useLayoutClass } from "@/ui/layout";
+
 /** The `{hostId, paneId}` of a push's data, or null when the data has another shape. */
 function pushPane(data: unknown): { hostId: string; paneId: string } | null {
   if (typeof data !== "object" || data === null) return null;
@@ -32,12 +34,34 @@ export function isPushSession(pathname: string | undefined, data: unknown): bool
   return parts.length === 3 && parts[0] === "session" && parts[1] === p.hostId && parts[2] === p.paneId;
 }
 
+/**
+ * The Overview route for a push's data in the two-column layout: the pane in the detail column.
+ * Null when the data has another shape.
+ */
+export function columnTarget(data: unknown): Href | null {
+  const p = pushPane(data);
+  return p ? { pathname: "/", params: { host: p.hostId, pane: p.paneId, from: "push" } } : null;
+}
+
 /** The current route, for the foreground notification handler (it runs outside React). */
 let currentPath: string | undefined;
+/** The pane in the detail column while Overview has the focus (regular width), else null. */
+let columnPane: { hostId: string; paneId: string } | null = null;
+
+/** Overview calls this when the pane in its detail column changes. */
+export function setColumnPane(p: { hostId: string; paneId: string } | null): void {
+  columnPane = p;
+}
+
+/** True when the detail column shows the push's pane. */
+function isColumnSession(data: unknown): boolean {
+  const p = pushPane(data);
+  return !!p && !!columnPane && columnPane.hostId === p.hostId && columnPane.paneId === p.paneId;
+}
 
 /** Foreground pushes show no banner while the user looks at that session: the screen already shows (and speaks) it. */
 export function showBannerFor(data: unknown): boolean {
-  return !isPushSession(currentPath, data);
+  return !isPushSession(currentPath, data) && !isColumnSession(data);
 }
 
 /**
@@ -53,6 +77,10 @@ export function useNotificationRouting(): void {
   const path = useRef(pathname);
   path.current = pathname;
   currentPath = pathname;
+  // Regular width opens the pane in the detail column of Overview, as a row tap does there.
+  const layoutNow = useLayoutClass();
+  const layout = useRef(layoutNow);
+  layout.current = layoutNow;
 
   useEffect(() => {
     if (!navReady) return;
@@ -65,6 +93,7 @@ export function useNotificationRouting(): void {
       const target = notificationTarget(data);
       if (!target) return;
       if (isPushSession(path.current, data)) router.setParams({ from: "push" });
+      else if (layout.current === "regular") router.navigate(columnTarget(data) ?? (target as Href));
       else router.navigate(target as Href);
     };
     open(Notifications.getLastNotificationResponse());

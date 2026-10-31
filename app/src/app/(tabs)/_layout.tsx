@@ -21,10 +21,13 @@ const androidBar =
  * The system tab bar (UITabBarController): Liquid Glass on iOS 26, a blurred bar before.
  * SF Symbols, gold for the selected tab. Each tab has its own native stack for its header.
  * Android has no SF Symbols: `src` gives it Material Symbols images (white, tinted by the bar).
+ * `sidebarAdaptable` (iOS 18+): on iPad the tab bar can turn into a sidebar. iPhone keeps the
+ * tab bar (iOS 27 shows the sidebar only on large iPhones in landscape, and Herdling is portrait).
  */
 export default function TabsLayout() {
   return (
     <NativeTabs
+      sidebarAdaptable
       tintColor={colors.accent}
       iconColor={{ default: colors.textMuted, selected: colors.accent }}
       labelStyle={{ default: { color: colors.textMuted }, selected: { color: colors.accent } }}

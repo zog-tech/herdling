@@ -3,6 +3,7 @@ import { Pressable } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { DelayedSpinner } from "@/ui/Delayed";
+import { useHover } from "@/ui/hover";
 import { Text } from "./Text";
 
 type Props = {
@@ -21,6 +22,9 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
   const bg = variant === "primary" ? colors.accent : "transparent";
   const border = variant === "primary" ? colors.accent : variant === "danger" ? colors.danger : colors.border;
   const off = disabled || loading;
+  const { hovered, hoverProps } = useHover();
+  // Under the pointer an outline button gets the hover layer. Gold stays as it is.
+  const rest = hovered && variant !== "primary" && !off ? state.hoverFill : bg;
   return (
     <Pressable
       accessibilityRole="button"
@@ -28,6 +32,7 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
       accessibilityState={{ disabled: !!off, busy: !!loading }}
       disabled={off}
       onPress={onPress}
+      {...hoverProps}
       style={({ pressed }) => ({
         minHeight: hitTarget,
         minWidth: hitTarget,
@@ -40,7 +45,7 @@ export function Button({ label, onPress, variant = "primary", Icon, loading, dis
         borderWidth: 1,
         borderColor: pressed && variant === "primary" ? colors.accentPressed : border,
         // Pressed: gold deepens; an outline button gets the raised fill.
-        backgroundColor: pressed ? (variant === "primary" ? colors.accentPressed : colors.raised) : bg,
+        backgroundColor: pressed ? (variant === "primary" ? colors.accentPressed : colors.raised) : rest,
         opacity: off ? state.disabledOpacity : 1,
       })}
     >
