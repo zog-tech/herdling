@@ -36,7 +36,24 @@ export const PENDING_MAX_AGE_MS = 30 * 60_000;
 const MATCH_CHARS = 200;
 
 const paneKey = (hostId: string, paneId: string) => `${hostId}:${paneId}`;
-export const matchKey = (text: string) => text.trim().slice(0, MATCH_CHARS);
+/** A line that is only the path of a photo the app uploaded (`files.put` saves to `.cache/zogsshd/uploads/`). */
+const UPLOAD_LINE = /^\s*\S*\/\.cache\/zogsshd\/uploads\/\S+\s*$/;
+/** The placeholder Claude Code writes for an attached image ("[Image #12]"). */
+const IMAGE_TAG = /\[Image #\d+\]/g;
+
+/** The prompt without the upload path lines the app adds after the text, and how many there were. */
+export function splitUploads(text: string): { text: string; images: number } {
+  const lines = text.split("\n");
+  const kept = lines.filter((l) => !UPLOAD_LINE.test(l));
+  return { text: kept.join("\n").trim(), images: lines.length - kept.length };
+}
+
+/**
+ * The text compared. Claude Code turns an image path into an attachment and writes "[Image #N]"
+ * in its place, so both the paths and the placeholders go, and runs of white space become one space.
+ */
+export const matchKey = (text: string) =>
+  splitUploads(text).text.replace(IMAGE_TAG, " ").replace(/\s+/g, " ").trim().slice(0, MATCH_CHARS);
 
 let seq = 0;
 

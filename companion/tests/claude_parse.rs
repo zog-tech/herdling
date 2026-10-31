@@ -392,3 +392,21 @@ fn pasted_content_keeps_the_typed_words_around_it() {
         other => panic!("expected a user item, got {other:?}"),
     }
 }
+
+#[test]
+fn image_placeholders_go_when_the_line_has_images() {
+    let line = json!({
+        "type": "user", "uuid": "u10", "timestamp": "2026-10-30T23:19:40.688Z",
+        "message": { "role": "user", "content": [
+            { "type": "text", "text": "[Image #12]Why is there 2 of some?" },
+            { "type": "image", "source": { "type": "base64", "media_type": "image/jpeg", "data": "AA==" } }
+        ] }
+    });
+    match &parse_line(&line.to_string())[0] {
+        ThreadItem::User { text, images, .. } => {
+            assert_eq!(text, "Why is there 2 of some?");
+            assert_eq!(*images, Some(1));
+        }
+        other => panic!("expected a user item, got {other:?}"),
+    }
+}

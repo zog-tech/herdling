@@ -150,6 +150,7 @@ fn parse_user(v: &Value, uuid: &str, ts: i64) -> Vec<ThreadItem> {
     }
     let images = (images > 0).then_some(images);
     match classify_user_text(&text) {
+        UserText::Prompt(text) if images.is_some() => vec![ThreadItem::User { id, ts, text: drop_image_tags(&text), images }],
         UserText::Prompt(text) => vec![ThreadItem::User { id, ts, text, images }],
         UserText::System(text) => vec![ThreadItem::System { id, ts, text }],
         UserText::Drop if images.is_some() => vec![ThreadItem::User { id, ts, text: String::new(), images }],
@@ -200,6 +201,26 @@ fn classify_user_text(text: &str) -> UserText {
         return if rest.is_empty() { UserText::Drop } else { UserText::Prompt(unwrap_pasted(rest)) };
     }
     UserText::Prompt(unwrap_pasted(text))
+}
+
+/// `s` without the "[Image #N]" placeholders Claude Code writes where an image was attached.
+/// The bubble shows the image count instead.
+fn drop_image_tags(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("[Image #") {
+        let after = &rest[i + "[Image #".len()..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        if digits > 0 && after[digits..].starts_with(']') {
+            out.push_str(&rest[..i]);
+            rest = &after[digits + 1..];
+        } else {
+            out.push_str(&rest[..i + 1]);
+            rest = &rest[i + 1..];
+        }
+    }
+    out.push_str(rest);
+    out.trim().to_string()
 }
 
 /// `s` without the `<pasted_content id="…">` and `</pasted_content …>` tags that Claude Code puts

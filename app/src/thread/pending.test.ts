@@ -1,6 +1,6 @@
 import type { ThreadItem } from "@zogssh/protocol";
 
-import { addPending, pendingOf, reconcilePending, removePending, sendWithPending, usePending, PENDING_MAX_AGE_MS } from "./pending";
+import { addPending, pendingOf, reconcilePending, removePending, sendWithPending, usePending, PENDING_MAX_AGE_MS, matchKey, splitUploads } from "./pending";
 
 const H = "studio";
 const P = "w1:p1";
@@ -67,4 +67,18 @@ test("old_bubbles_go_away_and_remove_works", () => {
   expect(states()).toEqual(["fresh:sending"]);
   removePending(H, P, id);
   expect(usePending.getState().byPane).toEqual({});
+});
+
+describe("photo prompts", () => {
+  const path = "/Users/sam/.cache/zogsshd/uploads/1793412598805-pasted-1.jpg";
+
+  it("hides the upload paths and counts them", () => {
+    expect(splitUploads(`Why is there 2 of some?\n${path}`)).toEqual({ text: "Why is there 2 of some?", images: 1 });
+    expect(splitUploads("no photos")).toEqual({ text: "no photos", images: 0 });
+  });
+
+  it("matches the log text where Claude Code put [Image #N] for the path", () => {
+    expect(matchKey(`Why is there 2 of some?\n${path}`)).toBe(matchKey("[Image #12]Why is there 2 of some?"));
+    expect(matchKey(`Look\n${path}\n${path}`)).toBe(matchKey("[Image #1] [Image #2]Look"));
+  });
 });

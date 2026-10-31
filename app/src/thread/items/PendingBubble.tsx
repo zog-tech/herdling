@@ -8,7 +8,7 @@ import { colors, hitTarget, motion, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
-import { removePending, sendWithPending, usePendingList, type Pending } from "../pending";
+import { removePending, sendWithPending, splitUploads, usePendingList, type Pending } from "../pending";
 import { UserBubble } from "./UserBubble";
 
 /** A new state line fades in over the old one's place: Sending → Queued → Not sent. Opacity only. */
@@ -25,6 +25,8 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
   const { rpc } = useHostConn(hostId);
   const failed = p.state === "failed";
   const label = pendingLabel(p);
+  // The photo paths at the end show as "N images", as in a delivered bubble.
+  const shown = splitUploads(p.text);
   const retry = () => {
     if (!rpc) return;
     sendWithPending(rpc, hostId, paneId, p.text, p.id).then(haptics.commit, haptics.fail);
@@ -32,7 +34,7 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
   return (
     <View style={{ gap: space.xs }}>
       <View style={{ opacity: failed ? 1 : 0.7 }}>
-        <UserBubble text={p.text} />
+        <UserBubble text={shown.text} images={shown.images || undefined} />
       </View>
       {/* Keyed by state: each change mounts the new line, which fades in. */}
       <Animated.View key={p.state} style={fadeIn}>
