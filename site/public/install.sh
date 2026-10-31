@@ -204,7 +204,13 @@ else
 fi
 file="herdlingd-$target.tar.gz"
 
-TMP=$(mktemp -d 2>/dev/null || mktemp -d -t herdlingd) || fail install_failed "Cannot make a temporary folder."
+# The temporary folder is in the home folder first: some systems (TrueNAS, hardened Linux) mount
+# /tmp with "noexec", and then the unpacked herdlingd cannot run from it.
+TMP=""
+if mkdir -p "$HOME/.cache/herdling" 2>/dev/null; then
+  TMP=$(mktemp -d "$HOME/.cache/herdling/install.XXXXXX" 2>/dev/null) || TMP=""
+fi
+[ -n "$TMP" ] || TMP=$(mktemp -d 2>/dev/null || mktemp -d -t herdlingd) || fail install_failed "Cannot make a temporary folder."
 
 step download "Downloading $what for $target..."
 dl "$url/$file" "$TMP/$file" || fail download_failed "Cannot download $url/$file. Check the network and the version."
@@ -221,6 +227,8 @@ step install "Installing herdlingd..."
 mkdir "$TMP/x" && tar -xzf "$TMP/$file" -C "$TMP/x" herdlingd ||
   fail install_failed "Cannot unpack $file."
 chmod 0755 "$TMP/x/herdlingd"
+"$TMP/x/herdlingd" version >/dev/null 2>&1 ||
+  fail install_failed "The unpacked herdlingd cannot run from $TMP. The file system may be mounted with noexec."
 if [ "$QUIET" = 1 ]; then
   out=$("$TMP/x/herdlingd" install 2>&1) ||
     fail install_failed "herdlingd install failed: $(printf '%s' "$out" | tail -n 3 | tr '\n' ' ')"

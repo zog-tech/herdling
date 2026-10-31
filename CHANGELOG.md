@@ -169,6 +169,11 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 - **Store and website.** App Store and Google Play listing text, the privacy policy and the
   support page.
 
+### Fixed
+
+- The installer unpacks herdlingd in `~/.cache/herdling`, not in `/tmp`. On systems that mount
+  `/tmp` with `noexec` (for example TrueNAS), the install failed with "Permission denied".
+
 ### Changed
 
 - The product name changed from the working name to Herdling. The companion is now `herdlingd`.
