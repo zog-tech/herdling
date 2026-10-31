@@ -79,3 +79,18 @@ test("loads_older_pages_with_before_cursor", async () => {
   expect(latest.items.map((i) => i.id)).toEqual(["s1", "s2"]);
   expect(latest.hasOlder).toBe(false);
 });
+
+test("running_comes_from_the_page_and_ends_with_the_follow", async () => {
+  mockRpc.pages = [{ items: [user("s1")], cursor: null, end: 120, log_path: SUB, running: true }];
+  await mount();
+  expect(latest.running).toBe(true);
+  await act(async () => mockRpc.follows[0].push({ items: [], offset: 120, agent_running: false }));
+  expect(latest.running).toBe(false);
+  expect(latest.items.map((i) => i.id)).toEqual(["s1"]);
+});
+
+test("running_is_unknown_on_an_older_host", async () => {
+  mockRpc.pages = [{ items: [user("s1")], cursor: null, end: 120, log_path: SUB }];
+  await mount();
+  expect(latest.running).toBeUndefined();
+});

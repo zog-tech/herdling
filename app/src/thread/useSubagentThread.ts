@@ -9,19 +9,29 @@ import type { FollowStatus } from "./useThread";
 /**
  * Thread of one subagent: `thread.subagent` (last page) → `thread.follow` from the page end on the
  * subagent file. Older pages come from `thread.subagent {before}`. Restarts on reconnect and on a
- * follow error, keeping loaded items.
+ * follow error, keeping loaded items. `running`: true while the subagent runs, false when it
+ * stopped, undefined when the host does not tell (an older host).
  */
 export function useSubagentThread(
   hostId: string,
   parentLog: string,
   agentId: string,
-): { items: ThreadItem[]; status: FollowStatus; loadOlder: () => void; loadingOlder: boolean; hasOlder: boolean; error?: string } {
+): {
+  items: ThreadItem[];
+  status: FollowStatus;
+  loadOlder: () => void;
+  loadingOlder: boolean;
+  hasOlder: boolean;
+  error?: string;
+  running?: boolean;
+} {
   const { rpc } = useHostConn(hostId);
   const [items, setItems] = useState<ThreadItem[]>([]);
   const [status, setStatus] = useState<FollowStatus>(rpc ? "loading" : "offline");
   const [error, setError] = useState<string>();
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [running, setRunning] = useState<boolean>();
   const [epoch, setEpoch] = useState(0);
   const failures = useRef(0);
   const cursor = useRef<number | null>(null);
@@ -33,6 +43,7 @@ export function useSubagentThread(
   useEffect(() => {
     setItems([]);
     setHasOlder(false);
+    setRunning(undefined);
     cursor.current = null;
     failures.current = 0;
   }, [hostId, parentLog, agentId]);
@@ -66,12 +77,14 @@ export function useSubagentThread(
         loadingRef.current = false;
         setItems((cur) => mergeItems(cur, page.items));
         setHasOlder(page.cursor != null);
+        setRunning(page.running);
         const u = await rpc.stream<FollowData>(
           "thread.follow",
           { log_path: page.log_path, from: page.end },
           followHandler({
             isDead: () => dead,
             setItems,
+            onAgentRunning: setRunning,
             onEnded: (e) => {
               unsub = undefined;
               fail(e);
@@ -113,5 +126,5 @@ export function useSubagentThread(
     });
   }, [rpc, parentLog, agentId]);
 
-  return { items, status, error, loadOlder, loadingOlder, hasOlder };
+  return { items, status, error, loadOlder, loadingOlder, hasOlder, running };
 }

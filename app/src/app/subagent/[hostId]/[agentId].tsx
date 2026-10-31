@@ -6,18 +6,29 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHosts } from "@/hosts/store";
 import { colors, hitTarget, space } from "@/theme/tokens";
 import { ThreadList } from "@/thread/ThreadList";
+import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { useSubagentThread } from "@/thread/useSubagentThread";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
 export default function SubagentScreen() {
-  const { hostId, agentId, log, title } = useLocalSearchParams<{ hostId: string; agentId: string; log: string; title?: string }>();
+  const { hostId, agentId, log, title, since } = useLocalSearchParams<{
+    hostId: string;
+    agentId: string;
+    log: string;
+    title?: string;
+    since?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const thread = useSubagentThread(hostId, log, agentId);
   const back = () => (router.canGoBack() ? router.back() : router.replace("/"));
   const { status, items } = thread;
+  // "Working" while the host says the subagent runs. An older host does not tell: no pill.
+  const badge = thread.running ? "working" : "idle";
+  const sinceMs = since && Number.isFinite(Number(since)) ? Number(since) : undefined;
+  const pill = <StatusRow status={badge} since={sinceMs} />;
 
   let body;
   if (items.length === 0) {
@@ -38,6 +49,7 @@ export default function SubagentScreen() {
         ) : (
           <DelayedSpinner color={colors.textMuted} />
         )}
+        {pill}
       </View>
     );
   } else {
@@ -54,7 +66,14 @@ export default function SubagentScreen() {
             </Text>
           </View>
         ) : null}
-        <ThreadList items={items} loadOlder={thread.loadOlder} loadingOlder={thread.loadingOlder} hasOlder={thread.hasOlder} />
+        <ThreadList
+          items={items}
+          loadOlder={thread.loadOlder}
+          loadingOlder={thread.loadingOlder}
+          hasOlder={thread.hasOlder}
+          footer={pill}
+          footerShown={isStatusShown(badge)}
+        />
       </View>
     );
   }
