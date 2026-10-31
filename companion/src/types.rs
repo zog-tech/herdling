@@ -62,7 +62,9 @@ pub struct Hello {
     pub herdr_protocol: Option<u64>,
     /// Method names this herdlingd accepts. An older herdlingd does not send the field.
     #[serde(default)]
-    pub methods: Vec<String>,
+    pub methods: Vec<String>,    /// herdr agent kinds with chat support. An older herdlingd does not send the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thread_kinds: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -351,6 +353,6 @@ pub struct AgentPreview {
     pub question: Option<String>,
     /// Unix seconds when the current herdr status began; null when unknown.
     pub status_since: Option<i64>,
-    /// "log" (Claude session log) or "screen" (last line of the pane).
+    /// "log" (agent session log) or "screen" (last line of the pane).
     pub source: String,
 }

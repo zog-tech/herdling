@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 
 use crate::claude;
+use crate::transcript;
 use crate::herdr::{self, HerdrError};
 use crate::types::{Hello, RpcError, RpcRequest, RpcResponse};
 
@@ -382,7 +383,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
 
 async fn thread_get(params: Value) -> Result<Value, RpcError> {
     let path = str_param(&params, "log_path", "thread.get")?.to_string();
-    let page = read_page(std::path::PathBuf::from(path), &params).await?;
+    let page = read_page(path, &params).await?;
     serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))
 }
 
@@ -400,17 +401,17 @@ async fn thread_subagent(params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("bad_request", "invalid agent_id"))?;
     let log_path = path.to_string_lossy().into_owned();
     let running = claude::subagents::transcript_running(&path, std::time::SystemTime::now());
-    let page = read_page(path, &params).await?;
+    let page = read_page(log_path.clone(), &params).await?;
     serde_json::to_value(crate::types::SubagentPage { page, log_path, running }).map_err(|e| err("internal", e.to_string()))
 }
 
-async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<crate::types::ThreadPage, RpcError> {
+async fn read_page(log: String, params: &Value) -> Result<crate::types::ThreadPage, RpcError> {
     let before = params.get("before").and_then(Value::as_u64);
     let limit = params
         .get("limit")
         .and_then(Value::as_u64)
-        .map_or(claude::DEFAULT_LIMIT, |n| n as usize);
-    let page = tokio::task::spawn_blocking(move || claude::thread_get(&path, before, limit))
+        .map_or(transcript::DEFAULT_LIMIT, |n| n as usize);
+    let page = tokio::task::spawn_blocking(move || transcript::thread_get(&log, before, limit))
         .await
         .map_err(|e| err("internal", e.to_string()))?
         .map_err(|e| match e.kind() {
@@ -436,6 +437,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         herdr_version: None,
         herdr_protocol: None,
         methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
+        thread_kinds: transcript::KINDS.iter().map(|k| (*k).to_string()).collect(),
     };
     if let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await {
         if let Ok(snap) = c.call("session.snapshot", json!({})).await {
@@ -527,7 +529,7 @@ fn rpc_cancel(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 
 async fn thread_resolve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = str_param(&params, "pane_id", "thread.resolve")?;
-    let r = claude::resolve(&ctx.herdr_socket, ctx.herdr_timeout, &ctx.home, pane).await.map_err(herdr_err)?;
+    let r = transcript::resolve(&ctx.herdr_socket, ctx.herdr_timeout, &ctx.home, pane).await.map_err(herdr_err)?;
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
@@ -535,17 +537,20 @@ async fn thread_resolve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 const FOLLOW_MAX_FAILURES: u32 = 10;
 
 fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
-    let path = std::path::PathBuf::from(str_param(&params, "log_path", "thread.follow")?);
+    let log = str_param(&params, "log_path", "thread.follow")?.to_string();
+    let path = std::path::PathBuf::from(&log);
     let from = params.get("from").and_then(Value::as_u64).unwrap_or(0);
-    if !path.is_file() {
-        return Err(err("not_found", format!("no such log: {}", path.display())));
-    }
+    let mut follower = transcript::Follower::new(&log, from).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
+        _ => err("io_error", e.to_string()),
+    })?;
+    let claude_log = transcript::Agent::of_log(&log) == transcript::Agent::Claude;
     let out = out.clone();
     let stream = ctx.streams.spawn("thread", move |id| async move {
-        let mut follower = claude::Follower::new(&path, from);
         let mut failures = 0u32;
         // On a subagent transcript, tell the app when the subagent stops (`agent_running`).
-        let mut running = claude::subagents::transcript_running(&path, std::time::SystemTime::now());
+        let mut running =
+            if claude_log { claude::subagents::transcript_running(&path, std::time::SystemTime::now()) } else { None };
         let mut next_check = tokio::time::Instant::now() + claude::subagents::AGENT_POLL;
         loop {
             if running == Some(true) && tokio::time::Instant::now() >= next_check {
@@ -577,6 +582,10 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
                     }
                 }
             }
+            if let Some(code) = follower.ended() {
+                notify(&out, &id, json!({ "error": code })).await;
+                return;
+            }
             tokio::time::sleep(claude::POLL_INTERVAL).await;
         }
     });
@@ -586,8 +595,10 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
 async fn sessions_recent(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let cwd = str_param(&params, "cwd", "sessions.recent")?.to_string();
     let limit = params.get("limit").and_then(Value::as_u64).map_or(20, |n| n as usize);
+    // Older apps send no kind: they ask for Claude sessions.
+    let kind = params.get("kind").and_then(Value::as_str).unwrap_or("claude").to_string();
     let home = ctx.home.clone();
-    let list = tokio::task::spawn_blocking(move || claude::recent_sessions(&home, &cwd, limit))
+    let list = tokio::task::spawn_blocking(move || transcript::recent_sessions(&home, &kind, &cwd, limit))
         .await
         .map_err(|e| err("internal", e.to_string()))?;
     serde_json::to_value(list).map_err(|e| err("internal", e.to_string()))

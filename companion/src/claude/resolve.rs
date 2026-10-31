@@ -229,6 +229,13 @@ fn first_prompt(path: &Path) -> String {
 /// Project dirs hold a `cwd` field in every line. Collect the newest cwd of each project,
 /// newest project first. Project dir names decode lossily, so they are not decoded.
 pub fn recent_cwds(home: &Path, cap: usize) -> Vec<String> {
+    let found = recent_cwds_timed(home, usize::MAX);
+    let mut seen = HashSet::new();
+    found.into_iter().map(|(_, c)| c).filter(|c| seen.insert(c.clone())).take(cap).collect()
+}
+
+/// Like [`recent_cwds`], with the mtime of the newest log of each project. Repeats stay.
+pub fn recent_cwds_timed(home: &Path, cap: usize) -> Vec<(SystemTime, String)> {
     let Ok(rd) = std::fs::read_dir(home.join(".claude/projects")) else { return Vec::new() };
     let mut found: Vec<(SystemTime, String)> = rd
         .filter_map(|e| e.ok())
@@ -238,8 +245,8 @@ pub fn recent_cwds(home: &Path, cap: usize) -> Vec<String> {
         })
         .collect();
     found.sort_by_key(|e| std::cmp::Reverse(e.0));
-    let mut seen = HashSet::new();
-    found.into_iter().map(|(_, c)| c).filter(|c| seen.insert(c.clone())).take(cap).collect()
+    found.truncate(cap);
+    found
 }
 
 /// The `cwd` of the newest line that has one.

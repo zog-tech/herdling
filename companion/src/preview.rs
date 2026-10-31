@@ -1,6 +1,7 @@
 //! `agents.preview`: one short line per agent for the app's Agent Board.
 //!
-//! Claude panes are read from the tail of their session log (activity, last reply,
+//! Panes of agents with a transcript adapter are read from the end of their session log
+//! (activity, last reply,
 //! pending permission). Other agents fall back to the last useful line of the screen.
 
 use std::collections::{HashMap, HashSet};
@@ -132,6 +133,31 @@ pub fn read_log(path: &Path) -> io::Result<LogPreview> {
     Ok(log_preview(lines.iter().map(|(_, l)| l.as_str())))
 }
 
+/// Items read from the end of a non-Claude log for a preview.
+const PREVIEW_ITEMS: usize = 80;
+
+/// A preview of any agent log. Claude logs use [`read_log`]; other logs use their last items.
+pub fn read_any_log(path: &Path) -> io::Result<LogPreview> {
+    let log = path.to_string_lossy();
+    if crate::transcript::Agent::of_log(&log) == crate::transcript::Agent::Claude {
+        return read_log(path);
+    }
+    let page = crate::transcript::thread_get(&log, None, PREVIEW_ITEMS)?;
+    Ok(items_preview(&page.items))
+}
+
+/// Summarizes assembled items (oldest first). A tool item with no result is pending.
+pub fn items_preview(items: &[ThreadItem]) -> LogPreview {
+    let done: HashSet<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            ThreadItem::Tool { id, result: Some(_), .. } => Some(id.clone()),
+            _ => None,
+        })
+        .collect();
+    summarize(items.to_vec(), &done)
+}
+
 /// Summarizes log lines (oldest first). A line still being written is not valid JSON
 /// and gives nothing.
 pub fn log_preview<'a>(lines: impl IntoIterator<Item = &'a str>) -> LogPreview {
@@ -141,6 +167,10 @@ pub fn log_preview<'a>(lines: impl IntoIterator<Item = &'a str>) -> LogPreview {
         done.extend(claude::parse_results(line).into_iter().map(|(id, _)| id));
         items.extend(claude::parse_line(line));
     }
+    summarize(items, &done)
+}
+
+fn summarize(items: Vec<ThreadItem>, done: &HashSet<String>) -> LogPreview {
     let last_reply = items.iter().rev().find_map(|i| match i {
         ThreadItem::Assistant { markdown, .. } => Some(one_line(&strip_markdown(markdown))),
         _ => None,
@@ -189,6 +219,11 @@ fn activity_of(item: &ThreadItem, pending: &[&ThreadItem]) -> String {
     let ThreadItem::Tool { name, input, .. } = item else { return "Running a subagent".into() };
     let s = match name.as_str() {
         "Bash" => format!("Running {}", cap_chars(&one_line(input_str(input, "command")), CMD_CAP)),
+        "bash" | "shell" | "exec_command" | "exec" => format!("Running {}", cap_chars(&one_line(&crate::transcript::tool_summary(name, input)), CMD_CAP)),
+        "edit" | "write" | "apply_patch" | "multiedit" => format!("Editing {}", basename(&crate::transcript::tool_summary(name, input))),
+        "read" => format!("Reading {}", basename(&crate::transcript::tool_summary(name, input))),
+        "grep" | "glob" | "find" | "ls" => "Searching".into(),
+        "webfetch" | "websearch" | "web_search" => "Browsing".into(),
         "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
             let path = [input_str(input, "file_path"), input_str(input, "notebook_path")].into_iter().find(|p| !p.is_empty());
             format!("Editing {}", basename(path.unwrap_or("")))
@@ -218,6 +253,10 @@ fn question_of(item: &ThreadItem) -> Option<String> {
             format!("Allow edit to {}?", basename(path.unwrap_or("")))
         }
         "WebFetch" => format!("Allow fetch of {}?", input_str(input, "url")),
+        "bash" | "shell" | "exec_command" | "exec" => {
+            format!("Allow {}?", cap_chars(&one_line(&crate::transcript::tool_summary(name, input)), LINE_CAP - 7))
+        }
+        "edit" | "write" | "apply_patch" => format!("Allow edit to {}?", basename(&crate::transcript::tool_summary(name, input))),
         other => format!("Allow {}?", tool_label(other)),
     };
     Some(cap_chars(&q, LINE_CAP))
@@ -482,18 +521,18 @@ async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &Preview
         status_since: None,
         source: "screen".into(),
     };
-    if a.kind == "claude" {
+    if crate::transcript::Agent::from_kind(&a.kind).is_some() {
         let log = match state.cached_log(&a.pane_id) {
             Some(l) => l,
             None => {
-                let r = claude::resolve(socket, timeout, home, &a.pane_id).await.ok()?;
+                let r = crate::transcript::resolve(socket, timeout, home, &a.pane_id).await.ok()?;
                 let l = r.log_path.map(PathBuf::from);
                 state.cache_log(&a.pane_id, l.clone());
                 l
             }
         };
         if let Some(path) = log {
-            if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_log(&path)).await {
+            if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_any_log(&path)).await {
                 p.source = "log".into();
                 p.last_reply = lp.last_reply;
                 match a.status.as_str() {

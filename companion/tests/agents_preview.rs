@@ -285,7 +285,10 @@ fn fake_host(dir: &Path) -> (PathBuf, PathBuf) {
                 {"pane_id": "w1:p2", "agent": "codex", "agent_status": "blocked", "cwd": "/home/sam/proj"},
                 {"pane_id": "w1:p3", "agent": "codex", "agent_status": "idle", "cwd": "/home/sam/proj"},
             ]}})),
-            "agent.get" => Some(json!({"agent": {"agent": "claude", "cwd": "/home/sam/proj", "pane_id": pane}})),
+            "agent.get" => {
+                let kind = if pane == "w1:p1" { "claude" } else { "codex" };
+                Some(json!({"agent": {"agent": kind, "cwd": "/home/sam/proj", "pane_id": pane}}))
+            }
             "pane.process_info" => Some(json!({"process_info": {"pane_id": pane, "shell_pid": 1,
                 "foreground_process_group_id": 4242, "foreground_processes": [{"pid": 4242, "name": "claude"}]}})),
             "pane.read" if pane == "w1:p2" => Some(json!({"read": {"text": "Would you like to run `rm -rf build`?\n│ 1. Yes │\n"}})),

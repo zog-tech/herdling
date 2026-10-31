@@ -14,7 +14,8 @@ use crate::tail::read_offset_lines_before;
 use crate::types::{ThreadItem, ThreadPage};
 
 pub use follow::{Follower, POLL_INTERVAL};
-pub use resolve::{resolve_with, ProcessTable, descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_sessions, resolve};
+pub use resolve::{resolve_with, ProcessTable, descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_cwds_timed, recent_sessions, resolve};
+pub(crate) use parse::{cap, parse_ts};
 pub use parse::{assemble, merge_result, parse_line, parse_results, ResultInfo, ResultKind, LAUNCH_TEXT, RESULT_CAP};
 
 /// Default page size in thread items.

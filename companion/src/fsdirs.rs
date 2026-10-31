@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::claude;
+use crate::transcript;
 
 /// Cap on `recent_cwds`.
 pub const RECENT_CAP: usize = 30;
@@ -29,6 +29,6 @@ pub fn dirs(home: &Path, path: Option<&str>) -> std::io::Result<Value> {
     Ok(json!({
         "path": target.to_string_lossy(),
         "dirs": names,
-        "recent_cwds": claude::recent_cwds(home, RECENT_CAP),
+        "recent_cwds": transcript::recent_cwds(home, RECENT_CAP),
     }))
 }
