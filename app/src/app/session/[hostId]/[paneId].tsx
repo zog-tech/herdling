@@ -384,7 +384,7 @@ export default function SessionScreen() {
   const menu = useSessionMenu(hostId, agent, back);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}>
           <Pressable
