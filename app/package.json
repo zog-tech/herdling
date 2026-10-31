@@ -59,6 +59,7 @@
     "typecheck": "tsc --noEmit"
   },
   "private": true,
+  "license": "MPL-2.0",
   "jest": {
     "preset": "jest-expo",
     "setupFiles": [

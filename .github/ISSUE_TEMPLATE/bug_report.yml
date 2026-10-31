@@ -1,0 +1,98 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Please do not post passwords, private keys, push tokens,
+        pairing codes, host names, IP addresses or screenshots of real sessions. For a security
+        problem, write to admin@zog-tech.com (see SECURITY.md) and do not use this form.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - iPhone
+        - Android
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Phone OS version
+      description: For example iOS 26.1 or Android 16.
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Herdling version
+      description: The version and the build number. The App Store, Google Play or TestFlight page shows them.
+    validations:
+      required: true
+  - type: input
+    id: herdlingd-version
+    attributes:
+      label: herdlingd version
+      description: The version, or the date you built or installed herdlingd.
+    validations:
+      required: true
+  - type: dropdown
+    id: computer-os
+    attributes:
+      label: Computer OS
+      description: The operating system of the computer that runs herdlingd.
+      options:
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: herdr-version
+    attributes:
+      label: herdr version
+      description: For example 0.9.5.
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent kind
+      description: The agents that show the problem.
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - Pi
+        - OpenCode
+        - Another agent
+        - Not about an agent
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Say what you did and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to repeat the problem
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: More details
+      description: Network setup (same Wi-Fi or VPN), screenshots of the demo host, the herdlingd log. Remove private data first.

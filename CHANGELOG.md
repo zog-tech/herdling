@@ -1,0 +1,58 @@
+# Changelog
+
+All notable changes to Herdling are in this file. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
+
+## [Unreleased]
+
+Herdling is in early development. The app is in beta on TestFlight, and the App Store and
+Google Play releases are coming soon. The list below follows the history of the repository,
+from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
+
+### Added
+
+- **Foundation.** A pnpm workspace with the Expo app, the shared protocol types and the Rust
+  companion `herdlingd`. The app talks to `herdlingd rpc` over SSH with newline-delimited JSON.
+  `herdlingd` passes calls to the herdr socket and streams herdr events.
+- **Chat view.** `herdlingd` reads the Claude Code session logs and pages them into a thread:
+  prompts, formatted replies, tool calls, thinking, subagents and permission requests. The app
+  follows the thread live and sends prompts.
+- **More agents.** An agent-neutral transcript layer with adapters for Codex, Pi and OpenCode.
+  Session resume and command lists for each agent (`/` commands, `$` skills for Codex, prompts
+  and skills from the agent folders for Pi and OpenCode).
+- **Board.** Every agent of every computer on one screen, grouped by status, with a "Needs you"
+  group first, a peek sheet with the last reply, live elapsed times and herdr names.
+- **Sessions.** Start an agent in any folder, restart, resume, rename and close a session.
+  Rename tabs and workspaces. Swipe between the agents of a workspace.
+- **Terminal.** An ANSI terminal view with a key row and width modes (fit, wrap, scroll).
+- **Computers.** Add a computer by hand, find computers on the local network (Bonjour), pair
+  with a one-time code or a QR code, or set up once with the SSH password (`herdlingd enroll`).
+  The app pins the host key. Each phone gets its own restricted key that can only run
+  `herdlingd rpc`.
+- **herdlingd service.** `herdlingd install` sets up a launchd agent on macOS or a systemd user
+  service on Linux. `herdlingd serve` watches herdr, advertises itself and opens the pairing window.
+- **Push notifications.** A push through Expo when an agent finishes or waits for you, with
+  per-kind settings and deep links into the session. No pushes while the user is active in herdr.
+- **Voice.** Record or dictate prompts, with on-device recognition, an on-device Parakeet model
+  on iOS, or the computer's own `stt_command`. Read replies out loud in full or as a summary,
+  with the phone voices or the computer's `tts_command` and `summary_command`.
+- **Composer.** Attach photos, paste images, a `+` menu and a command picker.
+- **Meters.** CPU and memory of each computer, and the plan usage of Claude and Codex.
+- **Automations.** A tab that lists the automations of `herdr-automate` and approves them.
+- **Design.** The "Night Watch" design system: a dark palette with one gold accent, Dynamic Type
+  roles, motion tokens, haptics, Liquid Glass on iOS 26, flat rows and grouped Settings.
+- **Android.** Native modules for SSH (sshj) and voice, and Android paths for sheets, prompts,
+  headers, tab icons and keyboard insets.
+- **Demo mode.** A demo host with made-up agents (`herdling://demo`).
+- **Compatibility.** `hello` lists the methods of the computer, so a new app works with an older
+  `herdlingd` and shows an update hint. The rules are in `docs/protocol.md`.
+- **Releases.** EAS build profiles, over-the-air updates with `expo-updates` and TestFlight builds.
+- **Store and website.** App Store and Google Play listing text, the privacy policy and the
+  support page.
+
+### Changed
+
+- The product name changed from the working name to Herdling. The companion is now `herdlingd`.
+- The app no longer asks for permissions it does not use (Face ID, storage, biometrics, overlay, boot).

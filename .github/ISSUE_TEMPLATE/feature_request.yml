@@ -1,0 +1,42 @@
+name: Feature request
+description: Ask for a new feature or a change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do
+      description: Describe the problem or the goal. Do not start with the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: Say how it could work. Other ideas are welcome too.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick all that matter to you.
+      multiple: true
+      options:
+        - iPhone app
+        - Android app
+        - herdlingd (the companion)
+        - A specific agent (Claude Code, Codex, Pi, OpenCode or another)
+        - Docs or website
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: How do you solve this now, in Herdling or in another tool?
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Checks
+      options:
+        - label: I looked for an existing issue or discussion.
+          required: true

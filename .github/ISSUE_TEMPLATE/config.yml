@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Get support
+    url: https://herdling.zog-tech.com/support
+    about: Answers to common questions, setup help and troubleshooting.
+  - name: Ask a question or share an idea
+    url: https://github.com/zog-tech/herdling/discussions
+    about: Use GitHub Discussions for questions and open ideas.
+  - name: Report a security problem
+    url: https://github.com/zog-tech/herdling/blob/main/SECURITY.md
+    about: Report security problems in private to admin@zog-tech.com. Do not open a public issue.
