@@ -19,6 +19,7 @@ import * as haptics from "@/ui/haptics";
 import { useVoiceSettings } from "@/voice/settings";
 import { testVoice } from "@/voice/useSpeakReplies";
 import { VoiceInputSection } from "@/voice/VoiceInputSettings";
+import { accentOf, deviceVoices, voiceLabel } from "@/voice/voiceList";
 
 function HostRow({ host }: { host: Host }) {
   const router = useRouter();
@@ -107,18 +108,15 @@ const RATE_STEP = 0.1;
 const RATE_MIN = 0.5;
 const RATE_MAX = 2;
 
-/** Voices for the device language, enhanced first. */
+/** Voices for the device language: its region first, then enhanced (see `deviceVoices`). */
 function useDeviceVoices(): Speech.Voice[] {
   const [voices, setVoices] = useState<Speech.Voice[]>([]);
   useEffect(() => {
     let live = true;
-    const lang = Intl.DateTimeFormat().resolvedOptions().locale.split(/[-_]/)[0].toLowerCase();
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
     Speech.getAvailableVoicesAsync()
       .then((all) => {
-        if (!live) return;
-        const mine = all.filter((v) => v.language.toLowerCase().startsWith(lang));
-        const rank = (v: Speech.Voice) => (v.quality === Speech.VoiceQuality.Enhanced ? 0 : 1);
-        setVoices(mine.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)));
+        if (live) setVoices(deviceVoices(all, locale));
       })
       .catch(() => {});
     return () => {
@@ -202,7 +200,7 @@ function VoiceSection() {
             onPress={() => setPicking((p) => !p)}
             trailing={
               <Text variant="small" muted>
-                {current?.name ?? "System default"}
+                {current ? voiceLabel(current) : "System default"}
               </Text>
             }
           >
@@ -216,7 +214,7 @@ function VoiceSection() {
               {voices.map((v) => (
                 <Row
                   key={v.identifier}
-                  accessibilityLabel={`Voice ${v.name}`}
+                  accessibilityLabel={`Voice ${v.name}${accentOf(v.language) ? `, ${accentOf(v.language)} English` : ""}`}
                   onPress={() => (set({ voice: v.identifier }), setPicking(false))}
                   trailing={
                     v.quality === Speech.VoiceQuality.Enhanced ? (
@@ -226,7 +224,7 @@ function VoiceSection() {
                     ) : undefined
                   }
                 >
-                  <Text bold={v.identifier === voice}>{v.name}</Text>
+                  <Text bold={v.identifier === voice}>{voiceLabel(v)}</Text>
                 </Row>
               ))}
             </View>
