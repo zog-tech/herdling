@@ -52,6 +52,9 @@ declare class SshNativeModule extends NativeModule<SshEvents> {
   execWithPassword(o: PasswordExecOptions): Promise<PasswordExecResult>;
   startBrowse(): Promise<void>;
   stopBrowse(): Promise<void>;
+  /** Builds before the browser preview do not have these two functions. */
+  startPreview?(hostId: string, port: number, command: string): Promise<{ localPort: number }>;
+  stopPreview?(localPort: number): Promise<void>;
 }
 
 const Ssh = requireNativeModule<SshNativeModule>("SshModule");
@@ -117,4 +120,29 @@ export function stopBrowse(): Promise<void> {
 
 export function addListener<E extends keyof SshEvents>(event: E, listener: SshEvents[E]): { remove(): void } {
   return Ssh.addListener(event, listener);
+}
+
+/**
+ * True when this build has the browser preview proxy. Builds before it do not have
+ * `startPreview`: an OTA update must hide the preview there.
+ */
+export function hasNativePreview(): boolean {
+  return typeof Ssh?.startPreview === "function" && typeof Ssh?.stopPreview === "function";
+}
+
+/**
+ * Starts the preview proxy for one port of a host: a listener on `127.0.0.1` of the phone, first
+ * on the same port number, else on a free port. Each accepted connection opens an exec channel
+ * with `command` (`herdlingd proxy <port> <grant>`) on the host's SSH connection and copies raw bytes.
+ * A connection without the preview cookie gets 403. The module puts the cookie in the web view
+ * cookie store before it resolves. Error codes: "not_supported", "not_connected", "listen_failed".
+ */
+export function startPreview(hostId: string, port: number, command: string): Promise<{ localPort: number }> {
+  if (!Ssh.startPreview) return Promise.reject(Object.assign(new Error("This build has no browser preview"), { code: "not_supported" }));
+  return Ssh.startPreview(hostId, port, command);
+}
+
+/** Stops the listener and closes its proxy channels. Unknown ports are ignored. */
+export function stopPreview(localPort: number): Promise<void> {
+  return Ssh.stopPreview ? Ssh.stopPreview(localPort) : Promise.resolve();
 }

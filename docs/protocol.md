@@ -8,6 +8,9 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 - The key runs `herdlingd rpc`. The command reads and writes one JSON object per line.
 - A line ends with `\n`. A JSON object never contains a raw newline.
 - A request line is at most 34 MiB. A longer line gets a `bad_request` error. (Before `stt.make`, the limit was 16 MiB.)
+- A second channel type carries the browser preview: one exec channel per TCP connection, with
+  the command `herdlingd proxy <port> <grant>`. It carries raw bytes, not JSON lines. See
+  "Browser preview" below.
 
 ## Messages
 
@@ -20,7 +23,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 ## Error codes in use
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
-`unsupported_platform`, `stale`.
+`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -292,6 +295,62 @@ Result:
   check can miss a program.
 - A kind in neither list has no known program name. The app shows it normally.
 - The app dims a missing agent and marks it "Not installed", but the user can still choose it.
+
+## Browser preview: `ports.list`, `preview.open`, `preview.close` and the proxy channel
+
+The app opens a dev server of the computer (for example `localhost:5173`) in a web view. The
+phone key keeps `no-port-forwarding`, so the app does not use SSH port forwarding. The app
+checks `hello.methods` for `preview.open` before it shows "Preview".
+
+`ports.list` params: `{"pane_id"?: "w1:p2"}`. Result:
+
+```json
+{"ports": [{"port": 5173, "addr": "::1", "pid": 4411, "process": "node", "cmd": "vite", "pane_id": "w1:p2"},
+           {"port": 3000, "addr": "127.0.0.1", "pid": 3900, "process": "node", "cmd": "next-server"}]}
+```
+
+- Only TCP listeners of the same user, on loopback (`127.0.0.0/8`, `::1`) or on all addresses
+  (`0.0.0.0`, `::`). One item per port. The pairing port of `serve` is never in the list.
+- macOS reads `lsof`. Linux reads `/proc/net/tcp`, `/proc/net/tcp6` and `/proc/<pid>/fd`. No root.
+- With `pane_id`, herdlingd asks herdr for `pane.process_info` and marks the ports of the processes
+  under the pane's shell. These ports come first, then the other ports by number.
+- herdlingd keeps the listener list for 5 s, because `lsof` can be slow.
+
+`preview.open` params: `{"port": 5173}`. Result: `{"grant": "<32 hex>", "port": 5173, "expires_at": 1767225600}`.
+
+- herdlingd checks that a process of the same user listens on the port on loopback or on all
+  addresses. If not, the error is `port_not_listening`. The pairing port gives `bad_request`.
+- The grant goes to `~/.local/state/herdling/preview-grants.json` (folder 0700, file 0600, atomic
+  rename). It expires 30 minutes after the last proxy connection. At most 16 grants are live.
+
+`preview.close` params: `{"grant": "<32 hex>"}`. Result: `{"closed": true}`, or `false` when the
+grant was not live. A grant that is not 32 lowercase hex characters gives `grant_invalid`.
+
+The proxy channel:
+
+- For each TCP connection of the web view, the app opens a new exec channel on the open SSH
+  connection. The command is the host command with the last word `rpc` replaced by
+  `proxy <port> <grant>`, for example `herdlingd proxy 5173 <grant>`.
+- With the phone key, sshd runs the forced command `herdlingd rpc` and puts the requested command
+  in `SSH_ORIGINAL_COMMAND`. `herdlingd rpc` changes to the proxy mode only when that text is exactly
+  `<path>herdlingd proxy <port> <grant>` (port 1–65535, grant 32 lowercase hex characters). Any
+  other text starts the normal RPC loop. herdlingd never gives the text to a shell.
+- A host without a forced command runs the same command in the user's shell: `herdlingd proxy`
+  is also a subcommand. Both paths run the same code.
+- The proxy checks the grant and the port, then connects to `127.0.0.1:<port>`, then to
+  `[::1]:<port>`. It never connects to another address. Then it copies bytes both ways until one
+  side closes. A refusal writes one line to stderr and ends the channel with exit code 2.
+- Each accepted connection extends the grant by 30 minutes.
+- An older herdlingd does not know the proxy request and starts the RPC loop. The app does not
+  send it unless `hello.methods` has `preview.open`.
+
+On the phone, the native ssh module listens on `127.0.0.1` only, while the preview screen is
+open. It first tries the same port number as on the computer, so the page origin is the same as
+at the desk. Each connection must send the cookie `herdling_preview=<random 128-bit value>`; the
+app puts it in the web view cookie store. A connection without it gets `403`. At most 6 proxy
+channels run at once per host; more connections wait. When a channel does not open on the
+first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
+for the preview.
 
 ## Compatibility rules
 

@@ -79,6 +79,7 @@ The path alias `@/` points to `app/src/`.
 | `board/` | The board: buckets, rows, the peek sheet, elapsed clocks |
 | `thread/` | The chat view: thread items, follow, composer, permission choices |
 | `terminal/` | The ANSI terminal view and the key row |
+| `preview/` | Browser preview: port list, tunnel, lazy `react-native-webview` loader (route `app/preview/`) |
 | `push/` | Push token, registration with each computer, notification routing |
 | `voice/` | Recording, recognition, speech, summaries |
 | `usage/`, `automations/` | Plan usage meters and the automations tab |
@@ -89,7 +90,7 @@ The path alias `@/` points to `app/src/`.
 
 | Path | Responsibility |
 |---|---|
-| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `version` |
+| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `proxy`, `version` |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
 | `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
 | `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI |
@@ -97,6 +98,7 @@ The path alias `@/` points to `app/src/`.
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
 | `git.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` |
+| `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |

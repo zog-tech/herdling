@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tokio::io::BufReader;
 use std::time::Duration;
-use herdlingd::{config, enroll, install, rpc, serve, update};
+use herdlingd::{config, enroll, install, proxy, rpc, serve, update};
 
 fn herdr_socket(home: &std::path::Path) -> PathBuf {
     match std::env::var_os("HERDR_SOCKET") {
@@ -124,6 +124,22 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
     }
 }
 
+/// The proxy mode of the browser preview: checks the grant, then copies bytes between the SSH
+/// channel (stdin and stdout) and the dev server on loopback. See `herdlingd::proxy`.
+async fn proxy_cmd(home: &std::path::Path, port: u16, grant: &str) -> ! {
+    let reserved = config::load(&config::default_path(home)).unwrap_or_default().pair_port;
+    let ctx = proxy::ProxyCtx::new(home, reserved);
+    let code = match proxy::run(tokio::io::stdin(), tokio::io::stdout(), port, grant, &ctx).await {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("herdlingd proxy: {e}");
+            2
+        }
+    };
+    // Exit at once: tokio reads stdin on a blocking thread that cannot be cancelled.
+    std::process::exit(code)
+}
+
 /// `herdlingd update`: the same as the `update.check` and `update.apply` methods.
 async fn update_cmd(ctx: update::UpdateCtx, usage: &str) -> Result<()> {
     let (mut check, mut allow_downgrade, mut version) = (false, false, None);
@@ -167,7 +183,8 @@ async fn update_cmd(ctx: update::UpdateCtx, usage: &str) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run] | version\n       \
-                         herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]";
+                         herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]\n       \
+                         herdlingd proxy <port> <grant>";
     if matches!(std::env::args().nth(1).as_deref(), Some("version" | "--version" | "-V")) {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -185,6 +202,11 @@ async fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("rpc") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            // The phone key forces `herdlingd rpc`. sshd puts the command that the app asked for
+            // in SSH_ORIGINAL_COMMAND. Only an exact proxy request changes the mode.
+            if let Some((port, grant)) = std::env::var("SSH_ORIGINAL_COMMAND").ok().as_deref().and_then(proxy::parse_original_command) {
+                proxy_cmd(&home, port, &grant).await;
+            }
             let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
@@ -245,6 +267,17 @@ async fn main() -> Result<()> {
         Some("update") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             update_cmd(update::UpdateCtx::new(home, std::env::current_exe()?.canonicalize()?), USAGE).await
+        }
+        Some("proxy") => {
+            // A host added by hand without a forced command runs the app's command in the shell.
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let [port, grant] = args.as_slice() else { bail!("{USAGE}") };
+            let line = format!("herdlingd proxy {port} {grant}");
+            let Some((port, grant)) = proxy::parse_original_command(&line) else {
+                bail!("herdlingd proxy: the port must be 1-65535 and the grant 32 hex characters")
+            };
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            proxy_cmd(&home, port, &grant).await
         }
         _ => bail!("{USAGE}"),
     }

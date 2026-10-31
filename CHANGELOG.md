@@ -56,6 +56,13 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
   older builds ignore the shortcuts.
 - **Pointer hover.** Board rows, filter chips and outline buttons show a light layer under an iPad
   trackpad or a mouse.
+- **Browser preview.** Open a dev server of the computer (for example `localhost:5173`) in the app,
+  with hot reload. "Preview" in the session menu lists the ports that the user's processes listen
+  on, with the ports of the session's pane first. The phone key keeps `no-port-forwarding`: each
+  connection goes over its own exec channel (`herdlingd proxy <port> <grant>`) to `127.0.0.1` or
+  `::1` on the computer only, with a grant from `preview.open`. herdlingd adds `ports.list`,
+  `preview.open` and `preview.close`. Needs a new app build (`react-native-webview`) and a new
+  herdlingd; without them the app does not show "Preview". The demo host shows a static page.
 - **Faster typing over cellular.** The terminal follows the screen with `pane.watch`: herdlingd
   reads the pane every 80 ms on the computer and sends only changed screens, in place of a 1 s poll.
   A sent line is one call (`pane.send_input`) and shows at once, dimmed, until the computer echoes

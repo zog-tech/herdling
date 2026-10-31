@@ -2,6 +2,9 @@ package com.zogtech.herdling.ssh
 
 import net.schmizz.sshj.SSHClient
 
+/** The login of a connected host: address, user and the host key that was seen. */
+data class HostTarget(val host: String, val port: Int, val user: String, val fingerprint: String?)
+
 /** Connected clients and open channels, guarded by one lock. */
 class SshState {
   private val clients = HashMap<String, SSHClient>()
@@ -26,6 +29,30 @@ class SshState {
     previous(clients.put(hostId, client))
     return true
   }
+
+  /** The login of each connected host, for the second connection of the preview. */
+  private val targets = HashMap<String, HostTarget>()
+
+  /** The second connection of the preview, when the first one could not open more channels. */
+  private val previewClients = HashMap<String, SSHClient>()
+
+  @Synchronized fun setTarget(hostId: String, target: HostTarget) {
+    targets[hostId] = target
+  }
+
+  @Synchronized fun target(hostId: String): HostTarget? = targets[hostId]
+
+  @Synchronized fun previewClient(hostId: String): SSHClient? = previewClients[hostId]
+
+  /** Stores the second connection of the preview. Returns the one already stored instead, if any. */
+  @Synchronized
+  fun setPreviewClient(hostId: String, client: SSHClient): SSHClient? {
+    previewClients[hostId]?.let { return it }
+    previewClients[hostId] = client
+    return null
+  }
+
+  @Synchronized fun removePreviewClient(hostId: String): SSHClient? = previewClients.remove(hostId)
 
   @Synchronized fun hostIds(): List<String> = clients.keys.toList()
 

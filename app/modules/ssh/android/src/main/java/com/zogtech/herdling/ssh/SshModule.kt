@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.DisconnectListener
 import net.schmizz.sshj.userauth.UserAuthException
+import java.io.IOException
 import java.util.UUID
 import kotlin.concurrent.thread
 
@@ -33,6 +34,7 @@ private const val CONNECT_TIMEOUT_MS = 10_000
 class SshModule : Module() {
   private val state = SshState()
   private var browser: Browser? = null
+  private val previews = PreviewRegistry()
 
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
@@ -95,8 +97,17 @@ class SshModule : Module() {
       browser?.stop()
     }
 
+    AsyncFunction("startPreview") Coroutine { hostId: String, port: Int, command: String ->
+      startPreview(hostId, port, command)
+    }
+
+    AsyncFunction("stopPreview") Coroutine { localPort: Int ->
+      withContext(Dispatchers.IO) { stopPreview(localPort) }
+    }
+
     OnDestroy {
       browser?.stop()
+      previews.removeAll().forEach { it.stop() }
       val ids = state.hostIds()
       thread(name = "herdling-ssh-teardown") { ids.forEach { disconnect(it) } }
     }
@@ -142,6 +153,8 @@ class SshModule : Module() {
       throw sshError("superseded", "a newer connect or disconnect replaced this one")
     }
     previous?.let { Clients.closeQuietly(it) }
+    // A second connection for the preview uses the same login and the host key seen now.
+    state.setTarget(hostId, HostTarget(opts.host, opts.port, opts.user, check.seen ?: opts.fingerprint))
     if (!client.isConnected) clientClosed(hostId, client)
     return mapOf("fingerprint" to (check.seen ?: ""))
   }
@@ -151,15 +164,93 @@ class SshModule : Module() {
     if (!state.removeClient(hostId, client)) return
     state.removeChannels(hostId).forEach { it.stop() }
     Clients.closeQuietly(client)
+    state.removePreviewClient(hostId)?.let { Clients.closeQuietly(it) }
     sendEvent("onDisconnect", mapOf("hostId" to hostId, "reason" to "connection closed"))
   }
 
-  /** Closes the host's channels and client. With `supersede`, an in-flight connect for the host becomes stale. */
+  /**
+   * Closes the host's channels and client. With `supersede`, an in-flight connect for the host becomes stale.
+   * A running preview stays: its next connections use the next client of the host.
+   */
   private fun disconnect(hostId: String, supersede: Boolean = true) {
     if (supersede) state.beginAttempt(hostId)
     state.removeChannels(hostId).forEach { it.stop() }
+    state.removePreviewClient(hostId)?.let { Clients.closeQuietly(it) }
     val client = state.removeClient(hostId) ?: return
     Clients.closeQuietly(client)
+  }
+
+  // Browser preview
+
+  private suspend fun startPreview(hostId: String, port: Int, command: String): Map<String, Int> {
+    if (port !in 1..65535) throw sshError("bad_request", "port $port is not in the range 1-65535")
+    if (state.client(hostId) == null) throw sshError("not_connected", "host $hostId is not connected")
+    withContext(Dispatchers.Main) { PreviewCookie.install() }
+    val server = withContext(Dispatchers.IO) {
+      try {
+        PreviewServer.start(hostId, port, command, previews.limiter(hostId)) { cmd -> openProxyChannel(hostId, cmd) }
+      } catch (e: IOException) {
+        throw sshError("listen_failed", e.message ?: e.toString())
+      }
+    }
+    previews.add(server)
+    return mapOf("localPort" to server.localPort)
+  }
+
+  private fun stopPreview(localPort: Int) {
+    val (server, last) = previews.remove(localPort) ?: return
+    server.stop()
+    // The last preview of the host closes the second connection.
+    if (last) state.removePreviewClient(server.hostId)?.let { Clients.closeQuietly(it) }
+  }
+
+  /**
+   * A new exec channel for the preview. It uses the host's connection. When the channel does not
+   * open there (for example sshd `MaxSessions`), it opens a second connection for the preview and
+   * uses that one from then on.
+   */
+  private fun openProxyChannel(hostId: String, command: String): ProxyChannel {
+    state.previewClient(hostId)?.let { return proxyExec(it, command) }
+    val main = state.client(hostId) ?: throw IOException("host $hostId is not connected")
+    return try {
+      proxyExec(main, command)
+    } catch (e: Exception) {
+      if (!main.isConnected) throw e
+      proxyExec(previewClient(hostId), command)
+    }
+  }
+
+  private fun proxyExec(client: SSHClient, command: String): ProxyChannel {
+    val session = client.startSession()
+    return try {
+      ProxyChannel(session, session.exec(command))
+    } catch (e: Exception) {
+      try {
+        session.close()
+      } catch (_: Exception) {
+      }
+      throw e
+    }
+  }
+
+  private fun previewClient(hostId: String): SSHClient {
+    state.previewClient(hostId)?.let { return it }
+    val target = state.target(hostId) ?: throw IOException("no login saved for host $hostId")
+    val key = Keys.loadOrCreate(context)
+    val client = Clients.newClient(HostKeyCheck(target.fingerprint), CONNECT_TIMEOUT_MS, keepAlive = true)
+    try {
+      client.connect(target.host, target.port)
+      client.authPublickey(target.user, key.keyProvider())
+    } catch (e: Exception) {
+      Clients.closeQuietly(client)
+      throw e
+    }
+    state.setPreviewClient(hostId, client)?.let {
+      // Another connection of the preview won the race: keep that one.
+      Clients.closeQuietly(client)
+      return it
+    }
+    return client
   }
 
   // Exec channels

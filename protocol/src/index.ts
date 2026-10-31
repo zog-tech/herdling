@@ -357,3 +357,32 @@ export type PaneWatchEvent =
   | { revision: number; text: string; truncated: boolean }
   | { error: string; message?: string }
   | { closed: true };
+
+/** `ports.list` params. With `pane_id`, the ports of that pane's processes come first and carry its id. */
+export type PortsListParams = { pane_id?: string };
+/** One TCP port that a process of the host user listens on, on loopback or on all addresses. */
+export type PortInfo = {
+  port: number;
+  /** The listen address: `127.0.0.1`, `::1`, `0.0.0.0` or `::`. */
+  addr: string;
+  pid?: number;
+  /** The process name, for example `node`. */
+  process?: string;
+  /** A short program name, for example `vite`. */
+  cmd?: string;
+  /** Set when the process descends from the shell of the asked pane. */
+  pane_id?: string;
+};
+/** `ports.list` result. The pairing port of herdlingd is never in it. */
+export type PortsList = { ports: PortInfo[] };
+
+/** `preview.open` params: a port that `ports.list` shows. */
+export type PreviewOpenParams = { port: number };
+/**
+ * `preview.open` result. The grant lets the proxy channel (`herdlingd proxy <port> <grant>`) connect
+ * to the port on loopback. It expires 30 minutes after the last proxy connection (`expires_at`, Unix seconds).
+ */
+export type PreviewOpen = { grant: string; port: number; expires_at: number };
+/** `preview.close` params and result. `closed` is false when the grant was not live. */
+export type PreviewCloseParams = { grant: string };
+export type PreviewClose = { closed: boolean };

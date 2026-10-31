@@ -3,6 +3,7 @@
  * The session route shows it full screen, with `SessionHeader` in the native header. The detail
  * column of Overview (regular width) shows it with `SessionHeader` as a plain row on top.
  */
+import type { PortInfo } from "@herdling/protocol";
 import { Stack, useIsFocused, useRouter } from "expo-router";
 import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -23,8 +24,10 @@ import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { portLabel } from "@/preview/preview";
+import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
-import { colors, denseScale, hitTarget, icon, space } from "@/theme/tokens";
+import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
@@ -64,11 +67,33 @@ const HEADER_BUTTON = { width: hitTarget, height: hitTarget, alignItems: "center
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** The listening ports of the computer as a sheet. A pick opens the browser preview. */
+function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: (port: number) => void) {
+  if (ports.length === 0) {
+    Alert.alert("No dev server found", "No process of your user listens on a loopback port of this computer. Start a dev server, then try again.");
+    return;
+  }
+  showActionSheet(
+    { title: "Preview", message: "Open a port of this computer", options: [...ports.map((p) => portLabel(p, paneId)), "Cancel"], cancelButtonIndex: ports.length },
+    (i) => {
+      const p = ports[i];
+      if (p) open(p.port);
+    },
+  );
+}
+
 /**
- * Restart, Resume (agents with a resume flag), the three renames and Close for the session's agent.
- * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
+ * Restart, Resume (agents with a resume flag), Changes, Preview, the three renames and Close for
+ * the session's agent. `openPane` shows another pane in place of this one (after a restart).
+ * `closed` runs after Close. `ports` is undefined when the preview does not show for this host.
  */
-function useSessionMenu(hostId: string, agent: AgentInfo | undefined, openPane: (paneId: string) => void, closed: () => void) {
+function useSessionMenu(
+  hostId: string,
+  agent: AgentInfo | undefined,
+  openPane: (paneId: string) => void,
+  closed: () => void,
+  ports?: PortInfo[],
+) {
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
@@ -108,6 +133,14 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, openPane: 
     if (listsMethod(hello, "git.status")) {
       items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${agent.pane_id}` as never) });
     }
+    if (ports) {
+      items.push({
+        label: ports.length > 0 ? `Preview (${ports.length})` : "Preview",
+        // After the menu closes, so the two sheets do not overlap.
+        onPick: () =>
+          setTimeout(() => showPortSheet(hostId, agent.pane_id, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
+      });
+    }
     items.push(
       ...renameItems(rpc, hostId, agent),
       {
@@ -132,9 +165,9 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, openPane: 
       },
       (i) => items[i]?.onPick(),
     );
-  }, [rpc, hello, agent, busy, run, router, hostId, openPane, closed]);
+  }, [rpc, hello, agent, busy, run, router, hostId, openPane, closed, ports]);
 
-  return { open, busy, enabled: !!rpc && !!agent && !busy };
+  return { open, busy, enabled: !!rpc && !!agent && !busy, ports };
 }
 
 const SWIPE_DISTANCE = 80;
@@ -357,13 +390,20 @@ function SessionActions({ hostId, paneId, menu }: { hostId: string; paneId: stri
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Session actions"
+        accessibilityLabel={menu.ports?.length ? "Session actions, dev server found" : "Session actions"}
         accessibilityState={{ disabled: !menu.enabled, busy: !!menu.busy }}
         disabled={!menu.enabled}
         onPress={menu.open}
         style={HEADER_BUTTON}
       >
         {menu.busy ? <DelayedSpinner color={colors.textMuted} /> : <Ellipsis size={icon.md} color={menu.enabled ? colors.text : colors.textMuted} />}
+        {/* The badge: the computer has a listening dev port that "Preview" can open. */}
+        {menu.ports && menu.ports.length > 0 && !menu.busy ? (
+          <View
+            importantForAccessibility="no"
+            style={{ position: "absolute", top: space.sm, right: space.sm, width: dot.size, height: dot.size, borderRadius: dot.size / 2, backgroundColor: colors.text }}
+          />
+        ) : null}
       </Pressable>
     </View>
   );
@@ -465,7 +505,11 @@ export function SessionDetail({
   const title = agent && snapshot ? agentTitle(snapshot, agent) : thread.ref?.kind || paneId;
   const kind = agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
-  const menu = useSessionMenu(hostId, agent, onOpenPane, onClosed);
+  // Browser preview: only on a build and a herdlingd that have it. The port list loads while the session is in view.
+  const previewOn = usePreviewSupported(hostId);
+  const livePorts = usePorts(hostId, paneId, previewOn && focused);
+  const ports = previewOn ? (livePorts ?? []) : undefined;
+  const menu = useSessionMenu(hostId, agent, onOpenPane, onClosed, ports);
 
   // Search: in the thread items (Thread) or in the visible terminal text (Terminal).
   const [searchOpen, setSearchOpen] = useState(false);
