@@ -13,6 +13,8 @@ import { SPOKEN_TICK_MS, TickingDuration } from "@/ui/TickingDuration";
 
 import { HScrollView } from "../HScrollView";
 import { LiveToolContext } from "../LiveToolContext";
+import { MenuPressable } from "../MenuPressable";
+import { toolCopyText } from "../rowMenu";
 import { lastLines, openToolView, refreshToolView, toolTime, type ToolResult } from "../toolView";
 import { useTerminalText } from "../useTerminalText";
 
@@ -68,7 +70,8 @@ function LiveOutput({ hostId, paneId, enabled }: { hostId: string; paneId: strin
 /**
  * One tool call: collapsed to `Name · summary` with its state and time; tap shows input and result.
  * A running card shows a spinner and a ticking timer. Opened, the newest running card shows the
- * pane's live output. "Expand" opens the full tool view.
+ * pane's live output. "Expand" opens the full tool view. A long press on the header opens the
+ * row menu: Copy (name, input and result) and Select text.
  */
 export const ToolCard = memo(function ToolCard({
   id,
@@ -115,7 +118,8 @@ export const ToolCard = memo(function ToolCard({
   return (
     <View style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.edge, backgroundColor: colors.card, overflow: "hidden" }}>
       <TopHighlight inset={radius.md} />
-      <Pressable
+      <MenuPressable
+        menu={{ kind: "tool", text: toolCopyText(name, input, result) }}
         accessibilityRole="button"
         accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${spokenTime ? `, ${spokenTime}` : ""}`}
         accessibilityState={{ expanded: open }}
@@ -154,7 +158,7 @@ export const ToolCard = memo(function ToolCard({
           </Text>
         ) : null}
         <Chevron size={14} color={colors.textMuted} />
-      </Pressable>
+      </MenuPressable>
       {open ? (
         <View style={{ paddingHorizontal: space.md, paddingBottom: space.md, gap: space.sm }}>
           <Block label="Input" text={inputText(input) || "(none)"} />

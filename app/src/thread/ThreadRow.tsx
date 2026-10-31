@@ -22,7 +22,7 @@ export const ThreadRow = memo(function ThreadRow({ item }: { item: ThreadItem })
     case "assistant":
       return (
         <>
-          <AssistantMessage markdown={item.markdown} />
+          <AssistantMessage markdown={item.markdown} id={item.id} />
           {live ? <ReplyPlayButton hostId={live.hostId} id={item.id} markdown={item.markdown} /> : null}
         </>
       );
