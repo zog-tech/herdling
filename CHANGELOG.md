@@ -5,6 +5,14 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd 0.1.2] - 2026-10-31
+
+- Answer from the notification: `pane.answer` checks the menu again and sends the key, or gives
+  the error `stale`. Needs-you pushes for a Yes / No menu carry the two labels for the app buttons.
+  `push.register` takes `capabilities`.
+- Browser preview: `ports.list`, `preview.open` and `preview.close`, and a proxy mode that connects
+  only to loopback ports with a grant. The phone key keeps `no-port-forwarding`.
+
 ## [herdlingd 0.1.1] - 2026-10-31
 
 - Faster terminal: `pane.watch` streams only changed screens, and `pane.send_input` sends a line
