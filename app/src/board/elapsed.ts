@@ -12,8 +12,8 @@ export function formatElapsed(seconds: number): string {
 }
 
 /**
- * Text of a card's status pill: "working 4m", "ready 2m ago", "needs you 30s", "idle 1h".
- * Without a start time only the label shows.
+ * Text of a card's status pill: "working 4m". Only working shows a time; the other states show
+ * their label only. Without a start time only the label shows.
  */
 export function pillText(bucket: Bucket, since: number | undefined, now: number): string {
   const { label, elapsed, suffix } = pillParts(bucket, since, now);
@@ -23,7 +23,6 @@ export function pillText(bucket: Bucket, since: number | undefined, now: number)
 /** The parts of the pill text, so the elapsed time can render apart from the label. */
 export function pillParts(bucket: Bucket, since: number | undefined, now: number): { label: string; elapsed?: string; suffix?: string } {
   const label = bucket === "needs_you" ? "needs you" : bucket;
-  if (since === undefined) return { label };
-  const elapsed = formatElapsed((now - since) / 1000);
-  return bucket === "ready" ? { label, elapsed, suffix: "ago" } : { label, elapsed };
+  if (bucket !== "working" || since === undefined) return { label };
+  return { label, elapsed: formatElapsed((now - since) / 1000) };
 }

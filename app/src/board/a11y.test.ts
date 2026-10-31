@@ -19,11 +19,11 @@ const item = (over: Partial<BoardItem>): BoardItem => ({
 });
 
 test("card_label_reads_status_place_preview_and_unread", () => {
-  expect(cardLabel(item({}), 1_000_000)).toBe("api, needs you 30s, studio · claude, Allow git push?");
+  expect(cardLabel(item({}), 1_000_000)).toBe("api, needs you, studio · claude, Allow git push?");
   expect(cardLabel(item({ bucket: "ready", line: "Done.", since: undefined }), 1_000_000)).toBe("api, ready, studio · claude, Done., unread");
   // No preview: the terminal title takes its place.
-  expect(cardLabel(item({ line: undefined }), 1_000_000)).toBe("api, needs you 30s, studio · claude, api-auth");
-  expect(cardLabel(item({ line: undefined, terminalTitle: undefined }), 1_000_000)).toBe("api, needs you 30s, studio · claude");
+  expect(cardLabel(item({ line: undefined }), 1_000_000)).toBe("api, needs you, studio · claude, api-auth");
+  expect(cardLabel(item({ line: undefined, terminalTitle: undefined }), 1_000_000)).toBe("api, needs you, studio · claude");
 });
 
 test("voiceover_actions_mirror_tap_peek_and_swipes", () => {

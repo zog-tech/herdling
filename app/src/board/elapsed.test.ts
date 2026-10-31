@@ -15,8 +15,8 @@ test("format_elapsed_units", () => {
 test("pill_text_per_bucket", () => {
   const now = 1_000_000;
   expect(pillText("working", now - 240_000, now)).toBe("working 4m");
-  expect(pillText("ready", now - 120_000, now)).toBe("ready 2m ago");
-  expect(pillText("needs_you", now - 30_000, now)).toBe("needs you 30s");
-  expect(pillText("idle", now - 3_600_000, now)).toBe("idle 1h");
+  expect(pillText("ready", now - 120_000, now)).toBe("ready");
+  expect(pillText("needs_you", now - 30_000, now)).toBe("needs you");
+  expect(pillText("idle", now - 3_600_000, now)).toBe("idle");
   expect(pillText("working", undefined, now)).toBe("working");
 });

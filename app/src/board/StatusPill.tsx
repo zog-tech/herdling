@@ -36,7 +36,8 @@ export function usePillNow(since: number | undefined, now: number): number {
 /** Status pill: icon + text in the bucket color, with the elapsed time. */
 export function StatusPill({ item, now: boardNow }: { item: BoardItem; now: number }) {
   const { color, Icon } = BUCKET_META[item.bucket];
-  const now = usePillNow(item.since, boardNow);
+  // Only working shows a time, so only working ticks.
+  const now = usePillNow(item.bucket === "working" ? item.since : undefined, boardNow);
   const text = pillText(item.bucket, item.since, now);
   const { label, elapsed, suffix } = pillParts(item.bucket, item.since, now);
   const textProps = { variant: "caption", color, bold: true, maxFontSizeMultiplier: denseScale.pill } as const;
