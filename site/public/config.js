@@ -9,10 +9,11 @@ window.HERDLING_CONFIG = {
   testFlightUrl: '',
   // The Google Play link of the Android app. Empty: "coming soon".
   playUrl: '',
-  // The one-line herdlingd installer. Set ready to true when the script is live.
+  // The one-line herdlingd installer (public/install.sh). It needs a herdlingd release on GitHub.
+  // Set ready to true after the first release (see README.md, "The installer").
   installer: {
     ready: false,
-    command: 'curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh',
+    command: 'curl -fsSL https://herdling.zog-tech.com/install.sh | sh',
   },
   // Screenshot slots that have files in /img/ (<slot>-360.webp and <slot>-720.webp).
   // Slots: overview, session, terminal, new-session, usage, settings, pair.

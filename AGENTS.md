@@ -88,13 +88,14 @@ The path alias `@/` points to `app/src/`.
 
 | Path | Responsibility |
 |---|---|
-| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]` |
+| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `version` |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
 | `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
 | `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi and OpenCode |
 | `serve/` | The user service: herdr watch, push debounce, desk activity ("quiet at the computer"), Bonjour, the pairing HTTP endpoint |
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
+| `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |
 | `stats.rs`, `usage.rs`, `automations.rs` | Host stats, plan usage, the `herdr-automate` adapter |
@@ -163,10 +164,24 @@ JS-only dependencies.
 - To deploy a new `herdlingd` to a computer: build it there (or for its target) with
   `cargo build --release`, then run `./target/release/herdlingd install`. The next SSH channel
   runs the new `rpc` code; the service restarts with the new `serve` code.
+- Users get `herdlingd` from the GitHub release: the app ("Install and pair"), the installer
+  `site/public/install.sh`, or `update.apply` / `herdlingd update`. The spec with the trust model is
+  `docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md`.
+- The installer's `--quiet` lines (`HERDLINGD_STEP`, `HERDLINGD_INSTALLED`, `HERDLINGD_ERROR`) are a
+  contract with `app/src/hosts/installer.ts`. The release asset names and `latest.json` are a
+  contract with `companion/src/update.rs` and the installer. Do not rename them.
 - The phone key runs `~/.local/bin/herdlingd rpc`. Do not move the binary without an update of
   the `authorized_keys` lines.
 - A new `herdlingd` must keep working with the app builds that people use (section 1).
-- The one-line installer is not public yet. Do not publish its URL as working.
+- The one-line installer needs a herdlingd release. Until the first release, the docs say
+  "after the first release" and `installer.ready` is `false` in `site/public/config.js`.
+
+### Releasing herdlingd
+
+Only the maintainer releases. The steps are in `CONTRIBUTING.md` ("Releasing herdlingd"):
+bump `version` in `companion/Cargo.toml`, update `CHANGELOG.md`, tag `herdlingd-vX.Y.Z` and push the
+tag. `.github/workflows/release-herdlingd.yml` builds the four targets and publishes the release.
+Installed apps and `herdlingd` find it through the "latest" release.
 
 ## 7. Builds on a shared machine
 

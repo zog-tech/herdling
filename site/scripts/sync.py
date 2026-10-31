@@ -27,7 +27,7 @@ PUBLIC = Path(__file__).resolve().parent.parent / "public"
 SITE = "https://herdling.zog-tech.com"
 PAGES = {"docs.md": "docs/index.html", "support.md": "support/index.html", "privacy.md": "privacy/index.html"}
 TWINS = ["index.md", "download.md", "docs.md", "support.md", "privacy.md"]
-INSTALLER = "curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh"
+INSTALLER = "curl -fsSL https://herdling.zog-tech.com/install.sh | sh"
 SHOT_LABELS = {
     "overview": "The Overview board: agents grouped by status, with one that needs you at the top.",
     "session": "A session in the chat view, with an agent's question and answer buttons.",
@@ -96,7 +96,7 @@ def display(url):
 def code_block(lang, lines):
     text = "\n".join(lines)
     if text.strip() == INSTALLER:
-        return ('<div class="code soon"><span class="tag" data-when="installer-soon">Coming soon</span>'
+        return ('<div class="code soon"><span class="tag" data-when="installer-soon">After the first release</span>'
                 f'<pre><code data-installer-command>{html.escape(text)}</code></pre></div>')
     rows = []
     for line in lines:

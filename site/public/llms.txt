@@ -5,7 +5,7 @@
 Key facts for an assistant that helps someone set up Herdling:
 
 - Computer: macOS or Linux, with herdr (https://herdr.dev), an SSH server, and herdlingd.
-- Install: `herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts a user service: launchd label `com.zogtech.herdlingd` (macOS) or systemd user unit `herdlingd.service` (Linux). The one-line installer `curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh` is coming soon and is not live yet. Until then, build from source: install Rust (rustup) and a C compiler, then `git clone https://github.com/zog-tech/herdling`, `cd herdling/companion`, `cargo build --release`, `./target/release/herdlingd install`. Update: `git pull`, rebuild, run `install` again.
+- Install: `herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts a user service: launchd label `com.zogtech.herdlingd` (macOS) or systemd user unit `herdlingd.service` (Linux). Three ways to install: (1) in the app, Settings > Hosts > Add host > Set up with password, then Install and pair (the app runs the installer over SSH, no terminal); (2) the one-line installer `curl -fsSL https://herdling.zog-tech.com/install.sh | sh` (downloads the GitHub release, checks SHA-256, no sudo; needs herdr first); (3) build from source: install Rust (rustup) and a C compiler, then `git clone https://github.com/zog-tech/herdling`, `cd herdling/companion`, `cargo build --release`, `./target/release/herdlingd install`. Ways 1 and 2 work after the first herdlingd release on GitHub. Update: tap Update herdlingd in the app, or run `herdlingd update` on the computer.
 - Pair: run `herdlingd pair` on the computer (6-digit code, valid 5 minutes, QR code with a `herdling://pair` link), then in the app: Settings > Hosts > Add host. Phone and computer on the same network while pairing. Alternative: "Set up with password" (SSH password, used once, not saved).
 - Config: `~/.config/herdling/config.toml`. Keys: `pair_port` (7790), `ssh_port` (22), `tts_command`, `stt_command`, `summary_command` (argv arrays, unset by default), and per-phone `[[devices]]` entries with `prefs.finished`, `prefs.needs_you`, `prefs.quiet_at_desk` (all true by default).
 - Phone: iOS 17 or later, Android 8.0 or later.
@@ -15,7 +15,7 @@ Key facts for an assistant that helps someone set up Herdling:
 ## Docs
 
 - [Guide](https://herdling.zog-tech.com/docs.md): install herdlingd, pair, every feature and setting, agent support matrix, the config file, voice commands, notifications, troubleshooting, update, uninstall
-- [Download](https://herdling.zog-tech.com/download.md): app store links and how to build herdlingd from source (installer coming soon)
+- [Download](https://herdling.zog-tech.com/download.md): app store links and how to install herdlingd: in the app, the one-line installer, or from source
 - [Support](https://herdling.zog-tech.com/support.md): common questions and how to contact us
 
 ## About

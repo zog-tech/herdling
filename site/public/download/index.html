@@ -66,6 +66,13 @@
 <p class="req">Needs herdr (installed and running) and an SSH server. On macOS: System Settings &rsaquo; General &rsaquo; Sharing &rsaquo; Remote Login. On Linux: the OpenSSH server.</p>
 </div>
 <div>
+<h3 class="steps-title">Set it up from the app</h3>
+<p class="req">The easiest way. In Herdling, tap Settings &rsaquo; Hosts &rsaquo; Add host &rsaquo; <strong>Set up with password</strong>. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers <strong>Install and pair</strong>: it runs the installer below over SSH, then pairs. No terminal and no admin rights. The app uses the password once and does not keep it.</p>
+<p class="req" data-when="installer-soon">This works after the first herdlingd release. Until then, build from source.</p>
+<h3 class="steps-title">The one-line installer</h3>
+<div class="code soon"><span class="tag" data-when="installer-soon">After the first release</span><pre><code data-installer-command>curl -fsSL https://herdling.zog-tech.com/install.sh | sh</code></pre></div>
+<p class="req">It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to <code>~/.local/bin</code> and starts the user service. It does not use sudo. Install herdr first.</p>
+<p class="req" data-when="installer-soon">The installer works after the first herdlingd release. Until then, build from source as below. Questions: <a href="https://github.com/zog-tech/herdling/issues">open an issue</a> or write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a>.</p>
 <h3 class="steps-title">Build it from source</h3>
 <p class="req">Herdling is open source (MPL-2.0). You need git, a C compiler (macOS: <code>xcode-select --install</code>; Debian and Ubuntu: <code>sudo apt install build-essential</code>) and Rust (stable), for example from <a href="https://rustup.rs">rustup</a>. herdr must be installed and running.</p>
 <div class="code"><pre><code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -74,11 +81,9 @@ cd herdling/companion
 cargo build --release
 ./target/release/herdlingd install
 herdlingd pair</code></pre></div>
-<p class="req"><code>herdlingd install</code> copies the program to <code>~/.local/bin/herdlingd</code> and starts the service: <code>com.zogtech.herdlingd</code> (launchd) on macOS, <code>herdlingd.service</code> (systemd user service) on Linux. Open a new terminal after rustup, and add <code>~/.local/bin</code> to your PATH if <code>herdlingd</code> is not found. Then scan the QR code from <code>herdlingd pair</code> in the app. To update, run <code>git pull</code>, <code>cargo build --release</code> and <code>install</code> again.</p>
-<h3 class="steps-title">The one-line installer</h3>
-<div class="code soon"><span class="tag" data-when="installer-soon">Coming soon</span><pre><code data-installer-command>curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh</code></pre></div>
-<p class="req" data-when="installer-soon">The installer is not live yet. Until it is, build from source as above. Questions: <a href="https://github.com/zog-tech/herdling/issues">open an issue</a> or write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a>.</p>
-<p class="req" data-when="installer-ready" hidden>It downloads herdlingd for your system and runs <code>herdlingd install</code>. Run it again to update.</p>
+<p class="req"><code>herdlingd install</code> copies the program to <code>~/.local/bin/herdlingd</code> and starts the service: <code>com.zogtech.herdlingd</code> (launchd) on macOS, <code>herdlingd.service</code> (systemd user service) on Linux. Open a new terminal after rustup, and add <code>~/.local/bin</code> to your PATH if <code>herdlingd</code> is not found. Then scan the QR code from <code>herdlingd pair</code> in the app.</p>
+<h3 class="steps-title">Update</h3>
+<p class="req">The app shows <strong>Update available</strong> when a new herdlingd is out. Tap <strong>Update herdlingd</strong> on the host screen. On the computer, <code>herdlingd update</code> does the same. Your config and paired phones stay.</p>
 <p class="req">The source code of the app and herdlingd is on <a href="https://github.com/zog-tech/herdling">GitHub</a>.</p>
 </div>
 </section>

@@ -13,6 +13,13 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Install and update herdlingd from the phone.** "Set up with password" installs herdlingd when it
+  is missing ("Install and pair"), with the installer `https://herdling.zog-tech.com/install.sh`.
+  The app shows "Update available" and updates herdlingd with one tap (`update.check`,
+  `update.apply`). On the computer: `herdlingd update` and `herdlingd version`. A release workflow
+  builds herdlingd for macOS (arm64, x86_64) and Linux (static musl, arm64, x86_64) on a
+  `herdlingd-v*` tag.
+
 - **Foundation.** A pnpm workspace with the Expo app, the shared protocol types and the Rust
   companion `herdlingd`. The app talks to `herdlingd rpc` over SSH with newline-delimited JSON.
   `herdlingd` passes calls to the herdr socket and streams herdr events.

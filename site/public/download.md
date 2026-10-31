@@ -20,7 +20,19 @@ Before you install it, the computer needs:
 - herdr (https://herdr.dev), installed and running, with your agents in it (herdlingd talks to the herdr socket);
 - an SSH server: on macOS, System Settings > General > Sharing > Remote Login; on Linux, the OpenSSH server.
 
-### Build from source (available now)
+### Set it up from the app (recommended)
+
+In Herdling, tap Settings > Hosts > Add host > **Set up with password**. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers **Install and pair**: it runs the one-line installer over SSH, then pairs. No terminal and no admin rights. The app uses the password once and does not keep it. This works after the first herdlingd release. Until then, build from source.
+
+### The one-line installer
+
+```sh
+curl -fsSL https://herdling.zog-tech.com/install.sh | sh
+```
+
+It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to `~/.local/bin` and starts the user service. It does not use sudo. Install herdr first. The installer works after the first herdlingd release. Until then, build from source as below.
+
+### Build from source
 
 You need git, a C compiler (macOS: `xcode-select --install`; Debian and Ubuntu: `sudo apt install build-essential`) and Rust (stable), for example from rustup:
 
@@ -42,15 +54,9 @@ herdlingd pair
 
 `herdlingd pair` shows a QR code. Scan it in the app (Settings > Hosts > Add host).
 
-To update: `git pull` in the `herdling` folder, then `cargo build --release` and `./target/release/herdlingd install` in `companion`.
+### Update
 
-### The one-line installer (coming soon)
-
-```sh
-curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
-```
-
-The installer is not live yet. Until it is, build from source as above.
+The app shows **Update available** when a new herdlingd is out. Tap **Update herdlingd** on the host screen. On the computer, `herdlingd update` does the same. From source: `git pull`, then `cargo build --release` and `./target/release/herdlingd install` in `companion`. Your config and paired phones stay.
 
 ## Source code
 

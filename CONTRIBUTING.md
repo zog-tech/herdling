@@ -60,6 +60,36 @@ open `herdling://demo` for the demo host.
 | `companion/` | `cargo clippy --all-targets -- -D warnings` | Rust lint |
 | `companion/` | `cargo test` | Rust tests |
 
+## Releasing herdlingd
+
+Only the maintainer releases. A release is a tag; GitHub Actions does the rest.
+
+1. Bump `version` in `companion/Cargo.toml` (for example `0.2.0`). Run `cargo build` once so
+   that `Cargo.lock` changes too, and commit both.
+2. In `CHANGELOG.md`, add a section `## [herdlingd 0.2.0] - YYYY-MM-DD` with the changes. The
+   workflow uses the text of this section as the release notes, and the app shows them before an update.
+3. Merge to `main`. Then tag the merge commit and push the tag:
+
+   ```sh
+   git tag herdlingd-v0.2.0
+   git push origin herdlingd-v0.2.0
+   ```
+
+4. `.github/workflows/release-herdlingd.yml` checks that the tag matches `companion/Cargo.toml`,
+   builds `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl` and
+   `aarch64-unknown-linux-musl`, and publishes the GitHub Release `herdlingd-v0.2.0` with
+   `herdlingd-<target>.tar.gz`, `SHA256SUMS` and `latest.json`. It marks the release as "latest".
+5. The app and `herdlingd update` find the new version through
+   `https://github.com/zog-tech/herdling/releases/latest/download/latest.json`. The installer
+   at `https://herdling.zog-tech.com/install.sh` downloads it.
+
+Rules:
+
+- Do not mark another release in this repository as "latest". The installer and the update use
+  the "latest" release.
+- Do not delete or change the assets of a published release. Make a new version instead.
+- The `version` in `app/app.json` is a different thing. Do not change it for a herdlingd release.
+
 ## Code style
 
 - TypeScript with `strict` on. Do not use `any`.

@@ -69,8 +69,17 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 
 - **iPhone** (iOS 17 or later): on the App Store soon.
 - **Android** (Android 8.0 or later): on Google Play soon.
-- **herdlingd** for macOS and Linux: build it from source (below). The one-line installer is
-  coming soon. See also the [download page](https://herdling.zog-tech.com/download).
+- **herdlingd** for macOS and Linux, in one of three ways (see the
+  [download page](https://herdling.zog-tech.com/download)):
+  - **In the app (recommended).** Settings > Hosts > Add host > **Set up with password**. When
+    herdlingd is missing, the app offers **Install and pair**. It runs the installer over SSH,
+    then pairs. No terminal, no sudo, and the app does not keep the password.
+  - **The one-line installer:** `curl -fsSL https://herdling.zog-tech.com/install.sh | sh`. It downloads the GitHub
+    release for your system and checks its SHA-256.
+  - **Build from source** (below).
+
+  The app and the installer download the GitHub release, so they work after the first
+  herdlingd release. Until then, build from source.
 - **Setup guide:** [herdling.zog-tech.com/docs](https://herdling.zog-tech.com/docs).
 
 Each computer needs herdr (installed and running), an SSH server and `herdlingd`. The phone must
@@ -99,7 +108,11 @@ user service (`herdlingd.service`) on Linux. The service runs as your user, not 
 `~/.local/bin` to your PATH. herdlingd talks to the herdr socket
 (`~/.config/herdr/herdr.sock`, or the path in `HERDR_SOCKET`), so herdr must run.
 
-To update, run `git pull`, then `cargo build --release` and `./target/release/herdlingd install`
+### Update herdlingd
+
+The app shows **Update available** when a new herdlingd is out: tap **Update herdlingd** on the
+host screen. On the computer, `herdlingd update` does the same (`--check` only looks). From
+source, run `git pull`, then `cargo build --release` and `./target/release/herdlingd install`
 again in `companion/`. Your config and paired phones stay.
 The [guide](https://herdling.zog-tech.com/docs) explains every step, the config file and how to uninstall.
 

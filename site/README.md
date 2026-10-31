@@ -30,13 +30,31 @@ is Zog Tech, Inc. The contact is admin@zog-tech.com. `scripts/check.sh` greps fo
 
 - `appStoreUrl`, `playUrl`: set them when the listings are live. Until then the buttons say
   "coming soon". `testFlightUrl`: a public beta link, shown while `appStoreUrl` is empty.
-- `installer.command` and `installer.ready`: the one-line herdlingd installer. While `ready` is
-  `false`, the command shows with a "Coming soon" tag. When the script at
-  `releases.zog-tech.com/herdlingd/install.sh` is live, set `ready: true`. Then also change the
-  "coming soon" sentences in `docs.md` (section 3 and 10), `download.md`, `index.md`
-  (Get Herdling), `support.md` if needed, and `llms.txt` (key facts), and run
-  `python3 scripts/sync.py`.
+- `installer.command` and `installer.ready`: the one-line herdlingd installer (see "The installer"
+  below). While `ready` is `false`, the command shows with an "After the first release" tag.
 - `screenshots`: see below.
+
+## The installer
+
+`public/install.sh` is the herdlingd installer, served at `https://herdling.zog-tech.com/install.sh`
+as `text/plain` (`public/_headers`). The app runs it over SSH for "Install and pair", and people
+run it with `curl -fsSL https://herdling.zog-tech.com/install.sh | sh`. It downloads the newest
+GitHub release (`herdlingd-v*`, made by `.github/workflows/release-herdlingd.yml`), so it works
+only after the first release. Its `--quiet` output is a contract with the app
+(`app/src/hosts/installer.ts`): change both together.
+
+Test it against a fake release with `HERDLING_RELEASE_BASE` (for tests only), for example a
+folder with `latest/download/herdlingd-<target>.tar.gz` and `SHA256SUMS`, served with
+`python3 -m http.server 8799`:
+`HERDLING_RELEASE_BASE=http://127.0.0.1:8799 sh public/install.sh --quiet`.
+
+After the first release:
+
+1. Set `installer.ready: true` in `public/config.js`.
+2. Remove the "after the first release" sentences in `docs.md` (section 3), `download.md`,
+   `index.md` (Get Herdling) and `llms.txt` (key facts), and in `index.html` (questions) and
+   `download/index.html` (the `data-when="installer-soon"` lines hide by themselves).
+3. Run `python3 scripts/sync.py` and `scripts/check.sh`, then deploy.
 
 ## Screenshots
 

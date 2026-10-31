@@ -85,7 +85,24 @@ How to set up and use Herdling: install herdlingd on your computer, pair your ph
 sudo systemctl enable --now ssh</code></pre></div>
 <p>On Fedora, the service is <code>sshd</code>: <code>sudo systemctl enable --now sshd</code>.</p>
 <h2 id="install-herdlingd">3. Install herdlingd</h2>
-<p>Herdling is open source (MPL-2.0). Until the one-line installer is live, you build herdlingd from the source code. The steps are the same on macOS and Linux. They take a few minutes.</p>
+<p>There are three ways. The first two need a herdlingd release on GitHub: they work after the first release. Until then, build from source.</p>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Way</th><th scope="col">Good for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>In the app</strong> (recommended)</th><td>Setup with no terminal. Needs SSH password login on the computer</td></tr>
+<tr><th scope="row"><strong>The one-line installer</strong></th><td>A terminal on the computer, no Rust</td></tr>
+<tr><th scope="row"><strong>Build from source</strong></th><td>Developers, and other CPU types</td></tr>
+</tbody></table></div>
+<h3 id="in-the-app-recommended">In the app (recommended)</h3>
+<p>In Herdling, tap Settings &gt; Hosts &gt; <strong>Add host</strong> &gt; <strong>Set up with password</strong>. Enter the address of the computer, the SSH port (22), your user name and your SSH password, then tap <strong>Connect</strong>. The app shows the host key for you to check (see step 4).</p>
+<p>When herdlingd is not on the computer, the app asks <strong>Install herdlingd now?</strong> and tells you what it does. Tap <strong>Install and pair</strong>. The app then:</p>
+<ol><li>logs in again with the same password and the same host key;</li><li>runs the one-line installer (below) on the computer, which downloads herdlingd from GitHub, checks its SHA-256, copies it to <code>~/.local/bin</code> and starts the user service;</li><li>adds the phone's restricted key (<code>herdlingd enroll</code>) and saves the computer.</li></ol>
+<p>It takes about a minute. It needs no admin rights and uses no sudo. The app uses the password only for these logins. It does not keep the password. herdr must be installed first: if it is missing, the app says so and links <a href="https://herdr.dev">herdr.dev</a>.</p>
+<h3 id="the-one-line-installer">The one-line installer</h3>
+<div class="code soon"><span class="tag" data-when="installer-soon">After the first release</span><pre><code data-installer-command>curl -fsSL https://herdling.zog-tech.com/install.sh | sh</code></pre></div>
+<p>The script is at <a href="/install.sh">herdling.zog-tech.com/install.sh</a>. Read it before you run it, if you like. It does this:</p>
+<ol><li>It finds your system: macOS or Linux, on arm64 or x86_64. Windows is not supported.</li><li>It checks that herdr is installed. It does not install herdr.</li><li>It downloads the newest herdlingd release from <a href="https://github.com/zog-tech/herdling/releases">github.com/zog-tech/herdling/releases</a> and compares its SHA-256 with the <code>SHA256SUMS</code> file of the release.</li><li>It runs <code>herdlingd install</code> (see below) and prints the version.</li></ol>
+<p>It never uses sudo. Run it again to update or repair herdlingd. To install one version, add <code>--version</code>: <code>curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --version 0.1.0</code>.</p>
 <h3 id="build-from-source">Build from source</h3>
 <p>You need:</p>
 <ul><li><strong>git</strong>.</li><li><strong>A C compiler.</strong> On macOS, run <code>xcode-select --install</code>. On Debian and Ubuntu, run <code>sudo apt install build-essential</code>.</li><li><strong>Rust (stable).</strong> The easy way is rustup (<a href="https://rustup.rs">rustup.rs</a>):</li></ul>
@@ -96,14 +113,11 @@ cd herdling/companion
 cargo build --release
 ./target/release/herdlingd install</code></pre></div>
 <p>The first build downloads and compiles the dependencies, so it takes a while. The program is <code>target/release/herdlingd</code>.</p>
-<p><code>herdlingd install</code> does this:</p>
+<h3 id="what-herdlingd-install-does">What herdlingd install does</h3>
+<p>All three ways end with <code>herdlingd install</code>. It does this:</p>
 <ol><li>It copies the program to <code>~/.local/bin/herdlingd</code>.</li><li>It registers a background service for your user that runs <code>herdlingd serve</code>:<ul><li><strong>macOS:</strong> a launchd agent with the label <code>com.zogtech.herdlingd</code>, in <code>~/Library/LaunchAgents/com.zogtech.herdlingd.plist</code>. Its log is <code>~/Library/Logs/herdlingd.log</code>.</li><li><strong>Linux:</strong> a systemd user service, <code>herdlingd.service</code>, in <code>~/.config/systemd/user/herdlingd.service</code>.</li></ul></li><li>It starts the service (or restarts it, if it was running).</li><li>On Linux, if your user has no "linger", it prints a command to keep the service running after you log out: <code>sudo loginctl enable-linger &lt;your user&gt;</code>. Run it.</li><li>It prints the next step: <code>herdlingd pair</code>.</li></ol>
-<p>To see what it would do without a change to the service, run <code>./target/release/herdlingd install --dry-run</code>.</p>
+<p>To see what it would do without a change to the service, run <code>herdlingd install --dry-run</code>.</p>
 <p>The service needs no root rights. It runs as your user. herdr must be installed, and it must run when you use Herdling: herdlingd reads its socket (see step 1). Then go to step 4 and run <code>herdlingd pair</code>. If <code>herdlingd</code> is not found, add <code>~/.local/bin</code> to your PATH, or run <code>~/.local/bin/herdlingd pair</code>.</p>
-<h3 id="the-one-line-installer-coming-soon">The one-line installer (coming soon)</h3>
-<p>When the installer is live, this command downloads herdlingd for your system and runs <code>herdlingd install</code>:</p>
-<div class="code soon"><span class="tag" data-when="installer-soon">Coming soon</span><pre><code data-installer-command>curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh</code></pre></div>
-<p>The installer is not live yet. Until it is, build from source as described above. If you get stuck, write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a> or open an issue: <a href="https://github.com/zog-tech/herdling/issues">github.com/zog-tech/herdling/issues</a></p>
 <h3 id="check-that-herdlingd-runs">Check that herdlingd runs</h3>
 <div class="code"><pre><code><span class="c"># macOS</span>
 launchctl print gui/$(id -u)/com.zogtech.herdlingd | head -20
@@ -123,7 +137,7 @@ systemctl --user status herdlingd.service</code></pre></div>
 <p>When you type the code, the app shows the host key in a <strong>Check the host key</strong> alert. Compare it with the key that <code>herdlingd pair</code> printed, then tap <strong>It matches</strong>.</p>
 <p>The QR code holds a link of this form: <code>herdling://pair?h=&lt;address&gt;&amp;p=&lt;port&gt;&amp;c=&lt;code&gt;&amp;f=&lt;fingerprint&gt;</code>. Opening such a link on the phone also opens the pairing screen.</p>
 <h3 id="other-ways-to-add-a-computer">Other ways to add a computer</h3>
-<ul><li><strong>Set up with password.</strong> For a computer that you reach over a VPN, or when pairing on the local network does not work. Enter the host, the SSH port (22), your user name and your SSH password, then tap <strong>Connect</strong>. The app first shows the host key for you to check (on the computer, <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> prints it). Then it logs in once, runs <code>herdlingd enroll</code> to add the phone's restricted key, and forgets the password. herdlingd must already be installed in <code>~/.local/bin</code> or on the PATH.</li><li><strong>Add manually.</strong> Enter the SSH details yourself. The Edit host screen shows a card, <strong>Authorize this phone</strong>, with the phone's public key and the command. Add one line to <code>~/.ssh/authorized_keys</code> on the computer that limits the key to <code>herdlingd rpc</code>:</li></ul>
+<ul><li><strong>Set up with password.</strong> For a computer that you reach over a VPN, or when pairing on the local network does not work. Enter the host, the SSH port (22), your user name and your SSH password, then tap <strong>Connect</strong>. The app first shows the host key for you to check (on the computer, <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> prints it). Then it logs in once, runs <code>herdlingd enroll</code> to add the phone's restricted key, and forgets the password. When herdlingd is not installed, the app offers to install it first (see step 3, "In the app").</li><li><strong>Add manually.</strong> Enter the SSH details yourself. The Edit host screen shows a card, <strong>Authorize this phone</strong>, with the phone's public key and the command. Add one line to <code>~/.ssh/authorized_keys</code> on the computer that limits the key to <code>herdlingd rpc</code>:</li></ul>
 <div class="code"><pre><code>command="&lt;full path to herdlingd&gt; rpc",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 &lt;phone public key&gt; herdling:&lt;phone name&gt;</code></pre></div>
 <p>When pairing is done, the computer and its agents show on the <strong>Overview</strong> tab.</p>
 <h2 id="use-herdling">5. Use Herdling</h2>
@@ -297,10 +311,13 @@ cat &gt; "$dir/in.wav"
 <ul><li>"No pairing window": run <code>herdlingd pair</code> again. The window lasts 5 minutes.</li><li>"Wrong code": check the six digits. After 5 wrong codes, run <code>herdlingd pair</code> again.</li><li>"Can't reach &lt;address&gt;:7790": <code>herdlingd serve</code> does not run, or a firewall blocks the port. Allow TCP port 7790 (or your <code>pair_port</code>) on your local network. On macOS, allow herdlingd in System Settings &gt; Network &gt; Firewall if asked.</li><li>"The host key is not the one in the QR code": stop. Someone on the network may intercept the pairing. Pair on a network you trust.</li><li><code>herdlingd pair</code> prints "serve is not running": run <code>herdlingd install</code>.</li></ul>
 <h3 id="the-ssh-port-is-not-22">The SSH port is not 22</h3>
 <p>Set <code>ssh_port</code> in <code>~/.config/herdling/config.toml</code> and run <code>herdlingd install</code> again. For a computer that you already added, change the <strong>Port</strong> in Settings &gt; Hosts.</p>
-<h3 id="update-herdlingd-on-this-host-for-all-features">"Update herdlingd on this host for all features"</h3>
-<p>The computer runs an older herdlingd. Install the newest herdlingd and run <code>herdlingd install</code> again. Features that the old version lacks stay hidden until then.</p>
-<h3 id="herdlingd-is-not-installed-on-this-host">"herdlingd is not installed on this host"</h3>
-<p>Shown by <strong>Set up with password</strong>. Install herdlingd first (step 3), then try again.</p>
+<h3 id="update-available-or-update-herdlingd-on-this-host-for-all-features">"Update available" or "Update herdlingd on this host for all features"</h3>
+<p>The computer runs an older herdlingd. Update it (step 10). Features that the old version lacks stay hidden until then.</p>
+<h3 id="herdlingd-is-not-on-this-computer">"herdlingd is not on this computer"</h3>
+<p>Shown by <strong>Set up with password</strong>. Tap <strong>Install and pair</strong> to install it from the app, or install it yourself (step 3) and try again.</p>
+<h3 id="the-install-from-the-app-fails">The install from the app fails</h3>
+<p>The app shows the reason:</p>
+<ul><li><strong>herdr is not installed.</strong> Install herdr (<a href="https://herdr.dev">herdr.dev</a>), then try again.</li><li><strong>Neither curl nor wget is installed.</strong> Install one of them on the computer.</li><li><strong>Cannot download.</strong> The computer needs internet access to github.com. Check the network, a proxy or a firewall.</li><li><strong>Windows is not supported.</strong> herdlingd runs on macOS and Linux.</li><li><strong>herdlingd install failed.</strong> On macOS, log in to the desktop of the Mac once: launchd needs a desktop session for the user service. On Linux, check <code>systemctl --user status</code>.</li></ul>
 <h3 id="can-t-read-herdr">"Can't read herdr"</h3>
 <p>herdr does not run on the computer, or herdlingd cannot reach its socket. Start herdr. If herdr uses a custom socket, set <code>HERDR_SOCKET</code> for the service.</p>
 <h3 id="no-notifications">No notifications</h3>
@@ -310,13 +327,14 @@ cat &gt; "$dir/in.wav"
 <h3 id="usage-shows-not-logged-in-or-token-expired">Usage shows "Not logged in" or "token expired"</h3>
 <p>Log in to Claude Code or Codex on that computer, or open the CLI once so it refreshes its login.</p>
 <h2 id="update-herdlingd">10. Update herdlingd</h2>
-<p>Pull the new source, build again and run <code>install</code>:</p>
+<p>When a new herdlingd is out, the app shows <strong>Update available: 0.1.0 → 0.2.0</strong> on the computer in Settings &gt; Hosts, and one quiet line on the Overview. The app asks each computer at most once a day.</p>
+<ul><li><strong>From the app.</strong> Open the computer in Settings &gt; Hosts and tap <strong>Update herdlingd</strong>. The app shows the release notes. herdlingd downloads the new release from GitHub, checks its SHA-256, replaces its own program and restarts its service. The app then connects again and shows the new version.</li><li><strong>An older herdlingd</strong> cannot update itself. The app shows <strong>Update herdlingd: sign in once with your password</strong>. It logs in once with your SSH password and runs the one-line installer.</li><li><strong>On the computer:</strong> run <code>herdlingd update</code>. <code>herdlingd update --check</code> only shows if there is a new version. <code>herdlingd version</code> prints the installed version.</li><li><strong>The one-line installer:</strong> run it again.</li><li><strong>From source:</strong> pull the new source, build again and run <code>install</code>:</li></ul>
 <div class="code"><pre><code>cd herdling
 git pull
 cd companion
 cargo build --release
 ./target/release/herdlingd install</code></pre></div>
-<p><code>herdlingd install</code> copies the new program to <code>~/.local/bin</code> and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.</p>
+<p>An update keeps your config and paired phones. A downgrade needs <code>herdlingd update --version X.Y.Z --allow-downgrade</code>.</p>
 <h2 id="uninstall">11. Uninstall</h2>
 <h3 id="remove-a-phone-from-a-computer">Remove a phone from a computer</h3>
 <p>In the app: Settings &gt; Hosts &gt; the computer &gt; trash button. If the computer is online, it forgets the phone's key.</p>
