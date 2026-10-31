@@ -113,6 +113,8 @@ describe("DemoTransport", () => {
     unfollow();
     const unsub = await stream("herdr.subscribe", {}).then(ok("herdr.subscribe"));
     unsub();
+    const unwatch = await stream("pane.watch", { pane_id: "p1", format: "ansi" }).then(ok("pane.watch"));
+    unwatch();
     await jest.advanceTimersByTimeAsync(100);
     answered.add("rpc.cancel");
 
@@ -197,6 +199,25 @@ describe("DemoTransport", () => {
     answered.add("hello");
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
+  });
+
+  it("pane.watch sends the screen at once, then only new screens", async () => {
+    const events: { text?: string; error?: string }[] = [];
+    const p = rpc.stream<{ text?: string }>("pane.watch", { pane_id: "p1", format: "text" }, (d) => events.push(d));
+    await jest.advanceTimersByTimeAsync(100);
+    const off = await p;
+    expect(events).toHaveLength(1);
+    expect(events[0].text).toContain("Claude");
+    // Typed text shows in the agent's input box.
+    await herdr("pane.send_input", { pane_id: "p1", text: "Add tests" });
+    await jest.advanceTimersByTimeAsync(400);
+    expect(events.length).toBeGreaterThan(1);
+    expect(events.at(-1)?.text).toContain("Add tests");
+    const n = events.length;
+    off();
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(events).toHaveLength(n);
+    expect(await callError("pane.watch", { pane_id: "nope" })).toMatchObject({ code: "not_found" });
   });
 
   it("answers herdr methods used by the app", async () => {

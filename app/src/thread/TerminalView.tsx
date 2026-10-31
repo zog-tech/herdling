@@ -1,6 +1,7 @@
 import { useIsFocused } from "expo-router";
 import {
   ArrowUp,
+  Keyboard as KeyboardIcon,
   Maximize2,
   WrapText,
   MoveHorizontal,
@@ -19,8 +20,17 @@ import {
 } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
+import { listsMethod } from "@/hosts/methods";
 import { parseAnsi } from "@/terminal/ansi";
 import { AnsiText } from "@/terminal/AnsiText";
+import {
+  ECHO_TIMEOUT_MS,
+  lastFilledLine,
+  overlayEcho,
+  plainText,
+  settleEchoes,
+  type Echo,
+} from "@/terminal/echo";
 import {
   FIT_MIN_SIZE,
   fitFontSize,
@@ -32,12 +42,24 @@ import {
 import { KeyRow } from "@/terminal/KeyRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { useTerminalWidth } from "@/terminal/widthMode";
-import { sendKey, sendLine } from "@/terminal/keys";
+import { sendInput, sendInputWorks } from "@/terminal/keys";
+import { LatencyBadge, useSrtt } from "@/terminal/latency";
+import {
+  endEpoch,
+  expire,
+  initialPrediction,
+  onBackspace,
+  onScreen,
+  onSrtt,
+  onType,
+  visiblePrediction,
+  type Prediction,
+} from "@/terminal/predict";
+import { SendQueue, Typist } from "@/terminal/sendQueue";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
-import { DelayedSpinner } from "@/ui/Delayed";
 
 import { HScrollView } from "./HScrollView";
 import { useTerminalText } from "./useTerminalText";
@@ -56,10 +78,22 @@ const MODES: Record<WidthMode, { label: string; Icon: typeof Maximize2 }> = {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** How often unconfirmed predictions are checked for the glitch timeout. */
+const EXPIRE_TICK_MS = 250;
+/**
+ * "Type directly" keeps an invisible character in the box, so Backspace on an empty box still
+ * changes the text (Android soft keyboards send no key event there). Two values alternate, so
+ * a reset always changes the state and React writes it to the native box.
+ */
+const SENTINEL = "\u200B";
+const SENTINEL_2 = "\u200B\u200B";
+const resetBuf = (prev: string) => (prev === SENTINEL ? SENTINEL_2 : SENTINEL);
+
 /**
  * Recent pane screen (herdr `pane.read`, ANSI colors), kept scrolled to the end unless the user scrolled up.
- * Reads every 1 s only while this screen is focused, the view is mounted and the app is active.
- * `controls`: a key row and a text box that type into the pane.
+ * Follows the screen (`pane.watch`, or a 1 s poll) only while this screen is focused, the view is
+ * mounted and the app is active. `controls`: a key row and a text box that type into the pane,
+ * a sent line shown at once (local echo), typing prediction in "Type directly" mode, and the latency.
  */
 export function TerminalView({
   hostId,
@@ -83,13 +117,54 @@ export function TerminalView({
     format: "ansi",
   });
   // Parsed once per new screen: the hook keeps the same string while the screen is unchanged.
-  const lines = useMemo(
+  const parsed = useMemo(
     () =>
       text === undefined
         ? undefined
         : parseAnsi(text, colors.ansi).slice(-MAX_LINES),
     [text],
   );
+  const { rpc } = useHostConn(hostId);
+  const srtt = useSrtt(rpc, focused && !!controls);
+  const [echoes, setEchoes] = useState<Echo[]>([]);
+  const [predict, setPredict] = useState<Prediction>(initialPrediction);
+  const screen = useMemo(() => (parsed ? plainText(parsed) : undefined), [parsed]);
+  const lastLine = useMemo(() => (parsed ? lastFilledLine(parsed) : ""), [parsed]);
+  useEffect(() => setEchoes((e) => settleEchoes(e, screen, Date.now())), [screen]);
+  useEffect(() => {
+    if (echoes.length === 0) return;
+    const oldest = Math.min(...echoes.map((e) => e.at));
+    const t = setTimeout(
+      () => setEchoes((e) => settleEchoes(e, screen, Date.now())),
+      Math.max(0, oldest + ECHO_TIMEOUT_MS - Date.now()),
+    );
+    return () => clearTimeout(t);
+  }, [echoes, screen]);
+  useEffect(() => setPredict((p) => onScreen(p, lastLine, Date.now())), [lastLine]);
+  useEffect(() => setPredict((p) => onSrtt(p, srtt)), [srtt]);
+  const unconfirmed = predict.typed.length > predict.confirmed;
+  useEffect(() => {
+    if (!unconfirmed) return;
+    const t = setInterval(() => setPredict((p) => expire(p, Date.now())), EXPIRE_TICK_MS);
+    return () => clearInterval(t);
+  }, [unconfirmed]);
+  const shownPrediction = visiblePrediction(predict);
+  // The screen plus what the computer did not echo yet. The same array when nothing waits.
+  const lines = useMemo(() => {
+    if (!parsed) return parsed;
+    if (shownPrediction.text) return overlayEcho(parsed, [shownPrediction.text], { underline: shownPrediction.underline });
+    return overlayEcho(parsed, echoes.map((e) => e.text));
+  }, [parsed, echoes, shownPrediction.text, shownPrediction.underline]);
+  const nextEcho = useRef(1);
+  const addEcho = useCallback(
+    (sent: string) => {
+      const id = nextEcho.current++;
+      setEchoes((e) => [...e, { id, text: sent, at: Date.now(), base: screen ?? "" }]);
+      return id;
+    },
+    [screen],
+  );
+  const dropEcho = useCallback((id: number) => setEchoes((e) => e.filter((x) => x.id !== id)), []);
   const scroll = useRef<ScrollViewInstance>(null);
   const atEnd = useRef(true);
   const viewHeight = useRef(0);
@@ -224,6 +299,14 @@ export function TerminalView({
         >
           <Icon size={18} color={colors.textMuted} />
         </Pressable>
+        {controls && srtt !== undefined ? (
+          <View
+            pointerEvents="none"
+            style={{ position: "absolute", top: space.sm, right: space.sm + hitTarget + space.xs, height: hitTarget, justifyContent: "center" }}
+          >
+            <LatencyBadge ms={srtt} />
+          </View>
+        ) : null}
       </View>
       {lines && error ? (
         <Text
@@ -241,56 +324,111 @@ export function TerminalView({
           paneId={paneId}
           bottomInset={bottomInset}
           onSent={refresh}
+          onEcho={addEcho}
+          onEchoFailed={dropEcho}
+          setPredict={setPredict}
         />
       ) : null}
     </View>
   );
 }
 
-/** Key row plus a one-line box: the box sends its text and Enter (`pane.send_text`, `pane.send_keys`). */
+/**
+ * Key row plus a one-line box. The box sends its text and Enter in one call (`pane.send_input`).
+ * Keys and lines go through an ordered send queue. "Type directly" sends each keystroke at once.
+ */
 function TerminalControls({
   hostId,
   paneId,
   bottomInset,
   onSent,
+  onEcho,
+  onEchoFailed,
+  setPredict,
 }: {
   hostId: string;
   paneId: string;
   bottomInset: number;
   onSent: () => void;
+  /** Shows a sent line at once; returns its id. */
+  onEcho: (text: string) => number;
+  onEchoFailed: (id: number) => void;
+  setPredict: (f: (p: Prediction) => Prediction) => void;
 }) {
-  const { rpc, status } = useHostConn(hostId);
+  const { rpc, status, hello } = useHostConn(hostId);
   const online = status === "online" && !!rpc;
   const [line, setLine] = useState("");
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  const latest = useRef(line);
-  latest.current = line;
-  const canSend = online && !sending && line.length > 0;
+  const [direct, setDirect] = useState(false);
+  const [buf, setBuf] = useState(SENTINEL);
+  const canSend = online && (direct || line.length > 0);
+  // herdlingd with `pane.watch` keeps the order of typing calls, so the queue need not wait.
+  const ordered = listsMethod(hello, "pane.watch");
+  const queue = useMemo(
+    () =>
+      rpc
+        ? new SendQueue((op) => sendInput(rpc, paneId, op), {
+            pipeline: () => ordered && sendInputWorks(rpc),
+            onError: (e) => setError(message(e)),
+          })
+        : undefined,
+    [rpc, paneId, ordered],
+  );
+  useEffect(() => () => queue?.dispose(), [queue]);
+  const typist = useMemo(() => (queue ? new Typist(queue) : undefined), [queue]);
 
   const key = (k: string) => {
-    if (!rpc || !online) return;
+    if (!queue || !typist || !online) return;
     setError(undefined);
-    sendKey(rpc, paneId, k)
-      .then(onSent)
-      .catch((e) => setError(message(e)));
+    setPredict(endEpoch);
+    const sent = direct ? typist.key(k) : queue.push({ keys: [k] });
+    sent.then(onSent, () => {});
   };
 
-  const send = async () => {
-    if (!rpc || !canSend) return;
-    const sent = line;
-    setSending(true);
-    setError(undefined);
-    try {
-      await sendLine(rpc, paneId, sent);
-      // Keep anything typed while the send was in flight.
-      if (latest.current === sent) setLine("");
-      onSent();
-    } catch (e) {
-      setError(message(e));
-    } finally {
-      setSending(false);
+  const send = () => {
+    if (!queue || !canSend) return;
+    if (direct) {
+      key("enter");
+      setBuf(resetBuf);
+      return;
     }
+    const sent = line;
+    setLine("");
+    setError(undefined);
+    const echo = onEcho(sent);
+    queue.push({ text: sent, keys: ["enter"] }).then(onSent, () => {
+      onEchoFailed(echo);
+      // Give the text back, unless the user typed something new.
+      setLine((cur) => (cur === "" ? sent : cur));
+    });
+  };
+
+  /** "Type directly": the change of the box text is the keystrokes since the last change. */
+  const typeDirect = (t: string) => {
+    if (!typist || !online) return;
+    let same = 0;
+    while (same < buf.length && same < t.length && buf[same] === t[same]) same++;
+    const removed = Array.from(buf.slice(same)).length;
+    const added = t.slice(same).replace(/\u200B/g, "");
+    if (removed > 0 || added) setError(undefined);
+    for (let i = 0; i < removed; i++) {
+      void typist.key("backspace");
+      setPredict(onBackspace);
+    }
+    if (added) {
+      typist.type(added);
+      const now = Date.now();
+      setPredict((p) => onType(p, added, now));
+    }
+    setBuf((prev) => (t.startsWith(SENTINEL) && t.length <= 64 ? t : resetBuf(prev)));
+  };
+
+  const toggleDirect = () => {
+    haptics.tap();
+    typist?.flush();
+    setPredict(endEpoch);
+    setBuf(resetBuf);
+    setDirect((d) => !d);
   };
 
   return (
@@ -327,20 +465,39 @@ function TerminalControls({
           paddingHorizontal: space.md,
         }}
       >
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityLabel="Type directly"
+          accessibilityHint="Sends each key at once, for a hardware keyboard"
+          accessibilityState={{ checked: direct }}
+          onPress={toggleDirect}
+          style={({ pressed }) => ({
+            width: hitTarget,
+            height: hitTarget,
+            borderRadius: radius.md,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.raised,
+            opacity: pressed ? state.pressedFill : 1,
+          })}
+        >
+          <KeyboardIcon size={20} color={direct ? colors.accent : colors.textMuted} />
+        </Pressable>
         <TextInput
-          value={line}
+          value={direct ? buf : line}
           onChangeText={(t) => {
+            if (direct) return typeDirect(t);
             setLine(t);
             if (error) setError(undefined);
           }}
-          onSubmitEditing={() => void send()}
+          onSubmitEditing={() => send()}
           submitBehavior="submit"
           returnKeyType="send"
           editable={online}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          placeholder={online ? "Type into the terminal" : "Host offline"}
+          placeholder={online ? (direct ? "Keys go to the terminal at once" : "Type into the terminal") : "Host offline"}
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Terminal input"
           style={{
@@ -359,10 +516,10 @@ function TerminalControls({
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Send line"
-          accessibilityState={{ disabled: !canSend, busy: sending }}
+          accessibilityLabel={direct ? "Enter" : "Send line"}
+          accessibilityState={{ disabled: !canSend }}
           disabled={!canSend}
-          onPress={() => void send()}
+          onPress={() => send()}
           style={({ pressed }) => ({
             width: hitTarget,
             height: hitTarget,
@@ -373,14 +530,7 @@ function TerminalControls({
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          {sending ? (
-            <DelayedSpinner color={colors.onAccent} />
-          ) : (
-            <ArrowUp
-              size={22}
-              color={canSend ? colors.onAccent : colors.textMuted}
-            />
-          )}
+          <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
         </Pressable>
       </View>
     </View>

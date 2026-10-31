@@ -1,5 +1,6 @@
 import type { RpcError as WireError } from "@herdling/protocol";
 
+import { isSmallCall, nextSrtt } from "./srtt";
 import type { LineTransport } from "./transport";
 
 /** Error thrown by RpcClient. `code` is the companion error code, or `timeout` / `disconnected` for local failures. */
@@ -18,6 +19,8 @@ type Pending = {
   timer: ReturnType<typeof setTimeout>;
   /** Runs synchronously when the result arrives, before the promise resolves. */
   onResult?: (result: unknown) => void;
+  /** Send time of a small call, which gives an RTT sample (see `srtt.ts`). */
+  sentAt?: number;
 };
 
 type Handler = (data: unknown) => void;
@@ -42,6 +45,8 @@ export class RpcClient {
   private readonly ended = new Set<string>();
   private readonly offLine: () => void;
   private readonly offClose: () => void;
+  private srtt?: number;
+  private readonly srttCbs = new Set<(ms: number) => void>();
 
   constructor(
     private readonly transport: LineTransport,
@@ -55,6 +60,17 @@ export class RpcClient {
   /** Number of buffered early events (exposed for tests). */
   get bufferedEvents(): number {
     return this.earlyCount;
+  }
+
+  /** Smoothed round-trip time of small calls in ms, or undefined before the first sample. */
+  get srttMs(): number | undefined {
+    return this.srtt;
+  }
+
+  /** Calls `cb` with the new SRTT after each sample. Returns the unsubscribe function. */
+  onSrtt(cb: (ms: number) => void): () => void {
+    this.srttCbs.add(cb);
+    return () => this.srttCbs.delete(cb);
   }
 
   /** `timeoutMs` overrides the client default for this call only. */
@@ -115,7 +131,8 @@ export class RpcClient {
         this.pending.delete(id);
         reject(new RpcError("timeout", `${method} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, onResult });
+      const sentAt = isSmallCall(method, params) ? Date.now() : undefined;
+      this.pending.set(id, { resolve, reject, timer, onResult, sentAt });
       try {
         this.transport.send(JSON.stringify({ id, method, params: params ?? {} }));
       } catch (e) {
@@ -152,12 +169,19 @@ export class RpcClient {
     if (!p) return;
     this.pending.delete(msg.id);
     clearTimeout(p.timer);
+    if (p.sentAt !== undefined) this.sample(Date.now() - p.sentAt);
     if (msg.error) {
       p.reject(new RpcError(String(msg.error.code ?? "error"), String(msg.error.message ?? "")));
       return;
     }
     p.onResult?.(msg.result);
     p.resolve(msg.result);
+  }
+
+  private sample(ms: number): void {
+    const srtt = nextSrtt(this.srtt, ms);
+    this.srtt = srtt;
+    this.srttCbs.forEach((cb) => cb(srtt));
   }
 
   private buffer(stream: string, data: unknown): void {
@@ -192,5 +216,6 @@ export class RpcClient {
     this.handlers.clear();
     this.clearEarly();
     this.ended.clear();
+    this.srttCbs.clear();
   }
 }

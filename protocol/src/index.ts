@@ -291,3 +291,19 @@ export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & { b
 
 /** Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`. */
 export type GitWorktree = { path: string; branch: string; root: string };
+
+/** `pane.watch` params. herdlingd clamps `interval_ms` to 50–1000 (default 80) and `lines` to 1–1000 (default 200). */
+export type PaneWatchParams = {
+  pane_id: string;
+  lines?: number;
+  format?: "text" | "ansi";
+  interval_ms?: number;
+};
+/**
+ * `pane.watch` event data. A screen comes first at once, then only when the screen changes.
+ * `error` (a herdr error code, for example `pane_not_found`) or `closed` (herdr stopped) ends the stream.
+ */
+export type PaneWatchEvent =
+  | { revision: number; text: string; truncated: boolean }
+  | { error: string; message?: string }
+  | { closed: true };

@@ -28,6 +28,47 @@ A `herdr.call` error can also carry a code from herdr itself.
 
 `hello` returns `methods`: every method name the host accepts. An older `herdlingd` does not send `methods`. In that case the app tries the call and falls back on `unknown_method`.
 
+## Terminal screen: `pane.watch`
+
+Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` polling.
+
+```json
+{"id": 7, "method": "pane.watch", "params": {"pane_id": "w1:p2", "lines": 200, "format": "ansi", "interval_ms": 80}}
+→ {"id": 7, "result": {"stream": "pane:9"}}
+→ {"method": "event", "params": {"stream": "pane:9", "data": {"revision": 0, "text": "...", "truncated": false}}}
+```
+
+- herdlingd reads the pane (herdr `pane.read`, source `recent`) every `interval_ms` on one kept herdr
+  connection. `interval_ms` is clamped to 50–1000 (default 80). `lines` is clamped to 1–1000 (default 200).
+  `format` is `text` (default, ANSI removed) or `ansi`.
+- The first screen is sent at once. After that, a screen is sent only when its `revision` or its
+  `text` differs from the last screen sent. herdr 0.9.5 returns `revision: 0` on every read, so the
+  text is the real check. An idle screen sends nothing.
+- Rate cap: at most 20 events per second per stream. A burst sends the latest screen, not every screen.
+- The first read happens before the reply. A herdr error (for example `pane_not_found`) is the call error.
+- Later, a herdr error sends `{"error": "<code>", "message": "..."}` and ends the stream. A stopped
+  herdr sends `{"closed": true}` and ends the stream.
+- The app stops the stream with `rpc.cancel` when the terminal is not on screen. The stream also
+  stops when the channel closes.
+- An app that finds no `pane.watch` in `hello.methods` polls `pane.read` as before.
+
+## Typing into a pane: `pane.send_input` and the order of calls
+
+The app types through `herdr.call`. One line costs one call:
+
+```json
+{"id": 8, "method": "herdr.call", "params": {"method": "pane.send_input", "params": {"pane_id": "w1:p2", "text": "ls -la", "keys": ["enter"]}}}
+```
+
+- Checked against herdr 0.9.5 (protocol 22): herdr types `text` first, then presses `keys`, in one
+  call. herdr checks every key before it types anything: an unknown key (`invalid_key`) types nothing.
+- herdr without `pane.send_input` answers `invalid_request` ("unknown variant"). The app then uses
+  `pane.send_text` and `pane.send_keys ["enter"]`, and remembers this for the connection.
+- herdlingd marks `pane.send_text`, `pane.send_keys` and `pane.send_input` as phone input.
+- Since herdlingd 0.1.1 (the version that lists `pane.watch`), herdlingd runs the typing calls to one
+  pane in the order they arrive. The app can send the next key before the reply to the last one.
+  With an older herdlingd, the app waits for each reply before the next typing call to the pane.
+
 ## Updates: `update.check` and `update.apply`
 
 `herdlingd` updates itself from the GitHub releases of the project. The design and the trust

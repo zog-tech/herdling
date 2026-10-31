@@ -23,6 +23,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Faster typing over cellular.** The terminal follows the screen with `pane.watch`: herdlingd
+  reads the pane every 80 ms on the computer and sends only changed screens, in place of a 1 s poll.
+  A sent line is one call (`pane.send_input`) and shows at once, dimmed, until the computer echoes
+  it. Keys go through an ordered queue without a wait for each reply. A badge shows the latency.
+  "Type directly" sends each key at once, with mosh-style prediction on slow links. Needs
+  herdlingd 0.1.1; with an older herdlingd the app polls as before.
 - **Start at boot.** herdlingd reports when it starts (`hello.boot`: at boot, or after a login;
   `boot.check`). The host screen and Settings show "Starts after you log in on this computer" with
   a step-by-step guide: automatic login on a Mac (and why FileVault blocks it), lingering on
