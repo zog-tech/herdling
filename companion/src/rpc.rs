@@ -68,6 +68,14 @@ pub struct Ctx {
     /// Settings for `update.check` and `update.apply`. None turns updates off: `Ctx::new`
     /// leaves it unset, so a test never downloads or replaces a binary. `main` sets it.
     pub update: Option<crate::update::UpdateCtx>,
+    /// Runs the system commands of `hello.boot`, `boot.check` and `mac.open_settings`. None
+    /// turns them off: `Ctx::new` leaves it unset, so a test never runs a real system command.
+    /// `main` sets it.
+    pub sys: Option<Arc<dyn crate::boot::SysRunner>>,
+    /// The OS that the boot check and `mac.open_settings` act for. Tests can change it.
+    pub host_os: crate::boot::Os,
+    /// The last boot state, see [`crate::boot::CACHE_TTL`].
+    pub boot_cache: crate::boot::BootCache,
 }
 
 impl Ctx {
@@ -91,6 +99,9 @@ impl Ctx {
             stt_timeout: crate::stt::TIMEOUT,
             preview: crate::preview::PreviewState::default(),
             update: None,
+            sys: None,
+            host_os: crate::boot::Os::current(),
+            boot_cache: crate::boot::BootCache::default(),
         }
     }
 }
@@ -354,6 +365,8 @@ pub const METHODS: &[&str] = &[
     "stt.make",
     "update.check",
     "update.apply",
+    "boot.check",
+    "mac.open_settings",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -385,6 +398,8 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "stt.make" => stt_make(ctx, params).await,
         "update.check" => update_check(ctx, params).await,
         "update.apply" => update_apply(ctx, params).await,
+        "boot.check" => boot_check(ctx).await,
+        "mac.open_settings" => mac_open_settings(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -447,6 +462,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
         thread_kinds: transcript::KINDS.iter().map(|k| (*k).to_string()).collect(),
         command_kinds: crate::commands::KINDS.iter().map(|k| (*k).to_string()).collect(),
+        boot: read_boot(ctx, false).await,
     };
     if let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await {
         if let Ok(snap) = c.call("session.snapshot", json!({})).await {
@@ -457,6 +473,43 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         }
     }
     serde_json::to_value(h).map_err(|e| err("internal", e.to_string()))
+}
+
+/// The boot state, from the cache unless `fresh`. None when system commands are off.
+async fn read_boot(ctx: &Ctx, fresh: bool) -> Option<crate::types::Boot> {
+    let runner = ctx.sys.clone()?;
+    let (os, user, cache) = (ctx.host_os, crate::serve::http::current_user(&ctx.home), ctx.boot_cache.clone());
+    tokio::task::spawn_blocking(move || cache.get(fresh, || crate::boot::detect(os, &user, runner.as_ref())))
+        .await
+        .ok()
+}
+
+/// `boot.check`: reads the boot state again (no cache).
+async fn boot_check(ctx: &Ctx) -> Result<Value, RpcError> {
+    if ctx.sys.is_none() {
+        return Err(err("unsupported_platform", "system checks are off in this process"));
+    }
+    let b = read_boot(ctx, true).await.ok_or_else(|| err("internal", "the boot check did not finish"))?;
+    serde_json::to_value(b).map_err(|e| err("internal", e.to_string()))
+}
+
+/// `mac.open_settings`: opens one allow-listed System Settings page on the Mac screen.
+async fn mac_open_settings(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    use crate::boot::OpenError;
+    let pane = str_param(&params, "pane", "mac.open_settings")?.to_string();
+    let Some(runner) = ctx.sys.clone() else {
+        return Err(err("unsupported_platform", "system commands are off in this process"));
+    };
+    let os = ctx.host_os;
+    let r = tokio::task::spawn_blocking(move || crate::boot::open_settings(os, &pane, runner.as_ref()).map(|_| pane))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?;
+    match r {
+        Ok(pane) => Ok(json!({ "opened": pane })),
+        Err(OpenError::UnsupportedPlatform) => Err(err("unsupported_platform", "mac.open_settings works on macOS only")),
+        Err(OpenError::UnknownPane) => Err(err("bad_request", "pane must be users_groups, sharing or filevault")),
+        Err(OpenError::Failed(m)) => Err(err("command_failed", format!("open failed: {m}"))),
+    }
 }
 
 pub fn hostname() -> String {

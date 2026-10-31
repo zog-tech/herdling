@@ -18,7 +18,36 @@ export type Hello = {
   thread_kinds?: string[];
   /** Agent kinds that `commands.list` answers for. Missing on an older herdlingd, which answers only for Claude. */
   command_kinds?: string[];
+  /** When herdlingd starts on this computer. Missing on an older herdlingd. */
+  boot?: Boot;
 };
+
+/**
+ * When herdlingd starts: `hello.boot` and the result of `boot.check`.
+ * herdlingd is a user service: it starts when the user logs in, or at boot with automatic login
+ * (macOS) or lingering (Linux).
+ */
+export type Boot = {
+  starts_at: "boot" | "login" | "unknown";
+  /** A short text that says what to do. */
+  how: string;
+  /**
+   * Why: `linger_on`, `linger_off`, `no_loginctl`, `auto_login_on`, `auto_login_off`,
+   * `auto_login_other_user`, `filevault_on`, `no_defaults`. New values can come.
+   */
+  reason?: string;
+  /** The user name that herdlingd runs as. */
+  user?: string;
+};
+
+/** Pages that `mac.open_settings` can open. Any other value gets `bad_request`. */
+export type MacSettingsPane = "users_groups" | "sharing" | "filevault";
+
+/** Params of `mac.open_settings`. */
+export type MacOpenSettingsParams = { pane: MacSettingsPane };
+
+/** Result of `mac.open_settings`. */
+export type MacOpenSettings = { opened: MacSettingsPane };
 
 /** Params of `update.check`. Without `version` the host reads the latest release. */
 export type UpdateCheckParams = { version?: string };

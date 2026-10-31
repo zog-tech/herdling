@@ -68,6 +68,25 @@ pub struct Hello {
     /// Agent kinds that `commands.list` answers for. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command_kinds: Vec<String>,
+    /// When herdlingd starts: at boot or after the user logs in. An older herdlingd does not send the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot: Option<Boot>,
+}
+
+/// `hello.boot` and the result of `boot.check`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Boot {
+    /// `"boot"`, `"login"` or `"unknown"`.
+    pub starts_at: String,
+    /// A short text that says what to do.
+    pub how: String,
+    /// Why: `linger_on`, `linger_off`, `no_loginctl`, `auto_login_on`, `auto_login_off`,
+    /// `auto_login_other_user`, `filevault_on`, `no_defaults`. New values can come.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The user name that herdlingd runs as.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

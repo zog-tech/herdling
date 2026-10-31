@@ -189,6 +189,7 @@ async fn main() -> Result<()> {
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }
+            ctx.sys = Some(std::sync::Arc::new(herdlingd::boot::SystemRunner));
             let result = rpc::run(BufReader::new(tokio::io::stdin()), tokio::io::stdout(), ctx).await;
             // Exit at once: tokio reads stdin on a blocking thread that cannot be
             // cancelled, so a normal runtime shutdown would wait for the next input line.
