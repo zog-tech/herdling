@@ -1,7 +1,7 @@
 import { AccessibilityInfo } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { announcement, StatusRow } from "./StatusRow";
+import { announcement, isStatusShown, StatusRow } from "./StatusRow";
 
 const label = (t: ReactTestRenderer) => t.root.findByProps({ accessibilityRole: "text" }).props.accessibilityLabel;
 
@@ -62,4 +62,9 @@ test("status_row_announces_on_change", () => {
   expect(spy).toHaveBeenCalledWith("Finished");
   act(() => t.unmount());
   spy.mockRestore();
+});
+
+test("status_pill_shows_only_for_working_blocked_and_offline", () => {
+  expect(["working", "blocked", "offline"].every((s) => isStatusShown(s as never))).toBe(true);
+  expect(["idle", "done", "unknown"].some((s) => isStatusShown(s as never))).toBe(false);
 });

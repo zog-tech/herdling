@@ -31,7 +31,7 @@ import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
 import { HorizonLine } from "@/ui/HorizonLine";
 import { type BadgeStatus } from "@/ui/StatusIcon";
-import { StatusRow } from "@/ui/StatusRow";
+import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { useSpeakReplies } from "@/voice/useSpeakReplies";
@@ -262,7 +262,21 @@ function SwipeBetweenAgents({ hostId, paneId, children }: { hostId: string; pane
   );
 }
 
-function ThreadBody({ thread, hostId, paneId, focused }: { thread: Thread; hostId: string; paneId: string; focused: boolean }) {
+function ThreadBody({
+  thread,
+  hostId,
+  paneId,
+  focused,
+  badge,
+  since,
+}: {
+  thread: Thread;
+  hostId: string;
+  paneId: string;
+  focused: boolean;
+  badge: BadgeStatus;
+  since?: number;
+}) {
   const { status, items } = thread;
   const pending = usePendingList(hostId, paneId);
   if (status === "no_session") {
@@ -318,6 +332,8 @@ function ThreadBody({ thread, hostId, paneId, focused }: { thread: Thread; hostI
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
+          footer={<StatusRow status={badge} since={since} />}
+          footerShown={isStatusShown(badge)}
           live={{ hostId, paneId, active: focused }}
         />
       </ThreadLogContext.Provider>
@@ -429,14 +445,12 @@ export default function SessionScreen() {
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
-          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} />
+          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} since={since} />
         </SwipeBetweenAgents>
       ) : (
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.
         <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} />
       )}
-      {/* The agent status sits at the bottom of the thread, where the eye is. It takes no space when hidden. */}
-      {mode === "thread" ? <StatusRow status={badge} since={since} /> : null}
       {/* Hidden, not unmounted, in Terminal mode: a half-typed prompt survives a mode switch. Hidden, it polls nothing. */}
       <View style={{ display: mode === "thread" ? "flex" : "none" }}>
         <Composer

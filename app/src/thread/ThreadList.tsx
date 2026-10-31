@@ -6,6 +6,7 @@ import { FlatList, Pressable, View, type NativeScrollEvent, type NativeSynthetic
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
 import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
+import { STATUS_ANIM_MS } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 import { Arrivals, ArrivalsContext } from "./arrivals";
@@ -22,6 +23,9 @@ type Props = {
   hasOlder: boolean;
   /** Shown after the newest item (the pending prompts). */
   tail?: ReactElement | null;
+  /** Shown after the tail: the agent status pill. `footerShown`: it takes room now, so keep it in view. */
+  footer?: ReactElement | null;
+  footerShown?: boolean;
   /** The pane the thread belongs to, for live tool output. `active`: the screen is focused. */
   live?: { hostId: string; paneId: string; active: boolean };
 };
@@ -68,7 +72,7 @@ const Gap = () => <View style={{ height: space.md }} />;
  * Inverted list, newest at the bottom. Stays pinned to the bottom only while the user is there;
  * otherwise new items keep the view still and a "New messages" pill appears.
  */
-export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, live }: Props) {
+export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, footer, footerShown, live }: Props) {
   const list = useRef<FlatList<ThreadItem>>(null);
   const data = useMemo(() => items.slice().reverse(), [items]);
   const atBottom = useRef(true);
@@ -87,6 +91,25 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
     lastNewest.current = newestId;
     if (prev !== undefined && newestId !== prev && !atBottom.current) setUnseen(true);
   }, [newestId]);
+
+  // The pill grows the header. When it shows while the user is at the bottom, keep offset 0 until it is
+  // fully open, so the newest message and the pill are both in view. A drag cancels this.
+  const pinned = useRef(false);
+  useEffect(() => {
+    if (!footerShown || !atBottom.current) return;
+    pinned.current = true;
+    list.current?.scrollToOffset({ offset: 0, animated: false });
+    const id = setTimeout(() => {
+      pinned.current = false;
+    }, STATUS_ANIM_MS + 120);
+    return () => clearTimeout(id);
+  }, [footerShown]);
+  const onContentSizeChange = useCallback(() => {
+    if (pinned.current) list.current?.scrollToOffset({ offset: 0, animated: false });
+  }, []);
+  const onScrollBeginDrag = useCallback(() => {
+    pinned.current = false;
+  }, []);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const bottom = e.nativeEvent.contentOffset.y <= BOTTOM_SLOP;
@@ -122,12 +145,21 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, liv
             ItemSeparatorComponent={Gap}
             contentContainerStyle={{ paddingHorizontal: space.lg, paddingVertical: space.md }}
             onScroll={onScroll}
+            onContentSizeChange={onContentSizeChange}
+            onScrollBeginDrag={onScrollBeginDrag}
             scrollEventThrottle={64}
             onEndReached={hasOlder ? loadOlder : undefined}
             onEndReachedThreshold={0.6}
             maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: BOTTOM_SLOP }}
             // Inverted: the header sits after the newest item.
-            ListHeaderComponent={tail ?? undefined}
+            ListHeaderComponent={
+              tail || footer ? (
+                <>
+                  {tail}
+                  {footer}
+                </>
+              ) : undefined
+            }
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             initialNumToRender={12}
