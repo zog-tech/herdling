@@ -23,7 +23,7 @@
         "NSSpeechRecognitionUsageDescription": "Herdling turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
         "NSPhotoLibraryUsageDescription": "Herdling attaches photos you pick to prompts for your agents."
       },
-      "buildNumber": "1"
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
