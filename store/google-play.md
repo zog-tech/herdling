@@ -8,8 +8,8 @@ Package `com.zogtech.herdling`. Version 1.0.0. Paste each field as written. Coun
 - **Category:** Applications > Tools
 - **Tags:** Developer tools, Productivity (choose the closest Play tags)
 - **Contact email:** admin@zog-tech.com
-- **Website:** https://zog-tech.com/herdling/
-- **Privacy policy URL:** https://zog-tech.com/herdling/privacy.html
+- **Website:** https://herdling.zog-tech.com/
+- **Privacy policy URL:** https://herdling.zog-tech.com/privacy
 - **Price:** Free. No in-app purchases.
 - **Contains ads:** No
 
@@ -50,7 +50,7 @@ WHAT YOU NEED
 - The free herdlingd companion on each computer. Setup takes a few minutes: install it, run "herdlingd pair" and scan the QR code.
 - A network path from your phone to your computers, such as your home Wi-Fi or a VPN.
 
-Setup guide and support: zog-tech.com/herdling
+Setup guide and support: herdling.zog-tech.com/docs
 
 Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.
 ```
@@ -133,7 +133,7 @@ Herdling has no accounts. In normal use it connects over SSH to the user's own M
 
 Permission prompts appear only when a feature is used: camera (scan a pairing QR code), microphone (mic button), notifications. The demo works if you decline them. (verify once the demo build lands)
 
-Setup guide: https://zog-tech.com/herdling/  Contact: admin@zog-tech.com
+Setup guide: https://herdling.zog-tech.com/docs  Contact: admin@zog-tech.com
 ```
 
 ## Permissions: justification notes

@@ -1,0 +1,25 @@
+<!-- Drawn placeholder screens for the screenshot slots. sync.py puts them into the Markdown pages
+     (<!-- shot: name --> in docs.md); index.html and download/index.html carry copies.
+     {slot} and {label} are filled in. site.js swaps a placeholder for the real image when
+     config.js lists its slot. -->
+<template id="overview">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="big">3</span><span class="cap"></span><span class="sec"></span><div class="row need"><i></i><div><b></b><span></span></div></div><span class="sec"></span><div class="row work"><i></i><div><b></b><span></span></div></div><div class="row work"><i></i><div><b></b><span></span></div></div><span class="sec"></span><div class="row done"><i></i><div><b></b><span></span></div></div><div class="row"><i></i><div><b></b><span></span></div></div></div>
+</template>
+<template id="session">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="t"></span><div class="bub"></div><div class="para"><i></i><i></i><i></i></div><div class="tool"></div><div class="para"><i></i><i></i><i></i></div><div class="choices"><i></i><i></i><i></i></div><div class="composer"></div></div>
+</template>
+<template id="terminal">
+<div class="screen term" data-shot="{slot}" role="img" aria-label="{label}"><i class="y"></i><i></i><i></i><i></i><i class="g"></i><i></i><i></i><i></i><i class="y"></i><i></i><i></i><div class="keys"><i></i><i></i><i></i><i></i><i></i></div></div>
+</template>
+<template id="new-session">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="t"></span><span class="sec"></span><div class="choices"><i></i><i></i><i></i></div><span class="sec"></span><div class="grp"><div><b></b></div><div><b></b></div><div><b></b></div></div><span class="sec"></span><div class="choices"><i></i><i></i><i></i></div><div class="choices"><i></i><i></i><i></i></div><div class="composer"></div></div>
+</template>
+<template id="usage">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="t"></span><span class="sec"></span><div class="meter"><b></b><u></u><u></u></div><div class="meter"><b></b><u></u><u></u></div><span class="sec"></span><div class="meter"><b></b><u></u><u></u></div></div>
+</template>
+<template id="settings">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="t"></span><span class="sec"></span><div class="grp"><div><b></b></div><div><b></b></div></div><span class="sec"></span><div class="grp"><div><b></b><s></s></div><div><b></b><s></s></div><div><b></b><s></s></div></div><span class="sec"></span><div class="grp"><div><b></b><s class="off"></s></div><div><b></b></div></div></div>
+</template>
+<template id="pair">
+<div class="screen" data-shot="{slot}" role="img" aria-label="{label}"><span class="t"></span><span class="cap"></span><div class="qr"></div></div>
+</template>

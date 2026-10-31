@@ -1,0 +1,768 @@
+# Herdling: full documentation
+
+> Every page of https://herdling.zog-tech.com in one Markdown file, for AI assistants and offline reading. Sources: https://herdling.zog-tech.com/index.md, https://herdling.zog-tech.com/download.md, https://herdling.zog-tech.com/docs.md, https://herdling.zog-tech.com/support.md, https://herdling.zog-tech.com/privacy.md.
+
+
+---
+
+## Herdling
+
+> Herdling puts the coding agents on your own computers in your pocket. See which agent works, which one is done and which one needs you, then answer from your phone. For iPhone and Android, with the free herdlingd companion on macOS or Linux. No account, no servers.
+
+Web version: https://herdling.zog-tech.com/
+
+Your coding agents keep working when you leave your desk. Herdling is a phone app for herdr, the terminal workspace for coding agents. It shows every agent on every computer you own, tells you when one finishes or needs an answer, and lets you reply in a few taps.
+
+### How it works
+
+1. **Install herdlingd on your computer.** herdlingd is the free Herdling companion for macOS and Linux. One command sets it up as a background service: `herdlingd install`.
+2. **Pair with a QR code.** Run `herdlingd pair` on the computer and scan the code with the app. The phone gets its own SSH key, limited to Herdling.
+3. **Watch and steer your agents.** Your computers and their agents show on one board. Open one to read, reply, answer a question or start new work.
+
+Step-by-step guide: https://herdling.zog-tech.com/docs.md
+
+### Features
+
+- **One board for every agent.** Agents on all your computers in one list, grouped by status: Needs you, Ready, Working, Idle. The ones that need an answer come first. Peek at the last reply with a long press.
+- **A chat view for your agents.** Read a session as a clean chat, with formatted replies, tool calls and subagents. Works with Claude Code, Codex, Pi and OpenCode. Type `/` for commands, `$` for Codex skills and `@` for OpenCode skills.
+- **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, arrow keys and Enter. Works with every agent that herdr runs.
+- **A notification when it matters.** Herdling tells you when an agent finishes or needs you. Tap the notification to open that session.
+- **Quiet while you are at the computer.** No notifications while you use herdr at your desk, and for 5 minutes after.
+- **Voice in and out.** Speak a prompt; speech becomes text on your phone (including a private on-device model) or on your own computer. Herdling can read replies out loud, in full or as a short summary.
+- **Start new work.** Start an agent in any folder on any computer, resume an earlier session, and review automations.
+- **Usage meters.** See how much of your Claude or Codex plan is left, and the CPU and memory of each computer.
+- **Your own network, over SSH.** The phone connects straight to your computers, on your Wi-Fi or through your VPN. Encrypted by SSH.
+- **No accounts, no servers.** There is nothing to sign up for. Zog Tech runs no server for Herdling and never sees your sessions.
+
+### Questions
+
+**What do I need?**
+An iPhone (iOS 17 or later) or an Android phone (Android 8.0 or later), and one or more Mac or Linux computers that run herdr, an SSH server and herdlingd.
+
+**What does it cost?**
+Herdling and herdlingd are free. There are no ads and no in-app purchases.
+
+**Which agents work?**
+Every agent that herdr runs shows on the board, with its status, its terminal and notifications. Claude Code, Codex, Pi and OpenCode also get the chat view, command lists and session resume.
+
+**Can I use it away from home?**
+Yes, if your phone can reach your computer, for example through WireGuard or Tailscale. Pair at home, then set the computer's address to its VPN address. You can also add a computer once with its SSH password.
+
+**Does Herdling see my code or my prompts?**
+No. Everything goes between your phone and your computer over SSH. Notifications go through Expo, Apple or Google and hold only the agent's name, kind and terminal title.
+
+**Is herdlingd safe to run?**
+It runs as your user, not as root. The phone's key can only run `herdlingd rpc`; it cannot open a shell. Pairing needs a six-digit code that works once, for 5 minutes, and the app checks the computer's host key.
+
+**Who makes Herdling?**
+Zog Tech, Inc. Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.
+
+### Get Herdling
+
+- iPhone: on the App Store soon.
+- Android: on Google Play soon.
+- herdlingd for macOS and Linux: see https://herdling.zog-tech.com/download.md
+
+Contact: admin@zog-tech.com
+
+
+---
+
+## Download Herdling
+
+> Get the Herdling app for iPhone or Android, and the free herdlingd companion for each Mac or Linux computer that runs your agents.
+
+Web version: https://herdling.zog-tech.com/download
+
+### The app
+
+- **iPhone:** coming soon to the App Store. Needs iOS 17 or later.
+- **Android:** coming soon to Google Play. Needs Android 8.0 or later.
+
+The app is free, with no account, no ads and no tracking.
+
+### herdlingd for your computer
+
+herdlingd is the free companion that runs on each computer next to herdr. It runs on macOS and Linux, as your user, as a background service.
+
+Before you install it, the computer needs:
+
+- herdr (https://herdr.dev), with your agents running in it;
+- an SSH server: on macOS, System Settings > General > Sharing > Remote Login; on Linux, the OpenSSH server.
+
+#### The one-line installer (coming soon)
+
+```sh
+curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
+```
+
+The installer is not live yet. Until it is, write to admin@zog-tech.com and we send you a herdlingd build for your system.
+
+#### Install a build by hand
+
+```sh
+chmod +x ./herdlingd
+./herdlingd install
+herdlingd pair
+```
+
+`herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts it as a user service: the launchd agent `com.zogtech.herdlingd` on macOS, the systemd user service `herdlingd.service` on Linux. On Linux it can ask you to run `sudo loginctl enable-linger <user>` so the service keeps running after you log out.
+
+`herdlingd pair` shows a QR code. Scan it in the app (Settings > Hosts > Add host).
+
+The full guide: https://herdling.zog-tech.com/docs.md
+
+
+---
+
+## Herdling guide
+
+> How to set up and use Herdling: install herdlingd on your computer, pair your phone, and watch and steer your coding agents. Covers every setting, the config file, voice, notifications, troubleshooting and uninstall.
+
+Web version: https://herdling.zog-tech.com/docs
+
+### What you need
+
+- **A phone.** iPhone with iOS 17 or later, or Android 8.0 or later. Herdling is made for phones in portrait (no iPad layout).
+- **One or more computers** with macOS or Linux. Each computer runs:
+  - **herdr**, the terminal workspace for coding agents (https://herdr.dev). Herdling shows the agents that herdr runs.
+  - **An SSH server.** The app connects to the computer over SSH.
+  - **herdlingd**, the free Herdling companion. It is a single program that answers the app, pairs phones and sends notifications.
+- **A network path** from the phone to the computer: the same Wi-Fi, or a VPN such as WireGuard or Tailscale.
+
+There is no account. Zog Tech runs no server for Herdling. The phone talks only to your computers.
+
+### 1. Install herdr
+
+Install herdr from https://herdr.dev and run your agents (Claude Code, Codex, Pi, OpenCode and others) inside it. herdlingd talks to herdr through its socket, `~/.config/herdr/herdr.sock`. If you run herdr with a different socket, set the `HERDR_SOCKET` environment variable for herdlingd.
+
+### 2. Turn on SSH
+
+- **macOS:** open System Settings > General > Sharing and turn on **Remote Login**.
+- **Linux:** install and start the OpenSSH server. On Debian and Ubuntu:
+
+```sh
+sudo apt install openssh-server
+sudo systemctl enable --now ssh
+```
+
+On Fedora, the service is `sshd`: `sudo systemctl enable --now sshd`.
+
+### 3. Install herdlingd
+
+#### The one-line installer (coming soon)
+
+When the installer is live, this command downloads herdlingd for your system and runs `herdlingd install`:
+
+```sh
+curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
+```
+
+The installer is not live yet. Until it is, write to admin@zog-tech.com and we send you a herdlingd build for your system (macOS or Linux, and your processor type). Then install it by hand as described below.
+
+#### Install by hand
+
+Put the `herdlingd` program anywhere on the computer, make it executable and run `install`:
+
+```sh
+chmod +x ./herdlingd
+./herdlingd install
+```
+
+`herdlingd install` does this:
+
+1. It copies the program to `~/.local/bin/herdlingd`.
+2. It registers a background service for your user that runs `herdlingd serve`:
+   - **macOS:** a launchd agent with the label `com.zogtech.herdlingd`, in `~/Library/LaunchAgents/com.zogtech.herdlingd.plist`. Its log is `~/Library/Logs/herdlingd.log`.
+   - **Linux:** a systemd user service, `herdlingd.service`, in `~/.config/systemd/user/herdlingd.service`.
+3. It starts the service (or restarts it, if it was running).
+4. On Linux, if your user has no "linger", it prints a command to keep the service running after you log out: `sudo loginctl enable-linger <your user>`. Run it.
+5. It prints the next step: `herdlingd pair`.
+
+To see what it would do without a change to the service, run `herdlingd install --dry-run`.
+
+The service needs no root rights. It runs as your user.
+
+#### Check that herdlingd runs
+
+```sh
+# macOS
+launchctl print gui/$(id -u)/com.zogtech.herdlingd | head -20
+
+# Linux
+systemctl --user status herdlingd.service
+```
+
+### 4. Pair your phone
+
+Pairing gives your phone its own SSH key on the computer. The key can only run `herdlingd rpc`, nothing else.
+
+On the computer, run:
+
+```sh
+herdlingd pair
+```
+
+It shows:
+
+- a **six-digit code**, in large digits;
+- the computer's **host key fingerprint** (`SHA256:...`);
+- the computer's address and the pairing port (7790 by default);
+- a **QR code** that holds a `herdling://pair` link.
+
+The pairing window stays open for 5 minutes. A code works once. After 5 wrong codes the window closes. Press Ctrl-C to close it early. When the phone pairs, the command prints `Paired <phone name>` and ends.
+
+Keep the phone on the same network as the computer while you pair. Then use one of these ways in the app (Settings > Hosts > **Add host**):
+
+- **Scan the QR code.** Tap **Add by address**, then **Scan QR**, and point the camera at the code. The app checks that the computer's host key matches the key in the QR code.
+- **Pick the computer from the list.** Under **On this network**, the app lists the computers that run herdlingd (it finds them with Bonjour, `_herdling._tcp`). Tap one and type the code.
+- **Type the address and the code.** Tap **Add by address**, type the computer's IP address or `.local` name and the six-digit code, then tap **Pair**.
+
+
+When you type the code, the app shows the host key in a **Check the host key** alert. Compare it with the key that `herdlingd pair` printed, then tap **It matches**.
+
+The QR code holds a link of this form: `herdling://pair?h=<address>&p=<port>&c=<code>&f=<fingerprint>`. Opening such a link on the phone also opens the pairing screen.
+
+#### Other ways to add a computer
+
+- **Set up with password.** For a computer that you reach over a VPN, or when pairing on the local network does not work. Enter the host, the SSH port (22), your user name and your SSH password, then tap **Connect**. The app first shows the host key for you to check (on the computer, `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` prints it). Then it logs in once, runs `herdlingd enroll` to add the phone's restricted key, and forgets the password. herdlingd must already be installed in `~/.local/bin` or on the PATH.
+- **Add manually.** Enter the SSH details yourself. The Edit host screen shows a card, **Authorize this phone**, with the phone's public key and the command. Add one line to `~/.ssh/authorized_keys` on the computer that limits the key to `herdlingd rpc`:
+
+```text
+command="<full path to herdlingd> rpc",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 <phone public key> herdling:<phone name>
+```
+
+When pairing is done, the computer and its agents show on the **Overview** tab.
+
+### 5. Use Herdling
+
+The app has four tabs: **Overview**, **Usage**, **Automations** and **Settings**.
+
+#### Overview: the board of agents
+
+One board shows the agents on all of your computers. Each agent shows its status as a dot and a word:
+
+- **Needs you** (ember): the agent waits for your answer, for example a permission question. These rows come first.
+- **Ready**: the agent finished, and you did not look yet.
+- **Working** (gold): the agent works now.
+- **Idle**: finished and seen, or unknown.
+
+The top shows a count and a summary. Filter chips show **All** or one group. The header button opens **Group by**: **Status**, **Host** or **Workspace**. At the bottom, each computer shows CPU and memory.
+
+On a row:
+
+- **Tap** to open the session.
+- **Long press** to open **Peek**: the last reply, the answer buttons when the agent asks something, and a message box. **Open** goes to the full session. Closing Peek marks the agent as seen.
+- **Swipe right** to mark it read. **Swipe left** for **Reply** and **Restart**.
+- The **...** button has **Reply**, **Peek**, **Mark read**, **Rename** (session, tab or workspace, if the computer supports it) and **Restart**. Restart starts a new agent in a new tab and closes the old pane.
+
+#### The session: chat view and terminal
+
+Open an agent to see its session. The toggle at the top switches between:
+
+- **Thread** (the chat view): the session as a chat, with formatted replies, tool calls and subagents. Swipe left or right to move to the next agent in the same workspace. If the agent has no conversation log, Herdling shows the terminal.
+- **Terminal**: the live terminal of the pane. A key bar has **Esc**, **Tab**, **Ctrl-C**, the arrow keys and **Enter**. Type a line and tap **Send line**. Choose **Fit to screen**, **Wrap lines** or **Scroll sideways** for wide output. Use Esc or Ctrl-C to interrupt an agent.
+
+The message box at the bottom ("Message the agent"):
+
+- **Send text.** The box grows to 5 lines.
+- **Answer questions.** When an agent asks a numbered question (for example a permission prompt), one button shows for each choice. Tap a choice to answer.
+- **Attach photos.** Tap **+**, then **Photos**, or long-press the box and paste an image. Up to 4 photos. The photos go to the computer, and their paths go at the end of your message, so the agent can read them.
+- **Commands and skills.** Type `/` as the first character to see the agent's commands. For Codex, type `$` for skills. For OpenCode, type `@` for skills. Or tap **+**, then **Commands & skills**.
+- **Speak.** Tap the mic to record and tap again to stop, or hold the mic and release. Slide away to cancel. The text goes into the box. Herdling does not send it until you tap send.
+
+The header has a speaker button (**Speak replies**) and a **...** menu: **Restart**, **Resume older session**, rename, and **Close** (stops the agent and closes its pane).
+
+#### Which agents work with what
+
+| Agent | Chat view | `/` commands | `$` | `@` | Resume older session |
+|---|---|---|---|---|---|
+| Claude Code | Yes | Built-in commands, your user and project commands and skills, plugin commands | No | No | Yes |
+| Codex | Yes | Built-in commands, custom prompts (`prompts:<name>`) | Skills | No | Yes |
+| Pi | Yes | Built-in commands, skills (`skill:<name>`), prompt templates | No | No | Yes |
+| OpenCode | Yes | Built-in commands, command files, commands in `opencode.json` | No | Skills | Yes |
+| Other agents in herdr (Gemini, Amp and more) | Terminal only | No | No | No | No |
+
+Every agent gets the board status, the terminal, notifications and voice input.
+
+#### Start new work
+
+Tap **+** on the Overview tab to start a new session:
+
+1. Choose the **host** (computer).
+2. Choose the **folder**: a recent one, or **Browse**.
+3. If a herdr workspace already uses the folder, choose **New tab in <workspace>** or **New workspace**.
+4. Choose the **agent**: claude, codex, pi, gemini, opencode, amp, or **More**.
+5. Optional: type or speak a **first prompt**.
+6. Tap **Start**.
+
+To continue an earlier conversation, open a session, tap **...**, then **Resume older session**, and pick one. It opens in a new tab.
+
+#### Usage
+
+The Usage tab shows how much of your plan is left, for each computer:
+
+- **Claude**: the 5-hour, 7-day and 7-day Opus windows. herdlingd reads the login that Claude Code saved on the computer (the macOS keychain item "Claude Code-credentials", or `~/.claude/.credentials.json`).
+- **Codex**: the 5-hour and 7-day windows, from `~/.codex/auth.json`.
+
+herdlingd only reads these logins. It never changes them and never sends them to the phone. If a meter says the token expired, open the CLI on the computer once.
+
+#### Automations
+
+The Automations tab shows the automations of `herdr-automate`, if it is installed on the computer (on the PATH, in `~/.local/bin` or in `~/.cargo/bin`). You see each automation, its schedule and its last runs, and you can review and approve an automation that needs approval. Herdling does not define automations itself.
+
+#### Notifications
+
+Herdling sends a notification when an agent:
+
+- **finished** its turn (working to idle or done), or
+- **needs you** (it waits for your input).
+
+herdlingd waits 5 seconds before it sends, so a quick status change does not send a notification. Tap a notification to open that session.
+
+**Quiet at the computer** (on by default): no notifications while you use herdr on the computer, and for 5 minutes after your last activity there (focus changes and typing in herdr). A message that you send from the phone does not count as activity at the computer.
+
+What must be true for notifications to arrive:
+
+- Notifications are allowed for Herdling in the phone's settings.
+- The phone connected to the computer at least once after you allowed notifications (the app registers its push token then).
+- `herdlingd serve` runs on the computer (the service that `herdlingd install` sets up).
+- The computer has an internet connection. It sends each notification through Expo's push service to Apple or Google.
+
+### 6. Settings
+
+
+#### Hosts
+
+Each computer shows its status: **Online**, **Connecting** or **Offline**. Tap a computer to edit its **Name**, **Address**, **Port**, **User** and **Command** (default `herdlingd rpc`), and tap **Test connection**. To use a computer away from home, change its address to the VPN address (for example its Tailscale address).
+
+To remove a computer, open it and tap the trash button. The app deletes the computer and its pinned key from the phone. If the computer is online, it also forgets the phone's key.
+
+#### Notifications
+
+| Switch | Default | Meaning |
+|---|---|---|
+| Finished | On | A notification when an agent finished its turn. |
+| Needs you | On | A notification when an agent waits for your input. |
+| Quiet at the computer | On | No notifications while you use herdr on the computer, until 5 minutes after your last activity. |
+
+These switches are saved on each computer (in its config file) when the phone connects.
+
+#### Voice
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Speak replies | Off | Read replies aloud in new sessions. Each session also has its own speaker button. |
+| What to read | Full text | **Full text** or **Summary**. A summary comes from the phone (Apple Intelligence, iOS 26 and later), then from the computer's `summary_command`, then falls back to the full text. |
+| Voice engine | iPhone (Phone on Android) | **iPhone/Phone** uses the phone's voices. **Host** uses the computer's `tts_command`, and falls back to the phone's voice if it fails. |
+| Voice | System default | The phone voice to use. |
+| Speed | 1.0x | 0.5x to 2.0x. Applies to host audio too. |
+| Test voice | | Plays a short sample. |
+| Speech log | | The last 20 speech and voice input events. Use it when a reply stays silent. |
+
+#### Voice input
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Engine | Parakeet if a model is downloaded, else Apple | **Parakeet** (iPhone only, on the device), **Host** (the computer's `stt_command`), **Apple** (Apple speech recognition) or **Android** (the system speech service). If the chosen engine fails, the app tries the next one. |
+| Parakeet models | None | **English (Parakeet v2)**, about 465 MB, or **Multilingual (Parakeet v3)**, 25 European languages, about 485 MB. Tap Download. The model runs fully on the phone. |
+| Download over cellular | Off | Off: models download on Wi-Fi only. |
+
+#### Feel
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Haptics | On | Taps you feel for send, approve, peek and status changes. |
+
+### 7. The config file
+
+herdlingd keeps its settings in `~/.config/herdling/config.toml` (folder mode 0700, file mode 0600). A missing file means all defaults. herdlingd and the app write the device entries. You can edit the top-level keys by hand. After a change to `pair_port` or `ssh_port`, restart the service (run `herdlingd install` again). The command keys take effect the next time the app connects.
+
+#### Top-level keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `pair_port` | number | `7790` | The TCP port where `herdlingd serve` listens for pairing requests (`POST /pair`). It also goes into the QR code and the Bonjour advert. |
+| `ssh_port` | number | `22` | The SSH port of this computer, as the app should use it. herdlingd does not listen on it. It tells the app (in the Bonjour advert and the pairing reply). Set it when your SSH server uses another port. |
+| `tts_command` | array of strings | not set | The program that makes speech audio, for the **Host** voice engine. Not set or empty: no host voice. |
+| `stt_command` | array of strings | not set | The program that makes text from a recording, for the **Host** voice input engine. Not set or empty: no host speech input. |
+| `summary_command` | array of strings | not set | The program that makes a short summary of a reply, for **What to read: Summary**. Not set or empty: no host summary. |
+
+Each command is an argv array: the first item is the program, the other items are its arguments. herdlingd runs it with no shell, so `~`, `$VAR` and pipes do not work. Use absolute paths, or a small wrapper script. The PATH is short, because the app reaches herdlingd through an SSH forced command.
+
+#### Device entries (written by herdlingd and the app)
+
+Each paired phone has a `[[devices]]` entry. Do not edit these by hand; use the app.
+
+| Key | Meaning |
+|---|---|
+| `id` | A random device ID that the app made. |
+| `name` | The phone's name, as the phone reports it. |
+| `host_id` | The ID that the app uses for this computer. |
+| `public_key` | The phone's SSH public key (ed25519). |
+| `expo_token` | The phone's push token, for notifications. |
+| `prefs.finished` | The **Finished** switch. Default `true`. |
+| `prefs.needs_you` | The **Needs you** switch. Default `true`. |
+| `prefs.quiet_at_desk` | The **Quiet at the computer** switch. Default `true`. |
+
+#### Example
+
+```toml
+pair_port = 7790
+ssh_port = 22
+tts_command = ["/usr/local/bin/herdling-tts"]
+stt_command = ["/usr/local/bin/herdling-stt"]
+summary_command = ["/usr/local/bin/ollama", "run", "llama3.2"]
+```
+
+#### Other files
+
+| Path | What |
+|---|---|
+| `~/.local/bin/herdlingd` | The program. |
+| `~/.config/herdling/config.toml` | The config file. |
+| `~/.config/herdling/pair.json` | The open pairing window (only while `herdlingd pair` runs). |
+| `~/.ssh/authorized_keys` | One line per paired phone, ending in `herdling:<phone name>`, limited to `herdlingd rpc`. |
+| `~/.cache/herdling/uploads/` | Photos that you attach. Deleted after 7 days. Maximum 10 MB each. |
+| `~/Library/LaunchAgents/com.zogtech.herdlingd.plist` | The macOS service. |
+| `~/Library/Logs/herdlingd.log` | The macOS service log. |
+| `~/.config/systemd/user/herdlingd.service` | The Linux service. Log: `journalctl --user -u herdlingd.service`. |
+
+### 8. Voice on your computer
+
+Herdling ships no AI service. By default, speech uses the phone. You can let your computer do the work with three optional commands in the config file. Any program that reads stdin and writes stdout works.
+
+| Key | stdin | stdout | Time limit |
+|---|---|---|---|
+| `tts_command` | Plain text, one sentence or more, up to 8,000 characters | Audio, up to 10 MB: WAV or MP3 (Ogg may not play on iPhone) | 30 s |
+| `stt_command` | WAV audio (16-bit PCM, 16 kHz, mono), up to 25 MB | The text, up to 64 KB | 120 s |
+| `summary_command` | One line of instructions, a blank line, then the reply (the last 24,000 characters) | The summary as plain text, up to 16 KB | 20 s |
+
+If a command fails or times out, the app falls back: to the phone's voice, to the next voice input engine, or to the full text.
+
+#### Example: a local TTS server
+
+With a Kokoro-FastAPI server (an OpenAI-compatible speech endpoint) on port 8880, save this wrapper as `/usr/local/bin/herdling-tts` and make it executable (`chmod +x`):
+
+```sh
+#!/bin/sh
+# Reads text on stdin, writes WAV on stdout.
+jq -Rs '{model: "kokoro", voice: "af_heart", response_format: "wav", input: .}' |
+  curl -sf http://127.0.0.1:8880/v1/audio/speech -H 'Content-Type: application/json' --data-binary @-
+```
+
+Then add to `~/.config/herdling/config.toml`:
+
+```toml
+tts_command = ["/usr/local/bin/herdling-tts"]
+```
+
+Piper also works directly: `tts_command = ["/usr/local/bin/piper", "--model", "/opt/piper/en_US-lessac-medium.onnx", "--output_file", "-"]`.
+
+In the app, set Settings > Voice > **Voice engine** to **Host**, and tap **Test voice**.
+
+#### Example: speech to text with whisper.cpp
+
+Save as `/usr/local/bin/herdling-stt` and make it executable:
+
+```sh
+#!/bin/sh
+# Reads WAV on stdin, writes text on stdout.
+dir=$(mktemp -d) || exit 1
+trap 'rm -rf "$dir"' EXIT
+cat > "$dir/in.wav"
+/opt/whisper.cpp/build/bin/whisper-cli -m /opt/whisper.cpp/models/ggml-base.en.bin -f "$dir/in.wav" -nt -np 2>/dev/null
+```
+
+```toml
+stt_command = ["/usr/local/bin/herdling-stt"]
+```
+
+On a Mac with Apple silicon, `parakeet-mlx` (install with `uv tool install parakeet-mlx`) works the same way through a wrapper that writes stdin to a file. In the app, set Settings > Voice input > **Engine** to **Host**.
+
+#### Example: summaries
+
+Any command-line model works, for example:
+
+```toml
+summary_command = ["/usr/local/bin/ollama", "run", "llama3.2"]
+```
+
+Claude Code in print mode (`["<path to claude>", "-p"]`) and the `llm` CLI also work. In the app, set Settings > Voice > **What to read** to **Summary**.
+
+### 9. Troubleshooting
+
+#### The computer shows Offline
+
+- Check that the computer is on and that the phone can reach it (same Wi-Fi, or the VPN is on).
+- Check that SSH works: Remote Login on macOS, `sshd` on Linux.
+- If the computer got a new IP address, edit the host in Settings > Hosts and change the **Address**. A fixed address or a `.local` name avoids this.
+- Away from home, use the computer's VPN address.
+- Tap **Retry** on the board, or **Test connection** in Edit host.
+
+#### The app cannot find my computer
+
+- Check that herdlingd runs (see "Check that herdlingd runs" above). Run `herdlingd install` again; it restarts the service.
+- Keep the phone and the computer on the same network.
+- Allow local network access for Herdling. On iPhone: Settings > Herdling > **Local Network**. The app shows "Local network access is off" with an **Open Settings** button when it is off.
+- Some networks block Bonjour (guest Wi-Fi, some mesh systems). Use **Add by address** with the IP address and the code.
+
+#### Pairing fails
+
+- "No pairing window": run `herdlingd pair` again. The window lasts 5 minutes.
+- "Wrong code": check the six digits. After 5 wrong codes, run `herdlingd pair` again.
+- "Can't reach <address>:7790": `herdlingd serve` does not run, or a firewall blocks the port. Allow TCP port 7790 (or your `pair_port`) on your local network. On macOS, allow herdlingd in System Settings > Network > Firewall if asked.
+- "The host key is not the one in the QR code": stop. Someone on the network may intercept the pairing. Pair on a network you trust.
+- `herdlingd pair` prints "serve is not running": run `herdlingd install`.
+
+#### The SSH port is not 22
+
+Set `ssh_port` in `~/.config/herdling/config.toml` and run `herdlingd install` again. For a computer that you already added, change the **Port** in Settings > Hosts.
+
+#### "Update herdlingd on this host for all features"
+
+The computer runs an older herdlingd. Install the newest herdlingd and run `herdlingd install` again. Features that the old version lacks stay hidden until then.
+
+#### "herdlingd is not installed on this host"
+
+Shown by **Set up with password**. Install herdlingd first (step 3), then try again.
+
+#### "Can't read herdr"
+
+herdr does not run on the computer, or herdlingd cannot reach its socket. Start herdr. If herdr uses a custom socket, set `HERDR_SOCKET` for the service.
+
+#### No notifications
+
+- Allow notifications for Herdling in the phone's settings.
+- Check the **Finished** and **Needs you** switches in Settings > Notifications.
+- If **Quiet at the computer** is on, notifications wait until 5 minutes after your last activity in herdr.
+- Open the app once with the computer online, so it registers the push token.
+- The computer needs internet access.
+
+#### Voice does not work
+
+- Allow microphone and speech recognition for Herdling in the phone's settings.
+- For a **Host** engine: check that the command key is set, that the path is absolute, and that the program runs from a terminal with input on stdin. Open Settings > Voice > **Speech log** to see the error: `no_command`, `command_failed`, `timeout` or `upstream_error` (the command wrote nothing).
+
+#### Usage shows "Not logged in" or "token expired"
+
+Log in to Claude Code or Codex on that computer, or open the CLI once so it refreshes its login.
+
+### 10. Update herdlingd
+
+Replace the program and run `herdlingd install` again. It copies the new program to `~/.local/bin` and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.
+
+### 11. Uninstall
+
+#### Remove a phone from a computer
+
+In the app: Settings > Hosts > the computer > trash button. If the computer is online, it forgets the phone's key.
+
+#### Remove herdlingd from a computer
+
+macOS:
+
+```sh
+launchctl bootout gui/$(id -u)/com.zogtech.herdlingd
+rm ~/Library/LaunchAgents/com.zogtech.herdlingd.plist
+rm ~/.local/bin/herdlingd
+```
+
+Linux:
+
+```sh
+systemctl --user disable --now herdlingd.service
+rm ~/.config/systemd/user/herdlingd.service
+systemctl --user daemon-reload
+rm ~/.local/bin/herdlingd
+```
+
+Then, on both, remove the phone keys and the data:
+
+```sh
+sed -i.bak '/ herdling:/d' ~/.ssh/authorized_keys
+rm -rf ~/.config/herdling ~/.cache/herdling
+```
+
+The `sed` command keeps a copy of the old file as `~/.ssh/authorized_keys.bak`.
+
+#### Remove the app
+
+Delete Herdling from the phone. On iPhone, the system can keep the app's Keychain entry until you reset the phone.
+
+### 12. Privacy in short
+
+- No account, no analytics, no ads, no tracking.
+- The phone connects straight to your computers over SSH. Sessions, prompts, photos and recordings never pass through Zog Tech.
+- The SSH key is made on the phone. The private key stays in the iOS Keychain or the Android Keystore.
+- Notifications go from your computer through Expo's push service to Apple or Google. They hold the agent's name, its kind, its terminal title and internal IDs, not your prompts or the replies.
+
+Full policy: https://herdling.zog-tech.com/privacy
+
+### Contact
+
+Write to admin@zog-tech.com. Tell us your phone model, your computer's system and what you tried.
+
+
+---
+
+## Herdling support
+
+> Answers to common questions about Herdling and herdlingd, and how to contact us.
+
+Web version: https://herdling.zog-tech.com/support
+
+The step-by-step guide is at https://herdling.zog-tech.com/docs.md. It covers install, pairing, every feature and setting, the config file, voice, troubleshooting and uninstall.
+
+### Contact
+
+Write to admin@zog-tech.com. Questions, bugs and ideas are welcome. Please tell us your phone model, your computer's system and what you tried.
+
+### Questions and answers
+
+#### What is herdlingd?
+
+herdlingd is the companion program for Herdling. It runs on your computer next to herdr. When the app connects over SSH, herdlingd answers its questions: which agents run, what they said and how much usage is left. It also pairs phones and sends the notifications. herdlingd only accepts the keys of phones that you paired, and those keys can only run `herdlingd rpc`.
+
+#### Do I need an account?
+
+No. There is no sign-up and no login. You pair each phone with each computer directly.
+
+#### How do I set it up?
+
+Install herdr, turn on SSH, then install herdlingd and run `herdlingd install`. Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
+
+#### Can I use Herdling away from home?
+
+Yes, if your phone can reach your computer. Use a VPN to your home network, such as WireGuard or Tailscale, and set the computer's address in Settings > Hosts to its VPN address. You can also add a computer with **Set up with password**, which works well over a VPN.
+
+#### Herdling cannot find my computer.
+
+Check that herdlingd runs: on the computer, run `herdlingd install` again. It restarts the service. Check that your phone and your computer are on the same network, and that Herdling has local network access (on iPhone: Settings > Herdling > Local Network). If automatic discovery does not work on your network, tap **Add by address** and type the computer's IP address or `.local` name and the pairing code.
+
+#### Pairing fails or the code does not work.
+
+The pairing code works once and only for 5 minutes. Run `herdlingd pair` again to get a new code. A firewall on the computer can block the pairing port (7790 by default) or SSH (port 22). Allow both on your local network. If your SSH server uses another port, set `ssh_port` in `~/.config/herdling/config.toml`.
+
+#### The app says to update herdlingd.
+
+Install the newest herdlingd and run `herdlingd install` again. Some features, such as automations and renames, need a recent version.
+
+#### I do not get notifications.
+
+Allow notifications for Herdling in your phone's settings. In Herdling, open Settings and check the **Finished** and **Needs you** switches. If **Quiet at the computer** is on, Herdling stays silent while you are active in herdr at your computer and for 5 minutes after. Your computer needs an internet connection to send a notification.
+
+#### Voice input or read aloud does not work.
+
+Allow microphone and speech recognition access for Herdling in your phone's settings. Voice input can run on your phone or on your computer. To use your computer, set `stt_command` (speech to text) or `tts_command` (text to speech) in `~/.config/herdling/config.toml`. Settings > Voice > Speech log shows the last errors.
+
+#### How do I remove a phone or a computer?
+
+In Herdling, open Settings, tap the computer and tap the trash button. If the computer is online, it also forgets your phone's key. To stop all access, uninstall herdlingd from the computer (the guide has the commands).
+
+#### How much does it cost?
+
+Herdling and herdlingd are free. There are no in-app purchases and no ads.
+
+#### Is my data safe?
+
+Your phone talks only to your computers, over SSH. Zog Tech runs no server for Herdling and keeps no copy of your data. Read the privacy policy: https://herdling.zog-tech.com/privacy.md
+
+
+---
+
+## Herdling privacy policy
+
+> How the Herdling app and the herdlingd companion handle your information. Short version: your phone talks only to your own computers, and Zog Tech collects no data.
+
+Web version: https://herdling.zog-tech.com/privacy
+
+**Effective date:** October 31, 2026
+
+This policy explains how the Herdling app for iPhone and Android handles your information. Herdling is made by Zog Tech, Inc. ("Zog Tech," "we," "us"). The short version: Herdling connects your phone to your own computers. Zog Tech does not run servers for Herdling, does not collect your data and cannot see your sessions.
+
+### No account, no analytics, no ads
+
+Herdling has no sign-up and no login. The app contains no analytics, no crash reporting service, no advertising and no tracking. We do not sell or share your data, because we do not have it.
+
+### How Herdling works
+
+Herdling works with herdr, a terminal program for AI coding agents. You install a companion program called herdlingd on your own computers. The app connects straight to those computers over SSH, on your network or through your own VPN. Everything you see and send in the app travels between your phone and your computer, encrypted by SSH. This includes agent sessions, terminal output, your prompts, photos you attach and voice recordings you choose to send to your computer. None of it passes through Zog Tech.
+
+### What stays on your phone
+
+Herdling keeps these items on your phone:
+
+- The list of computers you added: their names, addresses, SSH user names and host key fingerprints.
+- An SSH key that the app makes on your phone. The private key stays in the phone's secure storage (the iOS Keychain or the Android Keystore). It never leaves the phone. Only the public key goes to your computer.
+- A random device ID that the app makes, so that your computer can tell your phones apart.
+- Your settings, such as voice and notification choices.
+
+If you add a computer by its SSH password, the app uses the password once to log in and add its key. The app does not save the password.
+
+### What is kept on your computer
+
+herdlingd runs on your computer, under your control. For each paired phone it keeps the device ID, the phone's name as the system reports it, the phone's public key, the phone's push token and your notification choices. It keeps these in `~/.config/herdling/config.toml`. Photos that you attach are saved in a cache folder on your computer so that your agent can read them. herdlingd deletes them after seven days.
+
+Pairing sends one request on your local network from the phone to your computer. It contains the pairing code, the device ID, the phone's name and the public key. It contains no password and no private key.
+
+### Push notifications
+
+Notifications are optional. If you allow them, the app asks Expo's push service for a push token. Expo is the service that delivers notifications for apps built with the Expo tools. The app gives the token to your own computer over SSH. When an agent finishes or needs your input, herdlingd on your computer sends a message to Expo's push service. Expo passes it to Apple Push Notification service (on iPhone) or Firebase Cloud Messaging by Google (on Android), which shows it on your phone.
+
+Each notification contains:
+
+- a title with the agent's name, the pane's label or the workspace name, followed by "finished" or "needs you";
+- a short text with the kind of agent (for example, "Claude Code") and the agent's terminal title, which can describe the current task;
+- internal IDs of the computer and the pane, so that a tap opens the right session.
+
+Expo, Apple and Google handle these messages to deliver them, under their own privacy policies. Zog Tech does not receive them. Notifications do not include the agent's replies or your prompts. You can turn notifications off in Herdling's Settings or in your phone's settings. When you remove a computer from the app, that computer forgets your phone's key.
+
+### Voice input
+
+The microphone is used only while you record with the mic button. You choose where your speech becomes text:
+
+- **On the phone.** On iPhone, Herdling uses Apple's speech recognition. It runs on the device when your language supports it. If it does not, Apple may process the audio on its servers, under Apple's privacy policy. On iPhone you can also download a speech model (Parakeet) that runs fully on the device. The download comes from Hugging Face, a public model host. Your audio is not sent there. On Android, Herdling uses the speech recognition service of your phone's system, which may process audio on the device or on the provider's servers, under the provider's policy.
+- **On your computer.** The app records the audio and sends it to your computer over SSH. herdlingd passes it to a speech program that you set up there.
+
+### Read aloud
+
+Herdling can read agent replies out loud. It uses the voices on your phone, or a speech program on your computer that you set up. On iPhone with Apple Intelligence, short summaries of replies are made on the device.
+
+### App updates
+
+Herdling can get small updates without a new store release. To do this, the app checks Expo's update service when it starts. The request includes technical details that are needed to choose the right update: the app version, the platform, the update channel and a random ID made by the update library. It does not include your sessions, your computers or any personal details.
+
+### Usage meters
+
+The Usage tab shows how much of your Claude or ChatGPT plan is left. To get these numbers, herdlingd on your computer asks Anthropic or OpenAI for your usage. It uses the login that the Claude Code or Codex program already saved on that computer. herdlingd only reads that login. It does not change it, and it does not send it to the phone or to us.
+
+### Other services
+
+The only outside services that the app or herdlingd contact are Expo (updates and notifications), Apple or Google (notification delivery and, if you use it, system speech recognition), Hugging Face (only if you download the optional speech model), and Anthropic or OpenAI (only from your computer, for the usage meters). Like any internet service, they see the IP address that a request comes from.
+
+### Permissions
+
+- **Camera:** to scan the pairing QR code. No pictures are saved.
+- **Microphone and speech recognition:** for the mic button only.
+- **Photos:** to attach photos that you pick to a prompt. The app sees only the photos you pick.
+- **Local network:** to find and connect to your computers on your network.
+- **Notifications:** to tell you when an agent finishes or needs you.
+
+You can change each permission at any time in your phone's settings.
+
+### Deleting your data
+
+Zog Tech holds no data about you, so there is nothing for us to delete. To remove a computer, open Settings in the app, tap the computer and choose Remove. When the computer is online, it also forgets your phone. Deleting the app removes its data from your phone. On iPhone, the system can keep the app's Keychain entry after you delete the app, until you reset the phone. To remove everything from a computer, uninstall herdlingd and delete `~/.config/herdling` and `~/.cache/herdling`.
+
+### Children
+
+Herdling is a tool for software developers. It is not directed to children under 13, and we do not knowingly collect information from anyone.
+
+### Changes to this policy
+
+If the way Herdling handles data changes, we will update this page and change the effective date above.
+
+### Contact
+
+Questions about this policy can be sent to admin@zog-tech.com. Zog Tech, Inc. also has a [general privacy policy](https://zog-tech.com/privacy.html) for its website.

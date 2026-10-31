@@ -3,7 +3,7 @@
 State on 2026-10-31. "Agent" means a coding agent can do the step with the maintainer's go-ahead. "Maintainer" means it needs a person, an account login or a legal decision.
 
 Done already:
-- Website: https://zog-tech.com/herdling/ (product and support page) and https://zog-tech.com/herdling/privacy.html (privacy policy). Source: `site/herdling/`.
+- Website: https://herdling.zog-tech.com/ (product page and marketing URL), https://herdling.zog-tech.com/support (support URL), https://herdling.zog-tech.com/privacy (privacy policy), https://herdling.zog-tech.com/docs (setup guide), https://herdling.zog-tech.com/llms.txt (guide for AI assistants). Source: `site/` (Cloudflare Pages project `herdling-site`, see `site/README.md`). The old https://zog-tech.com/herdling/ pages forward there.
 - Listing text: `store/app-store.md`, `store/google-play.md`.
 - Play icon: `store/play-icon-512.png` (512 x 512, 32-bit PNG, made from `app/assets/images/icon.png`).
 - App Store Connect app record: "Herdling", bundle ID `com.zogtech.herdling`, SKU `herdling-ios`, Apple ID 6829197551.
@@ -12,7 +12,7 @@ Done already:
 ## Before either store
 
 1. **Demo mode lands on main** (agent, in progress in a separate worktree). Then check every "(verify once the demo build lands)" sentence in both store files against the real demo: button label "Try the demo", link `herdling://demo`, the 6 steps, "works with no network and no permissions". Remove the markers.
-2. **Public download for herdlingd** (maintainer decides). The support page says a public download is "on the way" and offers builds by email. The GitHub repo is private. Options: public GitHub releases with macOS and Linux binaries, or a download link on zog-tech.com. Then update step 3 on `site/herdling/index.html` and redeploy.
+2. **Public download for herdlingd** (maintainer decides). The support page says a public download is "on the way" and offers builds by email. The GitHub repo is private. Options: public GitHub releases with macOS and Linux binaries, or a download link on zog-tech.com. Then set `installer.ready` in `site/public/config.js`, update the "coming soon" sentences (list in `site/README.md`) and redeploy with `site/scripts/deploy.sh`.
 3. **Decide the privacy label stance** (maintainer). Recommended: "Data Not Collected" (Apple) and "No data collected" (Play). The conservative fallback (declare the push token as a device ID) is described in both store files.
 4. **Review contact phone number** (maintainer). Apple asks for a phone number for App Review. Use a business number, not a personal one.
 
@@ -45,10 +45,10 @@ Done already:
 | App Store name | 8 | 30 |
 | App Store subtitle | 30 | 30 |
 | App Store promotional text | 154 | 170 |
-| App Store description | 2102 | 4000 |
+| App Store description | 2107 | 4000 |
 | App Store keywords | 99 | 100 |
-| App Store review notes | 2005 | 4000 |
+| App Store review notes | 2009 | 4000 |
 | Play app name | 8 | 30 |
 | Play short description | 78 | 80 |
-| Play full description | 2108 | 4000 |
+| Play full description | 2113 | 4000 |
 | Play release notes | 226 | 500 |

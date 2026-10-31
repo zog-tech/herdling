@@ -1,0 +1,4 @@
+# Cloudflare Pages project for herdling.zog-tech.com. Deploy: scripts/deploy.sh (see README.md).
+name = "herdling-site"
+pages_build_output_dir = "public"
+compatibility_date = "2026-10-01"

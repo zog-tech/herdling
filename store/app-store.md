@@ -14,9 +14,9 @@ Version 1.0.0. Bundle ID `com.zogtech.herdling`. Paste each field as written. Ru
 
 ## URLs
 
-- **Support URL:** https://zog-tech.com/herdling/
-- **Marketing URL:** https://zog-tech.com/herdling/
-- **Privacy Policy URL:** https://zog-tech.com/herdling/privacy.html
+- **Support URL:** https://herdling.zog-tech.com/support
+- **Marketing URL:** https://herdling.zog-tech.com/
+- **Privacy Policy URL:** https://herdling.zog-tech.com/privacy
 
 ## Promotional text (max 170)
 
@@ -55,7 +55,7 @@ WHAT YOU NEED
 - The free herdlingd companion on each computer. Setup takes a few minutes: install it, run "herdlingd pair" and scan the QR code.
 - A network path from your phone to your computers, such as your home Wi-Fi or a VPN.
 
-Setup guide and support: zog-tech.com/herdling
+Setup guide and support: herdling.zog-tech.com/docs
 
 Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.
 ```
@@ -149,7 +149,7 @@ You can decline every prompt; the demo still works.
 
 Data: the app sends no data to us. All session data goes between the phone and the user's own computers over SSH. Notifications are sent by the user's own computer through the Expo push service.
 
-Setup guide for a real computer: https://zog-tech.com/herdling/
+Setup guide for a real computer: https://herdling.zog-tech.com/docs
 Contact: admin@zog-tech.com
 ```
 

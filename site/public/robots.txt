@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# A short guide for AI assistants: https://herdling.zog-tech.com/llms.txt
+# The full guide in one file: https://herdling.zog-tech.com/llms-full.txt
+
+Sitemap: https://herdling.zog-tech.com/sitemap.xml

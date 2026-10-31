@@ -1,0 +1,11 @@
+# Serve each page at its clean path with status 200 (Pages would redirect /docs to /docs/).
+/download /download/ 200
+/docs /docs/ 200
+/support /support/ 200
+/privacy /privacy/ 200
+# Old addresses on zog-tech.com and common guesses.
+/privacy.html /privacy 301
+/index.html / 301
+/setup /docs 301
+/guide /docs 301
+/install /download#herdlingd 301
