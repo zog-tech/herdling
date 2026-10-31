@@ -62,7 +62,7 @@ export type SubagentPage = ThreadPage & {
 export type ThreadRef = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 export type RecentSession = { session: string; first_prompt: string; last_activity: number; cwd: string };
 
-export type PushPrefs = { finished: boolean; needs_you: boolean };
+export type PushPrefs = { finished: boolean; needs_you: boolean; quiet_at_desk: boolean };
 export type PushRegister = {
   device_id: string;
   host_id: string;

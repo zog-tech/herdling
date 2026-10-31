@@ -1,15 +1,18 @@
 //! Watches agent statuses in herdr and sends Expo pushes for debounced notices.
 
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use super::debounce::{Debouncer, Notice};
+use super::desk::Desk;
 use super::ServeCtx;
 use crate::config;
 use crate::events::{self, EventStream};
 use crate::herdr::{self, HerdrError};
+use crate::phone_input;
 use crate::push;
 use crate::rpc::HERDR_TIMEOUT;
 use crate::types::AgentStatus;
@@ -25,11 +28,13 @@ const QUEUE: usize = 1024;
 pub async fn watch(ctx: &ServeCtx) {
     let client = reqwest::Client::builder().timeout(PUSH_TIMEOUT).build().unwrap_or_default();
     let mut failures = 0usize;
+    // Kept across reconnects: a herdr restart does not end the time at the desk.
+    let mut desk = Desk::default();
     loop {
-        match connect(ctx).await {
+        match connect(ctx, &mut desk).await {
             Ok((stream, debouncer)) => {
                 failures = 0;
-                run_stream(ctx, &client, stream, debouncer).await;
+                run_stream(ctx, &client, stream, debouncer, &mut desk).await;
                 eprintln!("zogsshd serve: herdr closed the event stream, reconnecting");
             }
             Err(e) => eprintln!("zogsshd serve: herdr: {e}"),
@@ -43,11 +48,13 @@ pub async fn watch(ctx: &ServeCtx) {
 /// Subscribes, then takes the current statuses from a snapshot so that the first
 /// event of each pane has a "from". A new debouncer per connection: pending notices
 /// of a closed connection are dropped, so a herdr restart cannot send a duplicate.
-async fn connect(ctx: &ServeCtx) -> Result<(EventStream, Debouncer), HerdrError> {
+/// The snapshot also gives the focused pane to `desk`.
+async fn connect(ctx: &ServeCtx, desk: &mut Desk) -> Result<(EventStream, Debouncer), HerdrError> {
     let stream = events::subscribe(&ctx.herdr_socket, HERDR_TIMEOUT, None).await?;
     let mut debouncer = Debouncer::new(ctx.debounce);
     let now = Instant::now();
     if let Ok(snap) = snapshot(ctx).await {
+        desk.set_focused(str_field(&snap, "focused_pane_id"));
         for agent in agents(&snap) {
             if let (Some(pane), Some(status)) = (str_field(agent, "pane_id"), status_field(agent)) {
                 debouncer.observe(pane, status, now);
@@ -57,7 +64,7 @@ async fn connect(ctx: &ServeCtx) -> Result<(EventStream, Debouncer), HerdrError>
     Ok((stream, debouncer))
 }
 
-async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventStream, mut debouncer: Debouncer) {
+async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventStream, mut debouncer: Debouncer, desk: &mut Desk) {
     // `EventStream::next` is not safe to cancel, so a task reads it and the loop
     // below selects on the channel instead.
     let (tx, mut rx) = mpsc::channel::<Value>(QUEUE);
@@ -78,35 +85,68 @@ async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventS
         };
         tokio::select! {
             ev = rx.recv() => match ev {
-                Some(ev) => observe(&mut debouncer, &ev),
+                Some(ev) => {
+                    if observe(&ctx.home, &mut debouncer, desk, &ev) {
+                        // A tab or workspace focus names no pane: ask herdr which pane has the focus now.
+                        if let Ok(snap) = snapshot(ctx).await {
+                            desk.set_focused(str_field(&snap, "focused_pane_id"));
+                        }
+                    }
+                }
                 None => break,
             },
             _ = wait => {}
         }
-        for (pane, notice) in debouncer.due(Instant::now()) {
-            send_notice(ctx, client, &pane, notice).await;
+        let now = Instant::now();
+        for (pane, notice) in debouncer.due(now) {
+            send_notice(ctx, client, &pane, notice, desk.active(now)).await;
         }
     }
     reader.abort();
 }
 
-fn observe(debouncer: &mut Debouncer, ev: &Value) {
+/// Feeds `ev` to the debouncer and the desk. Returns true when the focused pane may have
+/// changed but the event does not name it (a tab or workspace focus).
+fn observe(home: &Path, debouncer: &mut Debouncer, desk: &mut Desk, ev: &Value) -> bool {
+    let now = Instant::now();
     if let Some(pane) = events::closed_pane_id(ev) {
         debouncer.forget(pane);
-        return;
+        phone_input::forget(home, pane);
+        return false;
     }
-    if events::event_name(ev).as_deref() != Some("pane_agent_status_changed") {
-        return;
-    }
-    let Some(data) = ev.get("data") else { return };
-    if let (Some(pane), Some(status)) = (str_field(data, "pane_id"), status_field(data)) {
-        debouncer.observe(pane, status, Instant::now());
+    let data = ev.get("data").unwrap_or(&Value::Null);
+    match events::event_name(ev).as_deref() {
+        Some("pane_focused") => {
+            match str_field(data, "pane_id") {
+                Some(pane) => desk.focus(pane, now),
+                None => desk.touch(now),
+            }
+            false
+        }
+        Some("tab_focused" | "workspace_focused") => {
+            desk.touch(now);
+            true
+        }
+        Some("pane_agent_status_changed") => {
+            if let (Some(pane), Some(status)) = (str_field(data, "pane_id"), status_field(data)) {
+                // Read the phone mark only when it can matter: the focused pane starts to work.
+                let phone_ago = (desk.focused() == Some(pane) && status == AgentStatus::Working)
+                    .then(|| phone_input::last(home, pane))
+                    .flatten()
+                    .map(|at| SystemTime::now().duration_since(at).unwrap_or_default());
+                desk.agent_status(pane, debouncer.status(pane), status, phone_ago, now);
+                debouncer.observe(pane, status, now);
+            }
+            false
+        }
+        _ => false,
     }
 }
 
 /// Sends `notice` for `pane` to every device that wants it. Reads the config and a
-/// fresh snapshot each time, so new devices and titles apply at once.
-async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notice: Notice) {
+/// fresh snapshot each time, so new devices and titles apply at once. While the user is
+/// `at_desk`, devices with `quiet_at_desk` get nothing.
+async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notice: Notice, at_desk: bool) {
     let cfg = match config::load(&ctx.config_path) {
         Ok(c) => c,
         Err(e) => {
@@ -116,7 +156,13 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     };
     let snap = snapshot(ctx).await.unwrap_or(Value::Null);
     let (title, body) = push::describe(&snap, pane);
-    let msgs = push::messages(&cfg, notice, pane, &title, &body);
+    let msgs = push::messages(&cfg, notice, pane, &title, &body, at_desk);
+    if at_desk {
+        let skipped = push::messages(&cfg, notice, pane, &title, &body, false).len() - msgs.len();
+        if skipped > 0 {
+            eprintln!("zogsshd serve: user is at the computer, skipped {skipped} push(es) for pane {pane}");
+        }
+    }
     if msgs.is_empty() {
         return;
     }

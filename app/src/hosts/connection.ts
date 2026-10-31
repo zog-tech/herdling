@@ -417,7 +417,7 @@ export function startConnections(): void {
   // A changed notification pref goes to every online host.
   state.cleanup.push(
     useNotifPrefs.subscribe((p, prev) => {
-      if (p.finished === prev.finished && p.needs_you === prev.needs_you) return;
+      if (p.finished === prev.finished && p.needs_you === prev.needs_you && p.quiet_at_desk === prev.quiet_at_desk) return;
       for (const id of state.conns.keys()) {
         const conn = getHostConn(id);
         if (conn.status === "online" && conn.rpc) void registerPush(conn.rpc, id);

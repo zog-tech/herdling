@@ -47,7 +47,7 @@ function HostRow({ host }: { host: Host }) {
   );
 }
 
-function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you"; label: string; detail: string }) {
+function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you" | "quiet_at_desk"; label: string; detail: string }) {
   const value = useNotifPrefs((s) => s[pref]);
   const setPref = useNotifPrefs((s) => s.setPref);
   return (
@@ -298,6 +298,13 @@ export default function SettingsScreen() {
         <PrefRow pref="finished" label="Finished" detail="An agent finished its turn." />
         <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
           <PrefRow pref="needs_you" label="Needs you" detail="An agent waits for your input." />
+        </View>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
+          <PrefRow
+            pref="quiet_at_desk"
+            label="Quiet at the computer"
+            detail="No pushes while you use herdr on the computer (5 minutes after your last activity)."
+          />
         </View>
       </Card>
       <VoiceSection />

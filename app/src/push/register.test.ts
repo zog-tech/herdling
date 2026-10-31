@@ -14,7 +14,7 @@ function fakeRpc() {
   return { call: jest.fn(async (_method: string, _params?: unknown) => ({ ok: true }) as never) };
 }
 
-beforeEach(() => useNotifPrefs.setState({ finished: true, needs_you: true }));
+beforeEach(() => useNotifPrefs.setState({ finished: true, needs_you: true, quiet_at_desk: true }));
 
 describe("registerPush", () => {
   it("register_sends_device_and_prefs", async () => {
@@ -26,7 +26,7 @@ describe("registerPush", () => {
       host_id: "h_1",
       name: "Sam-iPhone",
       expo_token: "ExponentPushToken[test]",
-      prefs: { finished: true, needs_you: true },
+      prefs: { finished: true, needs_you: true, quiet_at_desk: true },
     });
   });
 
@@ -40,7 +40,14 @@ describe("registerPush", () => {
     useNotifPrefs.getState().setPref("finished", false);
     const rpc = fakeRpc();
     await registerPush(rpc, "h_1", { token: async () => null });
-    expect(rpc.call.mock.calls[0][1]).toMatchObject({ prefs: { finished: false, needs_you: true } });
+    expect(rpc.call.mock.calls[0][1]).toMatchObject({ prefs: { finished: false, needs_you: true, quiet_at_desk: true } });
+  });
+
+  it("register_sends_quiet_at_desk", async () => {
+    useNotifPrefs.getState().setPref("quiet_at_desk", false);
+    const rpc = fakeRpc();
+    await registerPush(rpc, "h_1", { token: async () => null });
+    expect(rpc.call.mock.calls[0][1]).toMatchObject({ prefs: { finished: true, needs_you: true, quiet_at_desk: false } });
   });
 
   it("register_token_error_skips_register", async () => {

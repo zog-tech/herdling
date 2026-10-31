@@ -61,15 +61,22 @@ pub struct Device {
     pub prefs: Prefs,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Prefs {
     pub finished: bool,
     pub needs_you: bool,
+    /// No pushes while the user is active at the computer. A file without the key gets true.
+    #[serde(default = "default_true")]
+    pub quiet_at_desk: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { finished: true, needs_you: true }
+        Prefs { finished: true, needs_you: true, quiet_at_desk: true }
     }
 }
 

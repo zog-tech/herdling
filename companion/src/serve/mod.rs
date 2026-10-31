@@ -10,6 +10,7 @@ use crate::config;
 
 pub mod bonjour;
 pub mod debounce;
+pub mod desk;
 pub mod http;
 pub mod watch;
 

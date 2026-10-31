@@ -23,8 +23,9 @@ pub struct PushData {
     pub pane_id: String,
 }
 
-/// One message per device that has a push token and wants `notice`.
-pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &str) -> Vec<PushMessage> {
+/// One message per device that has a push token and wants `notice`. While the user is
+/// `at_desk`, devices with `quiet_at_desk` get no message.
+pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &str, at_desk: bool) -> Vec<PushMessage> {
     let title = match notice {
         Notice::Finished => format!("{title} finished"),
         Notice::NeedsYou => format!("{title} needs you"),
@@ -35,6 +36,7 @@ pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &st
             Notice::Finished => d.prefs.finished,
             Notice::NeedsYou => d.prefs.needs_you,
         })
+        .filter(|d| !(at_desk && d.prefs.quiet_at_desk))
         .filter_map(|d| {
             let to = d.expo_token.clone()?;
             Some(PushMessage {

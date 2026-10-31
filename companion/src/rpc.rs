@@ -467,6 +467,11 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let p = params.get("params").cloned().unwrap_or_else(|| json!({}));
     // `agent.start` waits for the agent to boot, which can take much longer than other calls.
     let timeout = if method == "agent.start" { AGENT_START_TIMEOUT } else { ctx.herdr_timeout };
+    // Mark phone input before herdr gets it, so `serve` does not count the start of work
+    // that follows as activity at the desk.
+    if let Some(pane) = crate::phone_input::input_pane(&method, &p) {
+        let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
+    }
     let mut c = herdr::Client::connect(&ctx.herdr_socket, timeout).await.map_err(herdr_err)?;
     c.call(&method, p).await.map_err(herdr_err)
 }
@@ -749,13 +754,17 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let (Some(finished), Some(needs_you)) = (flag("finished"), flag("needs_you")) else {
         return Err(err("bad_request", "push.register requires prefs.finished and prefs.needs_you"));
     };
+    // An older app does not send `quiet_at_desk`: keep the saved value, else the default.
+    let quiet_at_desk = flag("quiet_at_desk");
     let path = ctx.config_path.clone();
     tokio::task::spawn_blocking(move || {
         config::update(&path, |c| {
-            let public_key = c.devices.iter().find(|d| d.id == id).and_then(|d| d.public_key.clone());
+            let old = c.devices.iter().find(|d| d.id == id);
+            let public_key = old.and_then(|d| d.public_key.clone());
+            let quiet_at_desk = quiet_at_desk.unwrap_or_else(|| old.map_or(Prefs::default().quiet_at_desk, |d| d.prefs.quiet_at_desk));
             config::upsert_device(
                 c,
-                Device { id, name, host_id, public_key, expo_token, prefs: Prefs { finished, needs_you } },
+                Device { id, name, host_id, public_key, expo_token, prefs: Prefs { finished, needs_you, quiet_at_desk } },
             );
         })
     })

@@ -117,9 +117,29 @@ async fn pushes_finished_to_expo() {
 
 #[tokio::test]
 async fn respects_prefs() {
-    let mut s = start(Prefs { finished: true, needs_you: false }, ok_reply()).await;
+    let mut s = start(Prefs { finished: true, needs_you: false, quiet_at_desk: true }, ok_reply()).await;
     s.push.send(Push::Event(status_ev("w1:p1", "blocked"))).unwrap();
     s.assert_no_body(Duration::from_millis(300)).await;
+}
+
+fn focus_ev(pane: &str) -> Value {
+    json!({"event": "pane.focused", "data": {"type": "pane_focused", "pane_id": pane, "workspace_id": "w1"}})
+}
+
+#[tokio::test]
+async fn quiet_while_at_desk() {
+    let mut s = start(Prefs::default(), ok_reply()).await;
+    s.push.send(Push::Event(focus_ev("w1:p1"))).unwrap();
+    s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
+    s.assert_no_body(Duration::from_millis(300)).await;
+}
+
+#[tokio::test]
+async fn pushes_at_desk_when_pref_is_off() {
+    let mut s = start(Prefs { quiet_at_desk: false, ..Prefs::default() }, ok_reply()).await;
+    s.push.send(Push::Event(focus_ev("w1:p1"))).unwrap();
+    s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
+    assert_eq!(s.next_body().await[0]["title"], "zogssh finished");
 }
 
 #[tokio::test]

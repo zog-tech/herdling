@@ -42,6 +42,22 @@ async fn register_then_update_prefs() {
 }
 
 #[tokio::test]
+async fn quiet_at_desk_is_saved_and_kept_when_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    // A new device from an older app gets the default.
+    call(&p, params(Value::Null, true)).await;
+    assert!(config::load(&p).unwrap().devices[0].prefs.quiet_at_desk);
+    let mut off = params(Value::Null, true);
+    off["prefs"]["quiet_at_desk"] = json!(false);
+    call(&p, off).await;
+    assert!(!config::load(&p).unwrap().devices[0].prefs.quiet_at_desk);
+    // An older app does not send the key: the saved value stays.
+    call(&p, params(Value::Null, true)).await;
+    assert!(!config::load(&p).unwrap().devices[0].prefs.quiet_at_desk);
+}
+
+#[tokio::test]
 async fn push_register_requires_device_id() {
     let dir = tempfile::tempdir().unwrap();
     let r = call(

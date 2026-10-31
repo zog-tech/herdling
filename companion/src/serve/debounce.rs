@@ -61,6 +61,11 @@ impl Debouncer {
         }
     }
 
+    /// The last status seen for `pane`.
+    pub fn status(&self, pane: &str) -> Option<AgentStatus> {
+        self.panes.get(pane).and_then(|p| p.status)
+    }
+
     /// Notices whose deadline is at or before `now`. Removes the returned entries.
     pub fn due(&mut self, now: Instant) -> Vec<(String, Notice)> {
         let mut out = vec![];

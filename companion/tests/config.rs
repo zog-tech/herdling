@@ -67,3 +67,16 @@ fn parse_error_does_not_leak_source() {
     assert!(!msg.contains("sk-secret"), "{msg}");
     assert!(msg.contains("line 2"), "{msg}");
 }
+
+#[test]
+fn prefs_without_quiet_at_desk_default_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(
+        &p,
+        "[[devices]]\nid = \"d1\"\nname = \"x\"\nhost_id = \"h_1\"\n\n[devices.prefs]\nfinished = true\nneeds_you = false\n",
+    )
+    .unwrap();
+    let prefs = &config::load(&p).unwrap().devices[0].prefs;
+    assert_eq!(prefs, &Prefs { finished: true, needs_you: false, quiet_at_desk: true });
+}

@@ -174,6 +174,8 @@ pub struct RecentSession {
 pub struct PushPrefs {
     pub finished: bool,
     pub needs_you: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiet_at_desk: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

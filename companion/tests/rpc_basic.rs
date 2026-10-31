@@ -168,3 +168,15 @@ async fn hello_lists_methods_and_methods_match_dispatch() {
     };
     assert_eq!(r["error"]["code"], "unknown_method");
 }
+
+#[tokio::test]
+async fn herdr_call_marks_phone_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Session::start(fake(&dir), dir.path().into());
+    s.send(r#"{"id":7,"method":"herdr.call","params":{"method":"agent.list","params":{"pane_id":"w1:p1"}}}"#).await;
+    s.recv().await;
+    assert_eq!(zogsshd::phone_input::last(dir.path(), "w1:p1"), None, "a read is not input");
+    s.send(r#"{"id":8,"method":"herdr.call","params":{"method":"pane.send_text","params":{"pane_id":"w1:p1","text":"hi"}}}"#).await;
+    s.recv().await;
+    assert!(zogsshd::phone_input::last(dir.path(), "w1:p1").is_some());
+}

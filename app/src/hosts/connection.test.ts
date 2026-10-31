@@ -100,7 +100,7 @@ beforeEach(() => {
   });
   useHosts.setState({ hosts: [] });
   mockRegisterPush.mockClear();
-  useNotifPrefs.setState({ finished: true, needs_you: true });
+  useNotifPrefs.setState({ finished: true, needs_you: true, quiet_at_desk: true });
 });
 
 afterEach(() => {
@@ -404,6 +404,15 @@ test("pref_change_reregisters_online_hosts", async () => {
   expect(mockRegisterPush).toHaveBeenCalledWith(getHostConn("h1").rpc, "h1");
   // Setting the same value again sends nothing.
   useNotifPrefs.getState().setPref("finished", false);
+  expect(mockRegisterPush).toHaveBeenCalledTimes(1);
+});
+
+test("quiet_at_desk_change_reregisters_online_hosts", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  mockRegisterPush.mockClear();
+  useNotifPrefs.getState().setPref("quiet_at_desk", false);
   expect(mockRegisterPush).toHaveBeenCalledTimes(1);
 });
 
