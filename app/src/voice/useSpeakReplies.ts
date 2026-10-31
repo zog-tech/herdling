@@ -7,7 +7,7 @@ import { create } from "zustand";
 import { localSummaryAvailable, releaseAudio, setSpeechAudio, summarizeLocal } from "../../modules/voice";
 import { getHostConn } from "../hosts/connection";
 import type { RpcClient } from "../rpc/RpcClient";
-import { hostAudio, stopHostAudio } from "./hostAudio";
+import { hostAudio, setPlaybackSession, stopHostAudio } from "./hostAudio";
 import { speakWithHost } from "./hostVoice";
 import { useRecording } from "./recording";
 import { replyToSpeak, shouldSpeak } from "./replyToSpeak";
@@ -89,8 +89,19 @@ async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | 
       await setSpeechAudio();
     } catch (e) {
       // The native module rejects with code "busy" while dictation holds the audio session.
-      logSpeech((e as { code?: unknown })?.code === "busy" ? "audio session busy (microphone)" : `audio session error: ${message(e)}`);
-      return;
+      if ((e as { code?: unknown })?.code === "busy") {
+        logSpeech("audio session busy (microphone)");
+        return;
+      }
+      logSpeech(`audio session error: ${message(e)}`);
+      // Builds up to 7 ask for an option that iOS 26 rejects (-50). Set the same playback session through expo-audio.
+      try {
+        await setPlaybackSession();
+        logSpeech("audio session set by the fallback");
+      } catch (e2) {
+        logSpeech(`audio session fallback error: ${message(e2)}`);
+        return;
+      }
     }
     audioOwner = mine;
     if (stale()) return release();

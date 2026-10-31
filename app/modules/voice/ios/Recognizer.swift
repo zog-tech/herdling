@@ -327,10 +327,11 @@ enum AudioSession {
     try session.setActive(true)
   }
 
-  /// Playback for text-to-speech: ducks other audio, lets AirPods play it.
+  /// Playback for text-to-speech: ducks other audio. The playback category routes to AirPods
+  /// by itself. `.allowBluetoothA2DP` is valid only with `.playAndRecord`: iOS 26 rejects it here with -50.
   static func activateForSpeech() throws {
     let session = AVAudioSession.sharedInstance()
-    try session.setCategory(.playback, mode: .default, options: [.duckOthers, .allowBluetoothA2DP])
+    try session.setCategory(.playback, mode: .default, options: [.duckOthers])
     try session.setActive(true)
   }
 

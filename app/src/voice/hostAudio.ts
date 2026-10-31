@@ -1,5 +1,5 @@
 import type { TtsAudio } from "@zogssh/protocol";
-import { createAudioPlayer, type AudioPlayer, type AudioStatus } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync, type AudioPlayer, type AudioStatus } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 
 import type { Clip, HostVoiceDeps } from "./hostVoice";
@@ -44,6 +44,21 @@ function watch(token: number, ms: number, fail = false) {
   watchdog = setTimeout(() => {
     if (current?.token === token) current.end(fail ? new Error("clip did not load") : undefined);
   }, ms);
+}
+
+/**
+ * Playback that ducks other audio and plays in silent mode: the same session as the voice module's
+ * `setSpeechAudio`. A fallback for builds whose native call fails.
+ */
+export async function setPlaybackSession(): Promise<void> {
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    interruptionMode: "duckOthers",
+    allowsRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+  });
+  await setIsAudioActiveAsync(true);
 }
 
 /** Stops the host voice clip now. The pending `play` resolves. */

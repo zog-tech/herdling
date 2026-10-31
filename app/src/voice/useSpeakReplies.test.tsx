@@ -31,8 +31,10 @@ jest.mock("../../modules/voice", () => ({
 const mockPlayed: string[] = [];
 const mockDeleted: string[] = [];
 const mockStopHost = jest.fn();
+const mockPlayback = jest.fn(async () => {});
 jest.mock("./hostAudio", () => ({
   stopHostAudio: () => mockStopHost(),
+  setPlaybackSession: () => mockPlayback(),
   hostAudio: () => ({
     writeClip: async (a: { audio_b64: string }) => ({ uri: `file:///${a.audio_b64}` }),
     deleteClip: (c: { uri: string }) => mockDeleted.push(c.uri),
@@ -445,6 +447,22 @@ describe("useSpeakReplies", () => {
     await act(async () => r.update(<Probe status="idle" items={items} />));
     await flush();
     expect(logged()).toContain("audio session busy (microphone)");
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
+  it("sets the session through the fallback when the native call fails, then speaks", async () => {
+    mockSet.mockRejectedValueOnce(new Error("OSStatus error -50"));
+    await act(async () => testVoice());
+    expect(mockPlayback).toHaveBeenCalledTimes(1);
+    expect(logged()).toContain("audio session set by the fallback");
+    expect(mockSpeak).toHaveBeenCalledWith("Voice output works.", expect.anything());
+  });
+
+  it("stays quiet when the fallback fails too", async () => {
+    mockSet.mockRejectedValueOnce(new Error("OSStatus error -50"));
+    mockPlayback.mockRejectedValueOnce(new Error("nope"));
+    await act(async () => testVoice());
+    expect(logged()).toContain("audio session fallback error: nope");
     expect(mockSpeak).not.toHaveBeenCalled();
   });
 
