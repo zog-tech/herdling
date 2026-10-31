@@ -23,6 +23,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **New session in a git worktree.** When the folder is in a git repo, New session offers "In a
+  new git worktree" with a branch name (default `herdling/<random>`). herdlingd makes the branch
+  and the folder `.worktrees/<branch>` in the repo (`git.worktree_add`), and the agent starts there
+  in a new workspace. Needs the new herdlingd.
 - **Changes and diffs.** The session menu has "Changes": the branch, the changed files with their
   status and line counts, and a diff view for each file (line colors, hunk headers, sideways
   scroll, large diffs in pages). New read-only methods `git.status` and `git.diff`. Needs the new

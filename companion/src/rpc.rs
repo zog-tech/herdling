@@ -356,6 +356,7 @@ pub const METHODS: &[&str] = &[
     "update.apply",
     "git.status",
     "git.diff",
+    "git.worktree_add",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -389,6 +390,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "update.apply" => update_apply(ctx, params).await,
         "git.status" => git_status(ctx, params).await,
         "git.diff" => git_diff(ctx, params).await,
+        "git.worktree_add" => git_worktree_add(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -834,6 +836,14 @@ async fn git_diff(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let staged = params.get("staged").and_then(Value::as_bool);
     let d = crate::git::diff(&cwd, path, staged).await?;
     serde_json::to_value(d).map_err(|e| err("internal", e.to_string()))
+}
+
+/// A new branch and worktree for a new session. See [`crate::git::worktree_add`].
+async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let cwd = git_cwd(ctx, &params, "git.worktree_add").await?;
+    let branch = str_param(&params, "branch", "git.worktree_add")?;
+    let w = crate::git::worktree_add(&cwd, branch).await?;
+    serde_json::to_value(w).map_err(|e| err("internal", e.to_string()))
 }
 
 /// The folder and the agent kind of a pane from herdr `pane.get`. Both `None` when herdr does not answer.

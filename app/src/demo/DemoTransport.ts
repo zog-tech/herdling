@@ -14,7 +14,7 @@ import type {
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
 
-import { demoGitDiff, demoGitStatus } from "./demoGit";
+import { demoGitDiff, demoGitStatus, demoWorktreeAdd } from "./demoGit";
 import { DEMO_HOST_NAME } from "./demoHost";
 import { CHAT_KINDS, DemoError, DemoScenario, type DemoNotice } from "./scenario";
 
@@ -250,6 +250,8 @@ export class DemoTransport implements LineTransport {
         return demoGitStatus(this.gitCwd(p, method));
       case "git.diff":
         return demoGitDiff(this.gitCwd(p, method), str(p, "path"));
+      case "git.worktree_add":
+        return demoWorktreeAdd(this.gitCwd(p, method), need(p, "branch", method));
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":

@@ -19,7 +19,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`.
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -102,6 +102,25 @@ together (against HEAD). An untracked `path` shows as a new file. Result:
 - A binary file shows as one `Binary files a/x and b/x differ` line.
 - A `path` that is absolute, has `..`, or goes out of the repo through a symbolic link gives `bad_request`.
 - A folder that is not in a repo gives `not_a_repo`. No `git` program gives `not_installed`.
+
+## New session in a worktree: `git.worktree_add`
+
+The app checks `hello.methods` before it calls this method. It is the only git method that writes.
+Params: the folder (`cwd` or `pane_id`, as above) and `"branch": "herdling/ab12cd"`. Result:
+
+```json
+{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app"}
+```
+
+- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`, then runs
+  `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`. The slug is the branch name with
+  `/` as `-` and other unusual chars as `_`.
+- It adds `/.worktrees/` to `info/exclude` of the repo once, so the main work tree does not show the folder.
+- The new branch starts at HEAD. Uncommitted changes stay in the main work tree.
+- Then the app starts the agent with the normal `agent.start` path, in a new workspace with
+  `cwd` set to `path`. `agent.start` does not change.
+- Errors: `bad_request` (not a valid branch name), `not_a_repo`, `already_exists` (the branch
+  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s).
 
 ## Compatibility rules
 

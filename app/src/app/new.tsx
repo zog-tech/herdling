@@ -17,7 +17,10 @@ import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { useDraftGuard } from "@/ui/draftGuard";
 import { Text } from "@/ui/Text";
-import { hasMethod } from "@/hosts/methods";
+import { hasMethod, listsMethod } from "@/hosts/methods";
+import { branchError, defaultBranch, worktreeSlug } from "@/changes/worktree";
+import { GoldSwitch } from "@/ui/GoldSwitch";
+import type { GitStatus, GitWorktree } from "@herdling/protocol";
 import { MicButton } from "@/voice/MicButton";
 import { appendDictation, hostTranscriber } from "@/voice/transcribe";
 import { useDictation } from "@/voice/useDictation";
@@ -190,19 +193,55 @@ export default function NewSessionScreen() {
   const existing = useMemo(() => (cwd ? workspaceForCwd(snapshot, cwd) : undefined), [snapshot, cwd]);
   useEffect(() => setNewWorkspace(false), [cwd]);
 
+  // "In a new git worktree": only for a folder in a git repo, on a herdlingd that can make one.
+  const canWorktree = !!rpc && listsMethod(hello, "git.worktree_add") && listsMethod(hello, "git.status");
+  const [repo, setRepo] = useState<GitStatus>();
+  const [worktree, setWorktree] = useState(false);
+  const [branch, setBranch] = useState(() => defaultBranch());
+  useEffect(() => {
+    setRepo(undefined);
+    setWorktree(false);
+    if (!rpc || !cwd || !canWorktree) return;
+    let dead = false;
+    rpc
+      .call<GitStatus>("git.status", { cwd })
+      .then((s) => !dead && setRepo(s))
+      // No answer: the option stays hidden.
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [rpc, cwd, canWorktree]);
+  const branchProblem = worktree ? branchError(branch) : undefined;
+
   const busy = progress !== undefined;
   // Swiping the sheet away mid-start would leave a half-started session behind (lock). A typed
   // first prompt asks before the modal closes; a started session leaves without asking.
   const allowLeave = useDraftGuard(prompt.trim().length > 0, { lock: busy });
   const start = useCallback(async () => {
     if (!rpc || !hostId || !cwd) return;
+    const inWorktree = worktree && repo?.is_repo;
+    if (inWorktree && branchError(branch)) return;
     setError(undefined);
+    let folder = cwd;
+    if (inWorktree) {
+      setProgress("Creating worktree…");
+      try {
+        const w = await rpc.call<GitWorktree>("git.worktree_add", { cwd, branch: branch.trim() }, 90_000);
+        folder = w.path;
+      } catch (e) {
+        setError(`Can't create the worktree: ${e instanceof Error ? e.message : String(e)}`);
+        setProgress(undefined);
+        return;
+      }
+    }
     setProgress("Creating workspace…");
     try {
       // The snapshot can lag: fall back to a new workspace when the old one is gone.
-      const reuse = existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
+      // A new worktree is a new folder: it always gets a new workspace.
+      const reuse = !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
       const { paneId, promptError } = await startSession(rpc, {
-        cwd,
+        cwd: folder,
         kind,
         prompt,
         workspaceId: reuse && existing ? existing.workspace_id : undefined,
@@ -219,7 +258,7 @@ export default function NewSessionScreen() {
       setError(e instanceof Error ? e.message : String(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, prompt, existing, newWorkspace, router, allowLeave]);
+  }, [rpc, hostId, cwd, kind, prompt, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
 
   const primary = AGENT_KINDS.slice(0, PRIMARY_KIND_COUNT);
   const rest = AGENT_KINDS.slice(PRIMARY_KIND_COUNT);
@@ -258,7 +297,57 @@ export default function NewSessionScreen() {
 
       {cwd ? (
         <>
-          {existing ? (
+          {repo?.is_repo ? (
+            <Section title="GIT">
+              <Card style={{ gap: space.sm }}>
+                <Row
+                  title="In a new git worktree"
+                  detail={repo.branch ? `A new branch from ${repo.branch}, in its own folder` : "A new branch, in its own folder"}
+                  trailing={<GoldSwitch label="In a new git worktree" value={worktree} onValueChange={(v) => !busy && setWorktree(v)} />}
+                />
+                {worktree ? (
+                  <View style={{ gap: space.xs }}>
+                    <Text variant="small" muted>
+                      Branch name
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="Branch name"
+                      value={branch}
+                      onChangeText={setBranch}
+                      editable={!busy}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      spellCheck={false}
+                      selectionColor={colors.accent}
+                      style={{
+                        minHeight: hitTarget,
+                        paddingHorizontal: space.md,
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: branchProblem ? colors.danger : colors.border,
+                        backgroundColor: colors.raised,
+                        color: colors.text,
+                        fontSize: type.size.body,
+                      }}
+                    />
+                    {branchProblem ? (
+                      <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite">
+                        {branchProblem}
+                      </Text>
+                    ) : (
+                      <Text variant="caption" muted>
+                        {`The folder is .worktrees/${worktreeSlug(branch)} in the repo.${
+                          repo.files.length > 0 ? " Uncommitted changes stay in the main folder." : ""
+                        }`}
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+              </Card>
+            </Section>
+          ) : null}
+
+          {existing && !(worktree && repo?.is_repo) ? (
             <Section title="WHERE">
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
                 <Chip label={`New tab in ${existing.label}`} selected={!newWorkspace} onPress={() => setNewWorkspace(false)} />
@@ -315,7 +404,7 @@ export default function NewSessionScreen() {
               </Text>
             </View>
           ) : null}
-          <Button label={busy ? progress : `Start ${kind}`} loading={busy} onPress={() => void start()} />
+          <Button label={busy ? progress : `Start ${kind}`} loading={busy} disabled={!!branchProblem} onPress={() => void start()} />
         </>
       ) : null}
     </Screen>

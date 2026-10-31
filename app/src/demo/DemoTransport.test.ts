@@ -6,6 +6,7 @@ import type {
   FilePut,
   GitDiff,
   GitStatus,
+  GitWorktree,
   Hello,
   RecentSession,
   Stats,
@@ -172,6 +173,11 @@ describe("DemoTransport", () => {
     expect([parsed[0].added, parsed[0].deleted]).toEqual([changed.added, changed.deleted]);
     expect(parseDiff((await call<GitDiff>("git.diff", { cwd: status.root })).diff).length).toBe(status.files.length);
     expect((await call<GitStatus>("git.status", { cwd: "/home/demo/notes" })).is_repo).toBe(false);
+    const wt = await call<GitWorktree>("git.worktree_add", { cwd: status.root, branch: "herdling/demo1" }).then(ok("git.worktree_add"));
+    expect(wt.path).toBe(`${status.root}/.worktrees/herdling-demo1`);
+    expect(await callError("git.worktree_add", { cwd: status.root, branch: "herdling/demo1" })).toMatchObject({ code: "already_exists" });
+    expect(await callError("git.worktree_add", { cwd: status.root, branch: "bad name" })).toMatchObject({ code: "bad_request" });
+    expect((await call<GitStatus>("git.status", { cwd: wt.path })).files).toEqual([]);
 
     // Host voice and summary are not there: a clear error, so the app uses the phone.
     for (const m of ["summary.make", "tts.make", "stt.make"]) {
