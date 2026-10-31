@@ -23,6 +23,11 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Search in the session.** A magnifier next to Thread and Terminal opens a search bar. In the
+  thread it finds the loaded messages, tool output included, marks them with a bar at the left,
+  shows the match in an excerpt and jumps between matches. "Search older messages" loads older
+  pages up to 2,000 messages. In the terminal it marks the matches in the text and jumps to them.
+  App only: it works with every herdlingd.
 - **Attach any file.** The "+" menu of the composer has "Files" next to "Photos": text, code, logs,
   PDF, JSON, CSV, zip and other files, up to 6 attachments per prompt. The agent gets the saved
   path in the prompt, as for photos. herdlingd takes files up to 25 MiB (was 10 MiB) and keeps the

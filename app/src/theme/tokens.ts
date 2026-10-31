@@ -81,6 +81,16 @@ export const colors = {
     /** The sign and text of a deleted line: a lighter `danger`, for contrast on `delBg`. */
     del: "#F07A7E",
   },
+  /**
+   * Search matches. The current match is the selected state: gold with `onAccent` text (9.0:1).
+   * Other matches: a dim gold fill with `terminal.fg` text (7.0:1).
+   */
+  search: {
+    matchBg: "#5A4721",
+    matchFg: "#E8E3D8",
+    currentBg: "#D4A857",
+    currentFg: "#0A0A0B",
+  },
   /** Terminal view: screen background and default text color (15.7:1). */
   terminal: {
     bg: "#070708",
