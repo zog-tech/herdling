@@ -19,8 +19,8 @@ export function photosAvailable(): boolean {
 }
 
 /**
- * True when this binary has the clipboard module. Older builds do not, so the paste feature
- * hides there instead of crashing.
+ * True when this binary has the clipboard module. Older builds do not, so the paste row
+ * hides there instead of crashing. Builds with the native paste hook do not use it.
  */
 export function clipboardAvailable(): boolean {
   return requireOptionalNativeModule("ExpoClipboard") != null;
@@ -54,21 +54,8 @@ export async function pickPhotos(max: number): Promise<Photo[]> {
 }
 
 /**
- * True when the clipboard holds an image. This reads the types only: it does not show the iOS
- * paste prompt. Returns false when the module is missing or the check fails.
- */
-export async function clipboardHasImage(): Promise<boolean> {
-  if (!clipboardAvailable()) return false;
-  try {
-    const Clipboard = require("expo-clipboard") as typeof import("expo-clipboard");
-    return await Clipboard.hasImageAsync();
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Reads the clipboard image as JPEG. Call it only on a user tap: iOS shows the paste prompt here.
+ * Only for builds without the native paste hook (modules/paste).
  * `index` is the 1-based number for the file name. Returns undefined when no image is there.
  */
 export async function pasteImage(index: number): Promise<Photo | undefined> {
@@ -78,18 +65,6 @@ export async function pasteImage(index: number): Promise<Photo | undefined> {
   const base64 = img?.data.replace(/^data:[^,]*,/, "");
   if (!img || !base64) return undefined;
   return { uri: img.data.startsWith("data:") ? img.data : `data:image/jpeg;base64,${base64}`, name: `pasted-${index}.jpg`, base64 };
-}
-
-/** Calls `onChange` when the clipboard content changes. Returns a function that stops it. */
-export function watchClipboard(onChange: () => void): () => void {
-  if (!clipboardAvailable()) return () => {};
-  try {
-    const Clipboard = require("expo-clipboard") as typeof import("expo-clipboard");
-    const sub = Clipboard.addClipboardListener(onChange);
-    return () => sub.remove();
-  } catch {
-    return () => {};
-  }
 }
 
 /** `IMG_1.HEIC` → `IMG_1.jpg`; no name → `photo-<n>.jpg`. The data is JPEG after the picker. */

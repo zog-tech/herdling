@@ -64,10 +64,18 @@ jest.mock("expo", () => {
   const actual = jest.requireActual("expo");
   return { ...actual, requireOptionalNativeModule: (n: string) => (n === "ExpoClipboard" ? {} : actual.requireOptionalNativeModule(n)) };
 });
-jest.mock("expo-clipboard", () => ({
-  hasImageAsync: jest.fn(async () => false),
-  getImageAsync: jest.fn(),
-  addClipboardListener: jest.fn(() => ({ remove: jest.fn() })),
+jest.mock("expo-clipboard", () => ({ getImageAsync: jest.fn() }));
+// The native paste hook: on by default, like build 7 and later.
+let mockNativePaste = true;
+const mockPasteListeners = new Set<(e: { base64: string; width: number; height: number }) => void>();
+jest.mock("../../modules/paste", () => ({
+  get hasNativePaste() {
+    return mockNativePaste;
+  },
+  addPasteImageListener: (cb: (e: { base64: string; width: number; height: number }) => void) => {
+    mockPasteListeners.add(cb);
+    return () => mockPasteListeners.delete(cb);
+  },
 }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
 
@@ -337,7 +345,19 @@ const focusPrompt = async (t: ReactTestRenderer) => {
   await act(async () => prompt(t).props.onFocus());
   await flush();
 };
-const clipboardHolds = (has: boolean) => (Clipboard.hasImageAsync as jest.Mock).mockResolvedValue(has);
+const textOf = (t: ReactTestRenderer) =>
+  t.root
+    .findAll((n) => typeof n.props.children === "string")
+    .map((n) => n.props.children)
+    .join("\n");
+const blurPrompt = async (t: ReactTestRenderer) => {
+  await act(async () => prompt(t).props.onBlur());
+  await flush();
+};
+const pasteFromMenu = async (base64 = "QUJD") => {
+  await act(async () => mockPasteListeners.forEach((cb) => cb({ base64, width: 1, height: 1 })));
+  await flush();
+};
 const mountWithPut = async () => {
   idle();
   mockHello = helloWith(["files.put"]);
@@ -346,74 +366,92 @@ const mountWithPut = async () => {
   });
 };
 
-test("paste_chip_shows_for_a_clipboard_image_and_hides_after_the_paste", async () => {
-  clipboardHolds(true);
-  (Clipboard.getImageAsync as jest.Mock).mockResolvedValue({ data: "data:image/jpeg;base64,QUJD", size: { width: 1, height: 1 } });
+test("edit_menu_paste_attaches_the_image_while_the_box_is_focused", async () => {
   await mountWithPut();
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  // No listener before focus: the native hook stays off and "Paste" does not show for an image.
+  expect(mockPasteListeners.size).toBe(0);
   await focusPrompt(tree!);
-  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
-  // Checking the types must not read the image (that shows the iOS prompt).
-  expect(Clipboard.getImageAsync).not.toHaveBeenCalled();
+  expect(mockPasteListeners.size).toBe(1);
+  // No chip and no menu row: the system edit menu pastes.
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
 
-  await press(tree!, "Paste image");
-  expect(haptics.tap).toHaveBeenCalledTimes(1);
-  expect(Clipboard.getImageAsync).toHaveBeenCalledWith({ format: "jpeg", jpegQuality: 0.8 });
+  await pasteFromMenu();
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
-  // The same image is still on the clipboard: the next focus does not bring the chip back.
-  await focusPrompt(tree!);
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
-
   await press(tree!, "Send");
   expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
     { name: "pasted-1.jpg", data_b64: "QUJD" },
   ]);
-  // A clipboard change brings the chip back.
-  const onChange = (Clipboard.addClipboardListener as jest.Mock).mock.calls[0][0];
-  await act(async () => onChange({ contentTypes: ["image"] }));
-  await flush();
-  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
+  await focusPrompt(tree!);
+  await blurPrompt(tree!);
+  expect(mockPasteListeners.size).toBe(0);
 });
 
-test("paste_image_row_is_in_the_plus_menu", async () => {
-  clipboardHolds(true);
-  await mountWithPut();
-  await press(tree!, "Add");
-  expect(byLabel(tree!, "Paste image")).toHaveLength(1);
-});
-
-test("paste_stops_at_the_photo_max", async () => {
-  clipboardHolds(true);
-  (Clipboard.getImageAsync as jest.Mock).mockResolvedValue({ data: "data:image/jpeg;base64,QUJD", size: { width: 1, height: 1 } });
+test("edit_menu_paste_stops_at_the_photo_max", async () => {
   await mountWithPut();
   pickerReturns(["a.jpg", "b.jpg", "c.jpg"]);
   await press(tree!, "Add");
   await press(tree!, "Photos");
   await focusPrompt(tree!);
-  await press(tree!, "Paste image");
+  await pasteFromMenu("AAA");
+  await pasteFromMenu("BBB");
   expect(byLabel(tree!, "Remove photo 4")).toHaveLength(1);
-  // Four photos: no chip, even after a clipboard change.
-  const onChange = (Clipboard.addClipboardListener as jest.Mock).mock.calls[0][0];
-  await act(async () => onChange({ contentTypes: ["image"] }));
-  await flush();
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
-  await press(tree!, "Add");
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  expect(byLabel(tree!, "Remove photo 5")).toHaveLength(0);
+  expect(textOf(tree!)).toContain("You can attach up to 4 photos.");
 });
 
-test("paste_chip_is_hidden_without_files_put", async () => {
-  clipboardHolds(true);
+test("edit_menu_paste_without_files_put_shows_an_error", async () => {
   idle();
   mockHello = helloWith(["commands.list"]);
   await act(async () => {
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
   });
   await focusPrompt(tree!);
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
-  await press(tree!, "Add");
-  expect(byLabel(tree!, "Paste image")).toHaveLength(0);
-  expect(Clipboard.hasImageAsync).not.toHaveBeenCalled();
+  await pasteFromMenu();
+  expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
+  expect(textOf(tree!)).toContain("This host cannot receive photos.");
+});
+
+describe("a build without the native paste hook", () => {
+  beforeEach(() => {
+    mockNativePaste = false;
+  });
+  afterEach(() => {
+    mockNativePaste = true;
+  });
+
+  test("pastes_with_the_plus_menu_row", async () => {
+    (Clipboard.getImageAsync as jest.Mock).mockResolvedValue({ data: "data:image/jpeg;base64,QUJD", size: { width: 1, height: 1 } });
+    await mountWithPut();
+    await press(tree!, "Add");
+    await press(tree!, "Paste image");
+    expect(Clipboard.getImageAsync).toHaveBeenCalledWith({ format: "jpeg", jpegQuality: 0.8 });
+    expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
+    await press(tree!, "Send");
+    expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
+      { name: "pasted-1.jpg", data_b64: "QUJD" },
+    ]);
+  });
+
+  test("says_so_when_the_clipboard_has_no_image", async () => {
+    (Clipboard.getImageAsync as jest.Mock).mockResolvedValue(null);
+    await mountWithPut();
+    await press(tree!, "Add");
+    await press(tree!, "Paste image");
+    expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
+    expect(textOf(tree!)).toContain("The clipboard has no image.");
+  });
+
+  test("has_no_paste_row_without_files_put", async () => {
+    idle();
+    mockHello = helloWith(["commands.list"]);
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await press(tree!, "Add");
+    expect(byLabel(tree!, "Paste image")).toHaveLength(0);
+  });
 });
 
 test("recording_swaps_the_box_for_the_record_bar_and_the_text_lands_appended", async () => {

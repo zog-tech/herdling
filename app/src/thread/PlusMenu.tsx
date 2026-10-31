@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
-import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
 import type { Photo } from "./attachments";
@@ -57,7 +56,10 @@ function MenuRow({ label, icon, onPress }: { label: string; icon: ReactNode; onP
   );
 }
 
-/** The menu that the "+" button opens, above the prompt box. A missing handler hides its row. */
+/**
+ * The menu that the "+" button opens, above the prompt box. A missing handler hides its row.
+ * "Paste image" is for builds without the native paste hook.
+ */
 export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => void; onPaste?: () => void; onCommands?: () => void }) {
   return (
     <View
@@ -76,36 +78,6 @@ export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => v
         <MenuRow label="Commands & skills" icon={<SquareSlash size={20} color={colors.text} />} onPress={onCommands} />
       ) : null}
     </View>
-  );
-}
-
-/** A chip above the prompt box that pastes the clipboard image as a photo. */
-export function PasteChip({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Paste image"
-      accessibilityHint="Attaches the image from the clipboard"
-      disabled={disabled}
-      onPress={() => {
-        haptics.tap();
-        onPress();
-      }}
-      style={({ pressed }) => ({
-        alignSelf: "flex-start",
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.sm,
-        paddingHorizontal: space.md,
-        borderRadius: hitTarget / 2,
-        backgroundColor: colors.raised,
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
-      })}
-    >
-      <ClipboardPaste size={20} color={colors.text} />
-      <Text>Paste image</Text>
-    </Pressable>
   );
 }
 

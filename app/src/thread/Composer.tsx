@@ -1,7 +1,7 @@
 import { File } from "expo-file-system";
 import { ArrowUp, Check } from "lucide-react-native";
 import { memo, useEffect, useRef, useState, type ComponentRef } from "react";
-import { AppState, Pressable, TextInput, useWindowDimensions, View } from "react-native";
+import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
@@ -17,13 +17,13 @@ import { appendDictation, hostTranscriber } from "@/voice/transcribe";
 import { useDictation } from "@/voice/useDictation";
 import { DelayedSpinner } from "@/ui/Delayed";
 
+import { addPasteImageListener, hasNativePaste, type PastedImage } from "../../modules/paste";
 import {
-  clipboardHasImage,
+  clipboardAvailable,
   MAX_PHOTOS,
   pasteImage,
   photosAvailable,
   pickPhotos,
-  watchClipboard,
   uploadPhotos, withPaths,
   type Photo,
 } from "./attachments";
@@ -33,7 +33,7 @@ import { CommandSheet } from "./CommandSheet";
 import { filterCommands, slashQuery, useCommands } from "./commands";
 import { sendWithPending } from "./pending";
 import { PermissionButtons } from "./PermissionButtons";
-import { PasteChip, PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
+import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -50,7 +50,7 @@ export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the termi
  * and the text lands in the box after its text, for editing. It is not sent.
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
  * The "+" button attaches photos (uploaded with `files.put`, their paths go at the end of the prompt)
- * and opens the full list of slash commands. Typing `/` shows the matching commands.
+ * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
  */
 export const Composer = memo(function Composer({
@@ -148,37 +148,38 @@ export const Composer = memo(function Composer({
     query !== undefined && slash.supported && slash.commands ? filterCommands(slash.commands, query).slice(0, MENU_MAX) : [];
   const showMenu = visible && online && !showChoices && matches.length > 0;
   const canAttach = hasMethod(hello, "files.put") && photosAvailable();
-  /** True when the clipboard holds an image that the user did not paste yet. */
-  const [clipImage, setClipImage] = useState(false);
-  /** Set after a paste. The same image stays on the clipboard, so the chip waits for a change. */
-  const clipConsumed = useRef(false);
   const pasteCount = useRef(0);
-  const canPaste = canAttach && clipImage && photos.length < MAX_PHOTOS;
+  /** Old builds without the native paste hook paste with a row in the "+" menu. */
+  const canPasteRow = !hasNativePaste && canAttach && clipboardAvailable() && photos.length < MAX_PHOTOS;
   const showPlus = canAttach || slash.supported;
+  /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
+  const [focused, setFocused] = useState(false);
+  const photoCount = useRef(photos.length);
+  photoCount.current = photos.length;
 
-
-  /** Checks the clipboard types only. This does not trigger the iOS paste prompt. */
-  const checkClipboard = async () => {
-    if (!canAttach) return;
-    const has = await clipboardHasImage();
-    setClipImage(has && !clipConsumed.current);
+  /** Attaches an image pasted from the edit menu of the prompt box. */
+  const onPastedImage = (img: PastedImage) => {
+    if (!canAttach) {
+      setError("This host cannot receive photos.");
+      return;
+    }
+    if (photoCount.current >= MAX_PHOTOS) {
+      setError(`You can attach up to ${MAX_PHOTOS} photos.`);
+      return;
+    }
+    const photo: Photo = { uri: `data:image/jpeg;base64,${img.base64}`, name: `pasted-${++pasteCount.current}.jpg`, base64: img.base64 };
+    photoCount.current += 1;
+    setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
+    if (error) setError(undefined);
   };
-  const checkClipboardRef = useRef(checkClipboard);
-  checkClipboardRef.current = checkClipboard;
+  const onPastedImageRef = useRef(onPastedImage);
+  onPastedImageRef.current = onPastedImage;
+  // Listen only while the box is focused: the native hook is on only while a listener is,
+  // so "Paste" shows for an image in this box and in no other input.
   useEffect(() => {
-    if (!canAttach || !visible) return;
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") void checkClipboardRef.current();
-    });
-    const stop = watchClipboard(() => {
-      clipConsumed.current = false;
-      void checkClipboardRef.current();
-    });
-    return () => {
-      sub.remove();
-      stop();
-    };
-  }, [canAttach, visible]);
+    if (!focused || !visible || voiceActive) return;
+    return addPasteImageListener((img) => onPastedImageRef.current(img));
+  }, [focused, visible, voiceActive]);
 
   /**
    * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).
@@ -235,6 +236,8 @@ export const Composer = memo(function Composer({
     // Keep anything typed after the tap.
     if (fromInput && latest.current === prompt) {
       setText("");
+      // The new box gets no blur event from the old one. autoFocus focuses it again.
+      setFocused(false);
       setInputKey((k) => k + 1);
     }
     setSending(false);
@@ -263,14 +266,20 @@ export const Composer = memo(function Composer({
       setError(`Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
-  /** Reads the clipboard image (this is the user tap, so the iOS prompt is fine) and attaches it. */
+  /**
+   * Old builds only. Reads the clipboard image (this is the user tap, so the iOS prompt is fine)
+   * and attaches it.
+   */
   const pasteClipboard = async () => {
     setPlusOpen(false);
-    clipConsumed.current = true;
-    setClipImage(false);
     try {
-      const photo = await pasteImage(++pasteCount.current);
-      if (photo) setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
+      const photo = await pasteImage(pasteCount.current + 1);
+      if (!photo) {
+        setError("The clipboard has no image.");
+        return;
+      }
+      pasteCount.current += 1;
+      setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
     } catch (e) {
       setError(`Could not paste the image: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -326,11 +335,10 @@ export const Composer = memo(function Composer({
       {plusOpen && showPlus && !showMenu ? (
         <PlusMenu
           onPhotos={canAttach && photos.length < MAX_PHOTOS ? () => void attachPhotos() : undefined}
-          onPaste={canPaste ? () => void pasteClipboard() : undefined}
+          onPaste={canPasteRow ? () => void pasteClipboard() : undefined}
           onCommands={slash.supported ? openSheet : undefined}
         />
       ) : null}
-      {canPaste && !plusOpen ? <PasteChip disabled={sending} onPress={() => void pasteClipboard()} /> : null}
       {uploaded !== undefined ? (
         <Text variant="small" muted accessibilityLiveRegion="polite">
           Uploading photo {Math.min(uploaded + 1, photos.length)} of {photos.length}…
@@ -358,10 +366,7 @@ export const Composer = memo(function Composer({
             open={plusOpen}
             disabled={!online || sending}
             onPress={() => {
-              if (!plusOpen) {
-                haptics.press();
-                void checkClipboard();
-              }
+              if (!plusOpen) haptics.press();
               setPlusOpen((o) => !o);
             }}
           />
@@ -378,7 +383,8 @@ export const Composer = memo(function Composer({
           }}
           editable={online}
           autoFocus={autoFocus}
-          onFocus={() => void checkClipboard()}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           multiline
           placeholder={online ? "Message the agent" : "Host offline"}
           placeholderTextColor={colors.textMuted}
