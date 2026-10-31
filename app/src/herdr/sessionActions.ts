@@ -62,9 +62,20 @@ export function canResume(hello: Hello | undefined, kind: string): boolean {
 
 /** Opens an earlier session of the same agent in a new tab. The current pane stays. */
 export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Promise<{ paneId: string }> {
-  const args = resumeArgs(a.agent, session);
-  if (!args) throw new RpcError("no_resume", `${a.agent} cannot resume an earlier session`);
-  const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: a.agent, workspaceId: a.workspace_id, args });
+  return resumeInFolder(rpc, { cwd: cwdOf(a), kind: a.agent, session, workspaceId: a.workspace_id });
+}
+
+/**
+ * Opens an earlier session of `kind` in `cwd`: a new tab of `workspaceId`, or a new workspace.
+ * New session uses it for its recent sessions, where no agent pane is open.
+ */
+export async function resumeInFolder(
+  rpc: Rpc,
+  o: { cwd: string; kind: string; session: string; workspaceId?: string },
+): Promise<{ paneId: string }> {
+  const args = resumeArgs(o.kind, o.session);
+  if (!args) throw new RpcError("no_resume", `${o.kind} cannot resume an earlier session`);
+  const { paneId } = await startSession(rpc, { cwd: o.cwd, kind: o.kind, workspaceId: o.workspaceId, args });
   return { paneId };
 }
 

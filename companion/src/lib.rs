@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod automations;
 pub mod boot;
 pub mod claude;

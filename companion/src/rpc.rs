@@ -379,6 +379,7 @@ pub const METHODS: &[&str] = &[
     "git.diff",
     "git.worktree_add",
     "pane.watch",
+    "agents.installed",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -416,6 +417,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "git.diff" => git_diff(ctx, params).await,
         "git.worktree_add" => git_worktree_add(ctx, params).await,
         "pane.watch" => crate::watch::pane_watch(ctx, out, params).await,
+        "agents.installed" => agents_installed(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -684,14 +686,26 @@ async fn sessions_recent(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 
 async fn fs_dirs(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let path = params.get("path").and_then(Value::as_str).map(String::from);
+    let defaults = crate::fsdirs::DirsOpts::default();
+    let opts = crate::fsdirs::DirsOpts {
+        hidden: params.get("hidden").and_then(Value::as_bool).unwrap_or(defaults.hidden),
+        recent: params.get("recent").and_then(Value::as_bool).unwrap_or(defaults.recent),
+    };
     let home = ctx.home.clone();
-    tokio::task::spawn_blocking(move || crate::fsdirs::dirs(&home, path.as_deref()))
+    tokio::task::spawn_blocking(move || crate::fsdirs::dirs_with(&home, path.as_deref(), opts))
         .await
         .map_err(|e| err("internal", e.to_string()))?
         .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => err("not_found", e.to_string()),
             _ => err("io_error", e.to_string()),
         })
+}
+
+async fn agents_installed(ctx: &Ctx) -> Result<Value, RpcError> {
+    let (home, base) = (ctx.home.clone(), ctx.bin_dirs.clone());
+    tokio::task::spawn_blocking(move || crate::agents::installed(&crate::agents::search_dirs(&home, &base)))
+        .await
+        .map_err(|e| err("internal", e.to_string()))
 }
 
 async fn stats_get(ctx: &Ctx) -> Result<Value, RpcError> {

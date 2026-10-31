@@ -177,6 +177,31 @@ async fn fs_dirs_lists_dirs_and_recent_cwds() {
 }
 
 #[tokio::test]
+async fn fs_dirs_hidden_git_and_no_recent() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().to_path_buf();
+    std::fs::create_dir_all(home.join("work/repo/.git")).unwrap();
+    std::fs::create_dir_all(home.join("work/tree")).unwrap();
+    // A linked worktree has a `.git` file, not a folder.
+    std::fs::write(home.join("work/tree/.git"), "gitdir: /x").unwrap();
+    std::fs::create_dir_all(home.join("work/plain")).unwrap();
+    std::fs::create_dir_all(home.join("work/.config")).unwrap();
+    write(&home.join(".claude/projects/-p-one/s.jsonl"), "{\"cwd\":\"/home/sam/one\"}\n");
+    let mut s = Session::start(dir.path().join("none.sock"), home.clone());
+    let work = home.join("work").to_string_lossy().into_owned();
+    // The defaults: no hidden folders, recent folders read.
+    let r = s.call("fs.dirs", json!({"path": work})).await;
+    assert_eq!(r["result"]["dirs"], json!(["plain", "repo", "tree"]));
+    assert_eq!(r["result"]["git_dirs"], json!(["repo", "tree"]));
+    assert_eq!(r["result"]["hidden"], json!(false));
+    assert_eq!(r["result"]["recent_cwds"], json!(["/home/sam/one"]));
+    let r = s.call("fs.dirs", json!({"path": work, "hidden": true, "recent": false})).await;
+    assert_eq!(r["result"]["dirs"], json!([".config", "plain", "repo", "tree"]));
+    assert_eq!(r["result"]["hidden"], json!(true));
+    assert_eq!(r["result"]["recent_cwds"], json!([]));
+}
+
+#[tokio::test]
 async fn thread_subagent_reads_sibling_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("sess1.jsonl");

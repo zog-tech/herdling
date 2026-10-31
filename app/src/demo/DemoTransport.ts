@@ -1,4 +1,5 @@
 import type {
+  AgentsInstalled,
   Automation,
   AutomationRun,
   CommandInfo,
@@ -269,7 +270,13 @@ export class DemoTransport implements LineTransport {
       case "sessions.recent":
         return s.recentSessions(str(p, "cwd"), str(p, "kind"), num(p, "limit") ?? 20);
       case "fs.dirs":
-        return s.dirs(str(p, "path"));
+        return s.dirs(str(p, "path"), { hidden: p.hidden === true, recent: p.recent !== false });
+      // The demo computer has the agents of the demo, and some more.
+      case "agents.installed":
+        return {
+          installed: ["claude", "codex", "pi", "opencode", "gemini", "amp"],
+          missing: ["cursor", "copilot", "droid", "kimi", "qwen", "grok", "cline", "omp", "kiro", "hermes", "kilo", "qodercli", "letta"],
+        } satisfies AgentsInstalled;
       case "push.register":
       case "pair.revoke":
         // Never sent for the demo host; accept it anyway, and send nothing anywhere.

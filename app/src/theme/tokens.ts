@@ -91,6 +91,21 @@ export const colors = {
     currentBg: "#D4A857",
     currentFg: "#0A0A0B",
   },
+  /**
+   * The letter mark of an agent kind (`ui/AgentMark`) on a `raised` tile. Muted tints, never gold
+   * and never the ember of "needs you". The name is always next to the mark, so the tint is
+   * never the only cue. On `raised`: claude 8.4:1, codex 15.2:1, pi 7.6:1, opencode 9.2:1,
+   * omp 8.1:1, gemini 7.0:1, other 6.4:1.
+   */
+  agent: {
+    claude: "#E3A98C",
+    codex: "#F5F2EA",
+    pi: "#B9A3E3",
+    opencode: "#9FC7C0",
+    omp: "#D7A3C9",
+    gemini: "#7FA7F0",
+    other: "#A39E93",
+  },
   /** Terminal view: screen background and default text color (15.7:1). */
   terminal: {
     bg: "#070708",

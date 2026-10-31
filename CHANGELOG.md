@@ -29,6 +29,15 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
   it. Keys go through an ordered queue without a wait for each reply. A badge shows the latency.
   "Type directly" sends each key at once, with mosh-style prediction on slow links. Needs
   herdlingd 0.1.1; with an older herdlingd the app polls as before.
+- **New session, redesigned.** Choose the agent first, in one row of chips (Claude Code, Codex,
+  Pi, OpenCode, omp, Gemini CLI and more). The app remembers the last agent for each computer.
+  Type a path with live folder suggestions (`~` is home, a button completes the name), or browse
+  with breadcrumbs, Up and Home buttons and pull to refresh. Recent folders are one row of chips,
+  and "Recent sessions" resumes an earlier session of the chosen agent with one tap. The first
+  prompt, dictation and the start button ("Start Claude Code here") stay at the bottom.
+  herdlingd 0.1.1 adds `agents.installed` (agents that are not installed show dimmed with "Not
+  installed"), and `fs.dirs` gets `hidden` ("Show hidden"), `recent` and `git_dirs` (a git folder
+  icon). With herdlingd 0.1.0 the screen works without these parts.
 - **Start at boot.** herdlingd reports when it starts (`hello.boot`: at boot, or after a login;
   `boot.check`). The host screen and Settings show "Starts after you log in on this computer" with
   a step-by-step guide: automatic login on a Mac (and why FileVault blocks it), lingering on
