@@ -23,7 +23,7 @@ rand = "0.9"
 sha2 = "0.10"
 base64 = "0.22"
 qrcode = { version = "0.14", default-features = false }
-if-addrs = "0.13"
+if-addrs = "0.15"
 mdns-sd = "0.13"
 libc = "0.2"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
