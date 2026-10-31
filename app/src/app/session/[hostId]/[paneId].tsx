@@ -27,6 +27,7 @@ import { usePendingList } from "@/thread/pending";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
+import { runningSubagents } from "@/thread/subagentState";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
 import { HorizonLine } from "@/ui/HorizonLine";
@@ -279,6 +280,7 @@ function ThreadBody({
 }) {
   const { status, items } = thread;
   const pending = usePendingList(hostId, paneId);
+  const subagents = useMemo(() => runningSubagents(items), [items]);
   if (status === "no_session") {
     return (
       <View style={{ flex: 1 }}>
@@ -334,7 +336,7 @@ function ThreadBody({
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
-          footer={<StatusRow status={badge} since={since} />}
+          footer={<StatusRow status={badge} since={since} subagents={subagents} />}
           footerShown={isStatusShown(badge)}
           live={{ hostId, paneId, active: focused }}
         />

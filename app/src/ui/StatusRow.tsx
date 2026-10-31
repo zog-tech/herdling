@@ -3,6 +3,7 @@ import { AccessibilityInfo, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { colors, motion, radius, space } from "@/theme/tokens";
+import { subagentCount } from "@/thread/subagentState";
 import { LanternGlow } from "./LanternGlow";
 import { STATUS_META, StatusIcon, statusSpoken, useElapsed, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
@@ -36,8 +37,17 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
  * icon, "Working" and a ticking clock. The pill is centered, fades and slides in and out, and takes no height when hidden.
  * The clock ticks on the UI thread (`TickingDuration`), so a busy JS thread does not freeze it, and
  * it pauses while the row is hidden. VoiceOver reads the time in whole minutes.
+ * `subagents`: running subagents; while working, the pill adds " · 2 subagents".
  */
-export const StatusRow = memo(function StatusRow({ status, since }: { status: BadgeStatus; since?: number }) {
+export const StatusRow = memo(function StatusRow({
+  status,
+  since,
+  subagents = 0,
+}: {
+  status: BadgeStatus;
+  since?: number;
+  subagents?: number;
+}) {
   const reduced = useReducedMotion();
   const visible = SHOWN.includes(status);
   // Keep the last shown state, so the content stays while the row fades out.
@@ -66,7 +76,9 @@ export const StatusRow = memo(function StatusRow({ status, since }: { status: Ba
   // Coarse JS clock, for the VoiceOver label only.
   const elapsed = useElapsed(working ? since : undefined, working, SPOKEN_TICK_MS);
   const { label, color } = STATUS_META[shown];
-  const text = statusSpoken(shown, shown === "working" ? elapsed : undefined);
+  const subs = shown === "working" && subagents > 0 ? subagentCount(subagents) : undefined;
+  const spoken = statusSpoken(shown, shown === "working" ? elapsed : undefined);
+  const text = subs ? `${spoken}, ${subs}` : spoken;
 
   const style = useAnimatedStyle(() => ({
     height: progress.get() * ROW_HEIGHT,
@@ -108,6 +120,11 @@ export const StatusRow = memo(function StatusRow({ status, since }: { status: Ba
         </Text>
         {shown === "working" && since !== undefined ? (
           <TickingDuration variant="small" since={since} active={working} maxFontSizeMultiplier={1.3} accessible={false} />
+        ) : null}
+        {subs ? (
+          <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
+            {`· ${subs}`}
+          </Text>
         ) : null}
       </View>
     </Animated.View>

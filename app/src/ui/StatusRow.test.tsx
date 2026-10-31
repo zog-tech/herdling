@@ -68,3 +68,23 @@ test("status_pill_shows_only_for_working_blocked_and_offline", () => {
   expect(["working", "blocked", "offline"].every((s) => isStatusShown(s as never))).toBe(true);
   expect(["idle", "done", "unknown"].some((s) => isStatusShown(s as never))).toBe(false);
 });
+
+test("status_row_adds_running_subagents_while_working", () => {
+  jest.useFakeTimers();
+  const since = Date.now() - 5_000;
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="working" since={since} subagents={2} />);
+  });
+  const texts = () => t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
+  expect(texts()).toContain("· 2 subagents");
+  expect(label(t)).toBe("Working, under a minute, 2 subagents");
+  act(() => t.update(<StatusRow status="working" since={since} subagents={1} />));
+  expect(label(t)).toBe("Working, under a minute, 1 subagent");
+  act(() => t.update(<StatusRow status="working" since={since} subagents={0} />));
+  expect(texts().some((c) => typeof c === "string" && c.includes("subagent"))).toBe(false);
+  act(() => t.update(<StatusRow status="blocked" since={since} subagents={2} />));
+  expect(label(t)).toBe("Needs you");
+  act(() => t.unmount());
+  jest.useRealTimers();
+});

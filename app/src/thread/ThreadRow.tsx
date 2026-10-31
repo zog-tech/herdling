@@ -39,6 +39,10 @@ export const ThreadRow = memo(function ThreadRow({ item }: { item: ThreadItem })
           status={item.status}
           resultSummary={item.result_summary}
           agentId={item.agent_id}
+          startedAt={item.started_at}
+          finishedAt={item.finished_at}
+          activity={item.activity}
+          toolCount={item.tool_count}
         />
       );
     case "system":
