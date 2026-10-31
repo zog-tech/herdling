@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.swift_version  = '5.9'
 
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'Network'
+  s.frameworks = 'Network', 'WebKit'
 
   # Citadel through Swift Package Manager (React Native's spm_dependency helper).
   # Pinned to an exact version. Citadel 0.12.1 is the first release with `withExec`.

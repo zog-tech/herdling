@@ -12,6 +12,9 @@ import type {
   GitWorktree,
   Hello,
   MacOpenSettings,
+  PortsList,
+  PreviewClose,
+  PreviewOpen,
   RecentSession,
   Stats,
   SubagentPage,
@@ -210,6 +213,16 @@ describe("DemoTransport", () => {
     });
     expect(await callError("mac.open_settings", { pane: "https://example.com" })).toMatchObject({ code: "bad_request" });
     answered.add("hello");
+
+    // The browser preview: the pane's dev server first, a grant for a listed port only.
+    const ports = await call<PortsList>("ports.list", { pane_id: "p1" }).then(ok("ports.list"));
+    expect(ports.ports[0]).toMatchObject({ port: 5173, cmd: "vite", pane_id: "p1" });
+    const open = await call<PreviewOpen>("preview.open", { port: 5173 }).then(ok("preview.open"));
+    expect(open.grant).toMatch(/^[0-9a-f]{32}$/);
+    expect(await callError("preview.open", { port: 4444 })).toMatchObject({ code: "port_not_listening" });
+    expect(await callError("preview.open", { port: "5173" })).toMatchObject({ code: "bad_request" });
+    expect(await call<PreviewClose>("preview.close", { grant: open.grant }).then(ok("preview.close"))).toEqual({ closed: true });
+    expect(await callError("preview.close", { grant: "../x" })).toMatchObject({ code: "grant_invalid" });
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

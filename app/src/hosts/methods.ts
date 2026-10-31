@@ -35,6 +35,9 @@ export const APP_METHODS = [
   "git.worktree_add",
   "pane.watch",
   "agents.installed",
+  "ports.list",
+  "preview.open",
+  "preview.close",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

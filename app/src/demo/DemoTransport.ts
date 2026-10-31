@@ -9,6 +9,8 @@ import type {
   Hello,
   MacOpenSettings,
   MacSettingsPane,
+  PortsList,
+  PreviewClose,
   Stats,
   UpdateApply,
   UpdateCheck,
@@ -20,6 +22,7 @@ import type { LineTransport } from "@/rpc/transport";
 
 import { demoGitDiff, demoGitStatus, demoWorktreeAdd } from "./demoGit";
 import { DEMO_HOST_NAME } from "./demoHost";
+import { demoPorts, demoPreviewOpen } from "./demoPreview";
 import { CHAT_KINDS, DemoError, DemoScenario, type DemoNotice } from "./scenario";
 
 /** Kinds with chat and command support, as a current herdlingd reports them. */
@@ -312,6 +315,16 @@ export class DemoTransport implements LineTransport {
         return demoGitDiff(this.gitCwd(p, method), str(p, "path"));
       case "git.worktree_add":
         return demoWorktreeAdd(this.gitCwd(p, method), need(p, "branch", method));
+      // The demo preview shows a static page (`demoPreviewHtml`); no proxy channel opens.
+      case "ports.list":
+        return { ports: demoPorts(str(p, "pane_id")) } satisfies PortsList;
+      case "preview.open":
+        return demoPreviewOpen(p.port);
+      case "preview.close": {
+        const grant = need(p, "grant", method);
+        if (!/^[0-9a-f]{32}$/.test(grant)) throw new DemoError("grant_invalid", "grant must be 32 lowercase hex characters");
+        return { closed: true } satisfies PreviewClose;
+      }
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":

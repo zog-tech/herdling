@@ -15,6 +15,7 @@ struct ConnectOptions: Record {
 public class SshModule: Module {
   private let state = SshState()
   private let browser = Browser()
+  private let previews = PreviewRegistry()
 
   public func definition() -> ModuleDefinition {
     Name("SshModule")
@@ -73,8 +74,19 @@ public class SshModule: Module {
       self.browser.stop()
     }
 
+    AsyncFunction("startPreview") { (hostId: String, port: Int, command: String) async throws -> [String: Int] in
+      try await self.startPreview(hostId: hostId, port: port, command: command)
+    }
+
+    AsyncFunction("stopPreview") { (localPort: Int) async in
+      await self.stopPreview(localPort: localPort)
+    }
+
     OnDestroy {
       self.browser.stop()
+      for server in self.previews.removeAll() {
+        server.stop()
+      }
       for hostId in self.state.hostIds() {
         Task { await self.disconnect(hostId: hostId) }
       }
@@ -125,6 +137,8 @@ public class SshModule: Module {
     if let old = previous {
       try? await old.close()
     }
+    // A second connection for the preview uses the same login and the host key seen now.
+    state.setTarget(hostId, HostTarget(host: opts.host, port: opts.port, user: opts.user, fingerprint: check.seen ?? opts.fingerprint))
     if !client.isConnected {
       clientClosed(hostId: hostId, client: client)
     }
@@ -137,17 +151,107 @@ public class SshModule: Module {
     for channel in state.removeChannels(of: hostId) {
       channel.stop()
     }
+    if let second = state.removePreviewClient(hostId) {
+      Task { try? await second.close() }
+    }
     sendEvent("onDisconnect", ["hostId": hostId, "reason": "connection closed"])
   }
 
   /// Closes the host's channels and client. With `supersede`, an in-flight connect for the host becomes stale.
+  /// A running preview stays: its next connections use the next client of the host.
   private func disconnect(hostId: String, supersede: Bool = true) async {
     if supersede { _ = state.beginAttempt(hostId) }
     for channel in state.removeChannels(of: hostId) {
       channel.stop()
     }
+    if let second = state.removePreviewClient(hostId) {
+      try? await second.close()
+    }
     guard let client = state.removeClient(hostId) else { return }
     try? await client.close()
+  }
+
+  // MARK: - Browser preview
+
+  private func startPreview(hostId: String, port: Int, command: String) async throws -> [String: Int] {
+    guard (1...65535).contains(port) else {
+      throw Exception(name: "BadPort", description: "port \(port) is not in the range 1-65535", code: "bad_request")
+    }
+    guard state.client(hostId) != nil else {
+      throw Exception(name: "NotConnected", description: "host \(hostId) is not connected", code: "not_connected")
+    }
+    await PreviewCookie.install()
+    let server: PreviewServer
+    do {
+      server = try await PreviewServer.start(
+        hostId: hostId, port: port, command: command, limiter: previews.limiter(hostId),
+        withChannel: previewChannel(hostId: hostId))
+    } catch {
+      throw Exception(name: "ListenFailed", description: String(describing: error), code: "listen_failed")
+    }
+    previews.add(server)
+    return ["localPort": server.localPort]
+  }
+
+  private func stopPreview(localPort: Int) async {
+    guard let removed = previews.remove(localPort) else { return }
+    let (server, lastLimiter) = removed
+    server.stop()
+    if let limiter = lastLimiter {
+      // The last preview of the host: let waiting connections go, and close the second connection.
+      await limiter.close()
+      if let second = state.removePreviewClient(server.hostId) {
+        try? await second.close()
+      }
+    }
+  }
+
+  /// Runs `perform` on a new exec channel for the preview. It uses the host's connection. When the
+  /// channel does not open there (for example sshd `MaxSessions`), it opens a second connection
+  /// for the preview and uses that one from then on.
+  private func previewChannel(hostId: String) -> (String, @escaping (TTYOutput, TTYStdinWriter) async throws -> Void) async throws -> Void {
+    return { [weak self] command, perform in
+      guard let self else { throw PreviewError(description: "the module is gone") }
+      if let second = self.state.previewClient(hostId) {
+        try await second.withExec(command) { inbound, outbound in try await perform(inbound, outbound) }
+        return
+      }
+      guard let main = self.state.client(hostId) else { throw PreviewError(description: "host \(hostId) is not connected") }
+      let opened = EndFlag()
+      do {
+        try await main.withExec(command) { inbound, outbound in
+          opened.set()
+          try await perform(inbound, outbound)
+        }
+      } catch {
+        if opened.isSet || !main.isConnected { throw error }
+        let second = try await self.makePreviewClient(hostId: hostId)
+        try await second.withExec(command) { inbound, outbound in try await perform(inbound, outbound) }
+      }
+    }
+  }
+
+  private func makePreviewClient(hostId: String) async throws -> SSHClient {
+    if let c = state.previewClient(hostId) { return c }
+    guard let target = state.target(hostId) else { throw PreviewError(description: "no login saved for host \(hostId)") }
+    let key = try Keys.loadOrCreate()
+    let client = try await SSHClient.connect(
+      host: target.host,
+      port: target.port,
+      authenticationMethod: .ed25519(username: target.user, privateKey: key),
+      hostKeyValidator: .custom(HostKeyCheck(pinned: target.fingerprint)),
+      reconnect: .never,
+      connectTimeout: .seconds(10)
+    )
+    if let existing = state.setPreviewClient(hostId, client) {
+      // Another connection of the preview won the race: keep that one.
+      try? await client.close()
+      return existing
+    }
+    client.onDisconnect { [weak self] in
+      _ = self?.state.removePreviewClient(hostId, ifIdentical: client)
+    }
+    return client
   }
 
   // MARK: - Exec channels
@@ -304,6 +408,10 @@ final class SshState: @unchecked Sendable {
   private var clients: [String: SSHClient] = [:]
   private var channels: [String: ExecChannel] = [:]
   private var attempts: [String: UInt64] = [:]
+  /// The login of each connected host, for the second connection of the preview.
+  private var targets: [String: HostTarget] = [:]
+  /// The second connection of the preview, when the first one could not open more channels.
+  private var previewClients: [String: SSHClient] = [:]
 
   /// Starts a new connect (or disconnect) for the host and returns its token.
   func beginAttempt(_ hostId: String) -> UInt64 {
@@ -327,6 +435,32 @@ final class SshState: @unchecked Sendable {
 
   func hostIds() -> [String] { lock.withLock { Array(clients.keys) } }
   func client(_ hostId: String) -> SSHClient? { lock.withLock { clients[hostId] } }
+
+  func setTarget(_ hostId: String, _ target: HostTarget) { lock.withLock { targets[hostId] = target } }
+  func target(_ hostId: String) -> HostTarget? { lock.withLock { targets[hostId] } }
+
+  func previewClient(_ hostId: String) -> SSHClient? { lock.withLock { previewClients[hostId] } }
+
+  /// Stores the second connection of the preview. Returns the one already stored instead, if any.
+  func setPreviewClient(_ hostId: String, _ client: SSHClient) -> SSHClient? {
+    lock.withLock {
+      if let existing = previewClients[hostId] { return existing }
+      previewClients[hostId] = client
+      return nil
+    }
+  }
+
+  func removePreviewClient(_ hostId: String) -> SSHClient? {
+    lock.withLock { previewClients.removeValue(forKey: hostId) }
+  }
+
+  func removePreviewClient(_ hostId: String, ifIdentical client: SSHClient) -> Bool {
+    lock.withLock {
+      guard previewClients[hostId] === client else { return false }
+      previewClients.removeValue(forKey: hostId)
+      return true
+    }
+  }
 
   func removeClient(_ hostId: String) -> SSHClient? {
     lock.withLock { clients.removeValue(forKey: hostId) }
@@ -355,6 +489,14 @@ final class SshState: @unchecked Sendable {
       return matching
     }
   }
+}
+
+/// The login of a connected host: address, user and the host key that was seen.
+struct HostTarget {
+  let host: String
+  let port: Int
+  let user: String
+  let fingerprint: String?
 }
 
 struct ExecOpenError: Error {
