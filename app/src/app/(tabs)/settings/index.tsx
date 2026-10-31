@@ -4,6 +4,8 @@ import { Check, Minus, Play, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
+import { DemoTag } from "@/demo/DemoTag";
+import { DEMO_HOST_DETAIL, isDemoHost, startDemo } from "@/demo/demoHost";
 import { PHONE, PHONE_LABEL } from "@/device";
 import { connLabel, ConnStatus, hostDetail } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
@@ -26,17 +28,27 @@ import { accentOf, deviceVoices, voiceLabel } from "@/voice/voiceList";
 function HostRow({ host }: { host: Host }) {
   const router = useRouter();
   const conn = useHostConn(host.id);
+  const demo = isDemoHost(host);
   return (
     <Row
-      accessibilityLabel={`${host.name}, ${connLabel(conn.status)}. Edit host`}
-      accessibilityActions={[{ name: "remove", label: `Remove ${host.name}` }]}
+      accessibilityLabel={demo ? `${host.name}, demo host, ${connLabel(conn.status)}. Open demo` : `${host.name}, ${connLabel(conn.status)}. Edit host`}
+      accessibilityActions={[{ name: "remove", label: demo ? "Remove demo" : `Remove ${host.name}` }]}
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "remove") confirmRemoveHost(host);
       }}
       onPress={() => router.push({ pathname: "/hosts/[id]", params: { id: host.id } })}
       title={host.name}
-      detail={hostDetail(host, conn.status, conn.lastSeen)}
-      trailing={<ConnStatus status={conn.status} />}
+      detail={demo ? DEMO_HOST_DETAIL : hostDetail(host, conn.status, conn.lastSeen)}
+      trailing={
+        demo ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <DemoTag />
+            <ConnStatus status={conn.status} />
+          </View>
+        ) : (
+          <ConnStatus status={conn.status} />
+        )
+      }
       chevron
     />
   );
@@ -266,6 +278,18 @@ export default function SettingsScreen() {
             leading={<Plus size={icon.md} color={colors.accent} strokeWidth={icon.strokeWidth} />}
             title="Add host"
           />
+          {hosts.length === 0 ? (
+            <Row
+              accessibilityLabel="Try the demo"
+              accessibilityHint="Adds a demo computer with sample agents. It runs inside the app."
+              onPress={() => {
+                void startDemo().then(() => router.navigate("/"));
+              }}
+              leading={<Play size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+              title="Try the demo"
+              detail="Sample agents that run inside the app. No computer needed."
+            />
+          ) : null}
         </Group>
       </Section>
       <Section title="Notifications">

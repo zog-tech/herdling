@@ -1,10 +1,12 @@
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
-import { CircleSlash, Ellipsis, ListFilter, Loader, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { CircleSlash, Ellipsis, ListFilter, Loader, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { Alert, Pressable, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AgentRow } from "@/board/AgentRow";
+import { DemoTag } from "@/demo/DemoTag";
+import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
 import { setFilter, setGroupBy, updateFirstSeen, useBoard } from "@/board/boardStore";
@@ -58,9 +60,12 @@ function HostRow({ host }: { host: Host }) {
   return (
     <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md, gap: space.sm, opacity: online ? 1 : state.offlineOpacity }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md }}>
-        <Text variant="headline" numberOfLines={1} style={{ flex: 1 }}>
-          {host.name}
-        </Text>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text variant="headline" numberOfLines={1} style={{ flexShrink: 1 }}>
+            {host.name}
+          </Text>
+          {isDemoHost(host) ? <DemoTag /> : null}
+        </View>
         <ConnStatus status={conn.status} />
       </View>
       {!online && conn.status === "offline" && conn.lastSeen ? (
@@ -361,6 +366,10 @@ export default function BoardScreen() {
             No hosts yet. Add one to see its agents here.
           </Text>
           <Button label="Add a host" Icon={Plus} onPress={() => router.push("/hosts/discover" as never)} />
+          <Text variant="small" muted style={{ textAlign: "center" }}>
+            No computer with herdlingd yet? The demo shows sample agents. It runs inside the app.
+          </Text>
+          <Button label="Try the demo" variant="secondary" Icon={Play} onPress={() => void startDemo()} />
         </View>
       ) : (
         <SectionList

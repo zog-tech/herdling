@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 
 import { ensureKey } from "../../modules/ssh";
+import { isDemoHost } from "../demo/demoHost";
 import { getDeviceId } from "../device";
 import type { RpcClient } from "../rpc/RpcClient";
 import { getHostConn } from "./connection";
@@ -18,6 +19,11 @@ export async function removeHostEverywhere(
   deps?: { rpc?: Pick<RpcClient, "call"> },
 ): Promise<{ revoked: boolean }> {
   let revoked = false;
+  // The demo host has no companion and no key: remove it without a revoke (no key generation).
+  if (isDemoHost(hostId)) {
+    useHosts.getState().removeHost(hostId);
+    return { revoked };
+  }
   const conn = getHostConn(hostId);
   const rpc = deps?.rpc ?? (conn.status === "online" ? conn.rpc : undefined);
   if (rpc) {
@@ -35,6 +41,13 @@ export async function removeHostEverywhere(
 
 /** Asks before removing; `onRemoved` runs after the host is gone. */
 export function confirmRemoveHost(host: Host, onRemoved?: () => void): void {
+  if (isDemoHost(host)) {
+    Alert.alert("Remove the demo?", "The demo computer and its sample agents go away. You can start the demo again at any time.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove demo", style: "destructive", onPress: () => void removeHostEverywhere(host.id).then(() => onRemoved?.()) },
+    ]);
+    return;
+  }
   Alert.alert(
     `Remove ${host.name}?`,
     "The host and its pinned key are deleted from this phone. When the host is online, it also forgets this phone's key.",
