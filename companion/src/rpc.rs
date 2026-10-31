@@ -76,6 +76,8 @@ pub struct Ctx {
     pub host_os: crate::boot::Os,
     /// The last boot state, see [`crate::boot::CACHE_TTL`].
     pub boot_cache: crate::boot::BootCache,
+    /// Keeps typing calls to one pane in arrival order, see [`crate::input_order`].
+    pub input_order: crate::input_order::InputOrder,
 }
 
 impl Ctx {
@@ -102,6 +104,7 @@ impl Ctx {
             sys: None,
             host_os: crate::boot::Os::current(),
             boot_cache: crate::boot::BootCache::default(),
+            input_order: crate::input_order::InputOrder::default(),
         }
     }
 }
@@ -294,7 +297,12 @@ where
         match serde_json::from_str::<RpcRequest>(&line) {
             Ok(req) => {
                 let (ctx, tx) = (ctx.clone(), tx.clone());
+                // Taken here, in arrival order, so typing calls to one pane reach herdr in order.
+                let mut turn = ctx.input_order.take_for(&req.method, &req.params);
                 tasks.spawn(async move {
+                    if let Some(t) = turn.as_mut() {
+                        t.wait().await;
+                    }
                     let resp = match dispatch(&ctx, &tx, &req.method, req.params).await {
                         Ok(result) => RpcResponse { id: Some(req.id), result: Some(result), error: None },
                         Err(error) => RpcResponse { id: Some(req.id), result: None, error: Some(error) },
@@ -367,6 +375,7 @@ pub const METHODS: &[&str] = &[
     "update.apply",
     "boot.check",
     "mac.open_settings",
+    "pane.watch",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -400,6 +409,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "update.apply" => update_apply(ctx, params).await,
         "boot.check" => boot_check(ctx).await,
         "mac.open_settings" => mac_open_settings(ctx, params).await,
+        "pane.watch" => crate::watch::pane_watch(ctx, out, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
