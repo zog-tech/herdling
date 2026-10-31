@@ -65,6 +65,9 @@ pub struct Ctx {
     pub stt_timeout: Duration,
     /// Status start times and resolved logs kept for `agents.preview`.
     pub preview: crate::preview::PreviewState,
+    /// Settings for `update.check` and `update.apply`. None turns updates off: `Ctx::new`
+    /// leaves it unset, so a test never downloads or replaces a binary. `main` sets it.
+    pub update: Option<crate::update::UpdateCtx>,
 }
 
 impl Ctx {
@@ -87,6 +90,7 @@ impl Ctx {
             tts_timeout: crate::tts::TIMEOUT,
             stt_timeout: crate::stt::TIMEOUT,
             preview: crate::preview::PreviewState::default(),
+            update: None,
         }
     }
 }
@@ -348,6 +352,8 @@ pub const METHODS: &[&str] = &[
     "commands.list",
     "files.put",
     "stt.make",
+    "update.check",
+    "update.apply",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -377,6 +383,8 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "commands.list" => commands_list(ctx, params).await,
         "files.put" => files_put(ctx, params).await,
         "stt.make" => stt_make(ctx, params).await,
+        "update.check" => update_check(ctx, params).await,
+        "update.apply" => update_apply(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -685,6 +693,33 @@ async fn stt_make(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("no_command", "no stt_command in the companion config"))?;
     let text = crate::stt::make(argv, audio, ctx.stt_timeout).await?;
     serde_json::to_value(crate::types::SttText { text }).map_err(|e| err("internal", e.to_string()))
+}
+
+fn update_ctx(ctx: &Ctx) -> Result<&crate::update::UpdateCtx, RpcError> {
+    ctx.update.as_ref().ok_or_else(|| err("update_unavailable", "updates are off in this process"))
+}
+
+fn version_param(params: &Value) -> Result<Option<&str>, RpcError> {
+    match params.get("version") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(v)) => Ok(Some(v.as_str())),
+        Some(_) => Err(err("bad_request", "version must be a string")),
+    }
+}
+
+/// See [`crate::update::check`].
+async fn update_check(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let u = update_ctx(ctx)?;
+    let r = crate::update::check(u, version_param(&params)?).await?;
+    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
+}
+
+/// See [`crate::update::apply`]. The app reconnects after the reply to run the new binary.
+async fn update_apply(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let u = update_ctx(ctx)?;
+    let allow_downgrade = params.get("allow_downgrade").and_then(Value::as_bool).unwrap_or(false);
+    let r = crate::update::apply(u, version_param(&params)?, allow_downgrade).await?;
+    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
 /// One preview line per agent (only `pane_ids` when given). See [`crate::preview`].

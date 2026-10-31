@@ -359,3 +359,27 @@ pub struct AgentPreview {
     /// "log" (agent session log) or "screen" (last line of the pane).
     pub source: String,
 }
+
+/// `update.check` result: the running version and the newest release for this computer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCheck {
+    pub current: String,
+    pub latest: String,
+    pub update_available: bool,
+    pub notes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    /// The release asset target for this computer, for example `aarch64-apple-darwin`.
+    pub target: String,
+}
+
+/// `update.apply` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateApply {
+    pub from: String,
+    pub to: String,
+    /// "updated" or "up_to_date".
+    pub status: String,
+    /// False when no service is installed, or when the restart command failed.
+    pub service_restarted: bool,
+}

@@ -19,13 +19,55 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`.
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
 ## Method list
 
 `hello` returns `methods`: every method name the host accepts. An older `herdlingd` does not send `methods`. In that case the app tries the call and falls back on `unknown_method`.
+
+## Updates: `update.check` and `update.apply`
+
+`herdlingd` updates itself from the GitHub releases of the project. The design and the trust
+model are in `docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md`.
+The app checks `hello.methods` before it calls these methods. `hello.herdlingd` is the running version.
+
+`update.check` params: `{"version"?: "X.Y.Z"}`. Without `version` it reads the latest release.
+Result:
+
+```json
+{"current": "0.1.0", "latest": "0.2.0", "update_available": true, "notes": "...", "date": "2026-11-02", "target": "aarch64-apple-darwin"}
+```
+
+`date` is optional. `update_available` is true only when `latest` is newer than `current`.
+
+`update.apply` params: `{"version"?: "X.Y.Z", "allow_downgrade"?: false}`. Result:
+
+```json
+{"from": "0.1.0", "to": "0.2.0", "status": "updated", "service_restarted": true}
+```
+
+- `status` is `"updated"` or `"up_to_date"`. With `up_to_date` nothing changes.
+- The method downloads the tarball for this computer, checks its SHA-256 against the release
+  manifest, and replaces the running executable with one rename. Then it restarts the user
+  service (launchd or systemd), if it is installed. `service_restarted` is false when there is no
+  service or the restart failed.
+- The rpc process keeps the old code until its channel closes. After the reply the app
+  reconnects; the new channel runs the new binary, and `hello` shows the new version.
+- The download can take some time. Use a long timeout (the app uses 3 minutes).
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `update_unavailable` | The release or the manifest could not be read, a download URL is not a release URL of the project, or updates are off in this process |
+| `unsupported_target` | No release build for this OS and CPU |
+| `checksum_mismatch` | The download does not match the SHA-256 of the release. Nothing changed |
+| `downgrade` | The release is older than the running version and `allow_downgrade` is not true |
+| `update_in_progress` | Another update runs now |
+| `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
+| `bad_request` | `version` is not a version text |
 
 ## Compatibility rules
 

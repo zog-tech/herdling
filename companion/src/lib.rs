@@ -21,5 +21,6 @@ pub mod transcript;
 pub mod stt;
 pub mod tts;
 pub mod types;
+pub mod update;
 pub mod uploads;
 pub mod usage;
