@@ -57,8 +57,22 @@ pub struct Device {
     pub host_id: String,
     pub public_key: Option<String>,
     pub expo_token: Option<String>,
+    /// Push features the app on this device can show, from `push.register` (for example
+    /// [`CHOICE_ACTIONS`]). Empty for an older app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
     #[serde(default)]
     pub prefs: Prefs,
+}
+
+/// The app shows Yes and No buttons on a "needs you" push (category `herdling_choice`).
+pub const CHOICE_ACTIONS: &str = "choice_actions";
+
+impl Device {
+    /// True when the app on this device registered `capability`.
+    pub fn can(&self, capability: &str) -> bool {
+        self.capabilities.iter().any(|c| c == capability)
+    }
 }
 
 fn default_true() -> bool {

@@ -110,6 +110,8 @@ pub fn spawn_fake_snapshot(
                             }
                             let result = match req["method"].as_str().unwrap() {
                                 "session.snapshot" => snapshot.clone(),
+                                // A test can give the visible screen of every pane as `screen` next to `snapshot`.
+                                "pane.read" if snapshot.get("screen").is_some() => json!({"read": {"revision": 3, "text": snapshot["screen"]}}),
                                 "events.subscribe" => {
                                     subs = req["params"]["subscriptions"].as_array().unwrap().clone();
                                     main = is_first;

@@ -395,6 +395,7 @@ pub fn save_device(authorized_keys: &Path, config_path: &Path, d: NewDevice, exp
         // The app sends the push token only over the pinned SSH session (`push.register`),
         // so a re-pair with no token keeps the one already saved, and the prefs.
         expo_token: expo_token.or_else(|| existing.as_ref().and_then(|x| x.expo_token.clone())),
+        capabilities: existing.as_ref().map(|x| x.capabilities.clone()).unwrap_or_default(),
         prefs: existing.map(|x| x.prefs).unwrap_or_default(),
     };
     crate::config::update(config_path, |c| {

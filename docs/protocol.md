@@ -20,7 +20,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 ## Error codes in use
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
-`unsupported_platform`.
+`unsupported_platform`, `stale`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -68,6 +68,41 @@ The app types through `herdr.call`. One line costs one call:
 - Since herdlingd 0.1.1 (the version that lists `pane.watch`), herdlingd runs the typing calls to one
   pane in the order they arrive. The app can send the next key before the reply to the last one.
   With an older herdlingd, the app waits for each reply before the next typing call to the pane.
+
+## Answer from the notification: `pane.answer` and choice pushes
+
+Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes and No buttons.
+
+```json
+{"id": 9, "method": "pane.answer", "params": {"pane_id": "w1:p2", "key": "1", "expect_label": "Yes"}}
+→ {"id": 9, "result": {"answered": true}}
+→ {"id": 9, "error": {"code": "stale", "message": "the menu changed"}}
+```
+
+- herdlingd reads the visible screen (herdr `pane.read`, source `visible`) and finds the permission
+  menu with the same rules as the app (`companion/src/choices.rs`, `app/src/thread/parseChoices.ts`).
+- herdlingd sends the key (herdr `pane.send_keys [key]`) only when the agent still waits
+  (`agent_status` `blocked`) and the option at `key` still has `expect_label`. A label cut for a
+  push (60 characters, ends with "…") also matches. Otherwise the error is `stale` and no key is sent.
+  A closed pane also gives `stale`.
+- `key` must be one digit from 1 to 9, else `bad_request`. The answer is phone input, and it keeps
+  the order of the other typing calls to the pane.
+- `push.register` takes an optional `capabilities: string[]` (at most 16 strings of at most 64
+  characters). The app sends `["choice_actions"]` only to a host whose `hello.methods` has
+  `pane.answer`. herdlingd saves the list per device. A register without the field clears it.
+- To a device with `choice_actions`, a "needs you" push gets `categoryId: "herdling_choice"` and
+  `data.choice`, when the first option starts with the word "Yes" and the last with the word "No":
+
+  ```json
+  {"hostId": "h_1", "paneId": "w1:p2",
+   "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"}, "revision": 0}}
+  ```
+
+  Labels have at most 60 characters. The push has no question text: it passes Expo and Apple or Google.
+  The push body adds a line with the two labels ("Yes · No, and tell Claude…"). Other devices get the push as before.
+- The app registers the category `herdling_choice` with the actions `choice_yes` ("Yes") and
+  `choice_no` ("No", destructive). Both open the app and need Face ID or the passcode on a locked
+  phone. The app then connects, opens the session and calls `pane.answer`.
 
 ## Updates: `update.check` and `update.apply`
 

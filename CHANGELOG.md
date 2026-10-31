@@ -35,6 +35,14 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Answer from the notification.** A "needs you" push for a Yes / No permission menu has Yes and
+  No buttons. The body shows the two full labels ("Yes · No, and tell Claude…"). A button needs
+  Face ID or the passcode on a locked phone, opens the app, opens the session and sends the
+  answer. The app shows "Answered Yes", or "The question changed" when the menu is not the same.
+  herdlingd checks the menu on the computer again before it sends the key (new `pane.answer`,
+  error `stale`). The push has the two labels only, no question text. `push.register` takes
+  `capabilities`, so only an app with the buttons gets them. The demo host shows the buttons too.
+  Needs the new herdlingd; with an older herdlingd the push has no buttons, as before.
 - **Faster typing over cellular.** The terminal follows the screen with `pane.watch`: herdlingd
   reads the pane every 80 ms on the computer and sends only changed screens, in place of a 1 s poll.
   A sent line is one call (`pane.send_input`) and shows at once, dimmed, until the computer echoes

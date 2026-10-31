@@ -2,6 +2,8 @@ import * as Notifications from "expo-notifications";
 import { usePathname, useRootNavigationState, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
 
+import { answerChoiceTap, choiceTap } from "./choiceActions";
+
 /** The `{hostId, paneId}` of a push's data, or null when the data has another shape. */
 function pushPane(data: unknown): { hostId: string; paneId: string } | null {
   if (typeof data !== "object" || data === null) return null;
@@ -44,6 +46,7 @@ export function showBannerFor(data: unknown): boolean {
  * Opens the session screen of the pane a tapped push is about: for the push that launched
  * the app, and for each tap while it runs. Waits until the root navigator is mounted.
  * A tap for the session already on screen sets its `from` param instead of opening a second copy.
+ * A tap on the Yes or No button of a "needs you" push also answers the menu (`pane.answer`).
  */
 export function useNotificationRouting(): void {
   const router = useRouter();
@@ -66,6 +69,8 @@ export function useNotificationRouting(): void {
       if (!target) return;
       if (isPushSession(path.current, data)) router.setParams({ from: "push" });
       else router.navigate(target as Href);
+      const tap = choiceTap(r.actionIdentifier, data);
+      if (tap) void answerChoiceTap(tap);
     };
     open(Notifications.getLastNotificationResponse());
     Notifications.clearLastNotificationResponse();

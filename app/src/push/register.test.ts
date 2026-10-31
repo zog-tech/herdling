@@ -30,6 +30,17 @@ describe("registerPush", () => {
     });
   });
 
+  it("register_sends_choice_actions_only_to_a_host_with_pane_answer", async () => {
+    const hello = (methods?: string[]) => ({ host: "studio.local", os: "macos" as const, herdlingd: "0.1.2", herdr_ok: true, methods });
+    const rpc = fakeRpc();
+    await registerPush(rpc, "h_1", { token: async () => null, hello: hello(["push.register", "pane.answer"]) });
+    expect(rpc.call.mock.calls[0][1]).toMatchObject({ capabilities: ["choice_actions"] });
+    await registerPush(rpc, "h_1", { token: async () => null, hello: hello(["push.register"]) });
+    await registerPush(rpc, "h_1", { token: async () => null, hello: hello(undefined) });
+    await registerPush(rpc, "h_1", { token: async () => null });
+    for (const [, p] of rpc.call.mock.calls.slice(1)) expect(p).not.toHaveProperty("capabilities");
+  });
+
   it("register_with_denied_permission_sends_null_token", async () => {
     const rpc = fakeRpc();
     await registerPush(rpc, "h_1", { token: async () => null });

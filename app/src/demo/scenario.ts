@@ -16,7 +16,8 @@ import type { FollowData } from "@/thread/followShared";
 import { PausableClock } from "./clock";
 
 /** A local notice the scenario asks for: an agent needs you, or an agent finished. */
-export type DemoNotice = { kind: "needs_you" | "finished"; paneId: string; title: string; body: string };
+/** `choices`: the option labels of the menu on a "needs you" notice, for the Yes and No buttons. */
+export type DemoNotice = { kind: "needs_you" | "finished"; paneId: string; title: string; body: string; choices?: string[] };
 
 /** An error with an RPC error code (the transport sends it as `{code, message}`). */
 export class DemoError extends Error {
@@ -875,7 +876,8 @@ export class DemoScenario {
 
     this.clock.after(3_000, () => {
       if (p2.question && this.agents.get("p2") === p2) {
-        this.onNotice?.({ kind: "needs_you", paneId: "p2", title: "Codex needs you · api-server", body: p2.question.prompt });
+        const q = p2.question;
+        this.onNotice?.({ kind: "needs_you", paneId: "p2", title: "Codex needs you · api-server", body: q.prompt, choices: q.choices });
       }
     });
 

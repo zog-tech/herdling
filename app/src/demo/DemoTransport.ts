@@ -9,6 +9,7 @@ import type {
   Hello,
   MacOpenSettings,
   MacSettingsPane,
+  PaneAnswer,
   Stats,
   UpdateApply,
   UpdateCheck,
@@ -17,6 +18,7 @@ import type {
 
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
+import { labelMatches, parseChoices } from "@/thread/parseChoices";
 
 import { demoGitDiff, demoGitStatus, demoWorktreeAdd } from "./demoGit";
 import { DEMO_HOST_NAME } from "./demoHost";
@@ -296,6 +298,8 @@ export class DemoTransport implements LineTransport {
         this.automations = this.automations.map((x) => (x.id === id ? { ...x, pending_approval: false, enabled: true } : x));
         return { ok: true };
       }
+      case "pane.answer":
+        return this.answer(p);
       case "agents.preview":
         return { previews: s.previews() };
       case "commands.list": {
@@ -321,6 +325,26 @@ export class DemoTransport implements LineTransport {
       default:
         throw new DemoError("unknown_method", `unknown method: ${method}`);
     }
+  }
+
+  /** `pane.answer`, with the checks of herdlingd: the agent waits, and the option at `key` still has `expect_label`. */
+  private answer(p: Params): PaneAnswer {
+    const m = "pane.answer";
+    const pane = need(p, "pane_id", m);
+    const key = need(p, "key", m);
+    const expect = need(p, "expect_label", m);
+    if (!/^[1-9]$/.test(key)) throw new DemoError("bad_request", "pane.answer: key must be one digit from 1 to 9");
+    const waits = this.scenario.snapshot().agents.some((a) => a.pane_id === pane && a.agent_status === "blocked");
+    let screen = "";
+    try {
+      screen = this.scenario.screen(pane);
+    } catch {
+      throw new DemoError("stale", "the pane is gone");
+    }
+    const choice = parseChoices(screen).find((c) => c.key === key);
+    if (!waits || !choice || !labelMatches(choice.label, expect)) throw new DemoError("stale", "the menu changed");
+    this.scenario.sendKeys(pane, [key]);
+    return { answered: true };
   }
 
   /** The folder of a git call: `cwd`, else the folder of the agent in `pane_id`. */

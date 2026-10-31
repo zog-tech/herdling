@@ -9,6 +9,7 @@ fn device(id: &str, name: &str) -> Device {
         host_id: "h_1".into(),
         public_key: None,
         expo_token: None,
+        capabilities: vec![],
         prefs: Prefs::default(),
     }
 }

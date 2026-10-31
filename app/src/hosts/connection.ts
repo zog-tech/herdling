@@ -296,7 +296,7 @@ class HostConnection {
       this.failures = 0;
       setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
       if (this.foreground) this.startPings();
-      void registerPush(rpc, host.id);
+      void registerPush(rpc, host.id, { hello });
     } catch (e) {
       if (gen !== this.generation) return;
       this.teardown();
@@ -459,7 +459,7 @@ export function startConnections(): void {
       for (const id of state.conns.keys()) {
         if (isDemoHost(id)) continue;
         const conn = getHostConn(id);
-        if (conn.status === "online" && conn.rpc) void registerPush(conn.rpc, id);
+        if (conn.status === "online" && conn.rpc) void registerPush(conn.rpc, id, { hello: conn.hello });
       }
     }),
   );
@@ -471,6 +471,30 @@ export function startConnections(): void {
  */
 export function retryNow(hostId: string): number | undefined {
   return running?.conns.get(hostId)?.retryNow();
+}
+
+/**
+ * The rpc client of `hostId` when the host is online on attempt `minAttempt` or later, or
+ * undefined after `timeoutMs`. Wakes a host that waits for its next retry.
+ */
+export function waitForRpc(hostId: string, timeoutMs: number, minAttempt = 0): Promise<RpcClient | undefined> {
+  const ready = (c: HostConn | undefined) => (c?.status === "online" && c.rpc && c.attempt >= minAttempt ? c.rpc : undefined);
+  const now = ready(getHostConn(hostId));
+  if (now) return Promise.resolve(now);
+  running?.conns.get(hostId)?.wake();
+  return new Promise((resolve) => {
+    let off = () => {};
+    const timer = setTimeout(() => done(undefined), timeoutMs);
+    const done = (rpc: RpcClient | undefined) => {
+      clearTimeout(timer);
+      off();
+      resolve(rpc);
+    };
+    off = useConns.subscribe((s) => {
+      const rpc = ready(s.conns[hostId]);
+      if (rpc) done(rpc);
+    });
+  });
 }
 
 /** Stops all connections and listeners. */

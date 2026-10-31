@@ -4,15 +4,23 @@ use anyhow::{bail, Context};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::Config;
+use crate::choices::PushChoice;
+use crate::config::{Config, CHOICE_ACTIONS};
 use crate::serve::debounce::Notice;
 
+/// The notification category with the Yes and No actions. The app registers it.
+pub const CHOICE_CATEGORY: &str = "herdling_choice";
+
 #[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PushMessage {
     pub to: String,
     pub title: String,
     pub body: String,
     pub sound: &'static str,
+    /// [`CHOICE_CATEGORY`] on a "needs you" push with Yes and No buttons.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
     pub data: PushData,
 }
 
@@ -21,11 +29,24 @@ pub struct PushMessage {
 pub struct PushData {
     pub host_id: String,
     pub pane_id: String,
+    /// The Yes and No options of the menu, for the buttons of [`CHOICE_CATEGORY`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice: Option<PushChoice>,
 }
 
 /// One message per device that has a push token and wants `notice`. While the user is
 /// `at_desk`, devices with `quiet_at_desk` get no message.
-pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &str, at_desk: bool) -> Vec<PushMessage> {
+/// `choice` adds the Yes and No buttons to a "needs you" push, only for devices that registered
+/// [`CHOICE_ACTIONS`]. Their body also shows the two labels, so the user knows what each button does.
+pub fn messages(
+    cfg: &Config,
+    notice: Notice,
+    pane: &str,
+    title: &str,
+    body: &str,
+    at_desk: bool,
+    choice: Option<&PushChoice>,
+) -> Vec<PushMessage> {
     let title = match notice {
         Notice::Finished => format!("{title} finished"),
         Notice::NeedsYou => format!("{title} needs you"),
@@ -39,12 +60,19 @@ pub fn messages(cfg: &Config, notice: Notice, pane: &str, title: &str, body: &st
         .filter(|d| !(at_desk && d.prefs.quiet_at_desk))
         .filter_map(|d| {
             let to = d.expo_token.clone()?;
+            let choice = choice.filter(|_| notice == Notice::NeedsYou && d.can(CHOICE_ACTIONS));
+            let body = match choice {
+                Some(c) if body.is_empty() => format!("{} · {}", c.yes.label, c.no.label),
+                Some(c) => format!("{body}\n{} · {}", c.yes.label, c.no.label),
+                None => body.to_string(),
+            };
             Some(PushMessage {
                 to,
                 title: title.clone(),
-                body: body.to_string(),
+                body,
                 sound: "default",
-                data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string() },
+                category_id: choice.map(|_| CHOICE_CATEGORY.to_string()),
+                data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string(), choice: choice.cloned() },
             })
         })
         .collect()

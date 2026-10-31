@@ -159,7 +159,34 @@ export type PushRegister = {
   name: string;
   expo_token: string | null;
   prefs: PushPrefs;
+  /**
+   * Push features this app can show. `"choice_actions"`: Yes and No buttons on a "needs you" push.
+   * Send it only to a host whose `hello.methods` has `pane.answer`. Missing means none.
+   */
+  capabilities?: string[];
 };
+
+/** Known push capabilities. `choice_actions`: the app shows the Yes and No buttons of the `herdling_choice` category. */
+export type PushCapability = "choice_actions";
+
+/** One option of a push's `data.choice`. `label` has at most 60 characters. */
+export type PushChoiceOption = { key: string; label: string };
+
+/**
+ * `data` of a push. `choice` is on a "needs you" push with `categoryId: "herdling_choice"`, only for
+ * a device that registered `"choice_actions"`. It has the first ("Yes…") and the last ("No…") option, no question text.
+ */
+export type PushData = {
+  hostId: string;
+  paneId: string;
+  choice?: { yes: PushChoiceOption; no: PushChoiceOption; revision: number };
+};
+
+/** Params of `pane.answer`: answers a permission menu with `key` when the option still has `expect_label`. */
+export type PaneAnswerParams = { pane_id: string; key: string; expect_label: string };
+
+/** Result of `pane.answer`. A changed or gone menu gives the error code `stale`, and no key is sent. */
+export type PaneAnswer = { answered: true };
 
 export type PairRequest = {
   code: string;

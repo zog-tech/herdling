@@ -42,8 +42,12 @@ impl InputOrder {
         Turn { prev, _done: tx }
     }
 
-    /// The turn for an rpc request, when it is a `herdr.call` that types into a pane.
+    /// The turn for an rpc request, when it is a `herdr.call` that types into a pane or a `pane.answer`.
     pub fn take_for(&self, method: &str, params: &Value) -> Option<Turn> {
+        if method == "pane.answer" {
+            let pane = params.get("pane_id").and_then(Value::as_str).filter(|p| !p.is_empty())?;
+            return Some(self.take(pane));
+        }
         if method != "herdr.call" {
             return None;
         }

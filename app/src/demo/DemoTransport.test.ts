@@ -12,6 +12,7 @@ import type {
   GitWorktree,
   Hello,
   MacOpenSettings,
+  PaneAnswer,
   RecentSession,
   Stats,
   SubagentPage,
@@ -147,6 +148,10 @@ describe("DemoTransport", () => {
     expect(agents.installed).toContain("claude");
     expect(agents.missing).not.toContain("claude");
 
+    // A wrong label sends nothing (the full flow is in its own test, because it ends the p2 question).
+    expect(await callError("pane.answer", { pane_id: "p2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
+    answered.add("pane.answer");
+
     expect(await call("push.register", {}).then(ok("push.register"))).toEqual({});
     expect(await call("pair.revoke", {}).then(ok("pair.revoke"))).toEqual({});
 
@@ -212,6 +217,19 @@ describe("DemoTransport", () => {
     answered.add("hello");
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
+  });
+
+  it("pane.answer checks the menu like herdlingd, then answers", async () => {
+    // The blocked Codex agent (p2) asks Yes / … / No. A changed label or a wrong key sends nothing.
+    expect(await callError("pane.answer", { pane_id: "p2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "p1", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "p2", key: "x", expect_label: "Yes" })).toMatchObject({ code: "bad_request" });
+    expect(await callError("pane.answer", { pane_id: "nope", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
+    expect(await call<PaneAnswer>("pane.answer", { pane_id: "p2", key: "1", expect_label: "Yes" })).toEqual({
+      answered: true,
+    });
+    // Answered: the menu is gone, so the same answer again is stale.
+    expect(await callError("pane.answer", { pane_id: "p2", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
   });
 
   it("pane.watch sends the screen at once, then only new screens", async () => {
