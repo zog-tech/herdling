@@ -13,8 +13,8 @@ Done already:
 
 1. **Demo mode lands on main** (agent, in progress in a separate worktree). Then check every "(verify once the demo build lands)" sentence in both store files against the real demo: button label "Try the demo", link `herdling://demo`, the 6 steps, "works with no network and no permissions". Remove the markers.
 2. **Public download for herdlingd** (maintainer decides). The repo is public (MPL-2.0), so a source build is available now: the website, the README and the guide give the steps (`git clone`, `cargo build --release`, `herdlingd install`). Still to do: the one-line installer, which needs public release binaries for macOS and Linux (GitHub releases or a download link on zog-tech.com) and the script at `releases.zog-tech.com/herdlingd/install.sh`. Then set `installer.ready` in `site/public/config.js`, update the "coming soon" sentences (list in `site/README.md`) and redeploy with `site/scripts/deploy.sh`.
-3. **Decide the privacy label stance** (maintainer). Recommended: "Data Not Collected" (Apple) and "No data collected" (Play). The conservative fallback (declare the push token as a device ID) is described in both store files.
-4. **Review contact phone number** (maintainer). Apple asks for a phone number for App Review. Use a business number, not a personal one.
+3. **Privacy label stance: decided.** Keep "Data Not Collected" (Apple) and "No data collected" (Play). The conservative fallback (declare the push token as a device ID) is described in both store files.
+4. **Review contact phone number: decided.** It goes into App Store Connect only, never into this public repo.
 
 ## App Store (iOS)
 

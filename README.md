@@ -22,15 +22,13 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-<!-- screenshots: demo-mode images go here.
-     When site/public/img/ has overview-720.webp, session-720.webp and terminal-720.webp
-     (see site/README.md, "Screenshots"), add them here, 200 px wide, like this:
-     <p align="center">
-       <img src="site/public/img/session-720.webp" alt="A session in the chat view." width="200">
-       <img src="site/public/img/overview-720.webp" alt="The board with an agent that needs you at the top." width="200">
-       <img src="site/public/img/terminal-720.webp" alt="The terminal view with the key row." width="200">
-     </p>
-     The screenshots show the demo host. -->
+<p align="center">
+  <img src="site/public/img/session-720.webp" alt="A session in the chat view." width="200">
+  <img src="site/public/img/overview-720.webp" alt="The board with an agent that needs you at the top." width="200">
+  <img src="site/public/img/terminal-720.webp" alt="The terminal view with the key row." width="200">
+</p>
+
+The screenshots show the built-in demo computer.
 
 Herdling is a phone app for [herdr](https://herdr.dev), the terminal workspace for AI coding agents.
 It shows every agent on every computer you own: Claude Code, Codex, Pi, OpenCode and the other

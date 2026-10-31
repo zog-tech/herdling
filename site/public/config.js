@@ -17,5 +17,5 @@ window.HERDLING_CONFIG = {
   // Screenshot slots that have files in /img/ (<slot>-360.webp and <slot>-720.webp).
   // Slots: overview, session, terminal, new-session, usage, settings, pair.
   // A listed slot replaces its drawn placeholder with the real image.
-  screenshots: [],
+  screenshots: ["overview", "session", "terminal", "new-session", "usage", "settings"],
 };

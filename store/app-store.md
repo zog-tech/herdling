@@ -121,7 +121,7 @@ Conservative alternative (only if the maintainer prefers it): declare **Identifi
 ## App Review information
 
 - **Sign-in required:** No. The app has no accounts.
-- **Contact:** Zog Tech Inc., admin@zog-tech.com, phone: (maintainer fills in a business phone number)
+- **Contact:** Zog Tech Inc., admin@zog-tech.com, phone: entered in App Store Connect only (not kept in this public repo)
 - **Attachment:** optional; a short screen recording of the demo path helps.
 
 ### Notes for the reviewer (paste into "Notes", max 4000)
