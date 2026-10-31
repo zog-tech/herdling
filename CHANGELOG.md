@@ -23,6 +23,11 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Chat view for omp and Gemini CLI.** herdlingd reads omp (oh-my-pi) sessions, which use the Pi
+  format with some additions, and Gemini CLI sessions (`~/.gemini/tmp/<project>/chats/`, JSON lines
+  with patches, and older single-object files). Both get the chat view, live follow, board
+  previews and "Resume older session" (`--resume`). `hello.thread_kinds` now lists `omp` and
+  `gemini`. Needs the new herdlingd.
 - **Search in the session.** A magnifier next to Thread and Terminal opens a search bar. In the
   thread it finds the loaded messages, tool output included, marks them with a bar at the left,
   shows the match in an excerpt and jumps between matches. "Search older messages" loads older

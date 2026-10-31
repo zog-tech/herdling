@@ -67,6 +67,8 @@ describe("sessionActions", () => {
       ["codex", ["resume", "s1"]],
       ["pi", ["--session", "s1"]],
       ["opencode", ["--session", "s1"]],
+      ["omp", ["--resume", "s1"]],
+      ["gemini", ["--resume", "s1"]],
     ] as const) {
       const rpc = fakeRpc();
       await resumeSession(rpc, agent({ agent: kind }), "s1");
@@ -76,9 +78,9 @@ describe("sessionActions", () => {
 
   it("resume_refuses_an_agent_without_a_resume_flag", async () => {
     const rpc = fakeRpc();
-    await expect(resumeSession(rpc, agent({ agent: "gemini" }), "s1")).rejects.toMatchObject({ code: "no_resume" });
+    await expect(resumeSession(rpc, agent({ agent: "amp" }), "s1")).rejects.toMatchObject({ code: "no_resume" });
     expect(rpc.calls).toEqual([]);
-    expect(resumeArgs("gemini", "s1")).toBeUndefined();
+    expect(resumeArgs("amp", "s1")).toBeUndefined();
   });
 
   it("can_resume_needs_the_kind_in_the_hosts_thread_kinds", () => {
@@ -89,7 +91,10 @@ describe("sessionActions", () => {
     expect(canResume(undefined, "claude")).toBe(true);
     expect(canResume(hello(["claude", "codex", "pi", "opencode"]), "codex")).toBe(true);
     expect(canResume(hello(["claude", "codex"]), "pi")).toBe(false);
-    expect(canResume(hello(["claude", "gemini"]), "gemini")).toBe(false);
+    // Gemini and omp need a herdlingd that lists them.
+    expect(canResume(hello(["claude", "codex", "pi", "opencode"]), "gemini")).toBe(false);
+    expect(canResume(hello(["claude", "codex", "pi", "opencode", "omp", "gemini"]), "gemini")).toBe(true);
+    expect(canResume(hello(["claude", "amp"]), "amp")).toBe(false);
   });
 
   it("rename_validates", async () => {

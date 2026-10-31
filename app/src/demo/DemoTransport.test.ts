@@ -72,7 +72,7 @@ describe("DemoTransport", () => {
     const h = await call<Hello>("hello");
     expect(h).toMatchObject({ herdr_ok: true, os: "macos" });
     expect(h.methods).toEqual([...APP_METHODS]);
-    expect(h.thread_kinds).toEqual(["claude", "codex", "pi", "opencode"]);
+    expect(h.thread_kinds).toEqual(["claude", "codex", "pi", "opencode", "omp", "gemini"]);
     expect(h.command_kinds).toEqual(["claude", "codex", "pi", "opencode"]);
   });
 

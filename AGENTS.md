@@ -91,7 +91,7 @@ The path alias `@/` points to `app/src/`.
 | `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `version` |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
 | `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
-| `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi and OpenCode |
+| `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI |
 | `serve/` | The user service: herdr watch, push debounce, desk activity ("quiet at the computer"), Bonjour, the pairing HTTP endpoint |
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |

@@ -69,6 +69,18 @@ Error codes:
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
 
+## Chat view: `thread_kinds`
+
+`hello.thread_kinds` lists the herdr agent kinds with a transcript adapter: `claude`, `codex`,
+`pi`, `opencode`, `omp` and `gemini` (the last two since this version). `thread.resolve`,
+`thread.get`, `thread.follow` and `sessions.recent` work for each listed kind.
+
+- `omp` (oh-my-pi) writes the Pi format in `~/.omp/agent/sessions/`. Its resume flag is `--resume <session id>`.
+- `gemini` (Gemini CLI) writes `~/.gemini/tmp/<project>/chats/session-*.jsonl`. Its messages change
+  in place, so `cursor` and `before` are item indexes, not byte offsets. `end` is still the file
+  size, and `thread.follow` sends a changed item again with the same `id`. Its resume flag is
+  `--resume <session UUID>`.
+
 ## Attachments: `files.put`
 
 Params: `{"name": "crash.log", "data_b64": "..."}`. Result: `{"path": "/home/sam/.cache/herdling/uploads/<unix-ms>-crash.log"}`.

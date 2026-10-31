@@ -184,7 +184,8 @@ export class DemoTransport implements LineTransport {
           herdr_version: "demo",
           herdr_protocol: 1,
           methods: [...DEMO_METHODS],
-          thread_kinds: KINDS,
+          // A current herdlingd also reads omp and Gemini CLI logs. The demo has no such agent.
+          thread_kinds: [...KINDS, "omp", "gemini"],
           command_kinds: KINDS,
         } satisfies Hello;
       case "ping":

@@ -86,7 +86,10 @@ export type ThreadItem =
     }
   | { kind: "system"; id: string; ts: number; text: string };
 
-/** cursor = byte offset for the older page (null at file start); end = file size at read time, used as thread.follow `from`. */
+/**
+ * cursor = byte offset for the older page (null at file start); end = file size at read time, used as thread.follow `from`.
+ * OpenCode logs use message `seq` values, and Gemini CLI logs use item indexes, for `cursor` and `before`. The app passes them back as they are.
+ */
 export type ThreadPage = { items: ThreadItem[]; cursor: number | null; end: number };
 /** `thread.subagent` result: a page plus the subagent transcript path (the `thread.follow` log). */
 export type SubagentPage = ThreadPage & {

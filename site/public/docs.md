@@ -208,7 +208,9 @@ The header has a speaker button (**Speak replies**) and a **...** menu: **Restar
 | Codex | Yes | Built-in commands, custom prompts (`prompts:<name>`) | Skills | No | Yes |
 | Pi | Yes | Built-in commands, skills (`skill:<name>`), prompt templates | No | No | Yes |
 | OpenCode | Yes | Built-in commands, command files, commands in `opencode.json` | No | Skills | Yes |
-| Other agents in herdr (Gemini, Amp and more) | Terminal only | No | No | No | No |
+| omp (oh-my-pi) | Yes | No | No | No | Yes |
+| Gemini CLI | Yes | No | No | No | Yes |
+| Other agents in herdr (Amp and more) | Terminal only | No | No | No | No |
 
 Every agent gets the board status, the terminal, notifications and voice input.
 
