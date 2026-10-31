@@ -39,7 +39,7 @@
 <div class="wrap">
 <a class="brand" href="/" aria-label="Herdling home"><svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><radialGradient id="lb-nav" cx="50%" cy="40%" r="65%"><stop offset="0" stop-color="#2A2116"/><stop offset="1" stop-color="#0A0A0B"/></radialGradient><linearGradient id="lg-nav" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F0CC80"/><stop offset="1" stop-color="#C39440"/></linearGradient></defs><rect width="1024" height="1024" rx="224" fill="url(#lb-nav)"/><g transform="translate(0 50)"><ellipse cx="262" cy="480" rx="118" ry="54" transform="rotate(-18 262 480)" fill="#B8903F"/><ellipse cx="762" cy="480" rx="118" ry="54" transform="rotate(18 762 480)" fill="#B8903F"/><g fill="#F3EBDC"><circle cx="420" cy="318" r="94"/><circle cx="512" cy="276" r="102"/><circle cx="604" cy="318" r="94"/><circle cx="370" cy="410" r="82"/><circle cx="654" cy="410" r="82"/></g><path d="M370 430C370 356 654 356 654 430L630 652C616 754 408 754 394 652Z" fill="url(#lg-nav)"/><ellipse cx="455" cy="532" rx="27" ry="33" fill="#1A1610"/><ellipse cx="569" cy="532" rx="27" ry="33" fill="#1A1610"/><circle cx="464" cy="521" r="9" fill="#F3EBDC"/><circle cx="578" cy="521" r="9" fill="#F3EBDC"/><path d="M484 644Q512 668 540 644" fill="none" stroke="#1A1610" stroke-width="17" stroke-linecap="round"/></g></svg><span>Herdling</span></a>
 <nav class="nav-links" aria-label="Main"><a href="/#features">Features</a><a href="/docs" aria-current="page">Guide</a><a href="/download">Download</a><a href="/support">Support</a></nav>
-<button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Change appearance"><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
+<a class="icon-btn" href="https://github.com/zog-tech/herdling" aria-label="Herdling source code on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Change appearance"><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
 <a class="btn small" href="/download">Get Herdling</a>
 </div>
 </header>
@@ -85,18 +85,25 @@ How to set up and use Herdling: install herdlingd on your computer, pair your ph
 sudo systemctl enable --now ssh</code></pre></div>
 <p>On Fedora, the service is <code>sshd</code>: <code>sudo systemctl enable --now sshd</code>.</p>
 <h2 id="install-herdlingd">3. Install herdlingd</h2>
+<p>Herdling is open source (MPL-2.0). Until the one-line installer is live, you build herdlingd from the source code. The steps are the same on macOS and Linux. They take a few minutes.</p>
+<h3 id="build-from-source">Build from source</h3>
+<p>You need:</p>
+<ul><li><strong>git</strong>.</li><li><strong>A C compiler.</strong> On macOS, run <code>xcode-select --install</code>. On Debian and Ubuntu, run <code>sudo apt install build-essential</code>.</li><li><strong>Rust (stable).</strong> The easy way is rustup (<a href="https://rustup.rs">rustup.rs</a>):</li></ul>
+<div class="code"><pre><code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code></pre></div>
+<p>Open a new terminal after rustup finishes, so that <code>cargo</code> is on your PATH. Then build and install herdlingd:</p>
+<div class="code"><pre><code>git clone https://github.com/zog-tech/herdling
+cd herdling/companion
+cargo build --release
+./target/release/herdlingd install</code></pre></div>
+<p>The first build downloads and compiles the dependencies, so it takes a while. The program is <code>target/release/herdlingd</code>.</p>
+<p><code>herdlingd install</code> does this:</p>
+<ol><li>It copies the program to <code>~/.local/bin/herdlingd</code>.</li><li>It registers a background service for your user that runs <code>herdlingd serve</code>:<ul><li><strong>macOS:</strong> a launchd agent with the label <code>com.zogtech.herdlingd</code>, in <code>~/Library/LaunchAgents/com.zogtech.herdlingd.plist</code>. Its log is <code>~/Library/Logs/herdlingd.log</code>.</li><li><strong>Linux:</strong> a systemd user service, <code>herdlingd.service</code>, in <code>~/.config/systemd/user/herdlingd.service</code>.</li></ul></li><li>It starts the service (or restarts it, if it was running).</li><li>On Linux, if your user has no "linger", it prints a command to keep the service running after you log out: <code>sudo loginctl enable-linger &lt;your user&gt;</code>. Run it.</li><li>It prints the next step: <code>herdlingd pair</code>.</li></ol>
+<p>To see what it would do without a change to the service, run <code>./target/release/herdlingd install --dry-run</code>.</p>
+<p>The service needs no root rights. It runs as your user. herdr must be installed, and it must run when you use Herdling: herdlingd reads its socket (see step 1). Then go to step 4 and run <code>herdlingd pair</code>. If <code>herdlingd</code> is not found, add <code>~/.local/bin</code> to your PATH, or run <code>~/.local/bin/herdlingd pair</code>.</p>
 <h3 id="the-one-line-installer-coming-soon">The one-line installer (coming soon)</h3>
 <p>When the installer is live, this command downloads herdlingd for your system and runs <code>herdlingd install</code>:</p>
 <div class="code soon"><span class="tag" data-when="installer-soon">Coming soon</span><pre><code data-installer-command>curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh</code></pre></div>
-<p>The installer is not live yet. Until it is, write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a> and we send you a herdlingd build for your system (macOS or Linux, and your processor type). Then install it by hand as described below.</p>
-<h3 id="install-by-hand">Install by hand</h3>
-<p>Put the <code>herdlingd</code> program anywhere on the computer, make it executable and run <code>install</code>:</p>
-<div class="code"><pre><code>chmod +x ./herdlingd
-./herdlingd install</code></pre></div>
-<p><code>herdlingd install</code> does this:</p>
-<ol><li>It copies the program to <code>~/.local/bin/herdlingd</code>.</li><li>It registers a background service for your user that runs <code>herdlingd serve</code>:<ul><li><strong>macOS:</strong> a launchd agent with the label <code>com.zogtech.herdlingd</code>, in <code>~/Library/LaunchAgents/com.zogtech.herdlingd.plist</code>. Its log is <code>~/Library/Logs/herdlingd.log</code>.</li><li><strong>Linux:</strong> a systemd user service, <code>herdlingd.service</code>, in <code>~/.config/systemd/user/herdlingd.service</code>.</li></ul></li><li>It starts the service (or restarts it, if it was running).</li><li>On Linux, if your user has no "linger", it prints a command to keep the service running after you log out: <code>sudo loginctl enable-linger &lt;your user&gt;</code>. Run it.</li><li>It prints the next step: <code>herdlingd pair</code>.</li></ol>
-<p>To see what it would do without a change to the service, run <code>herdlingd install --dry-run</code>.</p>
-<p>The service needs no root rights. It runs as your user.</p>
+<p>The installer is not live yet. Until it is, build from source as described above. If you get stuck, write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a> or open an issue: <a href="https://github.com/zog-tech/herdling/issues">github.com/zog-tech/herdling/issues</a></p>
 <h3 id="check-that-herdlingd-runs">Check that herdlingd runs</h3>
 <div class="code"><pre><code><span class="c"># macOS</span>
 launchctl print gui/$(id -u)/com.zogtech.herdlingd | head -20
@@ -303,7 +310,13 @@ cat &gt; "$dir/in.wav"
 <h3 id="usage-shows-not-logged-in-or-token-expired">Usage shows "Not logged in" or "token expired"</h3>
 <p>Log in to Claude Code or Codex on that computer, or open the CLI once so it refreshes its login.</p>
 <h2 id="update-herdlingd">10. Update herdlingd</h2>
-<p>Replace the program and run <code>herdlingd install</code> again. It copies the new program to <code>~/.local/bin</code> and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.</p>
+<p>Pull the new source, build again and run <code>install</code>:</p>
+<div class="code"><pre><code>cd herdling
+git pull
+cd companion
+cargo build --release
+./target/release/herdlingd install</code></pre></div>
+<p><code>herdlingd install</code> copies the new program to <code>~/.local/bin</code> and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.</p>
 <h2 id="uninstall">11. Uninstall</h2>
 <h3 id="remove-a-phone-from-a-computer">Remove a phone from a computer</h3>
 <p>In the app: Settings &gt; Hosts &gt; the computer &gt; trash button. If the computer is online, it forgets the phone's key.</p>
@@ -340,9 +353,9 @@ rm -rf ~/.config/herdling ~/.cache/herdling</code></pre></div>
 <p>Your coding agents, in your pocket. A phone app for herdr, with the free herdlingd companion. Made by Zog Tech, Inc.</p>
 </div>
 <nav aria-labelledby="f-app"><h2 id="f-app">Herdling</h2><ul><li><a href="/#features">Features</a></li><li><a href="/download">Download</a></li><li><a href="/docs">Guide</a></li><li><a href="/#faq">Questions</a></li></ul></nav>
-<nav aria-labelledby="f-help"><h2 id="f-help">Help</h2><ul><li><a href="/support">Support</a></li><li><a href="/privacy">Privacy policy</a></li><li><a href="/llms.txt">llms.txt for AI assistants</a></li><li><a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a></li></ul></nav>
+<nav aria-labelledby="f-help"><h2 id="f-help">Help</h2><ul><li><a href="/support">Support</a></li><li><a href="/privacy">Privacy policy</a></li><li><a href="https://github.com/zog-tech/herdling">Source code</a></li><li><a href="/llms.txt">llms.txt for AI assistants</a></li><li><a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a></li></ul></nav>
 </div>
-<div class="bottom"><span>&copy; 2026 Zog Tech, Inc.</span><span>This page in <a href="/docs.md">Markdown</a>. Herdling is not affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.</span></div>
+<div class="bottom"><span>&copy; 2026 Zog Tech, Inc. Open source under <a href="https://github.com/zog-tech/herdling/blob/main/LICENSE">MPL-2.0</a>.</span><span>This page in <a href="/docs.md">Markdown</a>. Herdling is not affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.</span></div>
 </div>
 </footer>
 </body>

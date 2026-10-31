@@ -13,12 +13,36 @@ The app is free, with no account, no ads and no tracking.
 
 ## herdlingd for your computer
 
-herdlingd is the free companion that runs on each computer next to herdr. It runs on macOS and Linux, as your user, as a background service.
+herdlingd is the free companion that runs on each computer next to herdr. It runs on macOS and Linux, as your user, as a background service. Herdling is open source under the MPL-2.0 license: https://github.com/zog-tech/herdling
 
 Before you install it, the computer needs:
 
-- herdr (https://herdr.dev), with your agents running in it;
+- herdr (https://herdr.dev), installed and running, with your agents in it (herdlingd talks to the herdr socket);
 - an SSH server: on macOS, System Settings > General > Sharing > Remote Login; on Linux, the OpenSSH server.
+
+### Build from source (available now)
+
+You need git, a C compiler (macOS: `xcode-select --install`; Debian and Ubuntu: `sudo apt install build-essential`) and Rust (stable), for example from rustup:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Open a new terminal. Then:
+
+```sh
+git clone https://github.com/zog-tech/herdling
+cd herdling/companion
+cargo build --release
+./target/release/herdlingd install
+herdlingd pair
+```
+
+`herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts it as a user service: the launchd agent `com.zogtech.herdlingd` on macOS, the systemd user service `herdlingd.service` on Linux. On Linux it can ask you to run `sudo loginctl enable-linger <user>` so the service keeps running after you log out. If `herdlingd` is not found, add `~/.local/bin` to your PATH.
+
+`herdlingd pair` shows a QR code. Scan it in the app (Settings > Hosts > Add host).
+
+To update: `git pull` in the `herdling` folder, then `cargo build --release` and `./target/release/herdlingd install` in `companion`.
 
 ### The one-line installer (coming soon)
 
@@ -26,18 +50,10 @@ Before you install it, the computer needs:
 curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
 ```
 
-The installer is not live yet. Until it is, write to admin@zog-tech.com and we send you a herdlingd build for your system.
+The installer is not live yet. Until it is, build from source as above.
 
-### Install a build by hand
+## Source code
 
-```sh
-chmod +x ./herdlingd
-./herdlingd install
-herdlingd pair
-```
-
-`herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts it as a user service: the launchd agent `com.zogtech.herdlingd` on macOS, the systemd user service `herdlingd.service` on Linux. On Linux it can ask you to run `sudo loginctl enable-linger <user>` so the service keeps running after you log out.
-
-`herdlingd pair` shows a QR code. Scan it in the app (Settings > Hosts > Add host).
+The source code of the app and herdlingd is at https://github.com/zog-tech/herdling (MPL-2.0). Report a problem: https://github.com/zog-tech/herdling/issues
 
 The full guide: https://herdling.zog-tech.com/docs.md

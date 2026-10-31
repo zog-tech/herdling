@@ -181,6 +181,7 @@ ul, ol { padding-left: 1.3em; }
   transition: color 160ms var(--ease), background-color 160ms var(--ease), transform 90ms var(--ease);
 }
 .icon-btn:hover { color: var(--text); background: var(--btn-2); }
+a.icon-btn { text-decoration: none; }
 .icon-btn:active { transform: scale(0.92); }
 .icon-btn svg { width: 20px; height: 20px; }
 .theme-toggle .moon { display: block; }

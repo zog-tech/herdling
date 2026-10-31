@@ -71,26 +71,38 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 
 - **iPhone** (iOS 17 or later): on the App Store soon.
 - **Android** (Android 8.0 or later): on Google Play soon.
-- **herdlingd** for macOS and Linux: the one-line installer is coming soon. Until then, see the
-  [download page](https://herdling.zog-tech.com/download), or build it from source (below).
+- **herdlingd** for macOS and Linux: build it from source (below). The one-line installer is
+  coming soon. See also the [download page](https://herdling.zog-tech.com/download).
 - **Setup guide:** [herdling.zog-tech.com/docs](https://herdling.zog-tech.com/docs).
 
-Each computer needs herdr, an SSH server and `herdlingd`. The phone must reach the computer: on
-the same Wi-Fi, or through a VPN such as WireGuard or Tailscale.
+Each computer needs herdr (installed and running), an SSH server and `herdlingd`. The phone must
+reach the computer: on the same Wi-Fi, or through a VPN such as WireGuard or Tailscale.
 
 ### Install herdlingd from source
 
-You need Rust (stable).
+The steps are the same on macOS and Linux. You need:
+
+- git;
+- a C compiler (macOS: `xcode-select --install`; Debian and Ubuntu: `sudo apt install build-essential`);
+- Rust (stable), for example from [rustup](https://rustup.rs):
+  `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`. Open a new terminal afterwards.
 
 ```sh
-cd companion
+git clone https://github.com/zog-tech/herdling
+cd herdling/companion
 cargo build --release
 ./target/release/herdlingd install   # copies itself to ~/.local/bin and starts the user service
 herdlingd pair                       # shows the pairing code and QR code for the app
 ```
 
-`herdlingd install` registers a launchd agent on macOS or a systemd user service on Linux.
-The service runs as your user, not as root. `herdlingd install --dry-run` shows what it would do.
+`herdlingd install` registers a launchd agent (`com.zogtech.herdlingd`) on macOS or a systemd
+user service (`herdlingd.service`) on Linux. The service runs as your user, not as root.
+`herdlingd install --dry-run` shows what it would do. If `herdlingd` is not found, add
+`~/.local/bin` to your PATH. herdlingd talks to the herdr socket
+(`~/.config/herdr/herdr.sock`, or the path in `HERDR_SOCKET`), so herdr must run.
+
+To update, run `git pull`, then `cargo build --release` and `./target/release/herdlingd install`
+again in `companion/`. Your config and paired phones stay.
 The [guide](https://herdling.zog-tech.com/docs) explains every step, the config file and how to uninstall.
 
 ## How it works

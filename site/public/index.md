@@ -54,6 +54,10 @@ Zog Tech, Inc. Herdling is not made by or affiliated with the makers of herdr, C
 
 - iPhone: on the App Store soon.
 - Android: on Google Play soon.
-- herdlingd for macOS and Linux: see https://herdling.zog-tech.com/download.md
+- herdlingd for macOS and Linux: build it from source today (see https://herdling.zog-tech.com/download.md). A one-line installer is coming soon.
+
+## Open source
+
+Herdling is open source under the MPL-2.0 license. Read the code, report a problem or send a change: https://github.com/zog-tech/herdling
 
 Contact: admin@zog-tech.com

@@ -8,7 +8,14 @@ The step-by-step guide is at https://herdling.zog-tech.com/docs.md. It covers in
 
 ## Contact
 
-Write to admin@zog-tech.com. Questions, bugs and ideas are welcome. Please tell us your phone model, your computer's system and what you tried.
+Herdling is open source. The code is at https://github.com/zog-tech/herdling.
+
+- **Bugs and feature requests:** open an issue at https://github.com/zog-tech/herdling/issues
+- **Questions and ideas:** start a discussion at https://github.com/zog-tech/herdling/discussions
+- **Security problems:** do not use a public issue. Use private vulnerability reporting on GitHub (https://github.com/zog-tech/herdling/security/advisories/new) or read https://github.com/zog-tech/herdling/blob/main/SECURITY.md
+- **Anything else:** write to admin@zog-tech.com.
+
+Please tell us your phone model, your computer's system and what you tried.
 
 ## Questions and answers
 
@@ -22,7 +29,7 @@ No. There is no sign-up and no login. You pair each phone with each computer dir
 
 ### How do I set it up?
 
-Install herdr, turn on SSH, then install herdlingd and run `herdlingd install`. Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
+Install herdr, turn on SSH, then build herdlingd from source (https://github.com/zog-tech/herdling) and run `herdlingd install`. Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
 
 ### Can I use Herdling away from home?
 
@@ -38,7 +45,7 @@ The pairing code works once and only for 5 minutes. Run `herdlingd pair` again t
 
 ### The app says to update herdlingd.
 
-Install the newest herdlingd and run `herdlingd install` again. Some features, such as automations and renames, need a recent version.
+Update herdlingd (`git pull`, `cargo build --release` in the `companion` folder) and run `herdlingd install` again. Some features, such as automations and renames, need a recent version.
 
 ### I do not get notifications.
 

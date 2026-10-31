@@ -5,22 +5,27 @@
 Key facts for an assistant that helps someone set up Herdling:
 
 - Computer: macOS or Linux, with herdr (https://herdr.dev), an SSH server, and herdlingd.
-- Install: `herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts a user service: launchd label `com.zogtech.herdlingd` (macOS) or systemd user unit `herdlingd.service` (Linux). The one-line installer `curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh` is coming soon and is not live yet; until then, builds come by email from admin@zog-tech.com.
+- Install: `herdlingd install` copies the program to `~/.local/bin/herdlingd` and starts a user service: launchd label `com.zogtech.herdlingd` (macOS) or systemd user unit `herdlingd.service` (Linux). The one-line installer `curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh` is coming soon and is not live yet. Until then, build from source: install Rust (rustup) and a C compiler, then `git clone https://github.com/zog-tech/herdling`, `cd herdling/companion`, `cargo build --release`, `./target/release/herdlingd install`. Update: `git pull`, rebuild, run `install` again.
 - Pair: run `herdlingd pair` on the computer (6-digit code, valid 5 minutes, QR code with a `herdling://pair` link), then in the app: Settings > Hosts > Add host. Phone and computer on the same network while pairing. Alternative: "Set up with password" (SSH password, used once, not saved).
 - Config: `~/.config/herdling/config.toml`. Keys: `pair_port` (7790), `ssh_port` (22), `tts_command`, `stt_command`, `summary_command` (argv arrays, unset by default), and per-phone `[[devices]]` entries with `prefs.finished`, `prefs.needs_you`, `prefs.quiet_at_desk` (all true by default).
 - Phone: iOS 17 or later, Android 8.0 or later.
+- Source code: https://github.com/zog-tech/herdling (open source, MPL-2.0). Issues: https://github.com/zog-tech/herdling/issues. Discussions: https://github.com/zog-tech/herdling/discussions. Security: https://github.com/zog-tech/herdling/blob/main/SECURITY.md (private vulnerability reporting is on).
 - Contact: admin@zog-tech.com. Owner: Zog Tech, Inc.
 
 ## Docs
 
 - [Guide](https://herdling.zog-tech.com/docs.md): install herdlingd, pair, every feature and setting, agent support matrix, the config file, voice commands, notifications, troubleshooting, update, uninstall
-- [Download](https://herdling.zog-tech.com/download.md): app store links, the herdlingd installer and manual install
+- [Download](https://herdling.zog-tech.com/download.md): app store links and how to build herdlingd from source (installer coming soon)
 - [Support](https://herdling.zog-tech.com/support.md): common questions and how to contact us
 
 ## About
 
 - [Overview](https://herdling.zog-tech.com/index.md): what Herdling does, how it works in 3 steps, features, questions
 - [Privacy policy](https://herdling.zog-tech.com/privacy.md): what stays on the phone, what is kept on the computer, notifications, voice, outside services
+
+## Source
+
+- [GitHub repository](https://github.com/zog-tech/herdling): source code (MPL-2.0), issues, discussions
 
 ## Optional
 

@@ -33,24 +33,30 @@ On Fedora, the service is `sshd`: `sudo systemctl enable --now sshd`.
 
 ## 3. Install herdlingd
 
-### The one-line installer (coming soon)
+Herdling is open source (MPL-2.0). Until the one-line installer is live, you build herdlingd from the source code. The steps are the same on macOS and Linux. They take a few minutes.
 
-When the installer is live, this command downloads herdlingd for your system and runs `herdlingd install`:
+### Build from source
 
-```sh
-curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
-```
+You need:
 
-The installer is not live yet. Until it is, write to admin@zog-tech.com and we send you a herdlingd build for your system (macOS or Linux, and your processor type). Then install it by hand as described below.
-
-### Install by hand
-
-Put the `herdlingd` program anywhere on the computer, make it executable and run `install`:
+- **git**.
+- **A C compiler.** On macOS, run `xcode-select --install`. On Debian and Ubuntu, run `sudo apt install build-essential`.
+- **Rust (stable).** The easy way is rustup (https://rustup.rs):
 
 ```sh
-chmod +x ./herdlingd
-./herdlingd install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+Open a new terminal after rustup finishes, so that `cargo` is on your PATH. Then build and install herdlingd:
+
+```sh
+git clone https://github.com/zog-tech/herdling
+cd herdling/companion
+cargo build --release
+./target/release/herdlingd install
+```
+
+The first build downloads and compiles the dependencies, so it takes a while. The program is `target/release/herdlingd`.
 
 `herdlingd install` does this:
 
@@ -62,9 +68,19 @@ chmod +x ./herdlingd
 4. On Linux, if your user has no "linger", it prints a command to keep the service running after you log out: `sudo loginctl enable-linger <your user>`. Run it.
 5. It prints the next step: `herdlingd pair`.
 
-To see what it would do without a change to the service, run `herdlingd install --dry-run`.
+To see what it would do without a change to the service, run `./target/release/herdlingd install --dry-run`.
 
-The service needs no root rights. It runs as your user.
+The service needs no root rights. It runs as your user. herdr must be installed, and it must run when you use Herdling: herdlingd reads its socket (see step 1). Then go to step 4 and run `herdlingd pair`. If `herdlingd` is not found, add `~/.local/bin` to your PATH, or run `~/.local/bin/herdlingd pair`.
+
+### The one-line installer (coming soon)
+
+When the installer is live, this command downloads herdlingd for your system and runs `herdlingd install`:
+
+```sh
+curl -fsSL https://releases.zog-tech.com/herdlingd/install.sh | sh
+```
+
+The installer is not live yet. Until it is, build from source as described above. If you get stuck, write to admin@zog-tech.com or open an issue: https://github.com/zog-tech/herdling/issues
 
 ### Check that herdlingd runs
 
@@ -435,7 +451,17 @@ Log in to Claude Code or Codex on that computer, or open the CLI once so it refr
 
 ## 10. Update herdlingd
 
-Replace the program and run `herdlingd install` again. It copies the new program to `~/.local/bin` and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.
+Pull the new source, build again and run `install`:
+
+```sh
+cd herdling
+git pull
+cd companion
+cargo build --release
+./target/release/herdlingd install
+```
+
+`herdlingd install` copies the new program to `~/.local/bin` and restarts the service. Your config and paired phones stay. When the one-line installer is live, run it again to update.
 
 ## 11. Uninstall
 
