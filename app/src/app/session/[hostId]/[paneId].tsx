@@ -1,5 +1,5 @@
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
+import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { useHostConn } from "@/hosts/connection";
+import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
@@ -28,6 +29,10 @@ import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { runningSubagents } from "@/thread/subagentState";
 import { useThread, type Thread } from "@/thread/useThread";
+import { countLabel, SEARCH_DEBOUNCE_MS, step } from "@/thread/search";
+import { SearchBar } from "@/thread/SearchBar";
+import { SearchMarksContext } from "@/thread/searchMarks";
+import { useDebounced, useThreadSearch } from "@/thread/useThreadSearch";
 import * as haptics from "@/ui/haptics";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { Segmented } from "@/ui/Segmented";
@@ -91,6 +96,9 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${agent.pane_id}` as never),
       });
+    }
+    if (listsMethod(hello, "git.status")) {
+      items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${agent.pane_id}` as never) });
     }
     items.push(
       ...renameItems(rpc, hostId, agent),
@@ -195,12 +203,15 @@ function ThreadBody({
   paneId,
   focused,
   badge,
+  focusId,
 }: {
   thread: Thread;
   hostId: string;
   paneId: string;
   focused: boolean;
   badge: BadgeStatus;
+  /** Search: the item to scroll into view. */
+  focusId?: string;
 }) {
   const { status, items } = thread;
   const pending = usePendingList(hostId, paneId);
@@ -263,6 +274,7 @@ function ThreadBody({
           footer={<StatusRow status={badge} subagents={subagents} />}
           footerShown={isStatusShown(badge)}
           live={{ hostId, paneId, active: focused }}
+          focusId={focusId}
         />
       </ThreadLogContext.Provider>
     </View>
@@ -308,6 +320,23 @@ export default function SessionScreen() {
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
   const back = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
   const menu = useSessionMenu(hostId, agent, back);
+
+  // Search: in the thread items (Thread) or in the visible terminal text (Terminal).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const threadSearch = useThreadSearch(thread, searchOpen && mode === "thread", query);
+  const termQuery = useDebounced(searchOpen && mode === "terminal" ? query : "", SEARCH_DEBOUNCE_MS);
+  const [termCount, setTermCount] = useState(0);
+  /** -1: the last (newest) match. */
+  const [termIndex, setTermIndex] = useState(-1);
+  useEffect(() => setTermIndex(-1), [termQuery]);
+  const termCurrent = termCount === 0 ? -1 : termIndex >= 0 && termIndex < termCount ? termIndex : termCount - 1;
+  const termSearch = useMemo(() => ({ term: termQuery, index: termIndex, onCount: setTermCount }), [termQuery, termIndex]);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setQuery("");
+    Keyboard.dismiss();
+  }, []);
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -378,7 +407,55 @@ export default function SessionScreen() {
         }}
       />
       <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
-        <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ marginHorizontal: space.lg }} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingLeft: space.lg, paddingRight: space.xs }}>
+          <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ flex: 1 }} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={mode === "thread" ? "Search the thread" : "Search the terminal"}
+            accessibilityState={{ expanded: searchOpen }}
+            onPress={() => {
+              haptics.tap();
+              if (searchOpen) closeSearch();
+              else setSearchOpen(true);
+            }}
+            style={HEADER_BUTTON}
+          >
+            <Search size={icon.md} color={searchOpen ? colors.accent : colors.text} />
+          </Pressable>
+        </View>
+        {searchOpen ? (
+          mode === "thread" ? (
+            <SearchBar
+              query={query}
+              onQuery={setQuery}
+              placeholder="Search the thread"
+              count={threadSearch.count}
+              label={countLabel(threadSearch.index, threadSearch.count, threadSearch.term)}
+              onOlder={threadSearch.older}
+              onNewer={threadSearch.newer}
+              onClose={closeSearch}
+              busy={threadSearch.seeking}
+              excerpt={threadSearch.excerpt}
+              note={threadSearch.note}
+              action={
+                threadSearch.canSeek && threadSearch.index <= 0 && !threadSearch.seeking
+                  ? { label: "Search older messages", onPress: threadSearch.older }
+                  : undefined
+              }
+            />
+          ) : (
+            <SearchBar
+              query={query}
+              onQuery={setQuery}
+              placeholder="Search the terminal"
+              count={termCount}
+              label={countLabel(termCurrent, termCount, termQuery)}
+              onOlder={() => setTermIndex(step(termCurrent, termCount, -1))}
+              onNewer={() => setTermIndex(step(termCurrent, termCount, 1))}
+              onClose={closeSearch}
+            />
+          )
+        ) : null}
         {voiceNotice ? (
           <Text variant="caption" muted accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg }}>
             {voiceNotice}
@@ -387,21 +464,23 @@ export default function SessionScreen() {
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
-          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} />
+          <SearchMarksContext.Provider value={threadSearch.marks}>
+            <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} focusId={threadSearch.currentId} />
+          </SearchMarksContext.Provider>
         </SwipeBetweenAgents>
       ) : (
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.
-        <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} />
+        <TerminalView hostId={hostId} paneId={paneId} controls bottomInset={keyboard ? 0 : insets.bottom} search={termSearch} />
       )}
-      {/* Hidden, not unmounted, in Terminal mode: a half-typed prompt survives a mode switch. Hidden, it polls nothing. */}
-      <View style={{ display: mode === "thread" ? "flex" : "none" }}>
+      {/* Hidden, not unmounted, in Terminal mode and while searching: a half-typed prompt survives. Hidden, it polls nothing. */}
+      <View style={{ display: mode === "thread" && !searchOpen ? "flex" : "none" }}>
         <Composer
           hostId={hostId}
           paneId={paneId}
           bottomInset={keyboard ? 0 : insets.bottom}
           initialText={promptError ? prompt : undefined}
           initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
-          visible={mode === "thread" && focused}
+          visible={mode === "thread" && focused && !searchOpen}
         />
       </View>
     </KeyboardAvoidingView>

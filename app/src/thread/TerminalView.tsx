@@ -30,6 +30,7 @@ import {
   type WidthMode,
 } from "@/terminal/fit";
 import { KeyRow } from "@/terminal/KeyRow";
+import { findInLines, markLines } from "@/terminal/search";
 import { useTerminalWidth } from "@/terminal/widthMode";
 import { sendKey, sendLine } from "@/terminal/keys";
 import { fontFamily } from "@/theme/fonts";
@@ -65,11 +66,17 @@ export function TerminalView({
   paneId,
   controls,
   bottomInset = 0,
+  search,
 }: {
   hostId: string;
   paneId: string;
   controls?: boolean;
   bottomInset?: number;
+  /**
+   * Search in the visible text. `index`: the current match, top to bottom; -1 or out of range means
+   * the last one. `onCount` gets the number of matches after each change.
+   */
+  search?: { term: string; index: number; onCount: (n: number) => void };
 }) {
   const focused = useIsFocused();
   const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
@@ -85,6 +92,24 @@ export function TerminalView({
   );
   const scroll = useRef<ScrollViewInstance>(null);
   const atEnd = useRef(true);
+  const viewHeight = useRef(0);
+  const term = search?.term ?? "";
+  const matches = useMemo(() => (lines && term.trim() ? findInLines(lines, term) : []), [lines, term]);
+  const current = matches.length === 0 ? -1 : search && search.index >= 0 && search.index < matches.length ? search.index : matches.length - 1;
+  const shown = useMemo(
+    () =>
+      lines && matches.length > 0
+        ? markLines(lines, matches, current, {
+            current: { fg: colors.search.currentFg, bg: colors.search.currentBg },
+            other: { fg: colors.search.matchFg, bg: colors.search.matchBg },
+          })
+        : lines,
+    [lines, matches, current],
+  );
+  const onCount = search?.onCount;
+  useEffect(() => {
+    onCount?.(matches.length);
+  }, [onCount, matches.length]);
   const mode = useTerminalWidth((s) => s.mode);
   const setMode = useTerminalWidth((s) => s.set);
   const [viewWidth, setViewWidth] = useState(0);
@@ -95,18 +120,43 @@ export function TerminalView({
       ? fitFontSize(cols, viewWidth - 2 * space.md, type.size.caption)
       : type.size.caption;
   const lineHeight = mode === "fit" ? lineHeightFor(fontSize) : LINE_HEIGHT;
+  // Keep the current match in the middle of the view: on a new query, a step, or when new output
+  // moves its line. With wrapped lines the place is close, not exact.
+  const currentLine = current >= 0 ? matches[current]?.line : undefined;
+  useEffect(() => {
+    if (currentLine === undefined) return;
+    atEnd.current = false;
+    const y = space.md + currentLine * lineHeight - viewHeight.current / 2;
+    scroll.current?.scrollTo({ y: Math.max(0, y), animated: true });
+  }, [currentLine, lineHeight]);
+  // The search ends: back to the latest output.
+  const searched = useRef(false);
+  useEffect(() => {
+    if (term.trim()) searched.current = true;
+    else if (searched.current) {
+      searched.current = false;
+      atEnd.current = true;
+      scroll.current?.scrollToEnd({ animated: false });
+    }
+  }, [term]);
   const toEnd = useCallback(() => {
     atEnd.current = true;
     scroll.current?.scrollToEnd({ animated: false });
   }, []);
+  const termRef = useRef(term);
+  termRef.current = term;
   // The keyboard opens: keep the latest output in view, even after the user scrolled up.
+  // Not while a search shows a match (the search box opens the keyboard too).
   useEffect(() => {
     if (!controls) return;
-    const sub = Keyboard.addListener("keyboardDidShow", toEnd);
+    const sub = Keyboard.addListener("keyboardDidShow", () => {
+      if (!termRef.current.trim()) toEnd();
+    });
     return () => sub.remove();
   }, [controls, toEnd]);
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setViewWidth(e.nativeEvent.layout.width);
+    viewHeight.current = e.nativeEvent.layout.height;
     // The view got shorter (keyboard): stay at the end.
     if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
   }, []);
@@ -117,8 +167,8 @@ export function TerminalView({
       contentSize.height - STICK_PX;
   }, []);
 
-  const body = lines ? (
-    <AnsiText lines={lines} style={{ fontSize, lineHeight }} />
+  const body = shown ? (
+    <AnsiText lines={shown} style={{ fontSize, lineHeight }} />
   ) : (
     <Text mono variant="caption" muted>
       {error ? `Can't read the terminal: ${error}` : "Loading…"}
@@ -137,7 +187,8 @@ export function TerminalView({
           onScroll={onScroll}
           scrollEventThrottle={100}
           onContentSizeChange={() => {
-            if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
+            // While a search shows a match, new output does not pull the view to the end.
+            if (atEnd.current && !term.trim()) scroll.current?.scrollToEnd({ animated: false });
           }}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"

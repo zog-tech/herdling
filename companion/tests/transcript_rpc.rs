@@ -125,7 +125,7 @@ async fn rpc_hello_lists_thread_kinds_and_sessions_recent_takes_a_kind() {
     codex_log(&home, "s-1");
     let mut s = Session::start(dir.path().join("none.sock"), home.clone());
     let r = s.call("hello", json!({})).await;
-    assert_eq!(r["result"]["thread_kinds"], json!(["claude", "codex", "pi", "opencode"]));
+    assert_eq!(r["result"]["thread_kinds"], json!(["claude", "codex", "pi", "opencode", "omp", "gemini"]));
     assert_eq!(r["result"]["command_kinds"], json!(["claude", "codex", "pi", "opencode"]));
     let r = s.call("sessions.recent", json!({"cwd": CWD, "kind": "codex"})).await;
     assert_eq!(r["result"][0]["session"], "s-1");

@@ -38,6 +38,28 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 - **Message menu in the thread.** Hold a prompt, a reply, a tool card or a note to get Copy,
   Select text, Share, Read aloud and Quote in reply. Copy gives plain text; "Copy as Markdown"
   gives the source of a reply. Hold a code block to copy only that code.
+- **Chat view for omp and Gemini CLI.** herdlingd reads omp (oh-my-pi) sessions, which use the Pi
+  format with some additions, and Gemini CLI sessions (`~/.gemini/tmp/<project>/chats/`, JSON lines
+  with patches, and older single-object files). Both get the chat view, live follow, board
+  previews and "Resume older session" (`--resume`). `hello.thread_kinds` now lists `omp` and
+  `gemini`. Needs the new herdlingd.
+- **Search in the session.** A magnifier next to Thread and Terminal opens a search bar. In the
+  thread it finds the loaded messages, tool output included, marks them with a bar at the left,
+  shows the match in an excerpt and jumps between matches. "Search older messages" loads older
+  pages up to 2,000 messages. In the terminal it marks the matches in the text and jumps to them.
+  App only: it works with every herdlingd.
+- **Attach any file.** The "+" menu of the composer has "Files" next to "Photos": text, code, logs,
+  PDF, JSON, CSV, zip and other files, up to 6 attachments per prompt. The agent gets the saved
+  path in the prompt, as for photos. herdlingd takes files up to 25 MiB (was 10 MiB) and keeps the
+  7-day cleanup. `expo-document-picker` is a new native module: binaries without it hide "Files".
+- **New session in a git worktree.** When the folder is in a git repo, New session offers "In a
+  new git worktree" with a branch name (default `herdling/<random>`). herdlingd makes the branch
+  and the folder `.worktrees/<branch>` in the repo (`git.worktree_add`), and the agent starts there
+  in a new workspace. Needs the new herdlingd.
+- **Changes and diffs.** The session menu has "Changes": the branch, the changed files with their
+  status and line counts, and a diff view for each file (line colors, hunk headers, sideways
+  scroll, large diffs in pages). New read-only methods `git.status` and `git.diff`. Needs the new
+  herdlingd. The demo host shows changes for its projects.
 - **Install and update herdlingd from the phone.** "Set up with password" installs herdlingd when it
   is missing ("Install and pair"), with the installer `https://herdling.zog-tech.com/install.sh`.
   The app shows "Update available" and updates herdlingd with one tap (`update.check`,

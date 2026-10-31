@@ -2,11 +2,13 @@
 //! follow new items, and list recent sessions and folders, for every agent with an adapter.
 //!
 //! The agent kind routes `resolve` and the lists. The form of `log_path` routes pages and
-//! follow: a Codex or Pi log path is a file under its sessions folder, an OpenCode log path
-//! starts with [`opencode::SCHEME`], and every other path is a Claude log.
+//! follow: a Codex, Pi, omp or Gemini log path is a file under its sessions folder, an OpenCode
+//! log path starts with [`opencode::SCHEME`], and every other path is a Claude log.
 
 pub mod codex;
+pub mod gemini;
 pub mod jsonl;
+pub mod omp;
 pub mod opencode;
 pub mod pi;
 pub mod procs;
@@ -31,10 +33,13 @@ pub enum Agent {
     Codex,
     Pi,
     OpenCode,
+    /// oh-my-pi, a fork of Pi with the same log format.
+    Omp,
+    Gemini,
 }
 
 /// herdr kinds of the agents with chat support. `hello` sends this list.
-pub const KINDS: &[&str] = &["claude", "codex", "pi", "opencode"];
+pub const KINDS: &[&str] = &["claude", "codex", "pi", "opencode", "omp", "gemini"];
 
 impl Agent {
     pub fn from_kind(kind: &str) -> Option<Agent> {
@@ -43,6 +48,8 @@ impl Agent {
             "codex" => Some(Agent::Codex),
             "pi" => Some(Agent::Pi),
             "opencode" => Some(Agent::OpenCode),
+            "omp" => Some(Agent::Omp),
+            "gemini" => Some(Agent::Gemini),
             _ => None,
         }
     }
@@ -54,6 +61,8 @@ impl Agent {
             Agent::Codex => &["codex"],
             Agent::Pi => &["pi"],
             Agent::OpenCode => &["opencode"],
+            Agent::Omp => &["omp"],
+            Agent::Gemini => &["gemini"],
         }
     }
 
@@ -67,6 +76,10 @@ impl Agent {
             Agent::Codex
         } else if p.contains("/.pi/agent/sessions/") {
             Agent::Pi
+        } else if p.contains("/.omp/agent/sessions/") {
+            Agent::Omp
+        } else if p.contains("/.gemini/tmp/") && p.contains("/chats/") {
+            Agent::Gemini
         } else {
             Agent::Claude
         }
@@ -172,8 +185,9 @@ pub fn thread_get(log: &str, before: Option<u64>, limit: usize) -> io::Result<Th
     match Agent::of_log(log) {
         Agent::Claude => claude::thread_get(Path::new(log), before, limit),
         Agent::Codex => jsonl::page(Path::new(log), before, limit, &mut codex::Parser),
-        Agent::Pi => pi::thread_get(Path::new(log), before, limit),
+        Agent::Pi | Agent::Omp => pi::thread_get(Path::new(log), before, limit),
         Agent::OpenCode => opencode::thread_get(log, before, limit),
+        Agent::Gemini => gemini::thread_get(Path::new(log), before, limit),
     }
 }
 
@@ -181,8 +195,10 @@ pub fn thread_get(log: &str, before: Option<u64>, limit: usize) -> io::Result<Th
 pub enum Follower {
     Claude(claude::Follower),
     Codex(jsonl::Follower<codex::Parser>),
+    /// Pi and omp logs.
     Pi(jsonl::Follower<pi::Parser>),
     OpenCode(opencode::Follower),
+    Gemini(gemini::Follower),
 }
 
 impl Follower {
@@ -195,12 +211,13 @@ impl Follower {
         Ok(match agent {
             Agent::Claude => Follower::Claude(claude::Follower::new(Path::new(log), from)),
             Agent::Codex => Follower::Codex(jsonl::Follower::new(Path::new(log), from, codex::Parser)),
-            Agent::Pi => {
+            Agent::Pi | Agent::Omp => {
                 // The leaf when the page was read: the last entry before `from`.
                 let leaf = pi_leaf_before(Path::new(log), from);
                 Follower::Pi(jsonl::Follower::new(Path::new(log), from, pi::Parser::for_follow(leaf)))
             }
             Agent::OpenCode => Follower::OpenCode(opencode::Follower::new(log, from)?),
+            Agent::Gemini => Follower::Gemini(gemini::Follower::new(Path::new(log), from)?),
         })
     }
 
@@ -210,6 +227,7 @@ impl Follower {
             Follower::Codex(f) => f.poll(),
             Follower::Pi(f) => f.poll(),
             Follower::OpenCode(f) => f.poll(),
+            Follower::Gemini(f) => f.poll(),
         }
     }
 
@@ -219,6 +237,7 @@ impl Follower {
             Follower::Codex(f) => f.offset(),
             Follower::Pi(f) => f.offset(),
             Follower::OpenCode(f) => f.offset(),
+            Follower::Gemini(f) => f.offset(),
         }
     }
 
@@ -300,6 +319,8 @@ pub fn locate(home: &Path, agent: Agent, cwd: &str, start: Option<SystemTime>, n
             (c == cwd).then(|| CandidateSession { id, cwd: c, log_path: p.to_string_lossy().into_owned(), last_activity: millis(t) })
         }),
         Agent::Pi => pi_sessions(home, cwd).into_iter().find(|s| s.last_activity >= since),
+        Agent::Omp => omp_sessions(home, cwd).into_iter().find(|s| s.last_activity >= since),
+        Agent::Gemini => gemini::sessions(home, cwd).into_iter().find(|s| s.last_activity >= since),
         Agent::OpenCode => opencode::candidates(&opencode::db_path(home), Some(cwd), 1)
             .ok()?
             .into_iter()
@@ -309,8 +330,20 @@ pub fn locate(home: &Path, agent: Agent, cwd: &str, start: Option<SystemTime>, n
 
 /// Pi sessions of `cwd`, newest first. A file whose header names another folder is left out.
 fn pi_sessions(home: &Path, cwd: &str) -> Vec<CandidateSession> {
-    let Ok(rd) = std::fs::read_dir(pi::project_dir(home, cwd)) else { return Vec::new() };
-    let mut files: Vec<(PathBuf, SystemTime)> = rd
+    pi_format_sessions(&[pi::project_dir(home, cwd)], cwd, |c| c == cwd)
+}
+
+/// omp sessions of `cwd`, newest first.
+fn omp_sessions(home: &Path, cwd: &str) -> Vec<CandidateSession> {
+    pi_format_sessions(&omp::project_dirs(home, cwd), cwd, |c| omp::same_cwd(c, cwd))
+}
+
+/// The sessions in Pi-format folders whose header cwd passes `same`, newest first.
+fn pi_format_sessions(dirs: &[PathBuf], cwd: &str, same: impl Fn(&str) -> bool) -> Vec<CandidateSession> {
+    let mut files: Vec<(PathBuf, SystemTime)> = dirs
+        .iter()
+        .filter_map(|d| std::fs::read_dir(d).ok())
+        .flatten()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
@@ -321,7 +354,7 @@ fn pi_sessions(home: &Path, cwd: &str) -> Vec<CandidateSession> {
         .into_iter()
         .filter_map(|(p, t)| {
             let (id, c) = pi::read_meta(&p)?;
-            (c == cwd).then(|| CandidateSession { id, cwd: c, log_path: p.to_string_lossy().into_owned(), last_activity: millis(t) })
+            same(&c).then(|| CandidateSession { id, cwd: cwd.to_string(), log_path: p.to_string_lossy().into_owned(), last_activity: millis(t) })
         })
         .collect()
 }
@@ -359,6 +392,22 @@ pub fn recent_sessions(home: &Path, kind: &str, cwd: &str, limit: usize) -> Vec<
                 to_recent(s, prompt)
             })
             .collect(),
+        Some(Agent::Omp) => omp_sessions(home, cwd)
+            .into_iter()
+            .take(limit)
+            .map(|s| {
+                let prompt = pi::first_prompt(Path::new(&s.log_path));
+                to_recent(s, prompt)
+            })
+            .collect(),
+        Some(Agent::Gemini) => gemini::sessions(home, cwd)
+            .into_iter()
+            .take(limit)
+            .map(|s| {
+                let prompt = gemini::first_prompt(Path::new(&s.log_path));
+                to_recent(s, prompt)
+            })
+            .collect(),
         Some(Agent::OpenCode) => {
             let db = opencode::db_path(home);
             opencode::candidates(&db, Some(cwd), limit)
@@ -382,23 +431,29 @@ pub fn recent_cwds(home: &Path, cap: usize) -> Vec<String> {
     let mut found: Vec<(i64, String)> =
         claude::recent_cwds_timed(home, cap).into_iter().map(|(t, c)| (millis(t), c)).collect();
     found.extend(codex::logs(home).into_iter().take(CWD_SCAN).filter_map(|(p, t)| Some((millis(t), codex::read_meta(&p)?.1))));
-    if let Ok(rd) = std::fs::read_dir(pi::sessions_root(home)) {
-        for dir in rd.filter_map(|e| e.ok()).map(|e| e.path()) {
-            let newest = std::fs::read_dir(&dir)
-                .into_iter()
-                .flatten()
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
-                .filter_map(|p| mtime(&p).map(|t| (p, t)))
-                .max_by_key(|e| e.1);
-            if let Some((p, t)) = newest {
-                if let Some((_, c)) = pi::read_meta(&p) {
-                    found.push((millis(t), c));
-                }
+    let pi_dirs = [pi::sessions_root(home), omp::sessions_root(home)]
+        .into_iter()
+        .filter_map(|r| std::fs::read_dir(r).ok())
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path());
+    // Pi and omp: the cwd in the header of the newest log of each folder.
+    for dir in pi_dirs {
+        let newest = std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+            .filter_map(|p| mtime(&p).map(|t| (p, t)))
+            .max_by_key(|e| e.1);
+        if let Some((p, t)) = newest {
+            if let Some((_, c)) = pi::read_meta(&p) {
+                found.push((millis(t), c));
             }
         }
     }
+    found.extend(gemini::recent_cwds(home));
     let db = opencode::db_path(home);
     if db.is_file() {
         found.extend(opencode::candidates(&db, None, cap * 4).unwrap_or_default().into_iter().map(|s| (s.last_activity, s.cwd)));

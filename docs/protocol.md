@@ -19,7 +19,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`,
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
 `unsupported_platform`.
 
 A `herdr.call` error can also carry a code from herdr itself.
@@ -105,6 +105,84 @@ Result: `{"opened": "users_groups"}`.
 
 Errors: `bad_request` (a missing or other pane), `unsupported_platform` (not macOS),
 `command_failed` (`open` failed, for example when no user is logged in on the Mac screen).
+
+## Chat view: `thread_kinds`
+
+`hello.thread_kinds` lists the herdr agent kinds with a transcript adapter: `claude`, `codex`,
+`pi`, `opencode`, `omp` and `gemini` (the last two since this version). `thread.resolve`,
+`thread.get`, `thread.follow` and `sessions.recent` work for each listed kind.
+
+- `omp` (oh-my-pi) writes the Pi format in `~/.omp/agent/sessions/`. Its resume flag is `--resume <session id>`.
+- `gemini` (Gemini CLI) writes `~/.gemini/tmp/<project>/chats/session-*.jsonl`. Its messages change
+  in place, so `cursor` and `before` are item indexes, not byte offsets. `end` is still the file
+  size, and `thread.follow` sends a changed item again with the same `id`. Its resume flag is
+  `--resume <session UUID>`.
+
+## Attachments: `files.put`
+
+Params: `{"name": "crash.log", "data_b64": "..."}`. Result: `{"path": "/home/sam/.cache/herdling/uploads/<unix-ms>-crash.log"}`.
+The app puts each path on its own line at the end of the prompt, and the agent reads the file there.
+
+- Any file type: photos, text, code, logs, PDF, JSON, CSV, zip. The file is only data. It is saved
+  with mode 0600 in a 0700 folder, never with the execute bit.
+- The name keeps `[A-Za-z0-9._-]` of its last path part. Other chars become `_`.
+- At most 25 MiB decoded (10 MiB before documents were accepted). A larger file gives `too_large`.
+- herdlingd deletes uploads older than 7 days on the next call.
+- The document picker (`expo-document-picker`) is a native module. The app loads it only when the
+  binary has it, so an older binary that gets new JavaScript hides "Files" in the "+" menu.
+
+## Git views: `git.status` and `git.diff`
+
+The app checks `hello.methods` before it calls these methods. Both take `{"cwd": "/abs/path"}` or
+`{"pane_id": "..."}` (herdlingd asks herdr for the folder of the pane). herdlingd runs only read-only
+git commands, with a timeout of 10 s each, with optional locks off and with no external diff,
+text conversion or fsmonitor program.
+
+`git.status` result:
+
+```json
+{"is_repo": true, "root": "/home/sam/app", "branch": "main", "head": "3f9c2ab", "upstream": "origin/main",
+ "ahead": 2, "behind": 0, "truncated": false,
+ "files": [{"path": "src/a.ts", "status": "M", "staged": false, "unstaged": true, "added": 4, "deleted": 1, "binary": false}]}
+```
+
+- A folder that is not in a git work tree gives `is_repo: false` and empty fields. It is not an error.
+- `status` is one letter: `M` changed, `A` added, `D` deleted, `R` renamed, `C` copied, `U` conflict, `?` untracked.
+- `added` and `deleted` count the staged and the unstaged lines together. They are null for a
+  binary file or a large untracked file. `orig_path` is set for a renamed or copied file.
+- At most 1000 files. `truncated` is true when there are more.
+
+`git.diff` params: the folder, and `"path"?: "src/a.ts"` (relative to the repo root),
+`"staged"?: true | false`. Without `staged` the diff shows the staged and the unstaged changes
+together (against HEAD). An untracked `path` shows as a new file. Result:
+
+```json
+{"diff": "diff --git a/src/a.ts b/src/a.ts\n...", "truncated": false, "root": "/home/sam/app"}
+```
+
+- The diff text is at most 512 KiB, cut at a line end. `truncated` is true when it was cut.
+- A binary file shows as one `Binary files a/x and b/x differ` line.
+- A `path` that is absolute, has `..`, or goes out of the repo through a symbolic link gives `bad_request`.
+- A folder that is not in a repo gives `not_a_repo`. No `git` program gives `not_installed`.
+
+## New session in a worktree: `git.worktree_add`
+
+The app checks `hello.methods` before it calls this method. It is the only git method that writes.
+Params: the folder (`cwd` or `pane_id`, as above) and `"branch": "herdling/ab12cd"`. Result:
+
+```json
+{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app"}
+```
+
+- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`, then runs
+  `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`. The slug is the branch name with
+  `/` as `-` and other unusual chars as `_`.
+- It adds `/.worktrees/` to `info/exclude` of the repo once, so the main work tree does not show the folder.
+- The new branch starts at HEAD. Uncommitted changes stay in the main work tree.
+- Then the app starts the agent with the normal `agent.start` path, in a new workspace with
+  `cwd` set to `path`. `agent.start` does not change.
+- Errors: `bad_request` (not a valid branch name), `not_a_repo`, `already_exists` (the branch
+  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s).
 
 ## Compatibility rules
 

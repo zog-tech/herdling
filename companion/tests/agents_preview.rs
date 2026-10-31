@@ -80,6 +80,11 @@ fn activity_names_per_tool() {
     assert_eq!(one("Task", json!({"description": "look around"})), "Running a subagent");
     assert_eq!(one("Read", json!({"file_path": "/home/sam/proj/README.md"})), "Reading README.md");
     assert_eq!(one("mcp__files__list_dir", json!({})), "Using list_dir");
+    // Gemini CLI tool names.
+    assert_eq!(one("run_shell_command", json!({"command": "npm test"})), "Running npm test");
+    assert_eq!(one("read_file", json!({"file_path": "/home/sam/proj/src/app.ts"})), "Reading app.ts");
+    assert_eq!(one("replace", json!({"file_path": "/home/sam/proj/src/app.ts", "old_string": "a"})), "Editing app.ts");
+    assert_eq!(one("google_web_search", json!({"query": "x"})), "Browsing");
 
     let reads = preview_of(&[
         prompt("u1", "go"),

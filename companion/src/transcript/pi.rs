@@ -1,5 +1,10 @@
 //! Pi session logs: `~/.pi/agent/sessions/--<cwd>--/<ts>_<id>.jsonl`. The entries form a
 //! tree by `id` and `parentId`; the thread is the current branch.
+//!
+//! omp (oh-my-pi, see [`super::omp`]) writes the same format with some additions: a title line
+//! before the header, `activeLeafId`, the `fileMention`, `pythonExecution` and `developer` roles,
+//! synthetic user messages and `redactedThinking` blocks. This parser reads them too; Pi never
+//! writes them.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -138,6 +143,8 @@ fn content_text(c: Option<&Value>) -> String {
 fn message(m: &Value, id: &str, ts: i64, out: &mut Parsed) {
     let block_id = |i: usize| format!("{id}:{i}");
     match m.get("role").and_then(Value::as_str) {
+        // A message that omp adds by itself, not one the user typed.
+        Some("user") if m.get("synthetic").and_then(Value::as_bool) == Some(true) => {}
         Some("user") => {
             let (text, images) = content_parts(m.get("content"));
             if !text.trim().is_empty() || images > 0 {
@@ -154,6 +161,7 @@ fn message(m: &Value, id: &str, ts: i64, out: &mut Parsed) {
                     Some("thinking") if !s("thinking").trim().is_empty() => {
                         out.items.push(ThreadItem::Thinking { id: block_id(i), ts, text: Some(s("thinking")) });
                     }
+                    Some("redactedThinking") => out.items.push(ThreadItem::Thinking { id: block_id(i), ts, text: None }),
                     Some("toolCall") => {
                         let name = s("name");
                         let input = b.get("arguments").cloned().unwrap_or(Value::Null);
@@ -188,6 +196,30 @@ fn message(m: &Value, id: &str, ts: i64, out: &mut Parsed) {
             let name = "bash".to_string();
             out.items.push(ThreadItem::Tool { input_summary: tool_summary(&name, &input), id: id.to_string(), ts, name, input, result: Some(result) });
         }
+        Some("pythonExecution") => {
+            // omp: Python code the user ran. It shows as a finished tool call, like `bashExecution`.
+            let code = m.get("code").or_else(|| m.get("command")).and_then(Value::as_str).unwrap_or("").to_string();
+            let input = serde_json::json!({ "command": code });
+            let exit = m.get("exitCode").and_then(Value::as_i64);
+            let cancelled = m.get("cancelled").and_then(Value::as_bool).unwrap_or(false);
+            let output = m.get("output").and_then(Value::as_str).unwrap_or("");
+            let result = text_result(output, !cancelled && exit.is_none_or(|c| c == 0), Some(ts));
+            let name = "python".to_string();
+            out.items.push(ThreadItem::Tool { input_summary: tool_summary(&name, &input), id: id.to_string(), ts, name, input, result: Some(result) });
+        }
+        Some("fileMention") => {
+            // omp: files the user mentioned with `@`. The file text goes to the model, not to the thread.
+            let names: Vec<&str> = m
+                .get("files")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f.get("path").and_then(Value::as_str))
+                .collect();
+            if !names.is_empty() {
+                out.items.push(ThreadItem::System { id: id.to_string(), ts, text: cap(&format!("Attached {}", names.join(", ")), SUMMARY_CAP).0 });
+            }
+        }
         Some("branchSummary" | "compactionSummary") => {
             let s = m.get("summary").and_then(Value::as_str).unwrap_or("");
             out.items.push(ThreadItem::System { id: id.to_string(), ts, text: cap(s, SUMMARY_CAP).0 });
@@ -203,6 +235,7 @@ fn message(m: &Value, id: &str, ts: i64, out: &mut Parsed) {
 }
 
 /// The ids of the current branch (the chain from the last entry to the root), and the leaf id.
+/// An omp entry with `activeLeafId` names the leaf when the entry itself is off the active branch.
 pub fn branch(path: &Path) -> io::Result<(HashSet<String>, Option<String>)> {
     let mut parent: HashMap<String, Option<String>> = HashMap::new();
     let mut leaf = None;
@@ -214,7 +247,7 @@ pub fn branch(path: &Path) -> io::Result<(HashSet<String>, Option<String>)> {
         }
         let Some(id) = v.get("id").and_then(Value::as_str) else { continue };
         parent.insert(id.to_string(), v.get("parentId").and_then(Value::as_str).map(String::from));
-        leaf = Some(id.to_string());
+        leaf = Some(v.get("activeLeafId").and_then(Value::as_str).unwrap_or(id).to_string());
     }
     let mut set = HashSet::new();
     let mut cur = leaf.clone();
@@ -233,15 +266,20 @@ pub fn thread_get(path: &Path, before: Option<u64>, limit: usize) -> io::Result<
     jsonl::page(path, before, limit, &mut Parser::for_branch(set))
 }
 
-/// Session id and cwd from the header line.
+/// Session id and cwd from the header line. An omp title line before the header is skipped.
 pub fn read_meta(path: &Path) -> Option<(String, String)> {
-    let mut line = String::new();
-    BufReader::new(File::open(path).ok()?).read_line(&mut line).ok()?;
-    let v: Value = serde_json::from_str(&line).ok()?;
-    if v.get("type").and_then(Value::as_str) != Some("session") {
-        return None;
+    let mut r = BufReader::new(File::open(path).ok()?);
+    for _ in 0..2 {
+        let mut line = String::new();
+        r.read_line(&mut line).ok()?;
+        let v: Value = serde_json::from_str(&line).ok()?;
+        match v.get("type").and_then(Value::as_str) {
+            Some("title") => continue,
+            Some("session") => return Some((v.get("id")?.as_str()?.to_string(), v.get("cwd")?.as_str()?.to_string())),
+            _ => return None,
+        }
     }
-    Some((v.get("id")?.as_str()?.to_string(), v.get("cwd")?.as_str()?.to_string()))
+    None
 }
 
 /// The session name (`session_info`), else the first user prompt.
@@ -254,6 +292,10 @@ pub fn first_prompt(path: &Path) -> String {
         let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
         match v.get("type").and_then(Value::as_str) {
             Some("session_info") => name = v.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(String::from),
+            // omp: the title line, or a title in the header.
+            Some("title" | "session") if name.is_none() => {
+                name = v.get("title").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(String::from)
+            }
             Some("message") if prompt.is_none() => {
                 let m = v.get("message").unwrap_or(&Value::Null);
                 if m.get("role").and_then(Value::as_str) == Some("user") {

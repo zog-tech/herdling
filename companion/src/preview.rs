@@ -219,11 +219,17 @@ fn activity_of(item: &ThreadItem, pending: &[&ThreadItem]) -> String {
     let ThreadItem::Tool { name, input, .. } = item else { return "Running a subagent".into() };
     let s = match name.as_str() {
         "Bash" => format!("Running {}", cap_chars(&one_line(input_str(input, "command")), CMD_CAP)),
-        "bash" | "shell" | "exec_command" | "exec" => format!("Running {}", cap_chars(&one_line(&crate::transcript::tool_summary(name, input)), CMD_CAP)),
-        "edit" | "write" | "apply_patch" | "multiedit" => format!("Editing {}", basename(&crate::transcript::tool_summary(name, input))),
-        "read" => format!("Reading {}", basename(&crate::transcript::tool_summary(name, input))),
-        "grep" | "glob" | "find" | "ls" => "Searching".into(),
-        "webfetch" | "websearch" | "web_search" => "Browsing".into(),
+        // Lower-case names: Codex, Pi, omp, OpenCode and Gemini CLI.
+        "bash" | "shell" | "exec_command" | "exec" | "python" | "run_shell_command" => {
+            format!("Running {}", cap_chars(&one_line(&crate::transcript::tool_summary(name, input)), CMD_CAP))
+        }
+        "edit" | "write" | "apply_patch" | "multiedit" | "replace" | "write_file" => {
+            format!("Editing {}", basename(&crate::transcript::tool_summary(name, input)))
+        }
+        "read" | "read_file" => format!("Reading {}", basename(&crate::transcript::tool_summary(name, input))),
+        "read_many_files" => "Reading files".into(),
+        "grep" | "glob" | "find" | "ls" | "search_file_content" | "list_directory" => "Searching".into(),
+        "webfetch" | "websearch" | "web_search" | "web_fetch" | "google_web_search" => "Browsing".into(),
         "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
             let path = [input_str(input, "file_path"), input_str(input, "notebook_path")].into_iter().find(|p| !p.is_empty());
             format!("Editing {}", basename(path.unwrap_or("")))
@@ -253,10 +259,12 @@ fn question_of(item: &ThreadItem) -> Option<String> {
             format!("Allow edit to {}?", basename(path.unwrap_or("")))
         }
         "WebFetch" => format!("Allow fetch of {}?", input_str(input, "url")),
-        "bash" | "shell" | "exec_command" | "exec" => {
+        "bash" | "shell" | "exec_command" | "exec" | "run_shell_command" => {
             format!("Allow {}?", cap_chars(&one_line(&crate::transcript::tool_summary(name, input)), LINE_CAP - 7))
         }
-        "edit" | "write" | "apply_patch" => format!("Allow edit to {}?", basename(&crate::transcript::tool_summary(name, input))),
+        "edit" | "write" | "apply_patch" | "replace" | "write_file" => {
+            format!("Allow edit to {}?", basename(&crate::transcript::tool_summary(name, input)))
+        }
         other => format!("Allow {}?", tool_label(other)),
     };
     Some(cap_chars(&q, LINE_CAP))

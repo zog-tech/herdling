@@ -37,6 +37,9 @@ export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: st
 export function resumeArgs(kind: string, session: string): string[] | undefined {
   switch (kind) {
     case "claude":
+    // omp takes a session id (or its start); Gemini CLI takes the session UUID.
+    case "omp":
+    case "gemini":
       return ["--resume", session];
     case "codex":
       return ["resume", session];

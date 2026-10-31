@@ -38,7 +38,7 @@ The phone connects straight to your computers over SSH. On each computer, a smal
 program, `herdlingd`, answers the app and sends the notifications. There is no account, and
 Zog Tech runs no server for Herdling.
 
-Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.
+Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi, OpenCode, omp or Gemini CLI.
 
 ## Features
 
@@ -46,8 +46,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   Needs you, Ready, Working and Idle. The agents that need an answer come first. A long press
   shows the last reply.
 - **A chat view.** Read a session as a clean chat, with formatted replies, tool calls, subagents
-  and permission buttons. It works with Claude Code, Codex, Pi and OpenCode, with their command
-  lists (`/`, `$` and `@`) and session resume.
+  and permission buttons. It works with Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI,
+  with session resume and the command lists (`/`, `$` and `@`) of the first four.
 - **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, the
   arrow keys and Enter. It works with every agent that herdr runs.
 - **A notification when it matters.** `herdlingd` sends a push when an agent finishes or waits
@@ -172,7 +172,7 @@ herdr (unchanged), through its socket ~/.config/herdr/herdr.sock
   Keychain on iOS, and encrypted with a Keystore key on Android.
 - **Protocol.** Requests, responses and streamed events are newline-delimited JSON. The rules
   are in [docs/protocol.md](docs/protocol.md). The shared TypeScript types are in [protocol/](protocol/).
-- **Transcripts.** `herdlingd` reads the session logs of Claude Code, Codex, Pi and OpenCode and
+- **Transcripts.** `herdlingd` reads the session logs of Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI and
   turns them into one agent-neutral thread format.
 - **Push.** The app registers an Expo push token with `herdlingd`. When an agent finishes or
   needs you, `herdlingd serve` posts a short message to the Expo push service, which sends it
@@ -188,7 +188,7 @@ Herdling exists because herdr already knows where each agent runs and what state
 A phone app can build on that. Herdling shows one board for all the agents on all your computers,
 sorted by what they need. You do not open a terminal on each computer to find the agent that waits for you.
 
-For Claude Code, Codex, Pi and OpenCode, `herdlingd` reads the agent's own session files and the
+For Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI, `herdlingd` reads the agent's own session files and the
 app shows them as a chat, with tool calls, subagents and permission buttons. The live terminal is
 one tap away, and it works with every agent that herdr runs.
 
@@ -204,7 +204,7 @@ If a row is wrong or out of date, please open an issue.
 
 | Tool | Connection | Account | Open source | View | Agents | Price |
 |---|---|---|---|---|---|---|
-| **Herdling** (iOS, Android) | Direct SSH to `herdlingd`; pushes through Expo | None | Yes, MPL-2.0 | Board, chat, terminal | Every agent in herdr; chat for Claude Code, Codex, Pi, OpenCode | Free |
+| **Herdling** (iOS, Android) | Direct SSH to `herdlingd`; pushes through Expo | None | Yes, MPL-2.0 | Board, chat, terminal | Every agent in herdr; chat for Claude Code, Codex, Pi, OpenCode, omp, Gemini CLI | Free |
 | [Moshi](https://getmoshi.app) (iOS, Android) | Direct SSH, Mosh or ET; agent events and pushes through the Moshi API | None for the free tier | Not stated | Terminal; chat view with Pro | 18 named agents, in any terminal | Free; Pro $9.99/month, $89.99/year or $199 once |
 | [herdrup](https://herdrup.themartian.app) (iPhone, iPad, Mac) | SSH to a herdr fork ([jerryfane/herdr](https://github.com/jerryfane/herdr)); pushes through the herdrup push relay | Not stated | Yes, Apache-2.0 | Board, terminal, messages; chat for omp | Every agent in herdr | Free |
 | [Ovis](https://ovis.sh) (browser, desktop app, phone betas) | A server on your computer; the phone reaches it through Tailscale, a VPN or an SSH tunnel | None | Yes, MIT | Chat, terminal | Every agent in herdr, most as a chat | Free |

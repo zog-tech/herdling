@@ -1,4 +1,4 @@
-import { ClipboardPaste, ImagePlus, Plus, SquareSlash, X } from "lucide-react-native";
+import { ClipboardPaste, FileText, ImagePlus, Paperclip, Plus, SquareSlash, X } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
@@ -6,7 +6,7 @@ import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import { GlassSurface, glassAvailable } from "@/ui/Glass";
 import { Text } from "@/ui/Text";
 
-import type { Photo } from "./attachments";
+import { formatBytes, isFile, type Attachment } from "./attachments";
 
 /** Size of a photo thumbnail above the prompt box. */
 export const THUMB = 56;
@@ -17,7 +17,7 @@ export function PlusButton({ open, disabled, onPress }: { open: boolean; disable
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Add"
-      accessibilityHint="Attach photos or insert a command"
+      accessibilityHint="Attach photos or files, or insert a command"
       accessibilityState={{ disabled: !!disabled, expanded: open }}
       disabled={disabled}
       onPress={onPress}
@@ -63,7 +63,17 @@ function MenuRow({ label, icon, onPress }: { label: string; icon: ReactNode; onP
  * The menu that the "+" button opens, above the prompt box. A missing handler hides its row.
  * "Paste image" is for builds without the native paste hook.
  */
-export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => void; onPaste?: () => void; onCommands?: () => void }) {
+export function PlusMenu({
+  onPhotos,
+  onFiles,
+  onPaste,
+  onCommands,
+}: {
+  onPhotos?: () => void;
+  onFiles?: () => void;
+  onPaste?: () => void;
+  onCommands?: () => void;
+}) {
   return (
     <View
       accessibilityLabel="Add menu"
@@ -76,6 +86,7 @@ export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => v
       }}
     >
       {onPhotos ? <MenuRow label="Photos" icon={<ImagePlus size={20} color={colors.text} />} onPress={onPhotos} /> : null}
+      {onFiles ? <MenuRow label="Files" icon={<Paperclip size={20} color={colors.text} />} onPress={onFiles} /> : null}
       {onPaste ? <MenuRow label="Paste image" icon={<ClipboardPaste size={20} color={colors.text} />} onPress={onPaste} /> : null}
       {onCommands ? (
         <MenuRow label="Commands & skills" icon={<SquareSlash size={20} color={colors.text} />} onPress={onCommands} />
@@ -84,20 +95,59 @@ export function PlusMenu({ onPhotos, onPaste, onCommands }: { onPhotos?: () => v
   );
 }
 
-/** Thumbnails of the picked photos, each with a remove button. */
-export function PhotoStrip({ photos, onRemove, disabled }: { photos: Photo[]; onRemove: (p: Photo) => void; disabled?: boolean }) {
+/** Width of a file tile: room for a short name. */
+const FILE_TILE = THUMB * 2.4;
+
+/** A picked file: an icon, the name and the size, in a tile as high as a photo. */
+function FileTile({ name, size, label }: { name: string; size?: number; label: string }) {
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      style={{
+        width: FILE_TILE,
+        height: THUMB,
+        borderRadius: radius.sm,
+        backgroundColor: colors.raised,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.xs,
+        paddingHorizontal: space.sm,
+      }}
+    >
+      <FileText size={20} color={colors.textMuted} />
+      <View style={{ flex: 1 }}>
+        <Text variant="caption" numberOfLines={2} ellipsizeMode="middle" maxFontSizeMultiplier={1.3}>
+          {name}
+        </Text>
+        {size != null ? (
+          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
+            {formatBytes(size)}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/** Thumbnails of the picked photos and tiles of the picked files, each with a remove button. */
+export function PhotoStrip({ photos, onRemove, disabled }: { photos: Attachment[]; onRemove: (p: Attachment) => void; disabled?: boolean }) {
   return (
     <ScrollView horizontal keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: space.sm, paddingTop: space.xs }}>
       {photos.map((p, i) => (
-        <View key={`${p.uri}:${i}`} style={{ width: THUMB, height: THUMB }}>
-          <Image
-            source={{ uri: p.uri }}
-            accessibilityLabel={`Photo ${i + 1}`}
-            style={{ width: THUMB, height: THUMB, borderRadius: radius.sm, backgroundColor: colors.raised }}
-          />
+        <View key={`${p.uri}:${i}`} style={{ width: isFile(p) ? FILE_TILE : THUMB, height: THUMB }}>
+          {isFile(p) ? (
+            <FileTile name={p.name} size={p.size} label={`File ${p.name}${p.size != null ? `, ${formatBytes(p.size)}` : ""}`} />
+          ) : (
+            <Image
+              source={{ uri: p.uri }}
+              accessibilityLabel={`Photo ${i + 1}`}
+              style={{ width: THUMB, height: THUMB, borderRadius: radius.sm, backgroundColor: colors.raised }}
+            />
+          )}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Remove photo ${i + 1}`}
+            accessibilityLabel={isFile(p) ? `Remove ${p.name}` : `Remove photo ${i + 1}`}
             disabled={disabled}
             onPress={() => onRemove(p)}
             hitSlop={12}

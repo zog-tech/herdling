@@ -174,6 +174,8 @@ Rules: one haptic per user action, at the moment of the visual change. Never on 
 - User prompts are right-aligned bubbles. A long prompt starts collapsed at 8 lines with "Show more".
 - Queued prompts: a sent prompt shows at once as a dimmed bubble at the end with a state line: "Sending…", then "Queued" (clock icon) until the log has the same text. A failed send shows "Not sent · Retry" (tap retries, long press removes).
 - Tool cards: name and summary in mono. Running: spinner and a ticking timer. Done: check or X with the run time. Opened: input and result; the newest running card shows live pane output. "Expand" opens the full tool view (pinch for text size, copy).
+- Search: a magnifier next to the Thread/Terminal control opens the search bar ("3 of 12", older, newer, close). A matching row gets a 3 pt bar at its left edge: gold for the current match (the selected state), stone for the others. The excerpt under the bar and the terminal text show the match in `search` colors. The composer hides while the search is open.
+- Changes and diff: flat rows (status letter in mono, file name, folder, `+n −n`). The diff view is mono on `sunken`; added and deleted lines use the `diff` tints and keep their `+` or `-` sign, so color is never the only cue.
 
 ## 10. Loading
 

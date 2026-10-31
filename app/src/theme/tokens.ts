@@ -67,6 +67,30 @@ export const colors = {
     /** Dimmer stone; its icon is a question mark. 5.0:1 on card. */
     unknown: "#8A857B",
   },
+  /**
+   * Diff view (`git.diff`) on `sunken`. Every line also keeps its "+" or "-" sign, so color is never
+   * the only cue. Measured: `add` 7.5:1 on `addBg`, `del` 6.8:1 on `delBg`, `terminal.fg` 13.5:1 or more on both.
+   */
+  diff: {
+    /** Pasture sage (`status.done`) at 12% over `sunken`. */
+    addBg: "#171C16",
+    /** `danger` at 12% over `sunken`. */
+    delBg: "#220F10",
+    /** The sign and text of an added line. */
+    add: "#8DB580",
+    /** The sign and text of a deleted line: a lighter `danger`, for contrast on `delBg`. */
+    del: "#F07A7E",
+  },
+  /**
+   * Search matches. The current match is the selected state: gold with `onAccent` text (9.0:1).
+   * Other matches: a dim gold fill with `terminal.fg` text (7.0:1).
+   */
+  search: {
+    matchBg: "#5A4721",
+    matchFg: "#E8E3D8",
+    currentBg: "#D4A857",
+    currentFg: "#0A0A0B",
+  },
   /** Terminal view: screen background and default text color (15.7:1). */
   terminal: {
     bg: "#070708",

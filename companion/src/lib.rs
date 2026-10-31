@@ -6,6 +6,7 @@ pub mod config;
 pub mod enroll;
 pub mod events;
 pub mod fsdirs;
+pub mod git;
 pub mod herdr;
 pub mod hostcmd;
 pub mod install;

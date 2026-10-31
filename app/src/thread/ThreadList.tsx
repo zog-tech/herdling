@@ -11,6 +11,7 @@ import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 import { Arrivals, ArrivalsContext } from "./arrivals";
 import { LiveToolContext, newestRunningTool, ThreadPaneContext } from "./LiveToolContext";
+import { SearchMark } from "./searchMarks";
 import { ThreadRow } from "./ThreadRow";
 
 /** Within this many points of the newest item counts as "at the bottom". */
@@ -28,6 +29,8 @@ type Props = {
   footerShown?: boolean;
   /** The pane the thread belongs to, for live tool output. `active`: the screen is focused. */
   live?: { hostId: string; paneId: string; active: boolean };
+  /** Search: scroll this item into the middle of the view when it changes. */
+  focusId?: string;
 };
 
 // The list is inverted (each cell is flipped), so a negative offset starts the row below its place.
@@ -63,7 +66,9 @@ function Arrive({ id, index, children }: { id: string; index: number; children: 
 const keyExtractor = (item: ThreadItem) => item.id;
 const renderItem = ({ item, index }: { item: ThreadItem; index: number }) => (
   <Arrive id={item.id} index={index}>
-    <ThreadRow item={item} />
+    <SearchMark id={item.id}>
+      <ThreadRow item={item} />
+    </SearchMark>
   </Arrive>
 );
 const Gap = () => <View style={{ height: space.md }} />;
@@ -72,7 +77,7 @@ const Gap = () => <View style={{ height: space.md }} />;
  * Inverted list, newest at the bottom. Stays pinned to the bottom only while the user is there;
  * otherwise new items keep the view still and a "New messages" pill appears.
  */
-export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, footer, footerShown, live }: Props) {
+export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, footer, footerShown, live, focusId }: Props) {
   const list = useRef<FlatList<ThreadItem>>(null);
   const data = useMemo(() => items.slice().reverse(), [items]);
   const atBottom = useRef(true);
@@ -126,6 +131,23 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, foo
 
   const pane = useMemo(() => (live ? { hostId: live.hostId, paneId: live.paneId } : null), [live?.hostId, live?.paneId]);
 
+  // Search jumps. A row far from the rendered window has no layout yet: scroll near it, then try again.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  useEffect(() => {
+    if (!focusId) return;
+    const index = dataRef.current.findIndex((i) => i.id === focusId);
+    if (index < 0) return;
+    pinned.current = false;
+    list.current?.scrollToIndex({ index, viewPosition: 0.5, animated: true });
+  }, [focusId]);
+  const onScrollToIndexFailed = useCallback((info: { index: number; averageItemLength: number }) => {
+    list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+    setTimeout(() => {
+      if (info.index < dataRef.current.length) list.current?.scrollToIndex({ index: info.index, viewPosition: 0.5, animated: true });
+    }, 120);
+  }, []);
+
   const toBottom = useCallback(() => {
     list.current?.scrollToOffset({ offset: 0, animated: true });
     setUnseen(false);
@@ -147,6 +169,7 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, foo
             onScroll={onScroll}
             onContentSizeChange={onContentSizeChange}
             onScrollBeginDrag={onScrollBeginDrag}
+            onScrollToIndexFailed={onScrollToIndexFailed}
             scrollEventThrottle={64}
             onEndReached={hasOlder ? loadOlder : undefined}
             onEndReachedThreshold={0.6}

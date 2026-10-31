@@ -1,4 +1,6 @@
-//! `files.put`: saves a file from the app (for example a photo) so that an agent can read it.
+//! `files.put`: saves a file from the app (a photo, or a document such as a log, a PDF, a CSV or
+//! a zip) so that an agent can read it. Any file type is accepted: the file is only data. It is
+//! saved without the execute bit, under a cleaned name, and deleted after `MAX_AGE`.
 
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -9,8 +11,9 @@ use base64::Engine;
 
 use crate::types::RpcError;
 
-/// Largest decoded file.
-pub const MAX_BYTES: usize = 10 << 20;
+/// Largest decoded file. Its base64 form (about 33.4 MiB) fits in one request line (`rpc::MAX_LINE`).
+/// Before documents were accepted, the limit was 10 MiB.
+pub const MAX_BYTES: usize = 25 << 20;
 /// Longest saved name, without the time prefix.
 pub const MAX_NAME: usize = 64;
 /// Uploads older than this are deleted on the next call.

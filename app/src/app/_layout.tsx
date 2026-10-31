@@ -92,6 +92,8 @@ export default function RootLayout() {
         {/* The session screen sets its own title view and bar buttons. */}
         <Stack.Screen name="session/[hostId]/[paneId]" options={{ ...hostHeader, title: "" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
+        <Stack.Screen name="changes/[hostId]/[paneId]" options={{ ...hostHeader, title: "Changes" }} />
+        <Stack.Screen name="diff/[hostId]/[paneId]" options={{ ...hostHeader, title: "Diff" }} />
         <Stack.Screen name="tool" options={{ presentation: "modal", contentStyle: { backgroundColor: colors.bg } }} />
         <Stack.Screen
           name="peek/[hostId]/[paneId]"
