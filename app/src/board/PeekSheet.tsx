@@ -1,6 +1,6 @@
 import { X } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { KeyboardAvoidingView, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { markSeen, useSeen } from "@/herdr/seen";
@@ -13,12 +13,14 @@ import { useThread } from "@/thread/useThread";
 import { GlassButton } from "@/ui/GlassButton";
 import { glassAvailable } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
+import { useSheetKeyboardPad } from "@/ui/sheetKeyboard";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
 import { BucketStatus } from "./BucketStatus";
 import { useBoard } from "./boardStore";
 import { mergeBoard } from "./buckets";
+import { PEEK_DETENT_ANDROID } from "./peekDetent";
 
 /**
  * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
@@ -41,6 +43,7 @@ export function PeekSheet({
   onDraftChange?: (hasDraft: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboard = useSheetKeyboardPad(PEEK_DETENT_ANDROID);
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const preview = useBoard((s) => s.previews[`${hostId}:${paneId}`]);
@@ -79,11 +82,10 @@ export function PeekSheet({
 
   const title = item?.title ?? paneId;
 
-  return (
-    // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
-    // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
-    // iOS 26: the sheet itself is Liquid Glass at the partial detent, so the page color stays off it.
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
+  // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
+  // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
+  const body = (
+    <>
       <View
         style={{
           flexDirection: "row",
@@ -152,7 +154,30 @@ export function PeekSheet({
         </ScrollView>
       </View>
 
-      <Composer hostId={hostId} paneId={paneId} bottomInset={insets.bottom} autoFocus={focusComposer} onDraftChange={onDraftChange} />
+      <Composer
+        hostId={hostId}
+        paneId={paneId}
+        // The keyboard covers the navigation bar, so the composer needs no bottom inset above it.
+        bottomInset={keyboard.pad > 0 ? 0 : insets.bottom}
+        autoFocus={focusComposer}
+        onDraftChange={onDraftChange}
+      />
+    </>
+  );
+
+  // Android: the sheet is `card`, so it stands out from the page behind it. The keyboard pad
+  // replaces the avoiding view (see `useSheetKeyboardPad`).
+  if (Platform.OS === "android") {
+    return (
+      <View ref={keyboard.ref} style={{ flex: 1, backgroundColor: colors.card, paddingBottom: keyboard.pad }}>
+        {body}
+      </View>
+    );
+  }
+  // iOS 26: the sheet itself is Liquid Glass at the partial detent, so the page color stays off it.
+  return (
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
+      {body}
     </KeyboardAvoidingView>
   );
 }

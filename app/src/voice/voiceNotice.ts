@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { PHONE } from "@/device";
+
 /** How long a voice notice stays on screen. */
 export const NOTICE_MS = 5_000;
 
@@ -11,7 +13,7 @@ export const useVoiceNotice = create<VoiceNotice>()(() => ({}));
 let hostFailShown = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-export const HOST_VOICE_FAILED = "Host voice command failed — using iPhone voice";
+export const HOST_VOICE_FAILED = `Host voice command failed — using ${PHONE} voice`;
 
 /** Shows the host voice failure notice once per app run. */
 export function noticeHostVoiceFailed(): void {

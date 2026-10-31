@@ -4,6 +4,7 @@ import { Check, Minus, Play, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
+import { PHONE, PHONE_LABEL } from "@/device";
 import { connLabel, ConnStatus, hostDetail } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
 import { confirmRemoveHost } from "@/hosts/removeHost";
@@ -112,7 +113,7 @@ const MODES = [
   { id: "summary", label: "Summary" },
 ] as const;
 const ENGINES = [
-  { id: "iphone", label: "iPhone" },
+  { id: "iphone", label: PHONE_LABEL },
   { id: "host", label: "Host" },
 ] as const;
 
@@ -148,7 +149,7 @@ function VoiceSection() {
         />
         <Row
           title="Voice engine"
-          detail={engine === "host" ? "The host's voice command (tts_command). Falls back to iPhone voices." : "The voices on this iPhone."}
+          detail={engine === "host" ? `The host's voice command (tts_command). Falls back to ${PHONE} voices.` : `The voices on this ${PHONE}.`}
           below={<Segmented options={ENGINES} value={engine} onChange={(e) => set({ engine: e })} label="Voice engine" />}
         />
         <Row

@@ -3,8 +3,10 @@ import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { PEEK_DETENT_ANDROID } from "@/board/peekDetent";
 import { startConnections } from "@/hosts/connection";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
@@ -87,14 +89,25 @@ export default function RootLayout() {
         <Stack.Screen name="tool" options={{ presentation: "modal", contentStyle: { backgroundColor: colors.bg } }} />
         <Stack.Screen
           name="peek/[hostId]/[paneId]"
-          options={{
-            presentation: "formSheet",
-            sheetAllowedDetents: [0.6, 1],
-            sheetGrabberVisible: true,
-            // iOS 26 draws the sheet as Liquid Glass with the system corner radius; before, the page color.
-            ...(glassAvailable() ? {} : { sheetCornerRadius: 16 }),
-            contentStyle: { backgroundColor: glassAvailable() ? "transparent" : colors.bg },
-          }}
+          options={
+            Platform.OS === "android"
+              ? {
+                  // Android lays out the sheet content at the largest detent, so at a lower detent the
+                  // composer is off the screen. One detent keeps the composer visible. `card` lifts the sheet off the page.
+                  presentation: "formSheet",
+                  sheetAllowedDetents: [PEEK_DETENT_ANDROID],
+                  sheetCornerRadius: 16,
+                  contentStyle: { backgroundColor: colors.card },
+                }
+              : {
+                  presentation: "formSheet",
+                  sheetAllowedDetents: [0.6, 1],
+                  sheetGrabberVisible: true,
+                  // iOS 26 draws the sheet as Liquid Glass with the system corner radius; before, the page color.
+                  ...(glassAvailable() ? {} : { sheetCornerRadius: 16 }),
+                  contentStyle: { backgroundColor: glassAvailable() ? "transparent" : colors.bg },
+                }
+          }
         />
       </Stack>
       </ThemeProvider>

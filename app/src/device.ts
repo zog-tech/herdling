@@ -1,5 +1,11 @@
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
+
+/** The name of this device in running text: "iPhone" on iOS, "phone" on Android. */
+export const PHONE = Platform.OS === "android" ? "phone" : "iPhone";
+/** The name of this device as a label (a segment, a title): "iPhone" or "Phone". */
+export const PHONE_LABEL = Platform.OS === "android" ? "Phone" : "iPhone";
 
 const DEVICE_ID_KEY = "herdling.device_id";
 
