@@ -62,6 +62,15 @@ function SwipeHaptic({ drag, at }: { drag: SharedValue<number>; at: number }) {
   return null;
 }
 
+/**
+ * Hides the swipe panels while the card is at rest. The long-press scale shrinks the card inside
+ * the swipeable, and without this the colored panels show at its edges.
+ */
+function SwipePanels({ drag, children }: { drag: SharedValue<number>; children: React.ReactNode }) {
+  const style = useAnimatedStyle(() => ({ opacity: Math.abs(drag.get()) > 0.5 ? 1 : 0 }));
+  return <Animated.View style={[{ flexDirection: "row" }, style]}>{children}</Animated.View>;
+}
+
 function SwipeAction({
   label,
   color,
@@ -205,13 +214,13 @@ export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: Boa
           }
         }}
         renderLeftActions={(_p, drag) => (
-          <>
+          <SwipePanels drag={drag}>
             <SwipeHaptic drag={drag} at={ACTION_W * 0.8} />
             <SwipeAction label="Read" color={colors.status.done} Icon={MailOpen} />
-          </>
+          </SwipePanels>
         )}
         renderRightActions={(_p, drag) => (
-          <View style={{ flexDirection: "row" }}>
+          <SwipePanels drag={drag}>
             <SwipeHaptic drag={drag} at={ACTION_W * 0.6} />
             <SwipeAction
               label="Reply"
@@ -231,7 +240,7 @@ export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: Boa
                 actions.onRestart(item);
               }}
             />
-          </View>
+          </SwipePanels>
         )}
       >
         <Animated.View style={[{ backgroundColor: colors.bg }, press.cardStyle]}>
