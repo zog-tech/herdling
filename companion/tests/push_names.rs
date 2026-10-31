@@ -1,5 +1,5 @@
 use serde_json::json;
-use zogsshd::push::describe;
+use herdlingd::push::describe;
 
 fn snap(agent_extra: serde_json::Value, pane_label: Option<&str>, tabs: usize) -> serde_json::Value {
     let mut agent = json!({

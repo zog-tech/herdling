@@ -1,4 +1,4 @@
-import type { PushPrefs } from "@zogssh/protocol";
+import type { PushPrefs } from "@herdling/protocol";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -16,7 +16,7 @@ export const useNotifPrefs = create<PrefsStore>()(
       setPref: (key, value) => set({ [key]: value } as Pick<PushPrefs, typeof key>),
     }),
     {
-      name: "zogssh.notif_prefs",
+      name: "herdling.notif_prefs",
       storage: secureJSONStorage(),
       partialize: (s) => ({ finished: s.finished, needs_you: s.needs_you, quiet_at_desk: s.quiet_at_desk }),
     },

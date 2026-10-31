@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name           = 'VoiceModule'
   s.version        = '1.0.0'
-  s.summary        = 'On-device dictation and recording for Zogssh'
+  s.summary        = 'On-device dictation and recording for Herdling'
   s.description    = 'Voice recording to WAV, live speech recognition (SpeechAnalyzer on iOS 26 with installed assets, else SFSpeechRecognizer) and on-device reply summaries (FoundationModels on iOS 26).'
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'

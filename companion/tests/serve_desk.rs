@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant, SystemTime};
 
-use zogsshd::phone_input;
-use zogsshd::serve::desk::{Desk, DESK_WINDOW};
-use zogsshd::types::AgentStatus::{Blocked, Idle, Working};
+use herdlingd::phone_input;
+use herdlingd::serve::desk::{Desk, DESK_WINDOW};
+use herdlingd::types::AgentStatus::{Blocked, Idle, Working};
 
 fn secs(n: u64) -> Duration {
     Duration::from_secs(n)

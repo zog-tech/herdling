@@ -1,4 +1,4 @@
-import type { AgentPreview } from "@zogssh/protocol";
+import type { AgentPreview } from "@herdling/protocol";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
 

@@ -1,4 +1,4 @@
-import type { AgentStatus, ThreadItem, ThreadPage, ThreadRef } from "@zogssh/protocol";
+import type { AgentStatus, ThreadItem, ThreadPage, ThreadRef } from "@herdling/protocol";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { RpcError } from "@/rpc/RpcClient";

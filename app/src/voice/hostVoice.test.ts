@@ -1,4 +1,4 @@
-import type { TtsAudio } from "@zogssh/protocol";
+import type { TtsAudio } from "@herdling/protocol";
 
 import { speakWithHost, type Clip, type HostVoiceDeps } from "./hostVoice";
 

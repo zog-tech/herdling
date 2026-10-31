@@ -1,4 +1,4 @@
-import type { RpcError as WireError } from "@zogssh/protocol";
+import type { RpcError as WireError } from "@herdling/protocol";
 
 import type { LineTransport } from "./transport";
 

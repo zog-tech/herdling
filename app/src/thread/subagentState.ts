@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 
 /** Start of the tool result Claude Code writes when it launches a background subagent. It is internal: never show it. */
 export const LAUNCH_TEXT = "Async agent launched successfully";

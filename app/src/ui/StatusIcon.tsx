@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@zogssh/protocol";
+import type { AgentStatus } from "@herdling/protocol";
 import { Check, CircleHelp, CircleSlash, Hand, LoaderCircle } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";

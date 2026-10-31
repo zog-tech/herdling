@@ -9,7 +9,7 @@ use fake_herdr_events::{spawn_fake_opts, status_ev, Push};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::rpc::{self, Ctx};
 
 /// Fake herdr: accepts many connections. `session.snapshot` returns `panes`;
 /// `events.subscribe` is acknowledged, its params are sent to the returned receiver,

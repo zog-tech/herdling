@@ -140,7 +140,7 @@ export function HostForm({ host }: { host?: Host }) {
       <Card>
         <Text variant="title">Authorize this phone</Text>
         <Text variant="small" muted>
-          Run this command on the host. It adds the phone key, restricted to the Zogssh companion.
+          Run this command on the host. It adds the phone key, restricted to the Herdling companion.
         </Text>
         {publicKey ? (
           <>

@@ -1,4 +1,4 @@
-import type { Automation, AutomationRun } from "@zogssh/protocol";
+import type { Automation, AutomationRun } from "@herdling/protocol";
 import { useRouter } from "expo-router";
 import { CircleAlert, CircleSlash, Clock, Info, Server, ShieldCheck } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -172,7 +172,7 @@ function HostAutomations({
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Info size={16} color={colors.textMuted} />
           <Text variant="small" muted style={{ flex: 1 }}>
-            This host runs an older zogsshd. Update it to use automations.
+            This host runs an older herdlingd. Update it to use automations.
           </Text>
         </View>
       ) : state.kind === "not_installed" ? (

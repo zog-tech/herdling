@@ -11,7 +11,7 @@ type SeenStore = { seen: Record<string, number> };
 /** Last `state_change_seq` the user has seen per pane, persisted. */
 export const useSeen = create<SeenStore>()(
   persist(() => ({ seen: {} }) as SeenStore, {
-    name: "zogssh.seen",
+    name: "herdling.seen",
     storage: secureJSONStorage(),
   }),
 );

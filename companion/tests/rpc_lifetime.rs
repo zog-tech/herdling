@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx, MAX_LINE};
+use herdlingd::rpc::{self, Ctx, MAX_LINE};
 
 fn ctx(dir: &tempfile::TempDir) -> Ctx {
     Ctx::new(dir.path().join("none.sock"), dir.path().into())

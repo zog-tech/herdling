@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name           = 'ZogPaste'
+  s.name           = 'HerdlingPaste'
   s.version        = '1.0.0'
   s.summary        = 'Image paste for the prompt box'
   s.description    = 'Adds "Paste" to the edit menu of multiline text inputs when the pasteboard holds an image, and sends the image to JS as JPEG.'

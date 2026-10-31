@@ -35,9 +35,9 @@ pub async fn watch(ctx: &ServeCtx) {
             Ok((stream, debouncer)) => {
                 failures = 0;
                 run_stream(ctx, &client, stream, debouncer, &mut desk).await;
-                eprintln!("zogsshd serve: herdr closed the event stream, reconnecting");
+                eprintln!("herdlingd serve: herdr closed the event stream, reconnecting");
             }
-            Err(e) => eprintln!("zogsshd serve: herdr: {e}"),
+            Err(e) => eprintln!("herdlingd serve: herdr: {e}"),
         }
         let secs = BACKOFF[failures.min(BACKOFF.len() - 1)];
         failures += 1;
@@ -150,7 +150,7 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     let cfg = match config::load(&ctx.config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("zogsshd serve: config: {e:#}");
+            eprintln!("herdlingd serve: config: {e:#}");
             return;
         }
     };
@@ -160,7 +160,7 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     if at_desk {
         let skipped = push::messages(&cfg, notice, pane, &title, &body, false).len() - msgs.len();
         if skipped > 0 {
-            eprintln!("zogsshd serve: user is at the computer, skipped {skipped} push(es) for pane {pane}");
+            eprintln!("herdlingd serve: user is at the computer, skipped {skipped} push(es) for pane {pane}");
         }
     }
     if msgs.is_empty() {
@@ -169,7 +169,7 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     let gone = match push::send(client, &ctx.push_url, &msgs).await {
         Ok(gone) => gone,
         Err(e) => {
-            eprintln!("zogsshd serve: push: {e:#}");
+            eprintln!("herdlingd serve: push: {e:#}");
             return;
         }
     };
@@ -188,7 +188,7 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     })
     .await;
     if !matches!(cleared, Ok(Ok(()))) {
-        eprintln!("zogsshd serve: could not remove unregistered push tokens");
+        eprintln!("herdlingd serve: could not remove unregistered push tokens");
     }
 }
 

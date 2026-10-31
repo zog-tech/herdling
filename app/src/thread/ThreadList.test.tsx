@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { mergeItems } from "./merge";

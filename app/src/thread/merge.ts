@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 
 /** Deep equality for JSON-like values (what the companion sends). */
 export function jsonEqual(a: unknown, b: unknown): boolean {

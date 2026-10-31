@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::preview::{self, log_preview, screen_line, screen_question, strip_markdown, PreviewState, LINE_CAP};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::preview::{self, log_preview, screen_line, screen_question, strip_markdown, PreviewState, LINE_CAP};
+use herdlingd::rpc::{self, Ctx};
 
 fn prompt(uuid: &str, text: &str) -> String {
     json!({"type": "user", "uuid": uuid, "timestamp": "2026-10-29T10:00:00.000Z",

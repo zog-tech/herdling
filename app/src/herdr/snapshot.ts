@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@zogssh/protocol";
+import type { AgentStatus } from "@herdling/protocol";
 
 /** Subset of herdr `session.snapshot` the app uses. Extra fields from herdr are kept as they come. */
 export type AgentInfo = {

@@ -1,4 +1,4 @@
-import type { AgentPreview, AgentStatus } from "@zogssh/protocol";
+import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 import { create } from "zustand";
 
 import type { Bucket, GroupBy, PreviewEntry } from "./buckets";

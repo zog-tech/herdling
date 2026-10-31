@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tokio::io::BufReader;
 use std::time::Duration;
-use zogsshd::{config, enroll, install, rpc, serve};
+use herdlingd::{config, enroll, install, rpc, serve};
 
 fn herdr_socket(home: &std::path::Path) -> PathBuf {
     match std::env::var_os("HERDR_SOCKET") {
@@ -25,7 +25,7 @@ async fn shutdown_signal() {
     }
 }
 
-/// Rows of the large digits printed by `zogsshd pair`.
+/// Rows of the large digits printed by `herdlingd pair`.
 const DIGITS: [[&str; 5]; 10] = [
     ["███", "█ █", "█ █", "█ █", "███"],
     ["  █", "  █", "  █", "  █", "  █"],
@@ -54,29 +54,29 @@ fn lan_ipv4() -> Option<std::net::Ipv4Addr> {
     })
 }
 
-/// `zogsshd pair`: opens the pairing window, shows the code, the host key fingerprint and
+/// `herdlingd pair`: opens the pairing window, shows the code, the host key fingerprint and
 /// the QR code, then stays until the window is used or closes and prints each device it paired.
 async fn pair_cmd(home: &std::path::Path) -> Result<()> {
-    use zogsshd::pair;
+    use herdlingd::pair;
     let config_path = config::default_path(home);
     let cfg = config::load(&config_path)?;
     let before = cfg.devices.clone();
-    let cfg_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| home.join(".config/zogsshd"));
+    let cfg_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| home.join(".config/herdling"));
     let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let code = pair::open_window(&cfg_dir, now())?;
     let fingerprint = pair::host_fingerprint(&pair::default_host_key_paths());
 
     let local = std::net::SocketAddr::from(([127, 0, 0, 1], cfg.pair_port));
     if std::net::TcpStream::connect_timeout(&local, Duration::from_secs(1)).is_err() {
-        eprintln!("warning: serve is not running — run zogsshd install");
+        eprintln!("warning: serve is not running — run herdlingd install");
     }
 
     println!("Pairing code (valid for {} minutes):\n", pair::WINDOW.as_secs() / 60);
     print!("{}", big_digits(&code));
     println!("\n  {code}\n");
     match &fingerprint {
-        Some(fp) => println!("Host key: {fp}\nIf you type the code by hand, check that Zogssh shows this key.\n"),
-        None => eprintln!("warning: no host key found, so Zogssh cannot check the host key while pairing\n"),
+        Some(fp) => println!("Host key: {fp}\nIf you type the code by hand, check that Herdling shows this key.\n"),
+        None => eprintln!("warning: no host key found, so Herdling cannot check the host key while pairing\n"),
     }
     match lan_ipv4() {
         Some(ip) => {
@@ -84,9 +84,9 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
             println!("Host: {ip}  port: {}\n", cfg.pair_port);
             let qr = qrcode::QrCode::new(url.as_bytes())?;
             println!("{}", qr.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
-            println!("Scan the code in Zogssh, or add the host by hand and type the code.");
+            println!("Scan the code in Herdling, or add the host by hand and type the code.");
         }
-        None => println!("No LAN IPv4 address found. Add the host by hand in Zogssh and type the code."),
+        None => println!("No LAN IPv4 address found. Add the host by hand in Herdling and type the code."),
     }
     println!("Waiting for the phone. Press Ctrl-C to close the window.");
 
@@ -126,7 +126,7 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    const USAGE: &str = "usage: zogsshd rpc | serve | pair | enroll | install [--dry-run]";
+    const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run]";
     // A help flag never runs a subcommand: `install --help` once installed the service.
     if std::env::args().skip(1).any(|a| a == "-h" || a == "--help" || a == "help") {
         println!("{USAGE}");
@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
             std::process::exit(match result {
                 Ok(()) => 0,
                 Err(e) => {
-                    eprintln!("zogsshd: {e:#}");
+                    eprintln!("herdlingd: {e:#}");
                     1
                 }
             })
@@ -161,7 +161,7 @@ async fn main() -> Result<()> {
                 push_url: "https://exp.host/--/api/v2/push/send".into(),
                 debounce: Duration::from_secs(5),
                 pair_port: None,
-                host_key_paths: zogsshd::pair::default_host_key_paths(),
+                host_key_paths: herdlingd::pair::default_host_key_paths(),
                 exe: std::env::current_exe()?.canonicalize()?,
             };
             serve::run(ctx, shutdown_signal()).await
@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
         }
         Some("enroll") => {
             // Reads one JSON request on stdin, prints one JSON line. The restricted rpc key
-            // cannot reach this: sshd forces `zogsshd rpc` for it and ignores the client command.
+            // cannot reach this: sshd forces `herdlingd rpc` for it and ignores the client command.
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             let exe = std::env::current_exe().and_then(|p| p.canonicalize()).unwrap_or_default();
             let (line, code) = enroll::run(std::io::stdin(), &enroll::EnrollCtx::new(&home, exe));

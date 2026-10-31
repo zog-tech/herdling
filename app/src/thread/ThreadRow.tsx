@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 import { memo, useContext } from "react";
 
 import { ThreadPaneContext } from "./LiveToolContext";

@@ -2,28 +2,28 @@ import ExpoModulesCore
 
 /// Paste an image into a multiline text input with the system edit menu.
 /// The hook acts only while JS listens for "onPasteImage".
-public class ZogPasteModule: Module {
+public class HerdlingPasteModule: Module {
   public func definition() -> ModuleDefinition {
-    Name("ZogPaste")
+    Name("HerdlingPaste")
 
     Events("onPasteImage")
 
     OnCreate {
-      ZogPasteHook.install { [weak self] base64, width, height in
+      HerdlingPasteHook.install { [weak self] base64, width, height in
         self?.sendEvent("onPasteImage", ["base64": base64, "width": width, "height": height])
       }
     }
 
     OnDestroy {
-      ZogPasteHook.setEnabled(false)
+      HerdlingPasteHook.setEnabled(false)
     }
 
     OnStartObserving("onPasteImage") {
-      ZogPasteHook.setEnabled(true)
+      HerdlingPasteHook.setEnabled(true)
     }
 
     OnStopObserving("onPasteImage") {
-      ZogPasteHook.setEnabled(false)
+      HerdlingPasteHook.setEnabled(false)
     }
   }
 }

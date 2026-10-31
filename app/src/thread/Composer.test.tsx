@@ -220,7 +220,7 @@ const press = async (t: ReactTestRenderer, label: string) => {
   await act(async () => byLabel(t, label)[0].props.onPress());
   await flush();
 };
-const helloWith = (methods: string[]) => ({ host: "h", os: "linux", zogsshd: "1", herdr_ok: true, methods });
+const helloWith = (methods: string[]) => ({ host: "h", os: "linux", herdlingd: "1", herdr_ok: true, methods });
 const pickerReturns = (names: string[]) =>
   (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
     canceled: false,

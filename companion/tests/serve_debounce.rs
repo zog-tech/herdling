@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use zogsshd::serve::debounce::{Debouncer, Notice};
-use zogsshd::types::AgentStatus::{self, Blocked, Done, Idle, Unknown, Working};
+use herdlingd::serve::debounce::{Debouncer, Notice};
+use herdlingd::types::AgentStatus::{self, Blocked, Done, Idle, Unknown, Working};
 
 const WINDOW: Duration = Duration::from_secs(5);
 

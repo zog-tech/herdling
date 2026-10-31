@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { addListener, type BrowseState, type FoundService, startBrowse, stopBrowse } from "../../modules/ssh";
 import type { Host } from "./store";
 
-/** A zogsshd host found on the local network through Bonjour. */
+/** A herdlingd host found on the local network through Bonjour. */
 export type Discovered = {
   name: string;
   address: string | null;
@@ -117,7 +117,7 @@ function release() {
 }
 
 /**
- * Browses for zogsshd hosts while `active` is true. All active consumers share one native
+ * Browses for herdlingd hosts while `active` is true. All active consumers share one native
  * browse and one list: the browse starts with the first consumer and stops with the last.
  * An inactive consumer gets an empty, stopped state.
  */

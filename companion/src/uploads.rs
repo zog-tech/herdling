@@ -20,9 +20,9 @@ fn err(code: &str, message: impl Into<String>) -> RpcError {
     RpcError { code: code.into(), message: message.into() }
 }
 
-/// `home/.cache/zogsshd/uploads`.
+/// `home/.cache/herdling/uploads`.
 pub fn dir(home: &Path) -> PathBuf {
-    home.join(".cache/zogsshd/uploads")
+    home.join(".cache/herdling/uploads")
 }
 
 /// Keeps `[A-Za-z0-9._-]`, replaces other chars with `_`, and keeps the extension when the

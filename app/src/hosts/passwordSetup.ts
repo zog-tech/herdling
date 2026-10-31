@@ -1,4 +1,4 @@
-import type { EnrollRequest, EnrollResult } from "@zogssh/protocol";
+import type { EnrollRequest, EnrollResult } from "@herdling/protocol";
 
 import * as ssh from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
@@ -43,20 +43,20 @@ export function setupMessage(code: SetupFailCode, target?: { address: string; po
     case "auth_failed":
       return "The host did not accept the user name and password, or it does not allow password login.";
     case "not_installed":
-      return "zogsshd is not installed on this host. Install it first: copy the zogsshd binary to the host and run zogsshd install.";
+      return "herdlingd is not installed on this host. Install it first: copy the herdlingd binary to the host and run herdlingd install.";
     case "enroll_failed":
       return "The host could not add this phone's key. Nothing was saved.";
     case "bad_answer":
-      return "The host gave an answer Zogssh does not understand. Is zogsshd up to date? Nothing was saved.";
+      return "The host gave an answer Herdling does not understand. Is herdlingd up to date? Nothing was saved.";
   }
 }
 
 /**
- * Runs `zogsshd enroll` from the PATH, else from `~/.local/bin` (where `zogsshd install` puts it).
+ * Runs `herdlingd enroll` from the PATH, else from `~/.local/bin` (where `herdlingd install` puts it).
  * The enroll request goes on stdin, never in the command line. Exit 3 means not installed.
  */
 export const ENROLL_COMMAND =
-  `sh -c 'Z=$(command -v zogsshd || echo "$HOME/.local/bin/zogsshd"); ` +
+  `sh -c 'Z=$(command -v herdlingd || echo "$HOME/.local/bin/herdlingd"); ` +
   `[ -x "$Z" ] || { echo "{\\"ok\\":false,\\"code\\":\\"not_installed\\"}"; exit 3; }; exec "$Z" enroll'`;
 
 const PROBE_TIMEOUT_MS = 10_000;
@@ -93,7 +93,7 @@ export type SetupOptions = {
 
 /**
  * "Set up with password": reads the host key and asks the user to confirm it, logs in once with
- * the password (pinned to that key), runs `zogsshd enroll` to add this phone's restricted key,
+ * the password (pinned to that key), runs `herdlingd enroll` to add this phone's restricted key,
  * then saves the host with the pinned key under the same rules as pairing. The password is used
  * for that one login only: it is never saved, logged or put in an error. Throws `SetupFailed`.
  */

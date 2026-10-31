@@ -5,7 +5,7 @@ import UIKit
 
 /// The phone's ed25519 key pair. The private key lives in the Keychain as its raw representation.
 enum Keys {
-  private static let service = "com.zogtech.zogssh.ssh-key"
+  private static let service = "com.zogtech.herdling.ssh-key"
   private static let account = "ed25519"
   private static let lock = NSLock()
 
@@ -21,7 +21,7 @@ enum Keys {
     return key
   }
 
-  /// OpenSSH public key line: `ssh-ed25519 <base64 wire blob> zogssh:<device name>`.
+  /// OpenSSH public key line: `ssh-ed25519 <base64 wire blob> herdling:<device name>`.
   /// Only the comment depends on the device; the key itself never changes.
   static func openSSHPublicKey(_ key: Curve25519.Signing.PrivateKey) -> String {
     var blob = Data()
@@ -30,7 +30,7 @@ enum Keys {
     return "ssh-ed25519 \(blob.base64EncodedString()) \(comment(deviceName: currentDeviceName()))"
   }
 
-  /// Key comment `zogssh:<name>`, so the host's authorized_keys shows which phone a line is for.
+  /// Key comment `herdling:<name>`, so the host's authorized_keys shows which phone a line is for.
   /// The name keeps only `[A-Za-z0-9._-]`; other runs become one `-`.
   static func comment(deviceName: String) -> String {
     var out = ""
@@ -43,7 +43,7 @@ enum Keys {
       }
     }
     let name = out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-    return name.isEmpty ? "zogssh" : "zogssh:\(name)"
+    return name.isEmpty ? "herdling" : "herdling:\(name)"
   }
 
   /// `UIDevice.name` is main-thread only; module functions run on a background queue.

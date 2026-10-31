@@ -8,7 +8,7 @@ type PasteEvents = { onPasteImage: (e: PastedImage) => void };
 declare class PasteNativeModule extends NativeModule<PasteEvents> {}
 
 // Builds 6 and older do not have this module. An OTA update must not crash them.
-const Paste = requireOptionalNativeModule<PasteNativeModule>("ZogPaste");
+const Paste = requireOptionalNativeModule<PasteNativeModule>("HerdlingPaste");
 
 /**
  * True when the edit menu of a multiline input can paste an image ("Paste" shows for an image).

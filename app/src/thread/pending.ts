@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 import { create } from "zustand";
 
 import type { RpcClient } from "@/rpc/RpcClient";
@@ -36,8 +36,8 @@ export const PENDING_MAX_AGE_MS = 30 * 60_000;
 const MATCH_CHARS = 200;
 
 const paneKey = (hostId: string, paneId: string) => `${hostId}:${paneId}`;
-/** A line that is only the path of a photo the app uploaded (`files.put` saves to `.cache/zogsshd/uploads/`). */
-const UPLOAD_LINE = /^\s*\S*\/\.cache\/zogsshd\/uploads\/\S+\s*$/;
+/** A line that is only the path of a photo the app uploaded (`files.put` saves to `.cache/herdling/uploads/`). */
+const UPLOAD_LINE = /^\s*\S*\/\.cache\/herdling\/uploads\/\S+\s*$/;
 /** The placeholder Claude Code writes for an attached image ("[Image #12]"). */
 const IMAGE_TAG = /\[Image #\d+\]/g;
 

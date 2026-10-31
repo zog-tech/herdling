@@ -1,4 +1,4 @@
-import type { AgentStatus, ThreadItem, TtsAudio } from "@zogssh/protocol";
+import type { AgentStatus, ThreadItem, TtsAudio } from "@herdling/protocol";
 import * as Speech from "expo-speech";
 import { useEffect, useRef } from "react";
 import { AppState } from "react-native";

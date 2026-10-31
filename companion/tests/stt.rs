@@ -60,7 +60,7 @@ async fn stt_missing_params_or_bad_audio_is_bad_request() {
 async fn stt_audio_over_the_cap_is_too_large() {
     let dir = tempfile::tempdir().unwrap();
     with_script(dir.path(), "cat > /dev/null\necho hi");
-    let big = vec![0u8; zogsshd::stt::MAX_AUDIO + 1];
+    let big = vec![0u8; herdlingd::stt::MAX_AUDIO + 1];
     assert_eq!(stt(dir.path(), &big, T).await["error"]["code"], "too_large");
 }
 
@@ -69,10 +69,10 @@ async fn stt_largest_audio_fits_in_one_request_line() {
     let dir = tempfile::tempdir().unwrap();
     let seen = dir.path().join("bytes");
     with_script(dir.path(), &format!("wc -c < /dev/stdin | tr -d ' ' > '{}'\necho ok", seen.display()));
-    let audio = vec![7u8; zogsshd::stt::MAX_AUDIO];
+    let audio = vec![7u8; herdlingd::stt::MAX_AUDIO];
     let r = stt(dir.path(), &audio, Duration::from_secs(30)).await;
     assert_eq!(r["result"]["text"], "ok", "{r}");
-    assert_eq!(std::fs::read_to_string(&seen).unwrap().trim(), zogsshd::stt::MAX_AUDIO.to_string());
+    assert_eq!(std::fs::read_to_string(&seen).unwrap().trim(), herdlingd::stt::MAX_AUDIO.to_string());
 }
 
 #[tokio::test]

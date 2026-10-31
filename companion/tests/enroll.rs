@@ -5,11 +5,11 @@ use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 use base64::Engine;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use zogsshd::config::{self, Device, Prefs};
-use zogsshd::enroll::{self, EnrollCtx, INPUT_LIMIT};
-use zogsshd::pair;
+use herdlingd::config::{self, Device, Prefs};
+use herdlingd::enroll::{self, EnrollCtx, INPUT_LIMIT};
+use herdlingd::pair;
 
-const EXE: &str = "/home/sam/.local/bin/zogsshd";
+const EXE: &str = "/home/sam/.local/bin/herdlingd";
 
 /// A valid ed25519 public key blob: type string, then 32 key bytes of `fill`.
 fn ed25519_blob(fill: u8) -> String {
@@ -66,7 +66,7 @@ fn setup() -> Setup {
 
 fn expected_line(blob: &str, name: &str) -> String {
     format!(
-        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} zogssh:{name}\n"
+        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:{name}\n"
     )
 }
 
@@ -74,7 +74,7 @@ fn expected_line(blob: &str, name: &str) -> String {
 fn enroll_appends_restricted_line() {
     let s = setup();
     let blob = ed25519_blob(1);
-    let (out, code) = s.enroll("d_1", "Sam iPhone", &format!("ssh-ed25519 {blob} zogssh:Sam"));
+    let (out, code) = s.enroll("d_1", "Sam iPhone", &format!("ssh-ed25519 {blob} herdling:Sam"));
     assert_eq!(code, 0, "{out}");
     assert_eq!(out["ok"], true);
     assert_eq!(s.keys(), expected_line(&blob, "Sam-iPhone"));
@@ -205,7 +205,7 @@ fn enroll_reads_one_line_without_eof() {
 fn enroll_binary_prints_one_line() {
     let s = setup();
     let home: &Path = s.dir.path();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_zogsshd"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_herdlingd"))
         .arg("enroll")
         .env("HOME", home)
         .stdin(Stdio::piped())

@@ -15,7 +15,7 @@ import { useHosts } from "./store";
 const FP = "SHA256:" + "a".repeat(43);
 const FP2 = "SHA256:" + "b".repeat(43);
 const PASSWORD = "correct horse battery staple";
-const PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA zogssh";
+const PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA herdling";
 
 function deps(over: { stdout?: string; exitCode?: number; probe?: string; seen?: string; execError?: object } = {}) {
   const exec = jest.fn(async (o: PasswordExecOptions): Promise<PasswordExecResult> => {
@@ -74,7 +74,7 @@ describe("setUpWithPassword", () => {
     const d = deps({ stdout: '{"ok":false,"code":"not_installed"}\n', exitCode: 3 });
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, d));
     expect(e.code).toBe("not_installed");
-    expect(e.message).toMatch(/^zogsshd is not installed on this host\. Install it first/);
+    expect(e.message).toMatch(/^herdlingd is not installed on this host\. Install it first/);
     expect(useHosts.getState().hosts).toEqual([]);
   });
 
@@ -115,7 +115,7 @@ describe("setUpWithPassword", () => {
     expect(opts.stdin).not.toContain(PASSWORD);
 
     expect(useHosts.getState().hosts).toEqual([
-      { id: host.id, name: "studio", address: "10.0.0.5", port: 22, user: "sam", fingerprint: FP, command: "zogsshd rpc" },
+      { id: host.id, name: "studio", address: "10.0.0.5", port: 22, user: "sam", fingerprint: FP, command: "herdlingd rpc" },
     ]);
     // Neither the store nor the Keychain holds the password.
     expect(JSON.stringify(useHosts.getState())).not.toContain(PASSWORD);
@@ -166,16 +166,16 @@ describe("setUpWithPassword", () => {
     expect(b.code).toBe("enroll_failed");
     expect(b.message).toContain("invalid host_id");
 
-    const junk = deps({ stdout: "sh: zogsshd: oops\n", exitCode: 127 });
+    const junk = deps({ stdout: "sh: herdlingd: oops\n", exitCode: 127 });
     expect((await failure(setUpWithPassword({ ...base, confirm: yes }, junk))).code).toBe("bad_answer");
     expect(useHosts.getState().hosts).toEqual([]);
   });
 });
 
 describe("ENROLL_COMMAND", () => {
-  it("is the exact shell command (checked in zsh and bash: exit 3 and the not_installed line without zogsshd)", () => {
+  it("is the exact shell command (checked in zsh and bash: exit 3 and the not_installed line without herdlingd)", () => {
     expect(ENROLL_COMMAND).toBe(
-      String.raw`sh -c 'Z=$(command -v zogsshd || echo "$HOME/.local/bin/zogsshd"); [ -x "$Z" ] || { echo "{\"ok\":false,\"code\":\"not_installed\"}"; exit 3; }; exec "$Z" enroll'`,
+      String.raw`sh -c 'Z=$(command -v herdlingd || echo "$HOME/.local/bin/herdlingd"); [ -x "$Z" ] || { echo "{\"ok\":false,\"code\":\"not_installed\"}"; exit 3; }; exec "$Z" enroll'`,
     );
   });
 });

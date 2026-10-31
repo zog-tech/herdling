@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::{config, rpc};
+use herdlingd::{config, rpc};
 
 async fn call(config_path: &std::path::Path, params: Value) -> Value {
     let (mut client_tx, server_in) = tokio::io::duplex(65536);

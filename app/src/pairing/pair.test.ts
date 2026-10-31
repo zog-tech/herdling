@@ -1,4 +1,4 @@
-const mockEnsureKey = jest.fn(async () => ({ publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA zogssh" }));
+const mockEnsureKey = jest.fn(async () => ({ publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA herdling" }));
 jest.mock("../../modules/ssh", () => ({ ensureKey: () => mockEnsureKey() }));
 jest.mock("expo-secure-store", () => {
   const items = new Map<string, string>();
@@ -47,7 +47,7 @@ describe("pairWithHost", () => {
       device_id: await getDeviceId(),
       device_name: "Sam's iPhone",
       host_id: host.id,
-      public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA zogssh",
+      public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA herdling",
       // The push token goes only over the pinned SSH session (push.register), never over plain HTTP.
       expo_token: null,
     });
@@ -104,7 +104,7 @@ describe("pairWithHost", () => {
     ).catch((e) => e);
     expect(err).toBeInstanceOf(PairFailed);
     expect((err as PairFailed).code).toBe("unreachable");
-    expect((err as PairFailed).message).toBe("Can't reach 10.0.0.5:7790. Is zogsshd serve running?");
+    expect((err as PairFailed).message).toBe("Can't reach 10.0.0.5:7790. Is herdlingd serve running?");
 
     expect(useHosts.getState().hosts).toHaveLength(0);
   });
@@ -121,8 +121,8 @@ describe("pairWithHost", () => {
 
   it("pair_messages", () => {
     expect(pairMessage("bad_code")).toBe("Wrong code. Check the code on the host.");
-    expect(pairMessage("no_window")).toBe("No pairing window. Run zogsshd pair on the host.");
-    expect(pairMessage("too_many_attempts")).toBe("Too many wrong codes. Run zogsshd pair again.");
+    expect(pairMessage("no_window")).toBe("No pairing window. Run herdlingd pair on the host.");
+    expect(pairMessage("too_many_attempts")).toBe("Too many wrong codes. Run herdlingd pair again.");
   });
 });
 

@@ -16,7 +16,7 @@ type FeelStore = { haptics: boolean; set: (patch: { haptics?: boolean }) => void
 export const useFeelSettings = create<FeelStore>()(
   persist(
     (set) => ({ haptics: true, set: (patch) => set(patch) }),
-    { name: "zogssh.feel_settings", storage: secureJSONStorage(), partialize: (s) => ({ haptics: s.haptics }) },
+    { name: "herdling.feel_settings", storage: secureJSONStorage(), partialize: (s) => ({ haptics: s.haptics }) },
   ),
 );
 

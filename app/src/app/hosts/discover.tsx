@@ -71,7 +71,7 @@ function BrowseStatus({ state, onRetry }: { state: DiscoveryState; onRetry: () =
           </Text>
         </View>
         <Text variant="small" muted>
-          Zogssh needs it to find hosts. Turn on Local Network for Zogssh in Settings.
+          Herdling needs it to find hosts. Turn on Local Network for Herdling in Settings.
         </Text>
         {state.error ? (
           <Text variant="caption" muted>
@@ -97,7 +97,7 @@ function BrowseStatus({ state, onRetry }: { state: DiscoveryState; onRetry: () =
   if (state.status === "ready") {
     return (
       <Text muted>
-        No hosts found yet. Run zogsshd serve on your computer and keep this phone on the same network.
+        No hosts found yet. Run herdlingd serve on your computer and keep this phone on the same network.
       </Text>
     );
   }
@@ -174,7 +174,7 @@ export default function DiscoverScreen() {
                 <Text bold>Add by address</Text>
               </View>
               <Text variant="small" muted>
-                Enter the address and the code from zogsshd pair.
+                Enter the address and the code from herdlingd pair.
               </Text>
             </Row>,
             <Row

@@ -1,4 +1,4 @@
-import type { Usage } from "@zogssh/protocol";
+import type { Usage } from "@herdling/protocol";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";

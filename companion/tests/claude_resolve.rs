@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::claude;
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::claude;
+use herdlingd::rpc::{self, Ctx};
 
 struct Session {
     tx: tokio::io::DuplexStream,
@@ -49,8 +49,8 @@ fn write(path: &Path, text: &str) {
 
 #[test]
 fn project_dir_encoding() {
-    let p = claude::project_dir(Path::new("/h"), "/home/sam/dev/apps/zogssh");
-    assert_eq!(p, Path::new("/h/.claude/projects/-home-sam-dev-apps-zogssh"));
+    let p = claude::project_dir(Path::new("/h"), "/home/sam/dev/apps/herdling");
+    assert_eq!(p, Path::new("/h/.claude/projects/-home-sam-dev-apps-herdling"));
     let p = claude::project_dir(Path::new("/h"), "/home/sam/my.proj_x");
     assert_eq!(p, Path::new("/h/.claude/projects/-home-sam-my-proj-x"));
 }

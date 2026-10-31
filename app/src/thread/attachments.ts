@@ -1,4 +1,4 @@
-import type { FilePut } from "@zogssh/protocol";
+import type { FilePut } from "@herdling/protocol";
 import { requireOptionalNativeModule } from "expo";
 
 import type { RpcClient } from "@/rpc/RpcClient";

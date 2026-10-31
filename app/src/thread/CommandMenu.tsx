@@ -1,4 +1,4 @@
-import type { CommandInfo } from "@zogssh/protocol";
+import type { CommandInfo } from "@herdling/protocol";
 import { Pressable, ScrollView, View } from "react-native";
 
 import { colors, hitTarget, radius, space } from "@/theme/tokens";

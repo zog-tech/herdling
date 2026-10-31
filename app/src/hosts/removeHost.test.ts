@@ -1,5 +1,5 @@
 jest.mock("../../modules/ssh", () => ({
-  ensureKey: async () => ({ publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA zogssh" }),
+  ensureKey: async () => ({ publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA herdling" }),
 }));
 jest.mock("./connection", () => ({ getHostConn: () => ({ status: "offline", attempt: 0 }) }));
 jest.mock("expo-secure-store", () => {
@@ -34,7 +34,7 @@ describe("removeHostEverywhere", () => {
     expect(call.mock.calls[0][0]).toBe("pair.revoke");
     expect(call.mock.calls[0][1]).toEqual({
       device_id: await getDeviceId(),
-      public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA zogssh",
+      public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA herdling",
     });
     expect(order).toEqual(["call:1"]);
     expect(useHosts.getState().hosts).toHaveLength(0);

@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 
-pub const SERVICE_TYPE: &str = "_zogssh._tcp.local.";
+pub const SERVICE_TYPE: &str = "_herdling._tcp.local.";
 
 pub struct AdvertInfo {
     pub host: String,
@@ -50,12 +50,12 @@ pub fn advert_command(os: &str, has_avahi: bool, info: &AdvertInfo) -> Option<(S
     let port = info.pair_port.to_string();
     match os {
         "macos" => {
-            let mut args = vec!["-R".to_string(), name, "_zogssh._tcp".into(), "local".into(), port];
+            let mut args = vec!["-R".to_string(), name, "_herdling._tcp".into(), "local".into(), port];
             args.extend(pairs);
             Some(("dns-sd".into(), args))
         }
         "linux" if has_avahi => {
-            let mut args = vec![name, "_zogssh._tcp".to_string(), port];
+            let mut args = vec![name, "_herdling._tcp".to_string(), port];
             args.extend(pairs);
             Some(("avahi-publish-service".into(), args))
         }
@@ -98,9 +98,9 @@ async fn supervise(program: String, args: Vec<String>) {
         {
             Ok(mut child) => {
                 let status = child.wait().await;
-                eprintln!("zogsshd serve: {program} exited ({status:?}); retrying in {}s", delay.as_secs());
+                eprintln!("herdlingd serve: {program} exited ({status:?}); retrying in {}s", delay.as_secs());
             }
-            Err(e) => eprintln!("zogsshd serve: cannot start {program}: {e}; retrying in {}s", delay.as_secs()),
+            Err(e) => eprintln!("herdlingd serve: cannot start {program}: {e}; retrying in {}s", delay.as_secs()),
         }
         if started.elapsed() > Duration::from_secs(120) {
             delay = Duration::from_secs(5);
@@ -113,7 +113,7 @@ async fn supervise(program: String, args: Vec<String>) {
 fn advertise_mdns(info: &AdvertInfo) -> Result<ServiceDaemon> {
     let daemon = ServiceDaemon::new().context("start mDNS daemon")?;
     // The mDNS host label is a single DNS label, so cut a dotted host name at the first dot.
-    let label = info.host.split('.').next().filter(|s| !s.is_empty()).unwrap_or("zogssh");
+    let label = info.host.split('.').next().filter(|s| !s.is_empty()).unwrap_or("herdling");
     let service = ServiceInfo::new(
         SERVICE_TYPE,
         short_host(&info.host),

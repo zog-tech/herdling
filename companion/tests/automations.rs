@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::rpc::{self, Ctx};
 
 const LIST_JSON: &str = r#"{"automations":[
   {"id":"a1","name":"Nightly tests","schedule":"0 2 * * *","enabled":true,"pending_approval":true,

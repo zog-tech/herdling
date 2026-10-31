@@ -15,9 +15,9 @@ const INPUT_METHODS: &[(&str, &str)] = &[
     ("agent.send_keys", "target"),
 ];
 
-/// `home/.cache/zogsshd/phone-input`.
+/// `home/.cache/herdling/phone-input`.
 pub fn dir(home: &Path) -> PathBuf {
-    home.join(".cache/zogsshd/phone-input")
+    home.join(".cache/herdling/phone-input")
 }
 
 /// One file per pane. The name is the pane id in hex, so any id gives a safe name.

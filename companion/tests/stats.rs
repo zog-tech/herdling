@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::rpc::{self, Ctx};
 
 async fn start(dir: &tempfile::TempDir) -> (tokio::io::DuplexStream, tokio::io::Lines<BufReader<tokio::io::DuplexStream>>) {
     let (client_tx, server_in) = tokio::io::duplex(65536);

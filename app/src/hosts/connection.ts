@@ -1,4 +1,4 @@
-import type { Hello } from "@zogssh/protocol";
+import type { Hello } from "@herdling/protocol";
 import { AppState } from "react-native";
 import { create } from "zustand";
 

@@ -1,10 +1,10 @@
 [package]
-name = "zogsshd"
+name = "herdlingd"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "zogsshd"
+name = "herdlingd"
 path = "src/main.rs"
 
 [dependencies]
@@ -31,5 +31,5 @@ sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tempfile = "3"
 
 [lib]
-name = "zogsshd"
+name = "herdlingd"
 path = "src/lib.rs"

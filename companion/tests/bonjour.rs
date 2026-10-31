@@ -1,6 +1,6 @@
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::time::{Duration, Instant};
-use zogsshd::serve::bonjour::{advert_command, txt, AdvertInfo, SERVICE_TYPE};
+use herdlingd::serve::bonjour::{advert_command, txt, AdvertInfo, SERVICE_TYPE};
 
 fn info(fp: Option<&str>) -> AdvertInfo {
     AdvertInfo {
@@ -40,7 +40,7 @@ fn macos_uses_dns_sd() {
     assert_eq!(prog, "dns-sd");
     assert_eq!(
         args,
-        strs(&["-R", "studio", "_zogssh._tcp", "local", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "fp=SHA256:abc"])
+        strs(&["-R", "studio", "_herdling._tcp", "local", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "fp=SHA256:abc"])
     );
 }
 
@@ -64,7 +64,7 @@ fn fp_omitted_when_none() {
 fn linux_with_avahi() {
     let (prog, args) = advert_command("linux", true, &info(None)).unwrap();
     assert_eq!(prog, "avahi-publish-service");
-    assert_eq!(args, strs(&["studio", "_zogssh._tcp", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0"]));
+    assert_eq!(args, strs(&["studio", "_herdling._tcp", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0"]));
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn nul_is_stripped() {
 #[ignore = "needs a multicast-capable network"]
 fn mdns_fallback_is_browsable() {
     // Outside a tokio runtime `advertise` always takes the mdns-sd path.
-    let _advert = zogsshd::serve::bonjour::advertise(&info(None)).unwrap();
+    let _advert = herdlingd::serve::bonjour::advertise(&info(None)).unwrap();
     let browser = ServiceDaemon::new().unwrap();
     let rx = browser.browse(SERVICE_TYPE).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);

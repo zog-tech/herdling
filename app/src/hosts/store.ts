@@ -11,11 +11,11 @@ export type Host = {
   user: string;
   /** Pinned host key, `SHA256:<base64>`. Unset until the first successful connect. */
   fingerprint?: string;
-  /** Command for the exec channel. Default "zogsshd rpc". */
+  /** Command for the exec channel. Default "herdlingd rpc". */
   command: string;
 };
 
-export const DEFAULT_COMMAND = "zogsshd rpc";
+export const DEFAULT_COMMAND = "herdlingd rpc";
 
 type HostStore = {
   hosts: Host[];
@@ -44,7 +44,7 @@ export const useHosts = create<HostStore>()(
       removeHost: (id) => set((s) => ({ hosts: s.hosts.filter((h) => h.id !== id) })),
     }),
     {
-      name: "zogssh.hosts",
+      name: "herdling.hosts",
       storage: secureJSONStorage(),
       partialize: (s) => ({ hosts: s.hosts }),
     },

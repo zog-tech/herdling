@@ -4,10 +4,10 @@ Date: 2026-10-29. Branch `phase-1`. Tester: the maintainer's agent session.
 
 ## Setup
 
-- App: iOS Simulator (iPhone, iOS 26.5), dev build of Zogssh.
+- App: iOS Simulator (iPhone, iOS 26.5), dev build of Herdling.
 - Host "Mac host": the development Mac, herdr 0.9.5, companion built from the repo (debug build), reached over the loopback address with a `from=` restriction.
 - Host "Linux dev server": Ubuntu server on the LAN, herdr 0.9.0, companion built there with `cargo build --release` from `git archive HEAD companion`, installed in `~/.local/bin`.
-- Authorization on the Linux server: one `restrict,command="<abs path>/zogsshd rpc"` line appended to `authorized_keys`. No `from=` restriction, because the simulator connects from a LAN address.
+- Authorization on the Linux server: one `restrict,command="<abs path>/herdlingd rpc"` line appended to `authorized_keys`. No `from=` restriction, because the simulator connects from a LAN address.
 - Both servers run live Claude agents. Test sends went only to temporary workspaces in `/tmp`. Both temporary workspaces were closed afterwards.
 
 ## Passed
@@ -21,7 +21,7 @@ Date: 2026-10-29. Branch `phase-1`. Tester: the maintainer's agent session.
 | Open an existing session read-only on the Linux server | Thread renders after the fix below. |
 | Send a prompt on the Mac host (new temporary session in `/tmp`) | Prompt and reply appear in the thread. Status goes to Done. |
 | New session flow on the Linux host (folder browse to `/tmp`, claude, first prompt) | Session created. Reply appears in the thread. |
-| Background the app for 75 s | The `zogsshd rpc` process on the Linux server exited (`pgrep` empty). The Mac process also exited. |
+| Background the app for 75 s | The `herdlingd rpc` process on the Linux server exited (`pgrep` empty). The Mac process also exited. |
 | Bring the app back | Both hosts reconnected. The Linux process was back within 5 s. Overview showed both Online. |
 | Existing agents untouched | No prompt went to an existing agent. `authorized_keys` differs from its backup by the one added line. The temporary build directory was removed. |
 

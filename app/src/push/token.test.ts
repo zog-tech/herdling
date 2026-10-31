@@ -66,11 +66,11 @@ describe("getExpoToken", () => {
   });
 
   it("denied_permission_gives_null_and_clears_saved_token", async () => {
-    mockStore.set("zogssh.expo_token", "ExponentPushToken[old]");
+    mockStore.set("herdling.expo_token", "ExponentPushToken[old]");
     mockNotif.requestPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: false });
     const { getExpoToken } = load();
     expect(await getExpoToken()).toBeNull();
-    expect(mockStore.has("zogssh.expo_token")).toBe(false);
+    expect(mockStore.has("herdling.expo_token")).toBe(false);
   });
 
   it("transient_failure_keeps_last_good_token", async () => {

@@ -6,12 +6,12 @@ use base64::Engine;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::config::{self, Device, Prefs};
-use zogsshd::pair;
-use zogsshd::rpc;
-use zogsshd::serve::{http, ServeCtx};
+use herdlingd::config::{self, Device, Prefs};
+use herdlingd::pair;
+use herdlingd::rpc;
+use herdlingd::serve::{http, ServeCtx};
 
-const EXE: &str = "/home/sam/.local/bin/zogsshd";
+const EXE: &str = "/home/sam/.local/bin/herdlingd";
 
 /// A valid ed25519 public key blob: type string, then 32 key bytes of `fill`.
 fn ed25519_blob(fill: u8) -> String {
@@ -37,7 +37,7 @@ impl Setup {
         self.dir.path()
     }
     fn cfg_dir(&self) -> PathBuf {
-        self.home().join(".config/zogsshd")
+        self.home().join(".config/herdling")
     }
     fn config_path(&self) -> PathBuf {
         config::default_path(self.home())
@@ -112,7 +112,7 @@ async fn pairs_with_right_code() {
     assert!(resp["user"].is_string());
 
     let expected = format!(
-        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} zogssh:Sam-iPhone\n"
+        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:Sam-iPhone\n"
     );
     assert_eq!(s.keys(), expected);
 
@@ -158,7 +158,7 @@ async fn existing_authorized_keys_mode_is_kept() {
     let lines: Vec<&str> = keys.lines().collect();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0], "ssh-ed25519 AAAAother sam@laptop");
-    assert!(lines[1].ends_with(&format!("ssh-ed25519 {blob} zogssh:Sam")));
+    assert!(lines[1].ends_with(&format!("ssh-ed25519 {blob} herdling:Sam")));
 }
 
 #[tokio::test]
@@ -259,7 +259,7 @@ async fn pair_rejects_injection() {
     let keys = s.keys();
     assert_eq!(keys.lines().count(), 1);
     let line = keys.lines().next().unwrap();
-    assert!(line.ends_with(&format!("ssh-ed25519 {blob} zogssh:abcd")), "{line}");
+    assert!(line.ends_with(&format!("ssh-ed25519 {blob} herdling:abcd")), "{line}");
     assert!(line.starts_with("command=\""));
 }
 
@@ -312,16 +312,16 @@ async fn pair_d1(s: &Setup, fills: &[u8]) {
 async fn repair_with_new_key_replaces_old_line() {
     let s = start().await;
     pair_d1(&s, &[1]).await;
-    // A line the user added for key A without the zogssh comment stays.
+    // A line the user added for key A without the herdling comment stays.
     let user_line = format!("ssh-ed25519 {} sam@laptop\n", ed25519_blob(1));
     let first = s.keys();
     std::fs::write(s.keys_path(), format!("{user_line}{first}")).unwrap();
     pair_d1(&s, &[2]).await;
     let keys = s.keys();
-    let zogssh: Vec<&str> = keys.lines().filter(|l| l.contains(" zogssh:")).collect();
-    assert_eq!(zogssh.len(), 1, "{keys}");
-    assert!(zogssh[0].contains(&format!("ssh-ed25519 {} zogssh:Sam-iPhone", ed25519_blob(2))));
-    assert!(!keys.contains(&format!("{} zogssh:", ed25519_blob(1))));
+    let herdling: Vec<&str> = keys.lines().filter(|l| l.contains(" herdling:")).collect();
+    assert_eq!(herdling.len(), 1, "{keys}");
+    assert!(herdling[0].contains(&format!("ssh-ed25519 {} herdling:Sam-iPhone", ed25519_blob(2))));
+    assert!(!keys.contains(&format!("{} herdling:", ed25519_blob(1))));
     assert!(keys.starts_with(&user_line));
     let c = config::load(&s.config_path()).unwrap();
     assert_eq!(c.devices.len(), 1);
@@ -383,7 +383,7 @@ async fn revoke_removes_only_that_key() {
     assert_eq!(r["error"]["code"], "bad_request");
 }
 
-/// Temp home with a user key line, a zogssh line for the same key, and device d1 paired with it.
+/// Temp home with a user key line, a herdling line for the same key, and device d1 paired with it.
 fn revoke_home(stored: Option<String>) -> (tempfile::TempDir, String, String) {
     let dir = tempfile::tempdir().unwrap();
     let keys = dir.path().join(".ssh/authorized_keys");
@@ -430,10 +430,10 @@ async fn revoke_other_key_or_unknown_device_removes_nothing() {
 fn serve_lock_is_exclusive() {
     let dir = tempfile::tempdir().unwrap();
     let path = config::default_path(dir.path());
-    let held = zogsshd::serve::take_serve_lock(&path).unwrap();
-    assert!(zogsshd::serve::take_serve_lock(&path).is_err());
+    let held = herdlingd::serve::take_serve_lock(&path).unwrap();
+    assert!(herdlingd::serve::take_serve_lock(&path).is_err());
     drop(held);
-    assert!(zogsshd::serve::take_serve_lock(&path).is_ok());
+    assert!(herdlingd::serve::take_serve_lock(&path).is_ok());
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn append_and_remove_key_helpers() {
     let keys = dir.path().join("nested/.ssh/authorized_keys");
     let blob = ed25519_blob(4);
     let line = pair::key_line(Path::new(EXE), &format!("ssh-ed25519 {blob}"), "").unwrap();
-    assert!(line.ends_with(" zogssh:phone"));
+    assert!(line.ends_with(" herdling:phone"));
     assert!(pair::append_key(&keys, &line).unwrap());
     assert!(!pair::append_key(&keys, &line).unwrap());
     assert_eq!(std::fs::read_to_string(&keys).unwrap(), format!("{line}\n"));
@@ -454,15 +454,15 @@ fn append_and_remove_key_helpers() {
 #[test]
 fn key_line_rejects_unsafe_exe() {
     let key = format!("ssh-ed25519 {}", ed25519_blob(1));
-    assert!(pair::key_line(Path::new("/opt/a\"b/zogsshd"), &key, "Sam").is_err());
-    assert!(pair::key_line(Path::new("/opt/a\nb/zogsshd"), &key, "Sam").is_err());
-    assert!(pair::key_line(Path::new("relative/zogsshd"), &key, "Sam").is_err());
-    assert!(pair::key_line(Path::new("/opt/a b/zogsshd"), &key, "Sam").is_err());
-    assert!(pair::key_line(Path::new("/opt/$(id)/zogsshd"), &key, "Sam").is_err());
-    assert!(pair::key_line(Path::new("/opt/`id`/zogsshd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("/opt/a\"b/herdlingd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("/opt/a\nb/herdlingd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("relative/herdlingd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("/opt/a b/herdlingd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("/opt/$(id)/herdlingd"), &key, "Sam").is_err());
+    assert!(pair::key_line(Path::new("/opt/`id`/herdlingd"), &key, "Sam").is_err());
     let long = "x".repeat(60);
     let line = pair::key_line(Path::new(EXE), &key, &long).unwrap();
-    assert!(line.ends_with(&format!(" zogssh:{}", "x".repeat(40))));
+    assert!(line.ends_with(&format!(" herdling:{}", "x".repeat(40))));
 }
 
 #[test]
@@ -478,11 +478,11 @@ fn host_fingerprint_skips_unreadable() {
 
 #[test]
 fn pair_url_format() {
-    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456", None), "zogssh://pair?h=10.0.0.5&p=7790&c=123456");
+    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456", None), "herdling://pair?h=10.0.0.5&p=7790&c=123456");
     // `+`, `/` and `:` in the fingerprint are percent-encoded, so the app reads it back exactly.
     assert_eq!(
         pair::pair_url("10.0.0.5", 7790, "123456", Some("SHA256:ab+c/d")),
-        "zogssh://pair?h=10.0.0.5&p=7790&c=123456&f=SHA256%3Aab%2Bc%2Fd"
+        "herdling://pair?h=10.0.0.5&p=7790&c=123456&f=SHA256%3Aab%2Bc%2Fd"
     );
 }
 
@@ -491,7 +491,7 @@ fn key_fingerprint_is_sha256_of_blob() {
     let blob = ed25519_blob(5);
     let fp = format!("SHA256:{}", STANDARD_NO_PAD.encode(Sha256::digest(STANDARD.decode(&blob).unwrap())));
     assert_eq!(pair::key_fingerprint(&format!("ssh-ed25519 {blob}")), Some(fp.clone()));
-    assert_eq!(pair::key_fingerprint(&format!("ssh-ed25519 {blob} zogssh:Sam")), Some(fp.clone()));
+    assert_eq!(pair::key_fingerprint(&format!("ssh-ed25519 {blob} herdling:Sam")), Some(fp.clone()));
     assert!(!fp.contains(&blob));
     assert_eq!(pair::key_fingerprint("ssh-ed25519"), None);
     assert_eq!(pair::key_fingerprint("ssh-ed25519 !!!"), None);

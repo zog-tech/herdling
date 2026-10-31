@@ -1,4 +1,4 @@
-import type { PushRegister } from "@zogssh/protocol";
+import type { PushRegister } from "@herdling/protocol";
 
 import { deviceName, getDeviceId } from "../device";
 import type { RpcClient } from "../rpc/RpcClient";

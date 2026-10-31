@@ -1,4 +1,4 @@
-import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
+import type { AgentStatus, ThreadItem } from "@herdling/protocol";
 
 /** The assistant markdown after the last user item, joined with a blank line. Null when there is none. */
 export function replyToSpeak(items: ThreadItem[]): string | null {

@@ -54,13 +54,13 @@ pub struct RpcEvent {
 pub struct Hello {
     pub host: String,
     pub os: String,
-    pub zogsshd: String,
+    pub herdlingd: String,
     pub herdr_ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub herdr_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub herdr_protocol: Option<u64>,
-    /// Method names this zogsshd accepts. An older zogsshd does not send the field.
+    /// Method names this herdlingd accepts. An older herdlingd does not send the field.
     #[serde(default)]
     pub methods: Vec<String>,
 }
@@ -205,7 +205,7 @@ pub struct PairResponse {
     pub host_key_fingerprint: Option<String>,
 }
 
-/// Input line of `zogsshd enroll` (password setup).
+/// Input line of `herdlingd enroll` (password setup).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrollRequest {
     pub device_id: String,
@@ -214,7 +214,7 @@ pub struct EnrollRequest {
     pub public_key: String,
 }
 
-/// `zogsshd enroll` output on success. `ok` is always true.
+/// `herdlingd enroll` output on success. `ok` is always true.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnrollOk {
     pub ok: bool,
@@ -222,7 +222,7 @@ pub struct EnrollOk {
     pub hostname: String,
 }
 
-/// `zogsshd enroll` output on failure. `ok` is always false; `code` is `bad_request` or `io_error`.
+/// `herdlingd enroll` output on failure. `ok` is always false; `code` is `bad_request` or `io_error`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnrollFailed {
     pub ok: bool,
@@ -230,7 +230,7 @@ pub struct EnrollFailed {
     pub message: String,
 }
 
-/// The one JSON line `zogsshd enroll` prints.
+/// The one JSON line `herdlingd enroll` prints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EnrollResult {

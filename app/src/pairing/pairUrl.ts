@@ -1,4 +1,4 @@
-/** Default pairing port of `zogsshd serve`. */
+/** Default pairing port of `herdlingd serve`. */
 export const DEFAULT_PAIR_PORT = 7790;
 
 /**
@@ -11,13 +11,13 @@ export type PairTarget = { address: string; port: number; code: string; fingerpr
 export const FINGERPRINT_RE = /^SHA256:[A-Za-z0-9+/]{43}$/;
 
 /**
- * Reads a pairing QR / deep link: `zogssh://pair?h=<host>&p=<port>&c=<code>&f=<fingerprint>`.
+ * Reads a pairing QR / deep link: `herdling://pair?h=<host>&p=<port>&c=<code>&f=<fingerprint>`.
  * `p` is optional (default 7790). `f` is optional, but when present it must be a valid
  * fingerprint. Returns null for any other URL or a bad value.
  * Parsed by hand: React Native's `URL` has no working `searchParams`.
  */
 export function parsePairUrl(url: string): PairTarget | null {
-  const m = /^zogssh:\/\/pair\/?\?(.*)$/i.exec(url.trim());
+  const m = /^herdling:\/\/pair\/?\?(.*)$/i.exec(url.trim());
   if (!m) return null;
   const params = new Map<string, string>();
   for (const part of m[1].split("&")) {

@@ -1,4 +1,4 @@
-import type { CommandInfo } from "@zogssh/protocol";
+import type { CommandInfo } from "@herdling/protocol";
 import { useMemo, useState } from "react";
 import { Modal, SectionList, TextInput, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";

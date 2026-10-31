@@ -8,7 +8,7 @@ const mockSsh = {
   emit(event: string, payload: unknown) {
     this.listeners.get(event)?.forEach((l) => l(payload));
   },
-  ensureKey: jest.fn(async () => ({ publicKey: "ssh-ed25519 AAAA zogssh" })),
+  ensureKey: jest.fn(async () => ({ publicKey: "ssh-ed25519 AAAA herdling" })),
   connect: jest.fn(async (_hostId: string, _o: unknown): Promise<{ fingerprint: string }> => ({ fingerprint: "SHA256:abc" })),
   openExec: jest.fn(async (_hostId: string, _cmd: string) => "ch1"),
   write: jest.fn(async (_ch: string, _data: string) => {}),
@@ -50,7 +50,7 @@ import { useNotifPrefs } from "../push/prefs";
 import { ExecTransport, getHostConn, retryNow, startConnections, stopConnections } from "./connection";
 import { useHosts } from "./store";
 
-const HELLO = { host: "box", os: "macos", zogsshd: "0.1.0", herdr_ok: true };
+const HELLO = { host: "box", os: "macos", herdlingd: "0.1.0", herdr_ok: true };
 
 /** Rpc methods the fake companion does not answer (to simulate a dead link). */
 const silent = new Set<string>();
@@ -111,7 +111,7 @@ afterEach(() => {
 
 function addHost(fingerprint?: string) {
   useHosts.setState({
-    hosts: [{ id: "h1", name: "Box", address: "10.0.0.5", port: 22, user: "sam", command: "zogsshd rpc", fingerprint }],
+    hosts: [{ id: "h1", name: "Box", address: "10.0.0.5", port: 22, user: "sam", command: "herdlingd rpc", fingerprint }],
   });
 }
 
@@ -141,7 +141,7 @@ test("first_connect_pins_fingerprint", async () => {
   startConnections();
   await flush();
   expect(mockSsh.connect).toHaveBeenCalledWith("h1", { host: "10.0.0.5", port: 22, user: "sam", fingerprint: undefined });
-  expect(mockSsh.openExec).toHaveBeenCalledWith("h1", "zogsshd rpc");
+  expect(mockSsh.openExec).toHaveBeenCalledWith("h1", "herdlingd rpc");
   expect(useHosts.getState().hosts[0].fingerprint).toBe("SHA256:abc");
   const conn = getHostConn("h1");
   expect(conn.status).toBe("online");
@@ -226,7 +226,7 @@ test("early_channel_events_are_kept", async () => {
     mockSsh.emit("onChannelClose", { channelId: "ch9", reason: "exit 1" });
     return "ch9";
   });
-  const t = await ExecTransport.open("h1", "zogsshd rpc");
+  const t = await ExecTransport.open("h1", "herdlingd rpc");
   const lines: string[] = [];
   const reasons: string[] = [];
   t.onLine((l) => lines.push(l));

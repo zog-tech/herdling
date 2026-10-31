@@ -1,6 +1,6 @@
-import type { Hello } from "@zogssh/protocol";
+import type { Hello } from "@herdling/protocol";
 
-/** Every zogsshd method this app calls. Keep it in step with the calls in `src/`. */
+/** Every herdlingd method this app calls. Keep it in step with the calls in `src/`. */
 export const APP_METHODS = [
   "hello",
   "ping",
@@ -28,17 +28,17 @@ export const APP_METHODS = [
   "stt.make",
 ] as const;
 
-/** True when the host has the method. True too when the host does not say (an older zogsshd): the caller tries and falls back. */
+/** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */
 export function hasMethod(hello: Hello | undefined, method: string): boolean {
   const methods = hello?.methods;
   return methods === undefined || methods.includes(method);
 }
 
 /** True when the host is online and misses a method the app uses, or does not list its methods at all. */
-export function needsZogsshdUpdate(hello: Hello | undefined): boolean {
+export function needsHerdlingdUpdate(hello: Hello | undefined): boolean {
   if (!hello) return false;
   const methods = hello.methods;
   return methods === undefined || APP_METHODS.some((m) => !methods.includes(m));
 }
 
-export const UPDATE_ZOGSSHD_HINT = "Update zogsshd on this host for all features";
+export const UPDATE_HERDLINGD_HINT = "Update herdlingd on this host for all features";

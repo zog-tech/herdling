@@ -18,7 +18,7 @@ export type PasswordExecOptions = {
 
 export type PasswordExecResult = { stdout: string; stderr: string; exitCode: number; hostFingerprint: string };
 
-/** A `_zogssh._tcp` service seen on the local network. `address` is null when it did not resolve in 3 s. */
+/** A `_herdling._tcp` service seen on the local network. `address` is null when it did not resolve in 3 s. */
 export type FoundService = { name: string; address: string | null; pairPort: number; txt: Record<string, string> };
 
 /** State of the Bonjour browse. "waiting" is what iOS reports when local network access is denied. */
@@ -56,7 +56,7 @@ declare class SshNativeModule extends NativeModule<SshEvents> {
 
 const Ssh = requireNativeModule<SshNativeModule>("SshModule");
 
-/** ed25519 key from the Keychain (made on first call). `publicKey` is an OpenSSH line ending in " zogssh". */
+/** ed25519 key from the Keychain (made on first call). `publicKey` is an OpenSSH line ending in " herdling". */
 export function ensureKey(): Promise<{ publicKey: string }> {
   return Ssh.ensureKey();
 }
@@ -106,7 +106,7 @@ export function execWithPassword(o: PasswordExecOptions): Promise<PasswordExecRe
   return Ssh.execWithPassword(o);
 }
 
-/** Starts browsing for `_zogssh._tcp` services (replaces a running browse). Results come as events. */
+/** Starts browsing for `_herdling._tcp` services (replaces a running browse). Results come as events. */
 export function startBrowse(): Promise<void> {
   return Ssh.startBrowse();
 }

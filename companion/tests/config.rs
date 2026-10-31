@@ -1,6 +1,6 @@
 use std::os::unix::fs::PermissionsExt;
 
-use zogsshd::config::{self, Config, Device, Prefs};
+use herdlingd::config::{self, Config, Device, Prefs};
 
 fn device(id: &str, name: &str) -> Device {
     Device {

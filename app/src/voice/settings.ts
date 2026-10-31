@@ -46,7 +46,7 @@ export const useVoiceSettings = create<VoiceStore>()(
       set: (patch) => set(patch),
     }),
     {
-      name: "zogssh.voice_settings",
+      name: "herdling.voice_settings",
       storage,
       partialize: (s) => ({
         ttsDefault: s.ttsDefault,
@@ -71,7 +71,7 @@ export const useSessionSpeak = create<SessionSpeak>()(
       bySession: {},
       setSpeak: (key, on) => set((s) => ({ bySession: { ...s.bySession, [key]: on } })),
     }),
-    { name: "zogssh.session_speak", storage, partialize: (s) => ({ bySession: s.bySession }) },
+    { name: "herdling.session_speak", storage, partialize: (s) => ({ bySession: s.bySession }) },
   ),
 );
 

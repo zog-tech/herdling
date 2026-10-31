@@ -431,7 +431,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
     let mut h = Hello {
         host: hostname(),
         os: if cfg!(target_os = "macos") { "macos" } else { "linux" }.into(),
-        zogsshd: env!("CARGO_PKG_VERSION").into(),
+        herdlingd: env!("CARGO_PKG_VERSION").into(),
         herdr_ok: false,
         herdr_version: None,
         herdr_protocol: None,
@@ -774,7 +774,7 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "ok": true }))
 }
 
-/// Removes the device's `zogssh:` key line from `authorized_keys` and the device from the
+/// Removes the device's `herdling:` key line from `authorized_keys` and the device from the
 /// config. The device must be paired and the key must be the one saved for it, so a call
 /// can never remove a line the user added (for example a laptop key).
 async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
@@ -791,7 +791,7 @@ async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         if device.public_key.as_deref() != Some(key.as_str()) {
             return Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device"));
         }
-        let removed_keys = crate::pair::remove_zogssh_key(&keys_path, &key).map_err(|e| io(e.into()))?;
+        let removed_keys = crate::pair::remove_herdling_key(&keys_path, &key).map_err(|e| io(e.into()))?;
         let removed_device = crate::config::update(&config_path, |c| {
             let before = c.devices.len();
             c.devices.retain(|d| d.id != id);

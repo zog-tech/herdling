@@ -62,7 +62,7 @@ export default function PairScreen() {
     <Screen>
       <Card>
         <Text variant="small" muted>
-          On the host, run zogsshd pair. Enter the code it shows, or scan its QR code. Use the host's IP address or its .local name.
+          On the host, run herdlingd pair. Enter the code it shows, or scan its QR code. Use the host's IP address or its .local name.
         </Text>
         <Field
           label="Address"

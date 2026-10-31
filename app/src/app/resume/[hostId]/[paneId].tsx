@@ -1,4 +1,4 @@
-import type { RecentSession } from "@zogssh/protocol";
+import type { RecentSession } from "@herdling/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronRight, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";

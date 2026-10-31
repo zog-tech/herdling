@@ -1,4 +1,4 @@
-import type { AgentStatus, ThreadItem } from "@zogssh/protocol";
+import type { AgentStatus, ThreadItem } from "@herdling/protocol";
 import { act, create as createRenderer } from "react-test-renderer";
 
 import { useRecording } from "./recording";

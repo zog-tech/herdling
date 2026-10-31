@@ -3,9 +3,9 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::claude::Follower;
-use zogsshd::rpc::{self, Ctx};
-use zogsshd::types::ThreadItem;
+use herdlingd::claude::Follower;
+use herdlingd::rpc::{self, Ctx};
+use herdlingd::types::ThreadItem;
 
 fn append(path: &Path, text: &str) {
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();

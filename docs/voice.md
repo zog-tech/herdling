@@ -1,7 +1,7 @@
 # Voice: summaries, host speech and voice input
 
-Zogssh ships no AI provider. Spoken replies use the iPhone by default. The host can add three
-optional commands in `~/.config/zogsshd/config.toml`:
+Herdling ships no AI provider. Spoken replies use the iPhone by default. The host can add three
+optional commands in `~/.config/herdling/config.toml`:
 
 - `summary_command`: makes a short summary of a reply for Summary mode.
 - `tts_command`: makes speech audio when the app's voice engine is "Host voice command".

@@ -1,4 +1,4 @@
-import type { Summary } from "@zogssh/protocol";
+import type { Summary } from "@herdling/protocol";
 
 import type { RpcClient } from "../rpc/RpcClient";
 import { speechText } from "./speechText";

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::rpc::{self, Ctx};
 
 /// Writes an executable `#!/bin/sh` script named `name` into `dir`.
 pub fn script(dir: &Path, name: &str, body: &str) -> String {
@@ -25,8 +25,8 @@ pub enum Which {
 }
 
 pub fn set_command(home: &Path, which: Which, argv: Option<Vec<String>>) {
-    let path = zogsshd::config::default_path(home);
-    zogsshd::config::update(&path, |c| match which {
+    let path = herdlingd::config::default_path(home);
+    herdlingd::config::update(&path, |c| match which {
         Which::Summary => c.summary_command = argv,
         Which::Tts => c.tts_command = argv,
         Which::Stt => c.stt_command = argv,

@@ -1,4 +1,4 @@
-import type { CommandInfo, CommandList } from "@zogssh/protocol";
+import type { CommandInfo, CommandList } from "@herdling/protocol";
 import { useEffect, useState } from "react";
 
 import { useSnapshots } from "@/herdr/snapshotStore";

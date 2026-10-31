@@ -1,4 +1,4 @@
-import type { Automation, AutomationRun } from "@zogssh/protocol";
+import type { Automation, AutomationRun } from "@herdling/protocol";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";

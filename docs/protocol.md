@@ -1,11 +1,11 @@
-# zogsshd protocol
+# herdlingd protocol
 
-The app talks to `zogsshd` on each host. This page lists the rules for both sides.
+The app talks to `herdlingd` on each host. This page lists the rules for both sides.
 
 ## Transport
 
 - The app opens an SSH connection with the restricted SSH key.
-- The key runs `zogsshd rpc`. The command reads and writes one JSON object per line.
+- The key runs `herdlingd rpc`. The command reads and writes one JSON object per line.
 - A line ends with `\n`. A JSON object never contains a raw newline.
 - A request line is at most 34 MiB. A longer line gets a `bad_request` error. (Before `stt.make`, the limit was 16 MiB.)
 
@@ -25,7 +25,7 @@ A `herdr.call` error can also carry a code from herdr itself.
 
 ## Method list
 
-`hello` returns `methods`: every method name the host accepts. An older `zogsshd` does not send `methods`. In that case the app tries the call and falls back on `unknown_method`.
+`hello` returns `methods`: every method name the host accepts. An older `herdlingd` does not send `methods`. In that case the app tries the call and falls back on `unknown_method`.
 
 ## Compatibility rules
 

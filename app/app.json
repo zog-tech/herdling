@@ -1,29 +1,29 @@
 {
   "expo": {
-    "name": "Zogssh",
+    "name": "Herdling",
     "slug": "zogssh",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "zogssh",
+    "scheme": "herdling",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.zogtech.zogssh",
+      "bundleIdentifier": "com.zogtech.herdling",
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Zogssh connects to your computers on the local network over SSH and finds the ones that run zogsshd.",
+        "NSLocalNetworkUsageDescription": "Herdling connects to your computers on the local network over SSH and finds the ones that run herdlingd.",
         "NSBonjourServices": [
-          "_zogssh._tcp"
+          "_herdling._tcp"
         ],
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "Zogssh uses the microphone while you record with the mic button, to turn your speech into a prompt for the agent.",
-        "NSSpeechRecognitionUsageDescription": "Zogssh turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
-        "NSPhotoLibraryUsageDescription": "Zogssh attaches photos you pick to prompts for your agents."
+        "NSMicrophoneUsageDescription": "Herdling uses the microphone while you record with the mic button, to turn your speech into a prompt for the agent.",
+        "NSSpeechRecognitionUsageDescription": "Herdling turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
+        "NSPhotoLibraryUsageDescription": "Herdling attaches photos you pick to prompts for your agents."
       },
-      "buildNumber": "7"
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,7 +33,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.zogtech.zogssh"
+      "package": "com.zogtech.herdling"
     },
     "web": {
       "output": "static",
@@ -46,7 +46,7 @@
         {
           "backgroundColor": "#0A0A0B",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 140
         }
       ],
       "expo-secure-store",
@@ -54,7 +54,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Zogssh uses the camera to scan the pairing QR code that zogsshd pair shows."
+          "cameraPermission": "Herdling uses the camera to scan the pairing QR code that herdlingd pair shows."
         }
       ],
       [
@@ -74,7 +74,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Zogssh attaches photos you pick to prompts for your agents."
+          "photosPermission": "Herdling attaches photos you pick to prompts for your agents."
         }
       ]
     ],

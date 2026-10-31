@@ -1,4 +1,4 @@
-import type { TtsAudio } from "@zogssh/protocol";
+import type { TtsAudio } from "@herdling/protocol";
 
 /** One audio clip on disk. */
 export type Clip = { uri: string };

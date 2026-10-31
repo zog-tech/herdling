@@ -1,4 +1,4 @@
-import type { SubagentPage, ThreadItem, ThreadPage } from "@zogssh/protocol";
+import type { SubagentPage, ThreadItem, ThreadPage } from "@herdling/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHostConn } from "@/hosts/connection";

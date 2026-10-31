@@ -212,7 +212,7 @@ pub fn key_line(exe: &Path, public_key: &str, device_name: &str) -> Result<Strin
         // sshd runs the command through the user's shell, so allow only plain path characters.
         .filter(|s| s.starts_with('/') && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._+@-".contains(&b)))
         .ok_or_else(|| PairError::BadRequest("companion path cannot be quoted safely".into()))?;
-    Ok(format!("command=\"{exe} rpc\",{KEY_OPTIONS} {key} zogssh:{}", sanitize_name(device_name)))
+    Ok(format!("command=\"{exe} rpc\",{KEY_OPTIONS} {key} herdling:{}", sanitize_name(device_name)))
 }
 
 /// Splits off the first field of an `authorized_keys` line. Whitespace inside double
@@ -288,20 +288,20 @@ pub fn remove_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<u
     remove_lines(authorized_keys, public_key, false)
 }
 
-/// Like [`remove_key`], but removes only lines that end with a `zogssh:<device>` comment,
+/// Like [`remove_key`], but removes only lines that end with a `herdling:<device>` comment,
 /// so a line the user added for the same key stays.
-pub fn remove_zogssh_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<usize> {
+pub fn remove_herdling_key(authorized_keys: &Path, public_key: &str) -> std::io::Result<usize> {
     remove_lines(authorized_keys, public_key, true)
 }
 
-fn is_zogssh_line(line: &str) -> bool {
+fn is_herdling_line(line: &str) -> bool {
     line.trim_end_matches(['\r', '\n', ' ', '\t'])
         .rsplit([' ', '\t'])
         .next()
-        .is_some_and(|c| c.starts_with("zogssh:"))
+        .is_some_and(|c| c.starts_with("herdling:"))
 }
 
-fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> std::io::Result<usize> {
+fn remove_lines(authorized_keys: &Path, public_key: &str, only_herdling: bool) -> std::io::Result<usize> {
     let Some(blob) = public_key.split(' ').nth(1).filter(|b| !b.is_empty()) else { return Ok(0) };
     if !authorized_keys.exists() {
         return Ok(0);
@@ -316,7 +316,7 @@ fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> 
     let mut kept = String::with_capacity(text.len());
     let mut removed = 0;
     for l in text.split_inclusive('\n') {
-        if line_blob(l) == Some(blob) && (!only_zogssh || is_zogssh_line(l)) {
+        if line_blob(l) == Some(blob) && (!only_herdling || is_herdling_line(l)) {
             removed += 1;
         } else {
             kept.push_str(l);
@@ -326,7 +326,7 @@ fn remove_lines(authorized_keys: &Path, public_key: &str, only_zogssh: bool) -> 
         return Ok(0);
     }
     let perms = fs::metadata(&target)?.permissions();
-    let tmp = target.with_file_name(format!(".authorized_keys.zogsshd.{}.tmp", std::process::id()));
+    let tmp = target.with_file_name(format!(".authorized_keys.herdlingd.{}.tmp", std::process::id()));
     let res = (|| {
         let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
         f.write_all(kept.as_bytes())?;
@@ -348,7 +348,7 @@ pub fn check_id(v: &str, field: &str) -> Result<(), PairError> {
     Ok(())
 }
 
-/// A validated phone to add: what `POST /pair` and `zogsshd enroll` save.
+/// A validated phone to add: what `POST /pair` and `herdlingd enroll` save.
 #[derive(Debug)]
 pub struct NewDevice {
     pub id: String,
@@ -375,7 +375,7 @@ impl NewDevice {
 }
 
 /// Adds the device's restricted key line to `authorized_keys` and upserts the device in the
-/// config. A device that comes back with a new key loses its old zogssh line first; a key
+/// config. A device that comes back with a new key loses its old herdling line first; a key
 /// that is already there is not added twice. A `None` token keeps the saved token and prefs.
 /// Returns the config's `ssh_port`.
 pub fn save_device(authorized_keys: &Path, config_path: &Path, d: NewDevice, expo_token: Option<String>) -> anyhow::Result<u16> {
@@ -384,7 +384,7 @@ pub fn save_device(authorized_keys: &Path, config_path: &Path, d: NewDevice, exp
     let existing = crate::config::load(config_path)?.devices.into_iter().find(|x| x.id == d.id);
     let old_key = existing.as_ref().and_then(|x| x.public_key.clone()).filter(|k| *k != d.public_key);
     if let Some(old) = old_key {
-        remove_zogssh_key(authorized_keys, &old)?;
+        remove_herdling_key(authorized_keys, &old)?;
     }
     append_key(authorized_keys, &d.line)?;
     let device = crate::config::Device {
@@ -466,7 +466,7 @@ fn url_encode(s: &str) -> String {
 
 /// The QR / deep link. `fingerprint` is the host key fingerprint the app must see in the `/pair` answer.
 pub fn pair_url(addr: &str, port: u16, code: &str, fingerprint: Option<&str>) -> String {
-    let mut url = format!("zogssh://pair?h={}&p={port}&c={}", url_encode(addr), url_encode(code));
+    let mut url = format!("herdling://pair?h={}&p={port}&c={}", url_encode(addr), url_encode(code));
     if let Some(fp) = fingerprint {
         url.push_str("&f=");
         url.push_str(&url_encode(fp));

@@ -1,4 +1,4 @@
-import type { ProviderUsage } from "@zogssh/protocol";
+import type { ProviderUsage } from "@herdling/protocol";
 import { useRouter } from "expo-router";
 import { CircleAlert, CircleSlash, LogIn, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";

@@ -41,7 +41,7 @@ enum PasswordSetup {
           host: host,
           port: port,
           // Never sent: the host key check rejects the key first.
-          authenticationMethod: .passwordBased(username: "zogssh-probe", password: ""),
+          authenticationMethod: .passwordBased(username: "herdling-probe", password: ""),
           hostKeyValidator: .custom(check),
           reconnect: .never,
           connectTimeout: .milliseconds(Int64(timeoutMs))

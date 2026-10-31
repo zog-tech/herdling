@@ -20,7 +20,7 @@ test("failed_keychain_write_warns_and_keeps_memory_state", async () => {
   // A persisted store whose write fails keeps the new state in memory.
   markSeen("h1", "p1", 4);
   await Promise.resolve();
-  expect(SecureStore.setItemAsync).toHaveBeenCalledWith("zogssh.seen", expect.any(String));
+  expect(SecureStore.setItemAsync).toHaveBeenCalledWith("herdling.seen", expect.any(String));
   expect(useSeen.getState().seen["h1:p1"]).toBe(4);
   warn.mockRestore();
 });

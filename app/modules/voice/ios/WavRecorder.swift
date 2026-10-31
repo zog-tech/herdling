@@ -23,7 +23,7 @@ final class WavWriter: @unchecked Sendable {
     else { throw DictationError.unavailable("Cannot convert microphone audio") }
     converter.primeMethod = .none
     let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("zogssh-rec-\(UUID().uuidString).wav")
+      .appendingPathComponent("herdling-rec-\(UUID().uuidString).wav")
     guard FileManager.default.createFile(atPath: url.path, contents: Self.header(dataBytes: 0)) else {
       throw DictationError.unavailable("Cannot create the recording file")
     }

@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { mergeItems } from "./merge";

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::commands::{self, Command};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::commands::{self, Command};
+use herdlingd::rpc::{self, Ctx};
 
 fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

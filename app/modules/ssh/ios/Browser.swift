@@ -1,15 +1,15 @@
 import Foundation
 import Network
 
-/// Browses Bonjour for `_zogssh._tcp` and resolves each service to an address and port.
+/// Browses Bonjour for `_herdling._tcp` and resolves each service to an address and port.
 /// All state lives on `queue`.
 final class Browser: @unchecked Sendable {
-  static let serviceType = "_zogssh._tcp"
+  static let serviceType = "_herdling._tcp"
   /// Used as `pairPort` when the service does not resolve (the companion default).
   static let defaultPairPort = 7790
   static let resolveTimeout: TimeInterval = 3
 
-  private let queue = DispatchQueue(label: "zogssh.bonjour")
+  private let queue = DispatchQueue(label: "herdling.bonjour")
   private var onFound: ([String: Any]) -> Void = { _ in }
   private var onLost: (String) -> Void = { _ in }
   /// Browse state: "ready", "waiting", "failed" or "stopped", and an error text.

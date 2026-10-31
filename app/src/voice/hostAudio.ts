@@ -1,4 +1,4 @@
-import type { TtsAudio } from "@zogssh/protocol";
+import type { TtsAudio } from "@herdling/protocol";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync, type AudioPlayer, type AudioStatus } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 
@@ -71,7 +71,7 @@ export function stopHostAudio(): void {
 export function hostAudio(rate: number): Omit<HostVoiceDeps, "tts"> {
   return {
     async writeClip(audio) {
-      const file = new File(Paths.cache, `zogssh-tts-${Date.now()}-${seq++}.${EXT[audio.mime] ?? "audio"}`);
+      const file = new File(Paths.cache, `herdling-tts-${Date.now()}-${seq++}.${EXT[audio.mime] ?? "audio"}`);
       await file.write(audio.audio_b64, { encoding: "base64" });
       return { uri: file.uri };
     },

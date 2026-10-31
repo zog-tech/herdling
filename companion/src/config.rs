@@ -1,4 +1,4 @@
-//! Companion config file (`~/.config/zogsshd/config.toml`). Written only through [`update`].
+//! Companion config file (`~/.config/herdling/config.toml`). Written only through [`update`].
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -81,7 +81,7 @@ impl Default for Prefs {
 }
 
 pub fn default_path(home: &Path) -> PathBuf {
-    home.join(".config/zogsshd/config.toml")
+    home.join(".config/herdling/config.toml")
 }
 
 /// Reads the config. A missing file gives the default config.

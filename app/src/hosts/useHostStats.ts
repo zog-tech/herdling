@@ -1,4 +1,4 @@
-import type { Stats } from "@zogssh/protocol";
+import type { Stats } from "@herdling/protocol";
 import { useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";

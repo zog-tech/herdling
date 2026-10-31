@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use base64::Engine;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
-use zogsshd::uploads;
+use herdlingd::rpc::{self, Ctx};
+use herdlingd::uploads;
 
 fn b64(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)

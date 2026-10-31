@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@zogssh/protocol";
+import type { ThreadItem } from "@herdling/protocol";
 
 import { addPending, pendingOf, reconcilePending, removePending, sendWithPending, usePending, PENDING_MAX_AGE_MS, matchKey, splitUploads } from "./pending";
 
@@ -70,7 +70,7 @@ test("old_bubbles_go_away_and_remove_works", () => {
 });
 
 describe("photo prompts", () => {
-  const path = "/Users/sam/.cache/zogsshd/uploads/1793412598805-pasted-1.jpg";
+  const path = "/Users/sam/.cache/herdling/uploads/1793412598805-pasted-1.jpg";
 
   it("hides the upload paths and counts them", () => {
     expect(splitUploads(`Why is there 2 of some?\n${path}`)).toEqual({ text: "Why is there 2 of some?", images: 1 });

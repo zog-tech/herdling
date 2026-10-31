@@ -1,4 +1,4 @@
-#import "ZogPasteHook.h"
+#import "HerdlingPasteHook.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
@@ -11,13 +11,13 @@ static const CGFloat kMaxSide = 2048;
 static const CGFloat kQuality = 0.8;
 
 static atomic_bool gEnabled = false;
-static ZogPasteImageHandler gHandler = nil;
+static HerdlingPasteImageHandler gHandler = nil;
 static IMP gOrigCanPerform = NULL;
 static IMP gOrigPaste = NULL;
 
-static ZogPasteImageHandler currentHandler(void)
+static HerdlingPasteImageHandler currentHandler(void)
 {
-  @synchronized([ZogPasteHook class]) {
+  @synchronized([HerdlingPasteHook class]) {
     return gHandler;
   }
 }
@@ -41,7 +41,7 @@ static BOOL takesPaste(UITextView *view)
 }
 
 /// Scales `image` to fit kMaxSide, encodes it as JPEG and calls the handler. Runs off the main thread.
-static void encodeAndSend(UIImage *image, ZogPasteImageHandler handler)
+static void encodeAndSend(UIImage *image, HerdlingPasteImageHandler handler)
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     CGFloat w = image.size.width * image.scale;
@@ -65,9 +65,9 @@ static void encodeAndSend(UIImage *image, ZogPasteImageHandler handler)
   });
 }
 
-@implementation ZogPasteHook
+@implementation HerdlingPasteHook
 
-+ (void)installWithHandler:(ZogPasteImageHandler)handler
++ (void)installWithHandler:(HerdlingPasteImageHandler)handler
 {
   @synchronized(self) {
     gHandler = [handler copy];
@@ -90,7 +90,7 @@ static void encodeAndSend(UIImage *image, ZogPasteImageHandler handler)
       return action == @selector(paste:) && takesPaste(view);
     });
     IMP pasteImp = imp_implementationWithBlock(^(UITextView *view, id sender) {
-      ZogPasteImageHandler h = currentHandler();
+      HerdlingPasteImageHandler h = currentHandler();
       if (h != nil && takesPaste(view)) {
         // An edit menu paste is a user action: reading the image shows no "Allow Paste" prompt.
         UIImage *image = UIPasteboard.generalPasteboard.image;

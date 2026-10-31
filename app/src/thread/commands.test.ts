@@ -1,4 +1,4 @@
-import type { CommandInfo } from "@zogssh/protocol";
+import type { CommandInfo } from "@herdling/protocol";
 
 jest.mock("@/hosts/connection", () => ({ useHostConn: () => ({ status: "offline", attempt: 0 }) }));
 

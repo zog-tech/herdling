@@ -8,11 +8,11 @@ export type RpcEvent = { method: "event"; params: { stream: string; data: unknow
 export type Hello = {
   host: string;
   os: "macos" | "linux";
-  zogsshd: string;
+  herdlingd: string;
   herdr_ok: boolean;
   herdr_version?: string;
   herdr_protocol?: number;
-  /** Method names the host accepts. Missing on an older zogsshd. */
+  /** Method names the host accepts. Missing on an older herdlingd. */
   methods?: string[];
 };
 
@@ -86,14 +86,14 @@ export type PairResponse = {
   host_key_fingerprint: string | null;
 };
 
-/** Input line of `zogsshd enroll` (password setup). Sent on stdin, never in the command line. */
+/** Input line of `herdlingd enroll` (password setup). Sent on stdin, never in the command line. */
 export type EnrollRequest = {
   device_id: string;
   device_name: string;
   host_id: string;
   public_key: string;
 };
-/** The one JSON line `zogsshd enroll` prints. Failure `code` is "bad_request" or "io_error". */
+/** The one JSON line `herdlingd enroll` prints. Failure `code` is "bad_request" or "io_error". */
 export type EnrollResult =
   | { ok: true; host_fingerprint: string | null; hostname: string }
   | { ok: false; code: string; message: string };
@@ -166,5 +166,5 @@ export type CommandInfo = {
 /** `commands.list` result, sorted by name. */
 export type CommandList = { commands: CommandInfo[] };
 
-/** `files.put` result: where the host saved the file (`~/.cache/zogsshd/uploads/...`). */
+/** `files.put` result: where the host saved the file (`~/.cache/herdling/uploads/...`). */
 export type FilePut = { path: string };

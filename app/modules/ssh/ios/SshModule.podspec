@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name           = 'SshModule'
   s.version        = '1.0.0'
-  s.summary        = 'SSH client for Zogssh (Citadel / SwiftNIO SSH) and Parakeet transcription (FluidAudio)'
+  s.summary        = 'SSH client for Herdling (Citadel / SwiftNIO SSH) and Parakeet transcription (FluidAudio)'
   s.description    = 'Ed25519 key in Keychain, host key pinning and streaming exec channels.'
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'

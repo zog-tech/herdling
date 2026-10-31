@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use host_command::{call, script, set_command, wait_dead, Which};
 use serde_json::{json, Value};
-use zogsshd::summary::INSTRUCTIONS;
+use herdlingd::summary::INSTRUCTIONS;
 
 const T: Duration = Duration::from_secs(5);
 
@@ -137,23 +137,23 @@ async fn long_input_keeps_end() {
 #[test]
 fn clip_counts_characters() {
     let text = "é".repeat(24_001);
-    assert_eq!(zogsshd::summary::clip(&text).chars().count(), 24_000);
-    assert_eq!(zogsshd::summary::clip("short"), "short");
+    assert_eq!(herdlingd::summary::clip(&text).chars().count(), 24_000);
+    assert_eq!(herdlingd::summary::clip("short"), "short");
 }
 
 #[tokio::test]
 async fn old_config_with_anthropic_key_still_loads() {
     let dir = tempfile::tempdir().unwrap();
-    let path = zogsshd::config::default_path(dir.path());
+    let path = herdlingd::config::default_path(dir.path());
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "anthropic_key = \"sk-old\"\npair_port = 7791\n").unwrap();
-    let cfg = zogsshd::config::load(&path).unwrap();
+    let cfg = herdlingd::config::load(&path).unwrap();
     assert_eq!(cfg.pair_port, 7791);
     assert_eq!(cfg.summary_command, None);
     // summary.make reports the missing command, not a config error.
     let r = summary(dir.path(), "hi", T).await;
     assert_eq!(r["error"]["code"], "no_command");
     // The next write drops the old key.
-    zogsshd::config::update(&path, |_| ()).unwrap();
+    herdlingd::config::update(&path, |_| ()).unwrap();
     assert!(!std::fs::read_to_string(&path).unwrap().contains("sk-old"));
 }

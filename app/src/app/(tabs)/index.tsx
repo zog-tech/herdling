@@ -18,7 +18,7 @@ import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
-import { needsZogsshdUpdate, UPDATE_ZOGSSHD_HINT } from "@/hosts/methods";
+import { needsHerdlingdUpdate, UPDATE_HERDLINGD_HINT } from "@/hosts/methods";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
@@ -66,9 +66,9 @@ function HostCard({ host }: { host: Host }) {
         <ConnBadge status={conn.status} />
       </View>
       {online ? <HostMeters hostId={host.id} /> : null}
-      {online && needsZogsshdUpdate(conn.hello) ? (
+      {online && needsHerdlingdUpdate(conn.hello) ? (
         <Text variant="small" muted>
-          {UPDATE_ZOGSSHD_HINT}
+          {UPDATE_HERDLINGD_HINT}
         </Text>
       ) : null}
       {online && !snapshot ? (

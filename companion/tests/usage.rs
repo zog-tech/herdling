@@ -6,8 +6,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
-use zogsshd::usage::{parse_claude, parse_codex, UsageUrls};
+use herdlingd::rpc::{self, Ctx};
+use herdlingd::usage::{parse_claude, parse_codex, UsageUrls};
 
 const CLAUDE_TOKEN: &str = "claude-test-token";
 const CODEX_TOKEN: &str = "codex-test-token";

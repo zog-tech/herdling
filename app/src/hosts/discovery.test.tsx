@@ -40,7 +40,7 @@ const STUDIO: FoundService = {
 };
 
 function host(id: string, address: string, fingerprint?: string): Host {
-  return { id, name: id, address, port: 22, user: "sam", fingerprint, command: "zogsshd rpc" };
+  return { id, name: id, address, port: 22, user: "sam", fingerprint, command: "herdlingd rpc" };
 }
 
 test("found_parses_txt", () => {

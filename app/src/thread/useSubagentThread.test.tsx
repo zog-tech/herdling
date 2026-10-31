@@ -1,4 +1,4 @@
-import type { SubagentPage, ThreadItem } from "@zogssh/protocol";
+import type { SubagentPage, ThreadItem } from "@herdling/protocol";
 import { act, create } from "react-test-renderer";
 
 import { useSubagentThread } from "./useSubagentThread";

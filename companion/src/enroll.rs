@@ -1,4 +1,4 @@
-//! `zogsshd enroll`: adds the phone's restricted key when the app logs in once with the
+//! `herdlingd enroll`: adds the phone's restricted key when the app logs in once with the
 //! user's SSH password ("Set up with password").
 //!
 //! It does what `POST /pair` does after the code check, through the same functions in

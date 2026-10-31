@@ -1,5 +1,5 @@
-//! `zogsshd install`: copies the binary to `~/.local/bin` and registers a user service
-//! (launchd on macOS, systemd on Linux) that runs `zogsshd serve`.
+//! `herdlingd install`: copies the binary to `~/.local/bin` and registers a user service
+//! (launchd on macOS, systemd on Linux) that runs `herdlingd serve`.
 
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -8,7 +8,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-pub const LABEL: &str = "com.zogtech.zogsshd";
+pub const LABEL: &str = "com.zogtech.herdlingd";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Os {
@@ -57,7 +57,7 @@ fn xml_escape(s: &str) -> String {
 
 pub fn launchd_plist(bin: &Path, home: &Path) -> String {
     let bin = xml_escape(&bin.display().to_string());
-    let log = xml_escape(&home.join("Library/Logs/zogsshd.log").display().to_string());
+    let log = xml_escape(&home.join("Library/Logs/herdlingd.log").display().to_string());
     let path = xml_escape(&format!("{}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home.join(".local/bin").display()));
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -89,10 +89,10 @@ pub fn launchd_plist(bin: &Path, home: &Path) -> String {
 }
 
 pub fn systemd_unit(bin: &Path) -> String {
-    // Derived from the binary path (`<home>/.local/bin/zogsshd`).
+    // Derived from the binary path (`<home>/.local/bin/herdlingd`).
     let home = bin.parent().and_then(Path::parent).and_then(Path::parent).unwrap_or(Path::new("/"));
     format!(
-        "[Unit]\nDescription=zogsshd companion for Zogssh\nAfter=network-online.target\n\n\
+        "[Unit]\nDescription=herdlingd companion for Herdling\nAfter=network-online.target\n\n\
          [Service]\nExecStart={} serve\nRestart=always\nRestartSec=5\n\
          Environment=PATH={}:/usr/local/bin:/usr/bin:/bin\n\n\
          [Install]\nWantedBy=default.target\n",
@@ -107,7 +107,7 @@ pub fn install(o: &InstallOpts) -> Result<InstallReport> {
 }
 
 pub fn install_with(o: &InstallOpts, runner: &dyn Runner) -> Result<InstallReport> {
-    let bin = o.home.join(".local/bin/zogsshd");
+    let bin = o.home.join(".local/bin/herdlingd");
     copy_binary(&o.exe, &bin)?;
 
     let user = crate::serve::http::current_user(&o.home);
@@ -123,12 +123,12 @@ pub fn install_with(o: &InstallOpts, runner: &dyn Runner) -> Result<InstallRepor
             (unit_path, launchd_plist(&bin, &o.home), cmds)
         }
         Os::Linux => {
-            let unit_path = o.home.join(".config/systemd/user/zogsshd.service");
+            let unit_path = o.home.join(".config/systemd/user/herdlingd.service");
             let cmds = vec![
                 vec!["systemctl".into(), "--user".into(), "daemon-reload".into()],
-                vec!["systemctl".into(), "--user".into(), "enable".into(), "--now".into(), "zogsshd.service".into()],
+                vec!["systemctl".into(), "--user".into(), "enable".into(), "--now".into(), "herdlingd.service".into()],
                 // `enable --now` leaves a running unit alone; restart it so a reinstall runs the new binary.
-                vec!["systemctl".into(), "--user".into(), "restart".into(), "zogsshd.service".into()],
+                vec!["systemctl".into(), "--user".into(), "restart".into(), "herdlingd.service".into()],
             ];
             (unit_path, systemd_unit(&bin), cmds)
         }
@@ -168,7 +168,7 @@ pub fn install_with(o: &InstallOpts, runner: &dyn Runner) -> Result<InstallRepor
             }
         }
     }
-    next_steps.push("Pair your phone: zogsshd pair".into());
+    next_steps.push("Pair your phone: herdlingd pair".into());
     Ok(InstallReport { bin, unit_path, commands, next_steps })
 }
 

@@ -65,7 +65,7 @@ export default function PasswordSetupScreen() {
     <Screen>
       <Card>
         <Text variant="small" muted>
-          For a host that allows SSH password login and has zogsshd installed. Zogssh logs in once, adds its own
+          For a host that allows SSH password login and has herdlingd installed. Herdling logs in once, adds its own
           key, and does not keep the password.
         </Text>
         <Field label="Name (optional)" value={name} onChangeText={setName} placeholder="Studio" editable={!busy} />

@@ -1,7 +1,7 @@
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 
-const DEVICE_ID_KEY = "zogssh.device_id";
+const DEVICE_ID_KEY = "herdling.device_id";
 
 let cached: Promise<string> | undefined;
 

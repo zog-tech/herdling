@@ -1,4 +1,4 @@
-import type { SttText } from "@zogssh/protocol";
+import type { SttText } from "@herdling/protocol";
 
 import type { Recorded } from "../../modules/voice";
 import type { InputEngine } from "./settings";

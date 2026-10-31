@@ -10,8 +10,8 @@ use fake_herdr_events::{spawn_fake_snapshot, status_ev, Push};
 use mock_http::MockHttp;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
-use zogsshd::config::{self, Device, Prefs};
-use zogsshd::serve::{watch::watch, ServeCtx};
+use herdlingd::config::{self, Device, Prefs};
+use herdlingd::serve::{watch::watch, ServeCtx};
 
 const TOKEN: &str = "ExponentPushToken[test]";
 
@@ -20,7 +20,7 @@ fn snapshot() -> Value {
         "panes": [{"pane_id": "w1:p1", "workspace_id": "w1"}],
         "agents": [{"pane_id": "w1:p1", "workspace_id": "w1", "agent": "claude",
                     "agent_status": "working", "terminal_title_stripped": "api"}],
-        "workspaces": [{"workspace_id": "w1", "label": "zogssh"}]
+        "workspaces": [{"workspace_id": "w1", "label": "herdling"}]
     }})
 }
 
@@ -67,7 +67,7 @@ async fn start(prefs: Prefs, reply: Value) -> Setup {
         debounce: Duration::from_millis(50),
         pair_port: None,
         host_key_paths: vec![],
-        exe: PathBuf::from("/usr/local/bin/zogsshd"),
+        exe: PathBuf::from("/usr/local/bin/herdlingd"),
     };
     tokio::spawn(async move { watch(&ctx).await });
     let mut s = Setup { _dir: dir, sock, config, push, reqs, http };
@@ -109,7 +109,7 @@ async fn pushes_finished_to_expo() {
     assert_eq!(
         body,
         // Title: the workspace label, as herdr shows it. Body: agent kind · terminal title.
-        json!([{"to": TOKEN, "title": "zogssh finished", "body": "claude · api", "sound": "default",
+        json!([{"to": TOKEN, "title": "herdling finished", "body": "claude · api", "sound": "default",
                 "data": {"hostId": "h_1", "paneId": "w1:p1"}}])
     );
     s.assert_no_body(Duration::from_millis(300)).await;
@@ -139,7 +139,7 @@ async fn pushes_at_desk_when_pref_is_off() {
     let mut s = start(Prefs { quiet_at_desk: false, ..Prefs::default() }, ok_reply()).await;
     s.push.send(Push::Event(focus_ev("w1:p1"))).unwrap();
     s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
-    assert_eq!(s.next_body().await[0]["title"], "zogssh finished");
+    assert_eq!(s.next_body().await[0]["title"], "herdling finished");
 }
 
 #[tokio::test]
@@ -170,7 +170,7 @@ async fn reconnects_after_herdr_restart() {
     s.wait_subscribed().await;
     s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
     let body = s.next_body().await;
-    assert_eq!(body[0]["title"], "zogssh finished");
+    assert_eq!(body[0]["title"], "herdling finished");
     assert_eq!(body.as_array().unwrap().len(), 1);
     s.assert_no_body(Duration::from_millis(300)).await;
 }

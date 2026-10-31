@@ -7,7 +7,7 @@ const old: Host = {
   address: "box.example.com",
   port: 22,
   user: "sam",
-  command: "zogsshd rpc",
+  command: "herdlingd rpc",
   fingerprint: "SHA256:abc",
 };
 const values = { name: old.name, address: old.address, port: old.port, user: old.user, command: old.command };

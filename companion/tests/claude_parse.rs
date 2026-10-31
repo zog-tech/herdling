@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use serde_json::json;
-use zogsshd::claude::{assemble, parse_line, parse_results, thread_get, thread_get_from, ResultInfo};
-use zogsshd::types::{ThreadItem, ToolResult};
+use herdlingd::claude::{assemble, parse_line, parse_results, thread_get, thread_get_from, ResultInfo};
+use herdlingd::types::{ThreadItem, ToolResult};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)

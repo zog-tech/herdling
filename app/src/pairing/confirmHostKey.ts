@@ -4,8 +4,8 @@ import { Alert } from "react-native";
 export function confirmHostKey(fingerprint: string | null): Promise<boolean> {
   return new Promise((resolve) => {
     const message = fingerprint
-      ? `${fingerprint}\n\nCheck that zogsshd pair on the host shows the same host key. If it does not, someone on the network may be intercepting the pairing.`
-      : "The host reported no host key. Zogssh will trust the key it sees on the first connection. Pair only on a network you trust.";
+      ? `${fingerprint}\n\nCheck that herdlingd pair on the host shows the same host key. If it does not, someone on the network may be intercepting the pairing.`
+      : "The host reported no host key. Herdling will trust the key it sees on the first connection. Pair only on a network you trust.";
     Alert.alert(
       fingerprint ? "Check the host key" : "No host key",
       message,

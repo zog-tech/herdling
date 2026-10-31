@@ -1,4 +1,4 @@
-import type { AgentPreview, AgentStatus } from "@zogssh/protocol";
+import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 
 import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";

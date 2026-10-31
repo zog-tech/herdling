@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use zogsshd::rpc::{self, Ctx};
+use herdlingd::rpc::{self, Ctx};
 
 struct Session {
     tx: tokio::io::DuplexStream,
@@ -49,7 +49,7 @@ async fn hello_reports_herdr_ok() {
     let r = s.recv().await;
     assert_eq!(r["id"], 1);
     assert_eq!(r["result"]["herdr_ok"], true);
-    assert_eq!(r["result"]["zogsshd"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(r["result"]["herdlingd"], env!("CARGO_PKG_VERSION"));
     assert_eq!(r["result"]["herdr_version"], "9.9.9");
     assert_eq!(r["result"]["herdr_protocol"], 22);
 }
@@ -175,8 +175,8 @@ async fn herdr_call_marks_phone_input() {
     let mut s = Session::start(fake(&dir), dir.path().into());
     s.send(r#"{"id":7,"method":"herdr.call","params":{"method":"agent.list","params":{"pane_id":"w1:p1"}}}"#).await;
     s.recv().await;
-    assert_eq!(zogsshd::phone_input::last(dir.path(), "w1:p1"), None, "a read is not input");
+    assert_eq!(herdlingd::phone_input::last(dir.path(), "w1:p1"), None, "a read is not input");
     s.send(r#"{"id":8,"method":"herdr.call","params":{"method":"pane.send_text","params":{"pane_id":"w1:p1","text":"hi"}}}"#).await;
     s.recv().await;
-    assert!(zogsshd::phone_input::last(dir.path(), "w1:p1").is_some());
+    assert!(herdlingd::phone_input::last(dir.path(), "w1:p1").is_some());
 }

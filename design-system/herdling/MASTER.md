@@ -1,6 +1,6 @@
-# Zogssh design system (native iOS, dark first)
+# Herdling design system (native iOS, dark first)
 
-> A file in `design-system/zogssh/pages/<screen>.md` overrides this file for that screen.
+> A file in `design-system/herdling/pages/<screen>.md` overrides this file for that screen.
 > The code source of truth is `app/src/theme/tokens.ts`. When this file and the tokens differ, fix one of them in the same change.
 
 **Product:** a phone remote for coding agents in herdr panes on your own hosts.

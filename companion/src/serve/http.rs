@@ -35,7 +35,7 @@ pub struct State {
 
 impl State {
     pub fn new(ctx: &ServeCtx) -> Arc<State> {
-        let cfg_dir = ctx.config_path.parent().map(PathBuf::from).unwrap_or_else(|| ctx.home.join(".config/zogsshd"));
+        let cfg_dir = ctx.config_path.parent().map(PathBuf::from).unwrap_or_else(|| ctx.home.join(".config/herdling"));
         Arc::new(State {
             authorized_keys: ctx.home.join(".ssh/authorized_keys"),
             config_path: ctx.config_path.clone(),
@@ -98,7 +98,7 @@ impl IntoResponse for Failure {
                 error(status, e.code())
             }
             Failure::Internal(e) => {
-                eprintln!("zogsshd serve: pairing failed: {e:#}");
+                eprintln!("herdlingd serve: pairing failed: {e:#}");
                 error(StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
         }
@@ -133,7 +133,7 @@ fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairRespon
     pair::take_window(&state.cfg_dir, &req.code, now)?;
     let ssh_port =
         pair::save_device(&state.authorized_keys, &state.config_path, device, req.expo_token).map_err(Failure::Internal)?;
-    eprintln!("zogsshd serve: paired device {name}  key {key_fp}");
+    eprintln!("herdlingd serve: paired device {name}  key {key_fp}");
     Ok(PairResponse {
         host_name: state.host_name.clone(),
         user: state.user.clone(),

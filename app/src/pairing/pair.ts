@@ -1,4 +1,4 @@
-import type { PairRequest, PairResponse } from "@zogssh/protocol";
+import type { PairRequest, PairResponse } from "@herdling/protocol";
 
 import { ensureKey } from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
@@ -33,13 +33,13 @@ export function pairMessage(code: PairFailCode, target?: { address: string; port
     case "bad_code":
       return "Wrong code. Check the code on the host.";
     case "no_window":
-      return "No pairing window. Run zogsshd pair on the host.";
+      return "No pairing window. Run herdlingd pair on the host.";
     case "too_many_attempts":
-      return "Too many wrong codes. Run zogsshd pair again.";
+      return "Too many wrong codes. Run herdlingd pair again.";
     case "unreachable":
       return target
-        ? `Can't reach ${target.address}:${target.port}. Is zogsshd serve running?`
-        : "Can't reach the host. Is zogsshd serve running?";
+        ? `Can't reach ${target.address}:${target.port}. Is herdlingd serve running?`
+        : "Can't reach the host. Is herdlingd serve running?";
     case "bad_request":
       return "The host rejected the pairing request.";
     case "host_key_mismatch":
@@ -70,13 +70,13 @@ function isPairResponse(v: unknown): v is PairResponse {
 /**
  * How the app checks the host key in the `/pair` answer, which comes over plain HTTP:
  * - `fingerprint`: the key from the QR code. A different key (or none) stops pairing.
- * - `confirm`: manual entry. The user compares the key with the one `zogsshd pair` prints;
+ * - `confirm`: manual entry. The user compares the key with the one `herdlingd pair` prints;
  *   `false` stops pairing. It gets `null` when the host reports no key.
  */
 export type HostKeyCheck = { fingerprint: string } | { confirm: (fingerprint: string | null) => Promise<boolean> };
 
 /**
- * Pairs with `zogsshd serve` at `address:port` using the code it shows, then saves the host
+ * Pairs with `herdlingd serve` at `address:port` using the code it shows, then saves the host
  * with the user, SSH port and host key the companion reports. Throws `PairFailed`; nothing is saved then.
  * The push token is not sent here: it goes only over the pinned SSH session (`push.register`).
  */

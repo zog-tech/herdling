@@ -11,7 +11,7 @@ import { Card } from "@/ui/Card";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 
-/** Scans the QR code of zogsshd pair and returns to the pair screen with its values. */
+/** Scans the QR code of herdlingd pair and returns to the pair screen with its values. */
 export default function ScanScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
@@ -44,7 +44,7 @@ export default function ScanScreen() {
       <Screen>
         <Card>
           <Text variant="title">Camera access</Text>
-          <Text muted>Zogssh uses the camera only to scan the pairing QR code that zogsshd pair shows.</Text>
+          <Text muted>Herdling uses the camera only to scan the pairing QR code that herdlingd pair shows.</Text>
           {permission.canAskAgain ? (
             <Button label="Allow camera" Icon={Camera} onPress={() => void requestPermission()} />
           ) : (
@@ -67,7 +67,7 @@ export default function ScanScreen() {
         />
       </View>
       <Text muted={!wrong} color={wrong ? colors.status.blocked : undefined} accessibilityLiveRegion="polite">
-        {wrong ? "Not a Zogssh pairing code. Scan the QR code from zogsshd pair." : "Point the camera at the QR code from zogsshd pair."}
+        {wrong ? "Not a Herdling pairing code. Scan the QR code from herdlingd pair." : "Point the camera at the QR code from herdlingd pair."}
       </Text>
     </View>
   );

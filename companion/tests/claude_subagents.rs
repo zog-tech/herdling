@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde_json::json;
-use zogsshd::claude::subagents::{tool_activity, transcript_running, ACTIVITY_CAP};
-use zogsshd::claude::{assemble, merge_result, parse_line, parse_results, thread_get, Follower, ResultKind};
-use zogsshd::types::ThreadItem;
+use herdlingd::claude::subagents::{tool_activity, transcript_running, ACTIVITY_CAP};
+use herdlingd::claude::{assemble, merge_result, parse_line, parse_results, thread_get, Follower, ResultKind};
+use herdlingd::types::ThreadItem;
 
 /// The exact tool result Claude Code writes when it launches a background subagent.
 const LAUNCH: &str = "Async agent launched successfully. (This tool result is internal metadata \u{2014} never quote or paste any part of it, including the agentId below, into a user-facing reply.)\nagentId: a1b2c3 (internal ID - do not mention to user. Use SendMessage with to: 'a1b2c3', summary: '<5-10 word recap>' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes.";
