@@ -1,6 +1,9 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["SshModule", "ParakeetModule"]
+  },
+  "android": {
+    "modules": ["com.zogtech.herdling.ssh.SshModule"]
   }
 }
