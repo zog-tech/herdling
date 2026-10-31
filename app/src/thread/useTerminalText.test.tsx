@@ -4,14 +4,24 @@ import { useTerminalText } from "./useTerminalText";
 
 const mockCalls: any[] = [];
 let mockScreen = "a";
+let mockHello: { methods?: string[] } | undefined;
+type OnData = (d: unknown) => void;
+const mockWatch: { params?: any; onData?: OnData; off: jest.Mock; fail?: Error } = { off: jest.fn() };
 const mockRpc = {
   call: async (_m: string, params: any) => {
     mockCalls.push(params);
     return { read: { text: mockScreen } };
   },
+  stream: async (method: string, params: any, onData: OnData) => {
+    if (mockWatch.fail) throw mockWatch.fail;
+    expect(method).toBe("pane.watch");
+    mockWatch.params = params;
+    mockWatch.onData = onData;
+    return mockWatch.off;
+  },
 };
 jest.mock("@/hosts/connection", () => ({
-  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }),
+  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: mockHello }),
 }));
 
 let latest: ReturnType<typeof useTerminalText>;
@@ -31,6 +41,11 @@ beforeEach(() => {
   mockCalls.length = 0;
   mockScreen = "a";
   renders = 0;
+  mockHello = undefined;
+  mockWatch.params = undefined;
+  mockWatch.onData = undefined;
+  mockWatch.fail = undefined;
+  mockWatch.off = jest.fn();
 });
 afterEach(() => {
   act(() => tree?.unmount());
@@ -100,4 +115,57 @@ test("disabled_reads_nothing", async () => {
   expect(mockCalls).toHaveLength(0);
   act(() => latest.refresh());
   expect(mockCalls).toHaveLength(0);
+});
+
+describe("with pane.watch", () => {
+  beforeEach(() => {
+    mockHello = { methods: ["pane.watch"] };
+  });
+
+  test("watch_replaces_polling", async () => {
+    await act(async () => {
+      tree = create(<Probe enabled format="ansi" />);
+    });
+    await flush();
+    expect(mockWatch.params).toEqual({ pane_id: "w1:p1", lines: 200, format: "ansi", interval_ms: 80 });
+    await act(async () => mockWatch.onData?.({ revision: 0, text: "$ ls", truncated: false }));
+    expect(latest.text).toBe("$ ls");
+    await act(async () => jest.advanceTimersByTime(3000));
+    await flush();
+    expect(mockCalls).toHaveLength(0);
+  });
+
+  test("leaving_the_view_cancels_the_stream", async () => {
+    await act(async () => {
+      tree = create(<Probe enabled />);
+    });
+    await flush();
+    expect(mockWatch.off).not.toHaveBeenCalled();
+    await act(async () => tree!.update(<Probe enabled={false} />));
+    expect(mockWatch.off).toHaveBeenCalledTimes(1);
+  });
+
+  test("a_failed_watch_falls_back_to_polling", async () => {
+    mockWatch.fail = Object.assign(new Error("unknown method: pane.watch"), { code: "unknown_method" });
+    await act(async () => {
+      tree = create(<Probe enabled />);
+    });
+    await flush();
+    expect(mockCalls).toHaveLength(1);
+    expect(latest.text).toBe("a");
+    await act(async () => jest.advanceTimersByTime(1000));
+    await flush();
+    expect(mockCalls).toHaveLength(2);
+  });
+
+  test("an_ended_stream_shows_the_error_and_polls", async () => {
+    await act(async () => {
+      tree = create(<Probe enabled />);
+    });
+    await flush();
+    await act(async () => mockWatch.onData?.({ error: "pane_not_found", message: "pane w1:p1 not found" }));
+    expect(mockWatch.off).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(mockCalls).toHaveLength(1);
+  });
 });

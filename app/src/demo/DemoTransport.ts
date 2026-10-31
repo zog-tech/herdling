@@ -29,6 +29,10 @@ export const DEMO_METHODS: readonly string[] = APP_METHODS;
 /** A short delay for each answer, so the app sees the order of a real connection (never a sync reply). */
 const LATENCY_MS = 40;
 const GIB = 1024 ** 3;
+/** How often a demo `pane.watch` stream looks for a new screen. */
+const WATCH_MS = 200;
+/** herdr key names (what the app sends) to the names the scenario knows. */
+const KEY_NAMES: Record<string, string> = { enter: "Enter", backspace: "BSpace", esc: "Escape", "ctrl+c": "C-c" };
 
 const DEMO_BOOT: Boot = {
   starts_at: "boot",
@@ -171,9 +175,35 @@ export class DemoTransport implements LineTransport {
     const off =
       method === "herdr.subscribe"
         ? this.scenario.onHerdrEvent((e) => this.event(id, e))
-        : this.scenario.follow(str(params, "log_path") ?? "", (d) => this.event(id, d));
+        : method === "pane.watch"
+          ? this.watch(id, params)
+          : this.scenario.follow(str(params, "log_path") ?? "", (d) => this.event(id, d));
     if (this.streams.has(id)) this.streams.set(id, off);
     else off();
+  }
+
+  /** `pane.watch`: the screen at once, then each new screen. Ends with an error when the pane goes. */
+  private watch(id: string, params: Params): () => void {
+    const pane = str(params, "pane_id") ?? "";
+    const format = str(params, "format") === "ansi" ? "ansi" : "text";
+    let last: string | undefined;
+    const look = () => {
+      let text: string;
+      try {
+        text = this.scenario.screen(pane, format);
+      } catch (e) {
+        this.event(id, { error: e instanceof DemoError ? e.code : "internal", message: e instanceof Error ? e.message : String(e) });
+        stop();
+        return;
+      }
+      if (text === last) return;
+      last = text;
+      this.event(id, { revision: 0, text, truncated: false });
+    };
+    const timer = setInterval(look, WATCH_MS);
+    const stop = () => clearInterval(timer);
+    look();
+    return stop;
   }
 
   private newStream(): { stream: string } {
@@ -220,6 +250,10 @@ export class DemoTransport implements LineTransport {
       case "herdr.call":
         return this.herdr(need(p, "method", method), (p.params && typeof p.params === "object" ? p.params : {}) as Params);
       case "herdr.subscribe":
+        return this.newStream();
+      case "pane.watch":
+        // Checks the pane, as herdlingd reads the first screen before it answers.
+        s.screen(need(p, "pane_id", method));
         return this.newStream();
       case "thread.resolve":
         return s.resolve(need(p, "pane_id", method));
@@ -284,9 +318,15 @@ export class DemoTransport implements LineTransport {
       case "pane.read":
         return { read: { text: s.screen(need(p, "pane_id", m), str(p, "format") === "ansi" ? "ansi" : "text") } };
       case "pane.send_keys": {
-        const keys = Array.isArray(p.keys) ? p.keys.filter((k): k is string => typeof k === "string") : [];
-        s.sendKeys(need(p, "pane_id", m), keys);
+        s.sendKeys(need(p, "pane_id", m), keyList(p));
         return {};
+      }
+      case "pane.send_input": {
+        const pane = need(p, "pane_id", m);
+        const text = str(p, "text");
+        if (text) s.sendText(pane, text);
+        s.sendKeys(pane, keyList(p));
+        return { type: "ok" };
       }
       case "pane.send_text":
         s.sendText(need(p, "pane_id", m), need(p, "text", m));
@@ -340,6 +380,12 @@ export class DemoTransport implements LineTransport {
       uptime_s: 6 * 86400 + 4 * 3600,
     };
   }
+}
+
+/** The `keys` param, with herdr key names changed to the names of the scenario. */
+function keyList(p: Params): string[] {
+  const keys = Array.isArray(p.keys) ? p.keys.filter((k): k is string => typeof k === "string") : [];
+  return keys.map((k) => KEY_NAMES[k] ?? k);
 }
 
 function usage(): Usage {

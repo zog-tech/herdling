@@ -49,7 +49,9 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   and permission buttons. It works with Claude Code, Codex, Pi and OpenCode, with their command
   lists (`/`, `$` and `@`) and session resume.
 - **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, the
-  arrow keys and Enter. It works with every agent that herdr runs.
+  arrow keys and Enter. It works with every agent that herdr runs. The computer pushes each new
+  screen, a sent line shows at once, and a badge shows the latency. "Type directly" sends each key
+  at once, for a hardware keyboard.
 - **A notification when it matters.** `herdlingd` sends a push when an agent finishes or waits
   for you. A tap opens that session.
 - **Quiet at the computer.** No pushes while you use herdr at your desk, and for 5 minutes after.
