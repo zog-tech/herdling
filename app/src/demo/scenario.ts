@@ -254,18 +254,18 @@ export class DemoScenario {
           lines.push(c("1", `> ${short(item.text, 70)}`), "");
           break;
         case "assistant":
-          for (const l of wrap(plain(item.markdown), 66).slice(0, 4)) lines.push(`⏺ ${l}`);
+          for (const l of wrap(plain(item.markdown), 66).slice(0, 4)) lines.push(`● ${l}`);
           lines.push("");
           break;
         case "thinking":
           lines.push(c("2;3", `✻ ${short(item.text ?? "Thinking", 66)}`));
           break;
         case "tool":
-          lines.push(`⏺ ${item.name}(${short(item.input_summary, 50)})`);
+          lines.push(`● ${item.name}(${short(item.input_summary, 50)})`);
           lines.push(c("2", `  ⎿  ${item.result ? short(item.result.text.split("\n")[0], 60) : "Running…"}`));
           break;
         case "subagent":
-          lines.push(`⏺ Task(${short(item.description, 50)})`);
+          lines.push(`● Task(${short(item.description, 50)})`);
           lines.push(c("2", `  ⎿  ${item.status === "running" ? (item.activity ?? "Running…") : "Done"}`));
           break;
         case "system":
