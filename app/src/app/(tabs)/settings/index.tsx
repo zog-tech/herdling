@@ -7,6 +7,7 @@ import { Pressable, View } from "react-native";
 import { DemoTag } from "@/demo/DemoTag";
 import { DEMO_HOST_DETAIL, isDemoHost, startDemo } from "@/demo/demoHost";
 import { PHONE, PHONE_LABEL } from "@/device";
+import { LOGIN_HINT, startsAtLogin } from "@/hosts/boot";
 import { connLabel, ConnStatus, hostDetail } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
 import { confirmRemoveHost } from "@/hosts/removeHost";
@@ -32,12 +33,16 @@ function HostRow({ host }: { host: Host }) {
   const demo = isDemoHost(host);
   const update = updateStatus(host, conn.status === "online" ? conn.hello : undefined);
   const updateText = update.kind === "available" ? `Update available: ${update.from} → ${update.to}` : undefined;
+  const hello = conn.status === "online" ? conn.hello : undefined;
+  // A quiet state line: herdr down first, then "starts after you log in".
+  const stateText = demo || !hello ? undefined : !hello.herdr_ok ? "herdr is not running" : startsAtLogin(hello) ? LOGIN_HINT : undefined;
+  const detailText = updateText ?? stateText;
   return (
     <Row
       accessibilityLabel={
         demo
           ? `${host.name}, demo host, ${connLabel(conn.status)}. Open demo`
-          : `${host.name}, ${connLabel(conn.status)}${updateText ? `, ${updateText}` : ""}. Edit host`
+          : `${host.name}, ${connLabel(conn.status)}${detailText ? `, ${detailText}` : ""}. Edit host`
       }
       accessibilityActions={[{ name: "remove", label: demo ? "Remove demo" : `Remove ${host.name}` }]}
       onAccessibilityAction={(e) => {
@@ -45,7 +50,7 @@ function HostRow({ host }: { host: Host }) {
       }}
       onPress={() => router.push({ pathname: "/hosts/[id]", params: { id: host.id } })}
       title={host.name}
-      detail={demo ? DEMO_HOST_DETAIL : (updateText ?? hostDetail(host, conn.status, conn.lastSeen))}
+      detail={demo ? DEMO_HOST_DETAIL : (detailText ?? hostDetail(host, conn.status, conn.lastSeen))}
       trailing={
         demo ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>

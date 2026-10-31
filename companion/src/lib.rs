@@ -1,4 +1,5 @@
 pub mod automations;
+pub mod boot;
 pub mod claude;
 pub mod commands;
 pub mod config;

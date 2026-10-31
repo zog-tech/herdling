@@ -2,9 +2,11 @@ import type {
   AgentPreview,
   Automation,
   AutomationRun,
+  Boot,
   CommandList,
   FilePut,
   Hello,
+  MacOpenSettings,
   RecentSession,
   Stats,
   SubagentPage,
@@ -70,6 +72,7 @@ describe("DemoTransport", () => {
     expect(h.methods).toEqual([...APP_METHODS]);
     expect(h.thread_kinds).toEqual(["claude", "codex", "pi", "opencode"]);
     expect(h.command_kinds).toEqual(["claude", "codex", "pi", "opencode"]);
+    expect(h.boot).toEqual({ starts_at: "boot", how: expect.any(String), reason: "auto_login_on" });
   });
 
   it("answers every advertised method with a valid shape (or a proper error)", async () => {
@@ -163,6 +166,13 @@ describe("DemoTransport", () => {
       expect(await callError(m, { text: "hi" })).toMatchObject({ code: "not_installed" });
       answered.add(m);
     }
+    // The demo Mac starts herdlingd at boot; it opens only an allow-listed settings page.
+    const boot = await call<Boot>("boot.check").then(ok("boot.check"));
+    expect(boot).toMatchObject({ starts_at: "boot", how: expect.any(String) });
+    expect(await call<MacOpenSettings>("mac.open_settings", { pane: "users_groups" }).then(ok("mac.open_settings"))).toEqual({
+      opened: "users_groups",
+    });
+    expect(await callError("mac.open_settings", { pane: "https://example.com" })).toMatchObject({ code: "bad_request" });
     answered.add("hello");
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());

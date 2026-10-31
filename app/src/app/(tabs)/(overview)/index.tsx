@@ -107,7 +107,9 @@ function HostStripRow({ host }: { host: Host }) {
   const conn = useHostConn(host.id);
   const text =
     conn.status === "online"
-      ? `${host.name} · can't read herdr`
+      ? conn.hello && !conn.hello.herdr_ok
+        ? `herdr is not running on ${host.name}`
+        : `${host.name} · can't read herdr`
       : conn.status === "connecting"
         ? `${host.name} is connecting…`
         : conn.lastSeen

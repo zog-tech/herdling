@@ -57,6 +57,7 @@ How to set up and use Herdling: install herdlingd on your computer, pair your ph
 <nav class="docs-nav" aria-labelledby="docs-nav-title"><h2 id="docs-nav-title">On this page</h2><ol>
 <!-- toc:start -->
 <li><a href="#what-you-need">What you need</a></li>
+<li><a href="#before-you-start">Before you start</a></li>
 <li><a href="#install-herdr">Install herdr</a></li>
 <li><a href="#turn-on-ssh">Turn on SSH</a></li>
 <li><a href="#install-herdlingd">Install herdlingd</a></li>
@@ -77,14 +78,29 @@ How to set up and use Herdling: install herdlingd on your computer, pair your ph
 <h2 id="what-you-need">What you need</h2>
 <ul><li><strong>A phone.</strong> iPhone with iOS 17 or later, or Android 8.0 or later. Herdling is made for phones in portrait (no iPad layout).</li><li><strong>One or more computers</strong> with macOS or Linux. Each computer runs:<ul><li><strong>herdr</strong>, the terminal workspace for coding agents (<a href="https://herdr.dev">herdr.dev</a>). Herdling shows the agents that herdr runs.</li><li><strong>An SSH server.</strong> The app connects to the computer over SSH.</li><li><strong>herdlingd</strong>, the free Herdling companion. It is a single program that answers the app, pairs phones and sends notifications.</li></ul></li><li><strong>A network path</strong> from the phone to the computer: the same Wi-Fi, or a VPN such as WireGuard or Tailscale.</li></ul>
 <p>There is no account. Zog Tech runs no server for Herdling. The phone talks only to your computers.</p>
-<p>Herdling is made for herdr. If you do not use herdr, or you want only a terminal, another tool can fit better. The README has a dated comparison with other mobile agent apps: <a href="https://github.com/zog-tech/herdling#how-herdling-compares">github.com/zog-tech/herdling#how-herdling-compares</a></p>
+<p>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD Herdling is made for herdr. If you do not use herdr, or you want only a terminal, another tool can fit better. The README has a dated comparison with other mobile agent apps: <a href="https://github.com/zog-tech/herdling#how-herdling-compares">github.com/zog-tech/herdling#how-herdling-compares</a> =======</p>
+<h2 id="before-you-start">Before you start</h2>
+<p>Check these three things on each computer. Most setup problems come from one of them.</p>
+<ol><li><strong>herdr is installed and runs.</strong> Open a terminal and run <code>herdr</code>. If it is not installed, see step 1. The app can also install it for you.</li><li><strong>SSH is on.</strong> On a Mac this setting is <strong>Remote Login</strong>. It is off on a new Mac. See step 2.</li><li><strong>The phone can reach the computer.</strong> Both are on the same network (the same Wi-Fi), or both are on the same VPN.</li></ol>
+<p>After a restart, herdlingd starts when you log in on the computer. To make it start at boot, with no login, see "Start at boot" in step 3. &gt;&gt;&gt;&gt;&gt;&gt;&gt; worktree-agent-a0a944c0ff93c7e9f</p>
 <h2 id="install-herdr">1. Install herdr</h2>
-<p>Install herdr from <a href="https://herdr.dev">herdr.dev</a> and run your agents (Claude Code, Codex, Pi, OpenCode and others) inside it. herdlingd talks to herdr through its socket, <code>~/.config/herdr/herdr.sock</code>. If you run herdr with a different socket, set the <code>HERDR_SOCKET</code> environment variable for herdlingd.</p>
+<p>herdr is the terminal workspace that Herdling works with. It is made by its own project, not by Zog Tech. Install it with its official installer:</p>
+<div class="code"><pre><code>curl -fsSL https://herdr.dev/install.sh | sh</code></pre></div>
+<p>The installer puts <code>herdr</code> in <code>~/.local/bin</code>. It uses no sudo. Other ways (Homebrew, mise, Nix) are on <a href="https://herdr.dev/tui">herdr.dev/tui</a>. If you set up the computer from the app and herdr is missing, the app offers <strong>Install herdr and herdlingd</strong>: it runs the same installer (see step 3).</p>
+<p>Herdling works with herdr, the terminal app (herdr.dev also calls it "Herdr TUI"). The newer Herdr desktop app (from <code>releases.herdr.dev/app</code>) runs agents in a different program, herdr-core. Herdling does not see those agents.</p>
+<p>Run your agents (Claude Code, Codex, Pi, OpenCode and others) inside herdr. herdlingd talks to herdr through its socket, <code>~/.config/herdr/herdr.sock</code>. If you run herdr with a different socket, set the <code>HERDR_SOCKET</code> environment variable for herdlingd.</p>
+<p>herdr must run when you use Herdling. Start it in a terminal with <code>herdr</code>. You can then close the terminal window: herdr keeps running in the background. herdr does not start by itself after a restart: run <code>herdr</code> again after each restart. (<code>herdr server</code> runs only its background server, with no window.)</p>
 <h2 id="turn-on-ssh">2. Turn on SSH</h2>
-<ul><li><strong>macOS:</strong> open System Settings &gt; General &gt; Sharing and turn on <strong>Remote Login</strong>.</li><li><strong>Linux:</strong> install and start the OpenSSH server. On Debian and Ubuntu:</li></ul>
+<p>The phone connects to the computer over SSH. On a new Mac, SSH (Remote Login) is off, so the phone cannot connect. When the app cannot reach port 22, it shows <strong>Turn on SSH on the computer</strong> with these steps and a <strong>Done, check again</strong> button.</p>
+<h3 id="macos-ventura-sonoma-sequoia-tahoe">macOS (Ventura, Sonoma, Sequoia, Tahoe)</h3>
+<ol><li>Click the Apple menu at the top-left of the screen and choose <strong>System Settings</strong>.</li><li>In the sidebar, click <strong>General</strong>.</li><li>Click <strong>Sharing</strong>.</li><li>Turn on <strong>Remote Login</strong>. If macOS asks, enter the password of the Mac.</li><li>Click the info button (i) next to Remote Login.</li><li>At <strong>Allow access for</strong>, choose <strong>All users</strong>. Or choose <strong>Only these users</strong> and make sure your user is in the list.</li><li>Leave <strong>Allow full disk access for remote users</strong> off. Herdling does not need it.</li><li>Click <strong>Done</strong>. Under Remote Login, macOS shows <code>ssh &lt;user&gt;@&lt;address&gt;</code>. Use that address in Herdling.</li></ol>
+<h3 id="linux">Linux</h3>
+<p>Install and start the OpenSSH server. On Debian and Ubuntu:</p>
 <div class="code"><pre><code>sudo apt install openssh-server
 sudo systemctl enable --now ssh</code></pre></div>
-<p>On Fedora, the service is <code>sshd</code>: <code>sudo systemctl enable --now sshd</code>.</p>
+<p>On Fedora, install <code>openssh-server</code> with <code>dnf</code>. On Arch, install <code>openssh</code> with <code>pacman</code>. On both, the service is <code>sshd</code>: <code>sudo systemctl enable --now sshd</code>. If the ufw firewall is on, run <code>sudo ufw allow ssh</code>.</p>
+<h3 id="the-network">The network</h3>
+<p>The phone and the computer must be on the same network (the same Wi-Fi), or on the same VPN (for example WireGuard or Tailscale). A guest Wi-Fi often blocks connections between devices.</p>
 <h2 id="install-herdlingd">3. Install herdlingd</h2>
 <p>There are three ways. The first two download a prebuilt herdlingd from the GitHub releases.</p>
 <div class="table-wrap"><table>
@@ -98,12 +114,16 @@ sudo systemctl enable --now ssh</code></pre></div>
 <p>In Herdling, tap Settings &gt; Hosts &gt; <strong>Add host</strong> &gt; <strong>Set up with password</strong>. Enter the address of the computer, the SSH port (22), your user name and your SSH password, then tap <strong>Connect</strong>. The app shows the host key for you to check (see step 4).</p>
 <p>When herdlingd is not on the computer, the app asks <strong>Install herdlingd now?</strong> and tells you what it does. Tap <strong>Install and pair</strong>. The app then:</p>
 <ol><li>logs in again with the same password and the same host key;</li><li>runs the one-line installer (below) on the computer, which downloads herdlingd from GitHub, checks its SHA-256, copies it to <code>~/.local/bin</code> and starts the user service;</li><li>adds the phone's restricted key (<code>herdlingd enroll</code>) and saves the computer.</li></ol>
-<p>It takes about a minute. It needs no admin rights and uses no sudo. The app uses the password only for these logins. It does not keep the password. herdr must be installed first: if it is missing, the app says so and links <a href="https://herdr.dev">herdr.dev</a>.</p>
+<p>It takes about a minute. It needs no admin rights and uses no sudo. The app uses the password only for these logins. It does not keep the password.</p>
+<p>When herdr is not on the computer, the app shows <strong>herdr is not on &lt;computer&gt;</strong>, with a link to <a href="https://herdr.dev">herdr.dev</a>. herdr is made by its own project, so the app installs it only when you tap <strong>Install herdr and herdlingd</strong>. Then it runs the installer with <code>--with-herdr</code> over the same login: the official herdr installer (<a href="https://herdr.dev/install.sh">herdr.dev/install.sh</a>) puts herdr in <code>~/.local/bin</code>, then herdlingd is installed and the phone is paired. Tap <strong>Cancel</strong> to stop. After the install, start herdr on the computer (<code>herdr</code> in a terminal).</p>
+<p>When herdlingd starts only after a login on the computer, the app says so once, after <strong>Install and pair</strong>, with <strong>How to start at boot</strong>.</p>
 <h3 id="the-one-line-installer">The one-line installer</h3>
 <div class="code soon"><span class="tag" data-when="installer-soon">After the first release</span><pre><code data-installer-command>curl -fsSL https://herdling.zog-tech.com/install.sh | sh</code></pre></div>
 <p>The script is at <a href="/install.sh">herdling.zog-tech.com/install.sh</a>. Read it before you run it, if you like. It does this:</p>
-<ol><li>It finds your system: macOS or Linux, on arm64 or x86_64. Windows is not supported.</li><li>It checks that herdr is installed. It does not install herdr.</li><li>It downloads the newest herdlingd release from <a href="https://github.com/zog-tech/herdling/releases">github.com/zog-tech/herdling/releases</a> and compares its SHA-256 with the <code>SHA256SUMS</code> file of the release.</li><li>It runs <code>herdlingd install</code> (see below) and prints the version.</li></ol>
+<ol><li>It finds your system: macOS or Linux, on arm64 or x86_64. Windows is not supported.</li><li>It checks that herdr is installed. It does not install herdr, unless you add <code>--with-herdr</code>.</li><li>It downloads the newest herdlingd release from <a href="https://github.com/zog-tech/herdling/releases">github.com/zog-tech/herdling/releases</a> and compares its SHA-256 with the <code>SHA256SUMS</code> file of the release.</li><li>It runs <code>herdlingd install</code> (see below) and prints the version.</li><li>It tells you when herdlingd starts: at boot, or after you log in. It prints the step to start it at boot (see "Start at boot").</li></ol>
 <p>It never uses sudo. Run it again to update or repair herdlingd. To install one version, add <code>--version</code>: <code>curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --version 0.1.0</code>.</p>
+<p>To install herdr too when it is missing, add <code>--with-herdr</code>. The script then runs the official herdr installer (<a href="https://herdr.dev/install.sh">herdr.dev/install.sh</a>) first:</p>
+<div class="code"><pre><code>curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --with-herdr</code></pre></div>
 <h3 id="build-from-source">Build from source</h3>
 <p>You need:</p>
 <ul><li><strong>git</strong>.</li><li><strong>A C compiler.</strong> On macOS, run <code>xcode-select --install</code>. On Debian and Ubuntu, run <code>sudo apt install build-essential</code>.</li><li><strong>Rust (stable).</strong> The easy way is rustup (<a href="https://rustup.rs">rustup.rs</a>):</li></ul>
@@ -125,6 +145,17 @@ launchctl print gui/$(id -u)/com.zogtech.herdlingd | head -20
 
 <span class="c"># Linux</span>
 systemctl --user status herdlingd.service</code></pre></div>
+<h3 id="start-at-boot">Start at boot</h3>
+<p>herdlingd runs as a service of your user, so it starts when you log in:</p>
+<ul><li><strong>macOS:</strong> the launchd agent (<code>RunAtLoad</code>, <code>KeepAlive</code>) starts when you log in on the Mac.</li><li><strong>Linux:</strong> the systemd user service starts when you log in (also over SSH), and stops when you log out. With "lingering" on, it starts at boot and keeps running with no login.</li></ul>
+<p>After a restart with no login, herdlingd does not run, so the computer shows <strong>Offline</strong> in the app. When this is the case, the host screen and Settings show <strong>Starts after you log in on this computer</strong> with <strong>How to start at boot</strong>. That guide shows these steps with your user name, and <strong>Done, check again</strong> checks again from the phone. On a Mac, <strong>Open this setting on my Mac</strong> opens the right page of System Settings on the Mac screen (needs herdlingd 0.1.1 or later).</p>
+<p><strong>macOS: turn on automatic login.</strong></p>
+<ol><li>Click the Apple menu and choose <strong>System Settings</strong>.</li><li>In the sidebar, click <strong>Users &amp; Groups</strong>.</li><li>Find <strong>Automatically log in as</strong> and choose your user.</li><li>Enter the password of your user and click <strong>OK</strong>.</li></ol>
+<p>Automatic login is not possible while <strong>FileVault</strong> is on: FileVault asks for a password when the Mac starts. If <strong>Automatically log in as</strong> is grey or missing, FileVault is on. Then log in on the Mac once after each restart. herdlingd starts then, and keeps running while the screen is locked. You can also turn off FileVault (System Settings &gt; Privacy &amp; Security &gt; FileVault), but your data is then less protected if someone takes the Mac.</p>
+<p><strong>Linux: turn on lingering.</strong> Run this once on the computer:</p>
+<div class="code"><pre><code>sudo loginctl enable-linger $USER</code></pre></div>
+<p>Check it: <code>loginctl show-user $USER -p Linger</code> prints <code>Linger=yes</code>.</p>
+<p><strong>herdr after a restart.</strong> herdr has no service of its own, so it does not start at boot. After each restart, open a terminal on the computer and run <code>herdr</code>. Until then, the app shows <strong>herdr is not running</strong> for that computer.</p>
 <h2 id="pair-your-phone">4. Pair your phone</h2>
 <p>Pairing gives your phone its own SSH key on the computer. The key can only run <code>herdlingd rpc</code>, nothing else.</p>
 <p>On the computer, run:</p>
@@ -187,6 +218,7 @@ systemctl --user status herdlingd.service</code></pre></div>
 <figure class="doc-shot"><div class="device phone"><div class="screen" data-shot="settings" role="img" aria-label="The Settings tab: hosts, notification switches and voice settings."><span class="t"></span><span class="sec"></span><div class="grp"><div><b></b></div><div><b></b></div></div><span class="sec"></span><div class="grp"><div><b></b><s></s></div><div><b></b><s></s></div><div><b></b><s></s></div></div><span class="sec"></span><div class="grp"><div><b></b><s class="off"></s></div><div><b></b></div></div></div></div></figure>
 <h3 id="hosts">Hosts</h3>
 <p>Each computer shows its status: <strong>Online</strong>, <strong>Connecting</strong> or <strong>Offline</strong>. Tap a computer to edit its <strong>Name</strong>, <strong>Address</strong>, <strong>Port</strong>, <strong>User</strong> and <strong>Command</strong> (default <code>herdlingd rpc</code>), and tap <strong>Test connection</strong>. To use a computer away from home, change its address to the VPN address (for example its Tailscale address).</p>
+<p>A computer can show one quiet line under its name: <strong>herdr is not running</strong> (start herdr on that computer), or <strong>Starts after you log in on this computer</strong> (see "Start at boot" in step 3).</p>
 <p>To remove a computer, open it and tap the trash button. The app deletes the computer and its pinned key from the phone. If the computer is online, it also forgets the phone's key.</p>
 <h3 id="notifications-2">Notifications</h3>
 <div class="table-wrap"><table>
@@ -304,8 +336,16 @@ cat &gt; "$dir/in.wav"
 <div class="code"><pre><code>summary_command = ["/usr/local/bin/ollama", "run", "llama3.2"]</code></pre></div>
 <p>Claude Code in print mode (<code>["&lt;path to claude&gt;", "-p"]</code>) and the <code>llm</code> CLI also work. In the app, set Settings &gt; Voice &gt; <strong>What to read</strong> to <strong>Summary</strong>.</p>
 <h2 id="troubleshooting">9. Troubleshooting</h2>
+<h3 id="can-t-connect-can-t-reach-22">Can't connect: "Can't reach &lt;address&gt;:22"</h3>
+<p>The phone cannot open an SSH connection to the computer. Tap <strong>Turn on SSH on the computer</strong> for the guide.</p>
+<ul><li><strong>SSH is off.</strong> On a Mac, turn on <strong>Remote Login</strong> (step 2). It is off on a new Mac. On Linux, install and start the SSH server (step 2).</li><li><strong>Another network.</strong> The phone and the computer must be on the same Wi-Fi, or on the same VPN.</li><li><strong>The wrong address.</strong> On a Mac, System Settings &gt; General &gt; Sharing &gt; Remote Login shows the address to use.</li><li><strong>A firewall</strong> blocks TCP port 22 on the computer or the network.</li></ul>
+<p>When SSH is on, tap <strong>Done, check again</strong>. The app connects again (it reads only the host key) and says if it works.</p>
+<h3 id="the-computer-is-offline-after-a-restart">The computer is offline after a restart</h3>
+<p>herdlingd starts when you log in on the computer, not at boot. Log in on the computer once, or make herdlingd start at boot: see "Start at boot" in step 3. On a Mac, this is automatic login (not possible with FileVault on). On Linux, this is <code>sudo loginctl enable-linger $USER</code>.</p>
+<h3 id="the-computer-shows-herdr-is-not-running">The computer shows "herdr is not running"</h3>
+<p>herdlingd runs, but herdr does not. Open a terminal on that computer and run <code>herdr</code>. You can close the terminal window after: herdr keeps running in the background. herdr does not start by itself after a restart, so do this after each restart.</p>
 <h3 id="the-computer-shows-offline">The computer shows Offline</h3>
-<ul><li>Check that the computer is on and that the phone can reach it (same Wi-Fi, or the VPN is on).</li><li>Check that SSH works: Remote Login on macOS, <code>sshd</code> on Linux.</li><li>If the computer got a new IP address, edit the host in Settings &gt; Hosts and change the <strong>Address</strong>. A fixed address or a <code>.local</code> name avoids this.</li><li>Away from home, use the computer's VPN address.</li><li>Tap <strong>Retry</strong> on the board, or <strong>Test connection</strong> in Edit host.</li></ul>
+<ul><li>Check that the computer is on and that the phone can reach it (same Wi-Fi, or the VPN is on).</li><li>Check that SSH works: Remote Login on macOS, <code>sshd</code> on Linux.</li><li>If the computer restarted, log in on it once (see "The computer is offline after a restart").</li><li>If the computer got a new IP address, edit the host in Settings &gt; Hosts and change the <strong>Address</strong>. A fixed address or a <code>.local</code> name avoids this.</li><li>Away from home, use the computer's VPN address.</li><li>Tap <strong>Retry</strong> on the board, or <strong>Test connection</strong> in Edit host.</li></ul>
 <h3 id="the-app-cannot-find-my-computer">The app cannot find my computer</h3>
 <ul><li>Check that herdlingd runs (see "Check that herdlingd runs" above). Run <code>herdlingd install</code> again; it restarts the service.</li><li>Keep the phone and the computer on the same network.</li><li>Allow local network access for Herdling. On iPhone: Settings &gt; Herdling &gt; <strong>Local Network</strong>. The app shows "Local network access is off" with an <strong>Open Settings</strong> button when it is off.</li><li>Some networks block Bonjour (guest Wi-Fi, some mesh systems). Use <strong>Add by address</strong> with the IP address and the code.</li></ul>
 <h3 id="pairing-fails">Pairing fails</h3>
@@ -318,9 +358,9 @@ cat &gt; "$dir/in.wav"
 <p>Shown by <strong>Set up with password</strong>. Tap <strong>Install and pair</strong> to install it from the app, or install it yourself (step 3) and try again.</p>
 <h3 id="the-install-from-the-app-fails">The install from the app fails</h3>
 <p>The app shows the reason:</p>
-<ul><li><strong>herdr is not installed.</strong> Install herdr (<a href="https://herdr.dev">herdr.dev</a>), then try again.</li><li><strong>Neither curl nor wget is installed.</strong> Install one of them on the computer.</li><li><strong>Cannot download.</strong> The computer needs internet access to github.com. Check the network, a proxy or a firewall.</li><li><strong>Windows is not supported.</strong> herdlingd runs on macOS and Linux.</li><li><strong>herdlingd install failed.</strong> On macOS, log in to the desktop of the Mac once: launchd needs a desktop session for the user service. On Linux, check <code>systemctl --user status</code>.</li></ul>
+<ul><li><strong>herdr is not installed.</strong> Tap <strong>Install herdr and herdlingd</strong>, or install herdr yourself (step 1) and try again.</li><li><strong>herdr could not be installed.</strong> The official herdr installer failed. The app shows its last lines. Install herdr yourself (step 1), then try again.</li><li><strong>Neither curl nor wget is installed.</strong> Install one of them on the computer.</li><li><strong>Cannot download.</strong> The computer needs internet access to github.com. Check the network, a proxy or a firewall.</li><li><strong>Windows is not supported.</strong> herdlingd runs on macOS and Linux.</li><li><strong>herdlingd install failed.</strong> On macOS, log in to the desktop of the Mac once: launchd needs a desktop session for the user service. On Linux, check <code>systemctl --user status</code>.</li></ul>
 <h3 id="can-t-read-herdr">"Can't read herdr"</h3>
-<p>herdr does not run on the computer, or herdlingd cannot reach its socket. Start herdr. If herdr uses a custom socket, set <code>HERDR_SOCKET</code> for the service.</p>
+<p>herdr does not run on the computer, or herdlingd cannot reach its socket. Start herdr (<code>herdr</code> in a terminal). If herdr uses a custom socket, set <code>HERDR_SOCKET</code> for the service. If you use the Herdr desktop app, note that Herdling works with herdr, the terminal app (see step 1).</p>
 <h3 id="no-notifications">No notifications</h3>
 <ul><li>Allow notifications for Herdling in the phone's settings.</li><li>Check the <strong>Finished</strong> and <strong>Needs you</strong> switches in Settings &gt; Notifications.</li><li>If <strong>Quiet at the computer</strong> is on, notifications wait until 5 minutes after your last activity in herdr.</li><li>Open the app once with the computer online, so it registers the push token.</li><li>The computer needs internet access.</li></ul>
 <h3 id="voice-does-not-work">Voice does not work</h3>

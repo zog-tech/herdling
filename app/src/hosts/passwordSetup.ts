@@ -4,7 +4,8 @@ import * as ssh from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
 import { PairFailed, savedHostFor, saveHost, type HostValues } from "../pairing/pair";
 import { retryNow } from "./connection";
-import { runInstaller } from "./installer";
+import { runInstaller, type InstallBoot, type InstallResult } from "./installer";
+import { reachFailure, type ReachFailure } from "./sshHelp";
 import { newHostId, type Host } from "./store";
 
 export type SetupFailCode =
@@ -21,12 +22,19 @@ export type SetupFailCode =
 
 /** Password setup did not work; nothing was saved. `message` is the text for the user and never holds the password. */
 export class SetupFailed extends Error {
+  /**
+   * The phone could not open an SSH connection to the port (refused, no route or no answer).
+   * The screen then offers the "Turn on SSH" help. `reach` says which kind, from the native text.
+   */
+  readonly reach?: ReachFailure;
   constructor(
     readonly code: SetupFailCode,
     message = setupMessage(code),
+    reach?: ReachFailure,
   ) {
     super(message);
     this.name = "SetupFailed";
+    this.reach = reach;
   }
 }
 
@@ -98,11 +106,18 @@ export type SetupOptions = {
    * with the same password and host key. Missing or false: setup stops with "not_installed".
    */
   confirmInstall?: (target: { address: string }) => Promise<boolean>;
+  /**
+   * Asks the user to install herdr too, when the installer says herdr is missing. True runs the
+   * installer again with `--with-herdr`. Missing or false: setup stops with the "no herdr" message.
+   */
+  confirmHerdrInstall?: (target: { address: string }) => Promise<boolean>;
+  /** Called after the installer worked, with the installed version and when the service starts. */
+  onInstalled?: (r: { version: string; boot?: InstallBoot }) => void;
   /** The current step, for the screen. */
   onProgress?: (step: SetupStep) => void;
 };
 
-export type SetupStep = "connecting" | "installing" | "pairing";
+export type SetupStep = "connecting" | "installing" | "installing_herdr" | "pairing";
 
 /**
  * "Set up with password": reads the host key and asks the user to confirm it, logs in once with
@@ -117,7 +132,7 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
   const target = { address, port };
 
   o.onProgress?.("connecting");
-  const { fingerprint } = await native(() => deps.probeHostKey({ host: address, port, timeoutMs: PROBE_TIMEOUT_MS }), target);
+  const { fingerprint } = await native(() => deps.probeHostKey({ host: address, port, timeoutMs: PROBE_TIMEOUT_MS }), target, true);
   const values: HostValues = { address, port, user, fingerprint };
   // Refuse before the password goes anywhere when a saved pin for this host differs.
   const saved = findSaved(values);
@@ -158,13 +173,20 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
   if (answer === "not_installed") {
     if (!o.confirmInstall || !(await o.confirmInstall({ address }))) throw new SetupFailed("not_installed");
     o.onProgress?.("installing");
-    const installed = await runInstaller(deps, { host: address, port, user, password: o.password, expectedFingerprint: fingerprint });
+    const install = { host: address, port, user, password: o.password, expectedFingerprint: fingerprint };
+    let installed: InstallResult = await runInstaller(deps, install);
+    // herdr is third-party software: install it only when the user says so.
+    if (!installed.ok && installed.code === "no_herdr" && o.confirmHerdrInstall && (await o.confirmHerdrInstall({ address }))) {
+      o.onProgress?.("installing_herdr");
+      installed = await runInstaller(deps, { ...install, withHerdr: true });
+    }
     if (!installed.ok) {
       if (installed.code === "host_key_mismatch" || installed.code === "auth_failed" || installed.code === "timeout") {
         throw new SetupFailed(installed.code);
       }
       throw new SetupFailed("install_failed", `${installed.message} Nothing was saved.`);
     }
+    o.onInstalled?.({ version: installed.version, boot: installed.boot });
     o.onProgress?.("pairing");
     answer = await enrollOnce();
     // The installer said it worked, but the enroll command still finds no herdlingd.
@@ -195,21 +217,27 @@ function findSaved(values: HostValues): Host | undefined {
   }
 }
 
-/** Runs a native call and turns its error into `SetupFailed`. The native text is never shown. */
-async function native<T>(call: () => Promise<T>, target: { address: string; port: number }): Promise<T> {
+/**
+ * Runs a native call and turns its error into `SetupFailed`. The native text is never shown.
+ * `first`: the first connection of the setup. A failure there means the SSH port is not reachable.
+ */
+async function native<T>(call: () => Promise<T>, target: { address: string; port: number }, first = false): Promise<T> {
   try {
     return await call();
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;
+    const text = (e as { message?: unknown } | null)?.message;
+    const reach = first ? (reachFailure(code, typeof text === "string" ? text : "") ?? undefined) : undefined;
     switch (code) {
       case "host_key_mismatch":
       case "auth_failed":
-      case "timeout":
         throw new SetupFailed(code);
+      case "timeout":
+        throw new SetupFailed(code, setupMessage(code), reach);
       case "exec_failed":
         throw new SetupFailed("enroll_failed");
       default:
-        throw new SetupFailed("unreachable", setupMessage("unreachable", target));
+        throw new SetupFailed("unreachable", setupMessage("unreachable", target), reach);
     }
   }
 }

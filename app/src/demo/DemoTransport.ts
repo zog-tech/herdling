@@ -4,7 +4,10 @@ import type {
   CommandInfo,
   CommandList,
   FilePut,
+  Boot,
   Hello,
+  MacOpenSettings,
+  MacSettingsPane,
   Stats,
   UpdateApply,
   UpdateCheck,
@@ -26,6 +29,12 @@ export const DEMO_METHODS: readonly string[] = APP_METHODS;
 /** A short delay for each answer, so the app sees the order of a real connection (never a sync reply). */
 const LATENCY_MS = 40;
 const GIB = 1024 ** 3;
+
+const DEMO_BOOT: Boot = {
+  starts_at: "boot",
+  how: "Automatic login is on: herdlingd starts when the Mac starts.",
+  reason: "auto_login_on",
+};
 
 type Params = Record<string, unknown>;
 
@@ -185,7 +194,16 @@ export class DemoTransport implements LineTransport {
           methods: [...DEMO_METHODS],
           thread_kinds: KINDS,
           command_kinds: KINDS,
+          boot: DEMO_BOOT,
         } satisfies Hello;
+      // The demo Mac logs in by itself, so herdlingd starts at boot. It opens no settings.
+      case "boot.check":
+        return DEMO_BOOT;
+      case "mac.open_settings": {
+        const pane = need(p, "pane", method);
+        if (!["users_groups", "sharing", "filevault"].includes(pane)) throw new DemoError("bad_request", "unknown pane");
+        return { opened: pane as MacSettingsPane } satisfies MacOpenSettings;
+      }
       case "ping":
         return {};
       // The demo herdlingd is always up to date: it never offers an update.

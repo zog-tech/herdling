@@ -15,14 +15,17 @@ The app is free, with no account, no ads and no tracking.
 
 herdlingd is the free companion that runs on each computer next to herdr. It runs on macOS and Linux, as your user, as a background service. Herdling is open source under the MPL-2.0 license: https://github.com/zog-tech/herdling
 
-Before you install it, the computer needs:
+Before you start, check these on the computer:
 
-- herdr (https://herdr.dev), installed and running, with your agents in it (herdlingd talks to the herdr socket);
-- an SSH server: on macOS, System Settings > General > Sharing > Remote Login; on Linux, the OpenSSH server.
+- **herdr is installed and runs**, with your agents in it (herdlingd talks to the herdr socket). Install it with `curl -fsSL https://herdr.dev/install.sh | sh`, or let the app install it (below). Start it with `herdr` in a terminal.
+- **SSH is on.** On macOS: System Settings > General > Sharing > **Remote Login** (it is off on a new Mac). On Linux: the OpenSSH server.
+- **The phone can reach the computer:** the same network (Wi-Fi), or the same VPN.
+
+herdlingd starts when you log in on the computer. To start it at boot, turn on automatic login on a Mac, or lingering on Linux (`sudo loginctl enable-linger $USER`). See "Start at boot" in the guide: https://herdling.zog-tech.com/docs.md
 
 ### Set it up from the app (recommended)
 
-In Herdling, tap Settings > Hosts > Add host > **Set up with password**. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers **Install and pair**: it runs the one-line installer over SSH, then pairs. No terminal and no admin rights. The app uses the password once and does not keep it. This works after the first herdlingd release. Until then, build from source.
+In Herdling, tap Settings > Hosts > Add host > **Set up with password**. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers **Install and pair**: it runs the one-line installer over SSH, then pairs. When herdr is missing too, the app asks before it installs herdr (**Install herdr and herdlingd**). No terminal and no admin rights. The app uses the password once and does not keep it. This works after the first herdlingd release. Until then, build from source.
 
 ### The one-line installer
 
@@ -30,7 +33,7 @@ In Herdling, tap Settings > Hosts > Add host > **Set up with password**. Enter t
 curl -fsSL https://herdling.zog-tech.com/install.sh | sh
 ```
 
-It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to `~/.local/bin` and starts the user service. It does not use sudo. Install herdr first. The installer works after the first herdlingd release. Until then, build from source as below.
+It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to `~/.local/bin` and starts the user service. It does not use sudo. Install herdr first, or add `--with-herdr` to run the official herdr installer first: `curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --with-herdr`. The installer works after the first herdlingd release. Until then, build from source as below.
 
 ### Build from source
 

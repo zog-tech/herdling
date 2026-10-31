@@ -1,6 +1,6 @@
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
-import { Check, Copy, Plug } from "lucide-react-native";
+import { Check, Copy, LifeBuoy, Plug, Power } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
@@ -10,8 +10,12 @@ import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
 import { Field } from "@/ui/Field";
 import { Screen } from "@/ui/Screen";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
+import { LOGIN_HINT, startsAtLogin } from "./boot";
+import { herdrNotRunningText, HostNotices } from "./HostNotices";
+import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
 import { UpdateCard } from "./UpdateCard";
 import { editPatch } from "./editPatch";
@@ -120,10 +124,12 @@ export function HostForm({ host }: { host?: Host }) {
   const waiting = tested && (!fresh || conn.status === "connecting");
   const hello = fresh && conn.status === "online" ? conn.hello : undefined;
   const error = fresh && conn.status === "offline" && conn.error ? errorMessage(conn.error) : undefined;
+  const reach = error ? reachFailure(conn.errorCode, conn.error ?? "") : null;
 
   return (
     <Screen>
       {host ? <UpdateCard hostId={host.id} /> : null}
+      {host ? <HostNotices hostId={host.id} /> : null}
       <Card>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
         <Field
@@ -168,8 +174,19 @@ export function HostForm({ host }: { host?: Host }) {
                 {hello.host} ({hello.os === "macos" ? "macOS" : "Linux"})
               </Text>
               <Text>
-                {hello.herdr_ok ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}` : "herdr not running"}
+                {hello.herdr_ok
+                  ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}`
+                  : herdrNotRunningText(hello.host)}
               </Text>
+              {/* A new host has no host notices above: show the boot hint here. */}
+              {!host && startsAtLogin(hello) && savedId ? (
+                <StateNotice
+                  Icon={Power}
+                  message={LOGIN_HINT}
+                  action="How to start at boot"
+                  onAction={() => router.push({ pathname: "/hosts/boot-help", params: { id: savedId } })}
+                />
+              ) : null}
               <HostKey fingerprint={fingerprint} />
             </View>
           ) : null}
@@ -177,6 +194,19 @@ export function HostForm({ host }: { host?: Host }) {
             <Text color={colors.danger} accessibilityLiveRegion="polite">
               {error}
             </Text>
+          ) : null}
+          {error && reach ? (
+            <Button
+              label="Turn on SSH on the computer"
+              variant="secondary"
+              Icon={LifeBuoy}
+              onPress={() =>
+                router.push({
+                  pathname: "/hosts/ssh-help",
+                  params: { address: address.trim(), port: String(portNum), user: user.trim(), kind: reach },
+                })
+              }
+            />
           ) : null}
         </Card>
       ) : null}

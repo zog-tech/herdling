@@ -38,6 +38,15 @@ Herdling and herdlingd are free. There are no ads and no in-app purchases.
 **Which agents work?**
 Every agent that herdr runs shows on the board, with its status, its terminal and notifications. Claude Code, Codex, Pi and OpenCode also get the chat view, command lists and session resume.
 
+**Do I need herdr first?**
+Yes. Herdling shows the agents that herdr (https://herdr.dev) runs. herdr is made by its own project. When you set up a computer with its SSH password and herdr is missing, the app offers to install herdr with its official installer, only when you tap **Install herdr and herdlingd**. herdr must run when you use Herdling: start it with `herdr` in a terminal.
+
+**The app cannot connect to my new Mac.**
+On a new Mac, SSH is off. Turn on Remote Login: System Settings > General > Sharing > Remote Login. The phone and the Mac must also be on the same network or VPN. The app shows these steps when it cannot connect. The guide has them too: https://herdling.zog-tech.com/docs.md
+
+**Does herdlingd start when the computer starts?**
+It starts when you log in on the computer. To start it at boot, turn on automatic login on a Mac (not possible with FileVault on), or run `sudo loginctl enable-linger $USER` on Linux. The app shows a guide for this. See "Start at boot" in the guide.
+
 **Can I use it away from home?**
 Yes, if your phone can reach your computer, for example through WireGuard or Tailscale. Pair at home, then set the computer's address to its VPN address. You can also add a computer once with its SSH password.
 

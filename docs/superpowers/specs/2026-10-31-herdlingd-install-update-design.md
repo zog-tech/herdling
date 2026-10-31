@@ -78,7 +78,10 @@ Steps:
    Windows (MINGW, MSYS, CYGWIN) and other systems stop with `unsupported_os`.
 2. Find herdr (`command -v herdr`, then `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`,
    `/usr/local/bin`). When herdr is missing, the script stops and links https://herdr.dev.
-   The script does not install herdr.
+   The script does not install herdr, unless the user gives `--with-herdr` (added after 0.1.0):
+   then it downloads the official herdr installer `https://herdr.dev/install.sh` into a variable,
+   runs it (it puts `herdr` in `~/.local/bin`, with no sudo and no login service), and finds
+   herdr again. The app passes `--with-herdr` only after the user taps "Install herdr and herdlingd".
 3. Find `curl` or `wget`, and `shasum` or `sha256sum`.
 4. Download the tarball and `SHA256SUMS` into a new temporary folder. The script uses the files
    directly and does not parse `latest.json` (no `jq` is necessary).
@@ -89,19 +92,21 @@ Steps:
 
 No `sudo`. A second run installs the same or a newer binary again and restarts the service.
 
-Flags: `--version X.Y.Z`, `--quiet`, `--help`. `HERDLING_RELEASE_BASE` replaces
-`https://github.com/zog-tech/herdling/releases` for tests only.
+Flags: `--version X.Y.Z`, `--with-herdr`, `--quiet`, `--help`. `HERDLING_RELEASE_BASE` replaces
+`https://github.com/zog-tech/herdling/releases` for tests only. `HERDR_INSTALL_URL` replaces the
+herdr installer URL, and `HERDLING_BOOT_STATE` replaces the boot check, for tests only.
 
 `--quiet` output for the app. Each line starts with a fixed word:
 
 | Line | Meaning |
 |---|---|
-| `HERDLINGD_STEP <step>` | Progress: `check`, `download`, `verify`, `install` |
+| `HERDLINGD_STEP <step>` | Progress: `check`, `herdr` (only with `--with-herdr`), `download`, `verify`, `install` |
+| `HERDLINGD_BOOT <state>` | When the user service starts: `boot`, `login` or `unknown`. Just before `HERDLINGD_INSTALLED`. An older script does not print it |
 | `HERDLINGD_INSTALLED <version>` | Success. The last line. Exit 0 |
 | `HERDLINGD_ERROR <code> <text>` | Failure. Exit 1 |
 
-Error codes: `unsupported_os`, `unsupported_arch`, `no_herdr`, `no_downloader`, `no_checksum_tool`,
-`download_failed`, `checksum_mismatch`, `install_failed`.
+Error codes: `unsupported_os`, `unsupported_arch`, `no_herdr`, `herdr_install_failed`,
+`no_downloader`, `no_checksum_tool`, `download_failed`, `checksum_mismatch`, `install_failed`.
 
 ## C. Update RPC
 

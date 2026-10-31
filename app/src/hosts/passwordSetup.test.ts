@@ -10,7 +10,7 @@ jest.mock("expo-device", () => ({ deviceName: "Sam's iPhone" }));
 
 import type { PasswordExecOptions, PasswordExecResult } from "../../modules/ssh";
 import { ENROLL_COMMAND, parseEnroll, type SetupDeps, SetupFailed, setUpWithPassword } from "./passwordSetup";
-import { INSTALL_COMMAND } from "./installer";
+import { INSTALL_COMMAND, installCommand } from "./installer";
 import { useHosts } from "./store";
 
 const FP = "SHA256:" + "a".repeat(43);
@@ -123,6 +123,70 @@ describe("setUpWithPassword", () => {
     expect(useHosts.getState().hosts).toEqual([]);
   });
 
+  it("reports the boot state of the install", async () => {
+    const d = installDeps("HERDLINGD_STEP install\nHERDLINGD_BOOT login\nHERDLINGD_INSTALLED 0.2.0\n");
+    const onInstalled = jest.fn();
+    await setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => true, onInstalled }, d);
+    expect(onInstalled).toHaveBeenCalledWith({ version: "0.2.0", boot: "login" });
+  });
+
+  describe("herdr is missing", () => {
+    const WITH_HERDR = installCommand(true);
+    /** The installer says no_herdr; with --with-herdr it works; then enroll works. */
+    function herdrDeps(withHerdrOut = "HERDLINGD_STEP herdr\nHERDLINGD_BOOT boot\nHERDLINGD_INSTALLED 0.2.0\n", exit = 0) {
+      const d = deps();
+      let enrolls = 0;
+      d.execWithPassword.mockImplementation(async (o: PasswordExecOptions): Promise<PasswordExecResult> => {
+        if (o.command === INSTALL_COMMAND)
+          return { stdout: "HERDLINGD_STEP check\nHERDLINGD_ERROR no_herdr herdr is not installed\n", stderr: "", exitCode: 1, hostFingerprint: FP };
+        if (o.command === WITH_HERDR) return { stdout: withHerdrOut, stderr: "", exitCode: exit, hostFingerprint: FP };
+        enrolls++;
+        const stdout =
+          enrolls === 1 ? '{"ok":false,"code":"not_installed"}\n' : `${JSON.stringify({ ok: true, host_fingerprint: FP, hostname: "studio" })}\n`;
+        return { stdout, stderr: "", exitCode: enrolls === 1 ? 3 : 0, hostFingerprint: FP };
+      });
+      return d;
+    }
+
+    it("asks, then installs herdr and herdlingd with --with-herdr, then enrolls", async () => {
+      const d = herdrDeps();
+      const confirmHerdrInstall = jest.fn(async () => true);
+      const steps: string[] = [];
+      const onInstalled = jest.fn();
+      await setUpWithPassword(
+        { ...base, confirm: yes, confirmInstall: async () => true, confirmHerdrInstall, onInstalled, onProgress: (s) => steps.push(s) },
+        d,
+      );
+      expect(confirmHerdrInstall).toHaveBeenCalledWith({ address: "10.0.0.5" });
+      expect(d.execWithPassword.mock.calls.map(([o]) => o.command)).toEqual([ENROLL_COMMAND, INSTALL_COMMAND, WITH_HERDR, ENROLL_COMMAND]);
+      for (const [o] of d.execWithPassword.mock.calls) expect(o.expectedFingerprint).toBe(FP);
+      expect(steps).toEqual(["connecting", "pairing", "installing", "installing_herdr", "pairing"]);
+      expect(onInstalled).toHaveBeenCalledWith({ version: "0.2.0", boot: "boot" });
+      expect(useHosts.getState().hosts).toHaveLength(1);
+    });
+
+    it("cancel at the herdr question runs no herdr installer and keeps the herdr message", async () => {
+      const d = herdrDeps();
+      const e = await failure(
+        setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => true, confirmHerdrInstall: async () => false }, d),
+      );
+      expect(e.code).toBe("install_failed");
+      expect(e.message).toContain("https://herdr.dev");
+      expect(d.execWithPassword.mock.calls.map(([o]) => o.command)).not.toContain(WITH_HERDR);
+      expect(useHosts.getState().hosts).toEqual([]);
+    });
+
+    it("a herdr installer failure stops the setup with its text", async () => {
+      const d = herdrDeps("HERDLINGD_STEP herdr\nHERDLINGD_ERROR herdr_install_failed The herdr installer failed: no build\n", 1);
+      const e = await failure(
+        setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => true, confirmHerdrInstall: async () => true }, d),
+      );
+      expect(e.code).toBe("install_failed");
+      expect(e.message).toContain("herdr could not be installed: The herdr installer failed: no build");
+      expect(useHosts.getState().hosts).toEqual([]);
+    });
+  });
+
   it("enroll fingerprint mismatch aborts and saves nothing", async () => {
     const d = deps({ stdout: JSON.stringify({ ok: true, host_fingerprint: FP2, hostname: "studio" }) });
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, d));
@@ -205,6 +269,18 @@ describe("setUpWithPassword", () => {
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, refused));
     expect(e.code).toBe("unreachable");
     expect(e.message).toBe("Can't reach 10.0.0.5:22. Check the host and port.");
+    expect(e.reach).toBe("refused");
+
+    const slow = deps();
+    slow.probeHostKey = jest.fn(async () => {
+      throw { code: "timeout", message: "the host did not answer in time" };
+    });
+    const t = await failure(setUpWithPassword({ ...base, confirm: yes }, slow));
+    expect(t.code).toBe("timeout");
+    expect(t.reach).toBe("no_answer");
+    // A timeout later in the setup (not on the first connection) is not about the SSH port.
+    const lateTimeout = deps({ execError: { code: "timeout" } });
+    expect((await failure(setUpWithPassword({ ...base, confirm: yes }, lateTimeout))).reach).toBeUndefined();
 
     const bad = deps({ stdout: '{"ok":false,"code":"bad_request","message":"invalid host_id"}', exitCode: 1 });
     const b = await failure(setUpWithPassword({ ...base, confirm: yes }, bad));

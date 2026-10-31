@@ -19,7 +19,8 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`.
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`,
+`unsupported_platform`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -68,6 +69,42 @@ Error codes:
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
+
+## Start at boot: `hello.boot`, `boot.check` and `mac.open_settings`
+
+herdlingd runs as a user service: a LaunchAgent on macOS, a systemd user unit on Linux. It starts
+when the user logs in. It starts at boot only with automatic login (macOS) or lingering (Linux).
+Since herdlingd 0.1.1, `hello` has an optional `boot` field:
+
+```json
+{"starts_at": "login", "how": "Run this once on the computer: sudo loginctl enable-linger sam", "reason": "linger_off", "user": "sam"}
+```
+
+- `starts_at` is `"boot"`, `"login"` or `"unknown"`. `how` is a short text for the user.
+- `reason` (optional) is one of `linger_on`, `linger_off`, `no_loginctl`, `auto_login_on`,
+  `auto_login_off`, `auto_login_other_user`, `filevault_on`, `no_defaults`. New values can come.
+- `user` (optional) is the user name that herdlingd runs as.
+- Linux: `loginctl show-user <user> -p Linger` (`Linger=yes` is boot), else the file
+  `/var/lib/systemd/linger/<user>`.
+- macOS: `fdesetup status` (FileVault on means automatic login is not possible, so `login`), then
+  `defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser` compared with the user.
+- The rpc process keeps the result for 5 minutes. An older herdlingd does not send `boot`.
+
+`boot.check` (no params) reads the state again, with no cache, and returns the same object.
+
+`mac.open_settings` params: `{"pane": "users_groups" | "sharing" | "filevault"}`. It runs
+`open "x-apple.systempreferences:<id>"` on the Mac, so System Settings shows that page on the
+Mac screen. Only these three ids are accepted: there is no way to open any other URL.
+Result: `{"opened": "users_groups"}`.
+
+| Pane | URL |
+|---|---|
+| `users_groups` | `x-apple.systempreferences:com.apple.Users-Groups-Settings.extension` |
+| `sharing` | `x-apple.systempreferences:com.apple.Sharing-Settings.extension` |
+| `filevault` | `x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?FileVault` |
+
+Errors: `bad_request` (a missing or other pane), `unsupported_platform` (not macOS),
+`command_failed` (`open` failed, for example when no user is logged in on the Mac screen).
 
 ## Compatibility rules
 
