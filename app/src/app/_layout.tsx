@@ -12,6 +12,7 @@ import { colors } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
 import { solidHeader } from "@/ui/headerOptions";
+import { NativeSheetHost } from "@/ui/nativeSheet";
 import { refreshParakeet } from "@/voice/parakeet";
 
 SplashScreen.preventAutoHideAsync();
@@ -98,6 +99,7 @@ export default function RootLayout() {
       </Stack>
       </ThemeProvider>
       <NotificationRouting />
+      <NativeSheetHost />
     </GestureHandlerRootView>
   );
 }

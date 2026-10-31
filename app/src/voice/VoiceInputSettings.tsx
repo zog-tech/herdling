@@ -23,13 +23,14 @@ import {
   useParakeet,
 } from "./parakeet";
 import { inputEngine, useVoiceSettings, type InputEngine } from "./settings";
+import { ENGINE_NAME } from "./transcribe";
 
 const MODELS: ParakeetModel[] = ["v2", "v3"];
 
 const DETAIL: Record<InputEngine, string> = {
   parakeet: "Parakeet on this iPhone. Private, works offline. Falls back to Host.",
   host: "The host's stt_command. Falls back to Parakeet when it is downloaded.",
-  apple: "Apple speech recognition, live while you record.",
+  apple: `${ENGINE_NAME.apple} speech recognition, live while you record.`,
 };
 
 /** A thin bar for the download progress, 0..1. The text next to it carries the number too. */
@@ -160,16 +161,15 @@ export function VoiceInputSection() {
   useEffect(() => {
     void refreshParakeet();
   }, []);
-  const label: Record<InputEngine, string> = { parakeet: "Parakeet", host: "Host", apple: "Apple" };
   return (
     <Section title="Voice input">
       <Group>
         <Row
           title="Engine"
-          detail={input === "parakeet" && !ready ? "Download a Parakeet model below. Until then, Apple is used." : DETAIL[current]}
+          detail={input === "parakeet" && !ready ? `Download a Parakeet model below. Until then, ${ENGINE_NAME.apple} is used.` : DETAIL[current]}
           below={
             <Segmented
-              options={engines.map((e) => ({ id: e, label: label[e] }))}
+              options={engines.map((e) => ({ id: e, label: ENGINE_NAME[e] }))}
               value={current}
               onChange={(e) => set({ input: e })}
               label="Voice input engine"

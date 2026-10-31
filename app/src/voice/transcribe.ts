@@ -1,4 +1,5 @@
 import type { SttText } from "@herdling/protocol";
+import { Platform } from "react-native";
 
 import type { Recorded } from "../../modules/voice";
 import type { InputEngine } from "./settings";
@@ -21,7 +22,12 @@ export class TranscribeError extends Error {
   }
 }
 
-export const ENGINE_NAME: Record<InputEngine, string> = { parakeet: "Parakeet", host: "Host", apple: "Apple" };
+/** The "apple" engine is the system recognizer: Apple on iOS, Android's on Android. */
+export const ENGINE_NAME: Record<InputEngine, string> = {
+  parakeet: "Parakeet",
+  host: "Host",
+  apple: Platform.OS === "android" ? "Android" : "Apple",
+};
 
 /**
  * The order in which engines try a recording. Apple has text only from live recognition during

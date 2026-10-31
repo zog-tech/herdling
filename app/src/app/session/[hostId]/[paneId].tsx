@@ -1,7 +1,7 @@
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,7 @@ import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { runningSubagents } from "@/thread/subagentState";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
+import { showActionSheet } from "@/ui/nativeSheet";
 import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
@@ -107,7 +108,7 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
       },
     );
     const options = [...items.map((i) => i.label), "Cancel"];
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionSheet(
       {
         options,
         cancelButtonIndex: items.length,
@@ -309,7 +310,7 @@ export default function SessionScreen() {
   const menu = useSessionMenu(hostId, agent, back);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* A native header: iOS 26 draws the back button and the bar buttons on Liquid Glass. */}
       <Stack.Screen
         options={{

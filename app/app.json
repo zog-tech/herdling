@@ -33,7 +33,15 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.zogtech.herdling"
+      "package": "com.zogtech.herdling",
+      "allowBackup": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static",
@@ -62,6 +70,13 @@
         {
           "ios": {
             "deploymentTarget": "17.0"
+          },
+          "android": {
+            "minSdkVersion": 26,
+            "usesCleartextTraffic": true,
+            "packagingOptions": {
+              "exclude": ["META-INF/versions/9/OSGI-INF/MANIFEST.MF"]
+            }
           }
         }
       ],

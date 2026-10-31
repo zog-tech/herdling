@@ -1,7 +1,7 @@
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
 import { CircleSlash, Ellipsis, ListFilter, Loader, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-native";
+import { Alert, Pressable, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AgentRow } from "@/board/AgentRow";
@@ -26,6 +26,7 @@ import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/token
 import { Button } from "@/ui/Button";
 import { GlassButton } from "@/ui/GlassButton";
 import { Divider } from "@/ui/Group";
+import { showActionSheet } from "@/ui/nativeSheet";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
@@ -261,7 +262,7 @@ export default function BoardScreen() {
   const sections = useMemo(() => groupBoard(filterBoard(items, filter), groupBy), [items, filter, groupBy]);
 
   const pickGroup = useCallback(() => {
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionSheet(
       { title: "Group by", options: [...GROUPS.map((g) => GROUP_LABEL[g]), "Cancel"], cancelButtonIndex: GROUPS.length },
       (i) => {
         if (GROUPS[i]) setGroupBy(GROUPS[i]);
@@ -325,7 +326,7 @@ export default function BoardScreen() {
       if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
       if (rpc) menu.push(...renameItems(rpc, i.hostId, i.agent));
       menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
-      ActionSheetIOS.showActionSheetWithOptions(
+      showActionSheet(
         {
           title: i.title,
           options: [...menu.map((m) => m.label), "Cancel"],
@@ -341,7 +342,7 @@ export default function BoardScreen() {
   const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string) => {
     const { rpc } = getHostConn(hostId);
     if (!rpc) return;
-    ActionSheetIOS.showActionSheetWithOptions({ options: ["Rename workspace", "Cancel"], cancelButtonIndex: 1 }, (k) => {
+    showActionSheet({ options: ["Rename workspace", "Cancel"], cancelButtonIndex: 1 }, (k) => {
       if (k === 0) promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" });
     });
   }, []);
