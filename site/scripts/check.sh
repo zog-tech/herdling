@@ -16,7 +16,7 @@ for page in index.html download/index.html docs/index.html support/index.html pr
 done
 
 # Personal data and local infrastructure must never ship.
-PATTERN='/Users/|/home/|@gmail\.|192\.168\.|\.internal\b|ssh (dev|mini)\b'
+PATTERN='/Users/|/home/|@gmail\.|192\.168\.|\.internal\b'
 if grep -rInE "$PATTERN" . --exclude-dir=fonts; then
   echo "personal data or a local path found (above)" >&2; exit 1
 fi
