@@ -1,3 +1,5 @@
+import type { Hello } from "@herdling/protocol";
+
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
@@ -31,14 +33,35 @@ export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: st
   return { paneId };
 }
 
-/** Opens an earlier Claude session in a new tab. The current pane stays. */
+/** The agent arguments that resume `session`, or `undefined` when the agent has no resume flag. */
+export function resumeArgs(kind: string, session: string): string[] | undefined {
+  switch (kind) {
+    case "claude":
+      return ["--resume", session];
+    case "codex":
+      return ["resume", session];
+    case "pi":
+    case "opencode":
+      return ["--session", session];
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * True when the app can list and resume earlier sessions of `kind` on this host: the agent has a
+ * resume flag and the host lists the kind in `thread_kinds`. A host without that field knows only Claude.
+ */
+export function canResume(hello: Hello | undefined, kind: string): boolean {
+  if (!resumeArgs(kind, "x")) return false;
+  return (hello?.thread_kinds ?? ["claude"]).includes(kind);
+}
+
+/** Opens an earlier session of the same agent in a new tab. The current pane stays. */
 export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Promise<{ paneId: string }> {
-  const { paneId } = await startSession(rpc, {
-    cwd: cwdOf(a),
-    kind: "claude",
-    workspaceId: a.workspace_id,
-    args: ["--resume", session],
-  });
+  const args = resumeArgs(a.agent, session);
+  if (!args) throw new RpcError("no_resume", `${a.agent} cannot resume an earlier session`);
+  const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: a.agent, workspaceId: a.workspace_id, args });
   return { paneId };
 }
 

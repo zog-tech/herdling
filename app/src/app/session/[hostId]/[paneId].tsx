@@ -14,7 +14,7 @@ import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
 import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { renameItems } from "@/herdr/rename";
-import { closeAgent } from "@/herdr/sessionActions";
+import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
@@ -42,10 +42,10 @@ type Mode = "thread" | "terminal";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Restart, Resume (Claude only), the three renames and Close for the session's agent. */
+/** Restart, Resume (agents with a resume flag), the three renames and Close for the session's agent. */
 function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () => void) {
   const router = useRouter();
-  const { rpc } = useHostConn(hostId);
+  const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
 
   const run = useCallback(
@@ -77,7 +77,7 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
         },
       },
     ];
-    if (agent.agent === "claude") {
+    if (canResume(hello, agent.agent)) {
       items.push({
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${agent.pane_id}` as never),
@@ -107,7 +107,7 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
       },
       (i) => items[i]?.onPick(),
     );
-  }, [rpc, agent, busy, run, router, hostId, back]);
+  }, [rpc, hello, agent, busy, run, router, hostId, back]);
 
   return { open, busy, enabled: !!rpc && !!agent && !busy };
 }

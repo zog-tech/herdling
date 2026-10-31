@@ -41,12 +41,15 @@ OpenCode also has `time_viewed`, which the TUI sets; the newest of `time_updated
 
 ## Adapters
 
-**Codex** (rollout JSONL). The cwd comes from the `session_meta` line. User prompts come from
-`event_msg/user_message` (older versions) and `event_msg/item_completed` with a `UserMessage`
-item (newer versions). The `response_item` user messages are not used: they also hold injected
-context (AGENTS.md, environment). Assistant text, reasoning summaries, tool calls
-(`function_call`, `custom_tool_call`, `web_search_call`) and their outputs come from
-`response_item` lines. Compaction, interrupt and rollback events become system rows.
+**Codex** (rollout JSONL). The cwd comes from the `session_meta` line. A log whose
+`session_meta.source` names a subagent is not a pane's session. User prompts come from the
+`response_item` user messages. Newer versions mark each content item with
+`content_item_kinds`; only `user.*` items count. Older versions have no kinds; the adapter drops
+the injected context (AGENTS.md, environment, skills) by its start text. Some versions also write
+each prompt as an `event_msg`; the adapter ignores those, so a prompt shows once (some sessions
+have no prompt events at all). Assistant text, reasoning summaries, tool calls (`function_call`,
+`custom_tool_call`, `web_search_call`) and their outputs come from `response_item` lines.
+Compaction, interrupt and rollback events become system rows.
 
 **Pi** (session JSONL tree). Entries have `id` and `parentId`. The thread shows the current
 branch: the chain from the last entry back to the root. A page read scans the ids of the file

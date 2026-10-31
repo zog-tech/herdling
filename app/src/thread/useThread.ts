@@ -12,7 +12,7 @@ import { reconcilePending, usePendingList } from "./pending";
  * - `loading`: resolve / first page in flight.
  * - `live`: following the log.
  * - `waiting`: the session has no log file yet (a new agent before its first prompt).
- * - `no_session`: the pane has no thread log (not Claude, or not found); show terminal text.
+ * - `no_session`: the pane has no thread log (an agent without chat support, or not found); show terminal text.
  * - `error`: the last attempt failed; a retry is scheduled.
  */
 export type FollowStatus = "offline" | "loading" | "live" | "waiting" | "no_session" | "error";

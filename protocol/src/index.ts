@@ -14,6 +14,8 @@ export type Hello = {
   herdr_protocol?: number;
   /** Method names the host accepts. Missing on an older herdlingd. */
   methods?: string[];
+  /** herdr agent kinds with chat support. Missing on an older herdlingd, which supports only Claude. */
+  thread_kinds?: string[];
 };
 
 export type ThreadItem =

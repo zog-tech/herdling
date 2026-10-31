@@ -14,28 +14,29 @@ import { DelayedSpinner } from "@/ui/Delayed";
 
 const RECENT_LIMIT = 30;
 
-/** Modal: earlier Claude sessions in the agent's folder, newest first. A pick resumes it in a new tab. */
+/** Modal: earlier sessions of the agent in its folder, newest first. A pick resumes it in a new tab. */
 export default function ResumeScreen() {
   const { hostId, paneId } = useLocalSearchParams<{ hostId: string; paneId: string }>();
   const router = useRouter();
   const { rpc } = useHostConn(hostId);
   const agent = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId));
   const cwd = agent?.cwd;
+  const kind = agent?.agent;
   const [sessions, setSessions] = useState<RecentSession[]>();
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState<string>();
 
   useEffect(() => {
-    if (!rpc || !cwd) return;
+    if (!rpc || !cwd || !kind) return;
     let live = true;
     rpc
-      .call<RecentSession[]>("sessions.recent", { cwd, limit: RECENT_LIMIT })
+      .call<RecentSession[]>("sessions.recent", { cwd, kind, limit: RECENT_LIMIT })
       .then((list) => live && setSessions([...list].sort((a, b) => b.last_activity - a.last_activity)))
       .catch((e) => live && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       live = false;
     };
-  }, [rpc, cwd]);
+  }, [rpc, cwd, kind]);
 
   const pick = useCallback(
     async (s: RecentSession) => {

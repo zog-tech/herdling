@@ -1,6 +1,6 @@
 import { RpcError } from "@/rpc/RpcClient";
 
-import { closeAgent, openResumedSession, renameAgent, restartAgent, resumeSession } from "./sessionActions";
+import { canResume, closeAgent, openResumedSession, renameAgent, restartAgent, resumeArgs, resumeSession } from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
 
 function fakeRpc(fail?: string, failWith?: Error) {
@@ -60,6 +60,36 @@ describe("sessionActions", () => {
     await expect(resumeSession(rpc, agent({ agent: "claude" }), "abc")).resolves.toEqual({ paneId: "w1:p2" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start"]);
     expect(rpc.calls[1].params).toMatchObject({ kind: "claude", pane_id: "w1:p2", args: ["--resume", "abc"] });
+  });
+
+  it("resume_uses_each_agents_own_flag", async () => {
+    for (const [kind, args] of [
+      ["codex", ["resume", "s1"]],
+      ["pi", ["--session", "s1"]],
+      ["opencode", ["--session", "s1"]],
+    ] as const) {
+      const rpc = fakeRpc();
+      await resumeSession(rpc, agent({ agent: kind }), "s1");
+      expect(rpc.calls[1].params).toMatchObject({ kind, args });
+    }
+  });
+
+  it("resume_refuses_an_agent_without_a_resume_flag", async () => {
+    const rpc = fakeRpc();
+    await expect(resumeSession(rpc, agent({ agent: "gemini" }), "s1")).rejects.toMatchObject({ code: "no_resume" });
+    expect(rpc.calls).toEqual([]);
+    expect(resumeArgs("gemini", "s1")).toBeUndefined();
+  });
+
+  it("can_resume_needs_the_kind_in_the_hosts_thread_kinds", () => {
+    const hello = (thread_kinds?: string[]) => ({ host: "h", os: "linux", herdlingd: "1", herdr_ok: true, thread_kinds }) as const;
+    // An older host lists no kinds: only Claude.
+    expect(canResume(hello(), "claude")).toBe(true);
+    expect(canResume(hello(), "codex")).toBe(false);
+    expect(canResume(undefined, "claude")).toBe(true);
+    expect(canResume(hello(["claude", "codex", "pi", "opencode"]), "codex")).toBe(true);
+    expect(canResume(hello(["claude", "codex"]), "pi")).toBe(false);
+    expect(canResume(hello(["claude", "gemini"]), "gemini")).toBe(false);
   });
 
   it("rename_validates", async () => {
