@@ -21,8 +21,10 @@ pub fn sessions_root(home: &Path) -> PathBuf {
     home.join(".codex").join("sessions")
 }
 
-/// Maps rollout lines to thread items. User prompts come from `event_msg` lines: the
-/// `response_item` user messages also hold injected context.
+/// Maps rollout lines to thread items. User prompts come from the `response_item` user
+/// messages, without the context Codex puts in them (AGENTS.md, environment, skills). Some
+/// versions also write each prompt as an `event_msg`; those lines are not used, so a prompt
+/// does not show twice.
 #[derive(Default)]
 pub struct Parser;
 
@@ -36,27 +38,9 @@ impl LineParser for Parser {
         let id_or = |key: &str| p.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map_or(line_id.clone(), String::from);
         let mut out = Parsed::default();
         match (v.get("type").and_then(Value::as_str).unwrap_or(""), ptype) {
-            ("event_msg", "user_message") => {
-                let text = p.get("message").and_then(Value::as_str).unwrap_or("").to_string();
-                let count = |k: &str| p.get(k).and_then(Value::as_array).map_or(0, |a| a.len() as u32);
-                push_user(&mut out, line_id, ts, text, count("images") + count("local_images"));
-            }
-            ("event_msg", "item_completed") => {
-                let Some(item) = p.get("item") else { return out };
-                if item.get("type").and_then(Value::as_str) != Some("UserMessage") {
-                    return out;
-                }
-                let mut texts = Vec::new();
-                let mut images = 0;
-                for c in item.get("content").and_then(Value::as_array).into_iter().flatten() {
-                    match c.get("type").and_then(Value::as_str) {
-                        Some("text") => texts.push(c.get("text").and_then(Value::as_str).unwrap_or("")),
-                        Some(t) if t.contains("image") => images += 1,
-                        _ => {}
-                    }
-                }
-                let id = item.get("id").and_then(Value::as_str).map_or(line_id, String::from);
-                push_user(&mut out, id, ts, texts.join("\n"), images);
+            ("response_item", "message") if p.get("role").and_then(Value::as_str) == Some("user") => {
+                let (text, images) = user_parts(p);
+                push_user(&mut out, id_or("id"), ts, text, images);
             }
             ("event_msg", "context_compacted") => out.items.push(system(line_id, ts, "Conversation compacted")),
             ("event_msg", "turn_aborted") => out.items.push(system(line_id, ts, "Interrupted")),
@@ -105,6 +89,48 @@ impl LineParser for Parser {
         }
         out
     }
+}
+
+/// Start of text that Codex injects into a user message.
+const INJECTED: &[&str] = &[
+    "# AGENTS.md instructions",
+    "<environment_context>",
+    "<user_instructions>",
+    "<INSTRUCTIONS>",
+    "<permissions instructions>",
+    "<collaboration_mode>",
+    "<skill>",
+    "<turn_aborted>",
+    "<user_shell_command>",
+    "<subagent_notification>",
+];
+
+/// The typed text and image count of a user message. With `content_item_kinds` (newer
+/// versions), only `user.*` items count; else injected text is found by its start.
+fn user_parts(p: &Value) -> (String, u32) {
+    let kinds: Option<Vec<&str>> = p
+        .pointer("/internal_chat_message_metadata_passthrough/content_item_kinds")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().map(|k| k.as_str().unwrap_or("")).collect());
+    let mut texts = Vec::new();
+    let mut images = 0;
+    for (i, c) in p.get("content").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        let typed = match &kinds {
+            Some(k) => k.get(i).is_some_and(|k| k.starts_with("user.")),
+            None => true,
+        };
+        match c.get("type").and_then(Value::as_str) {
+            Some("input_text") => {
+                let t = c.get("text").and_then(Value::as_str).unwrap_or("");
+                if typed && !INJECTED.iter().any(|w| t.trim_start().starts_with(w)) {
+                    texts.push(t);
+                }
+            }
+            Some("input_image") if typed => images += 1,
+            _ => {}
+        }
+    }
+    (texts.join("\n"), images)
 }
 
 fn str_of(v: &Value, key: &str) -> String {
@@ -170,6 +196,10 @@ pub fn read_meta(path: &Path) -> Option<(String, String)> {
         return None;
     }
     let p = v.get("payload")?;
+    // A subagent thread (for example a guardian review) is not a pane's session.
+    if p.get("source").is_some_and(|s| s.get("subagent").is_some()) {
+        return None;
+    }
     let id = p.get("id").or_else(|| p.get("session_id")).and_then(Value::as_str)?.to_string();
     Some((id, p.get("cwd").and_then(Value::as_str)?.to_string()))
 }

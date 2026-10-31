@@ -255,7 +255,7 @@ impl Follower {
         let next = self.next_seq;
         // Keep only what can still match the watermark or the last row.
         self.sent.retain(|seq, t| *t >= w || *seq + 1 >= next);
-        Ok(changed.then(|| (items, self.next_seq as u64)))
+        Ok(changed.then_some((items, self.next_seq as u64)))
     }
 }
 
