@@ -1,7 +1,19 @@
 import { Dimensions, Keyboard, Platform, Text, View, type KeyboardEvent } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { KeyboardAvoider, keyboardOverlap } from "./KeyboardAvoider";
+import { KeyboardAvoider, keyboardOverlap, keyboardTopOf } from "./KeyboardAvoider";
+
+describe("keyboardTopOf", () => {
+  it("uses screenY when it is real", () => {
+    expect(keyboardTopOf(538, 336, 874)).toBe(538);
+  });
+  it("uses the window height minus the keyboard height when screenY is 0", () => {
+    expect(keyboardTopOf(0, 336, 874)).toBe(538);
+  });
+  it("gives 0 when neither value is real", () => {
+    expect(keyboardTopOf(0, 0, 874)).toBe(0);
+  });
+});
 
 describe("keyboardOverlap", () => {
   test("a_view_below_a_header_pads_by_the_part_the_keyboard_covers", () => {

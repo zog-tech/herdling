@@ -23,6 +23,16 @@ export function keyboardOverlap(viewY: number, viewHeight: number, keyboardTop: 
 }
 
 /**
+ * The top edge of the keyboard on the screen. Some keyboard events (cross-fade transitions, some
+ * keyboard changes) give `screenY` 0 with a real height. Then the top is the window height minus
+ * the keyboard height. Gives 0 when neither value is real.
+ */
+export function keyboardTopOf(screenY: number, height: number, windowHeight: number): number {
+  if (screenY > 0) return screenY;
+  return height > 0 ? Math.max(0, windowHeight - height) : 0;
+}
+
+/**
  * A `flex: 1` view that adds bottom padding equal to the part of it that the keyboard covers.
  *
  * Use it in place of `KeyboardAvoidingView`. React Native's `KeyboardAvoidingView` takes its
@@ -65,7 +75,7 @@ export function KeyboardAvoider({
       setPad(next);
     };
     const measure = (e: KeyboardEvent) => {
-      const top = e.endCoordinates.screenY;
+      const top = keyboardTopOf(e.endCoordinates.screenY, e.endCoordinates.height, Dimensions.get("window").height);
       const view = ref.current;
       if (!view) return;
       view.measureInWindow((_x, y, _w, h) => {

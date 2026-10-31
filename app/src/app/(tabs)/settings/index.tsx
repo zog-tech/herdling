@@ -1,4 +1,6 @@
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
+import * as Updates from "expo-updates";
 import * as Speech from "expo-speech";
 import { Check, Minus, Play, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
@@ -26,6 +28,14 @@ import { useVoiceSettings } from "@/voice/settings";
 import { testVoice } from "@/voice/useSpeakReplies";
 import { VoiceInputSection } from "@/voice/VoiceInputSettings";
 import { accentOf, deviceVoices, voiceLabel } from "@/voice/voiceList";
+
+/** "1.0.0 · update 488f5e09, Oct 31" or "1.0.0 · built-in code". Tells which code the phone runs. */
+function versionText(): string {
+  const version = Constants.expoConfig?.version ?? "?";
+  if (Updates.isEmbeddedLaunch || !Updates.updateId) return `${version} · built-in code`;
+  const day = Updates.createdAt ? `, ${Updates.createdAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "";
+  return `${version} · update ${Updates.updateId.slice(0, 8)}${day}`;
+}
 
 function HostRow({ host }: { host: Host }) {
   const router = useRouter();
@@ -318,6 +328,11 @@ export default function SettingsScreen() {
       <VoiceSection />
       <VoiceInputSection />
       <FeelSection />
+      <Section title="About">
+        <Group>
+          <Row title="Version" detail={versionText()} />
+        </Group>
+      </Section>
     </Screen>
   );
 }
