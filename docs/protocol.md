@@ -184,6 +184,39 @@ Params: the folder (`cwd` or `pane_id`, as above) and `"branch": "herdling/ab12c
 - Errors: `bad_request` (not a valid branch name), `not_a_repo`, `already_exists` (the branch
   or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s).
 
+## New session: `fs.dirs` and `agents.installed`
+
+`fs.dirs` params: `{"path"?: "~/apps", "hidden"?: false, "recent"?: true}`. `path` defaults to
+home, and a leading `~` means home. Result:
+
+```json
+{"path": "/home/sam/apps", "dirs": ["api", "herdling"], "git_dirs": ["herdling"], "hidden": false,
+ "recent_cwds": ["/home/sam/apps/herdling"]}
+```
+
+- `path` is the canonical folder (symbolic links resolved). `dirs` holds only folders, sorted
+  without case. A missing folder gives `not_found`; a folder that cannot be read gives `io_error`.
+- Since herdlingd 0.1.1: `hidden: true` also lists folders whose name starts with a dot.
+  `recent: false` skips the scan of agent logs and sends an empty `recent_cwds`. The app turns
+  it off while it browses and autocompletes. `git_dirs` (optional) names the entries that have
+  a `.git` folder or file. `hidden` (optional) echoes the param. The app shows "Show hidden"
+  only when the result has `hidden`. herdlingd 0.1.0 ignores both params.
+
+`agents.installed` (since herdlingd 0.1.1, no params). The app checks `hello.methods` first.
+Result:
+
+```json
+{"installed": ["claude", "codex"], "missing": ["gemini", "cursor"]}
+```
+
+- herdlingd looks for the program of each known agent kind (for example `cursor` is
+  `cursor-agent`) in its PATH, `~/.local/bin`, `~/.cargo/bin` and the usual install folders:
+  Homebrew, `/usr/local/bin`, npm, bun, pnpm, Volta, Deno, mise, asdf, and the node versions of
+  nvm and fnm. herdr starts agents in the login shell, which can have a longer PATH, so the
+  check can miss a program.
+- A kind in neither list has no known program name. The app shows it normally.
+- The app dims a missing agent and marks it "Not installed", but the user can still choose it.
+
 ## Compatibility rules
 
 An app and a host can run different versions. Follow these rules so they do not break each other.

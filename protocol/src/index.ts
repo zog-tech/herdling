@@ -129,6 +129,29 @@ export type SubagentPage = ThreadPage & {
 export type ThreadRef = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 export type RecentSession = { session: string; first_prompt: string; last_activity: number; cwd: string };
 
+/**
+ * `fs.dirs` params. `hidden` and `recent` are new in herdlingd 0.1.1; an older herdlingd ignores
+ * them (no hidden folders, always `recent_cwds`).
+ */
+export type FsDirsParams = { path?: string; hidden?: boolean; recent?: boolean };
+/** `fs.dirs` result: the canonical folder, its sub-folders and the recent agent folders. */
+export type FsDirs = {
+  path: string;
+  dirs: string[];
+  /** Empty when the call had `recent: false`. */
+  recent_cwds: string[];
+  /** Names in `dirs` that have a `.git` (a repo or worktree root). Missing on herdlingd 0.1.0. */
+  git_dirs?: string[];
+  /** Echo of the `hidden` param. Missing on herdlingd 0.1.0, which cannot list hidden folders. */
+  hidden?: boolean;
+};
+
+/**
+ * `agents.installed` result: the herdr agent kinds with a program on the computer, and the ones
+ * without. A kind in neither list has no known program name.
+ */
+export type AgentsInstalled = { installed: string[]; missing: string[] };
+
 export type PushPrefs = { finished: boolean; needs_you: boolean; quiet_at_desk: boolean };
 export type PushRegister = {
   device_id: string;
