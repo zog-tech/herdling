@@ -147,6 +147,52 @@ herdr (unchanged), through its socket ~/.config/herdr/herdr.sock
 - **Updates.** The app gets JavaScript updates over the air with `expo-updates`. An app and a
   computer can run different versions: the protocol only adds methods and fields.
 
+## How Herdling compares
+
+Herdling exists because herdr already knows where each agent runs and what state it is in.
+A phone app can build on that. Herdling shows one board for all the agents on all your computers,
+sorted by what they need. You do not open a terminal on each computer to find the agent that waits for you.
+
+For Claude Code, Codex, Pi and OpenCode, `herdlingd` reads the agent's own session files and the
+app shows them as a chat, with tool calls, subagents and permission buttons. The live terminal is
+one tap away, and it works with every agent that herdr runs.
+
+The phone connects straight to your computers over SSH, with a key that can only run
+`herdlingd rpc`. Session traffic does not pass through a server of ours, and there is no account.
+Notifications go from your computer through the Expo push service to Apple or Google, and hold
+only the agent name, its kind and the terminal title. The app and `herdlingd` are free and open source.
+
+Many tools reach coding agents from a phone. The table below lists the ones we checked, as of
+October 2026, from each project's own pages. It is not complete: the
+[awesome-herdr list](https://github.com/yigitkonur/awesome-herdr) has many more herdr clients.
+If a row is wrong or out of date, please open an issue.
+
+| Tool | Connection | Account | Open source | View | Agents | Price |
+|---|---|---|---|---|---|---|
+| **Herdling** (iOS, Android) | Direct SSH to `herdlingd`; pushes through Expo | None | Yes, MPL-2.0 | Board, chat, terminal | Every agent in herdr; chat for Claude Code, Codex, Pi, OpenCode | Free |
+| [Moshi](https://getmoshi.app) (iOS, Android) | Direct SSH, Mosh or ET; agent events and pushes through the Moshi API | None for the free tier | Not stated | Terminal; chat view with Pro | 18 named agents, in any terminal | Free; Pro $9.99/month, $89.99/year or $199 once |
+| [herdrup](https://herdrup.themartian.app) (iPhone, iPad, Mac) | SSH to a herdr fork ([jerryfane/herdr](https://github.com/jerryfane/herdr)); pushes through the herdrup push relay | Not stated | Yes, Apache-2.0 | Board, terminal, messages; chat for omp | Every agent in herdr | Free |
+| [Ovis](https://ovis.sh) (browser, desktop app, phone betas) | A server on your computer; the phone reaches it through Tailscale, a VPN or an SSH tunnel | None | Yes, MIT | Chat, terminal | Every agent in herdr, most as a chat | Free |
+| [ColliePWA](https://colliepwa.dev) (web app on the phone) | A server on your computer, over Tailscale | None | Yes, MIT | Board, terminal, files and diffs | Claude Code, Codex, OpenCode, Pi and others, in herdr, tmux or zellij | Free |
+| [Happy](https://happy.engineering) (iOS, Android, web, desktop) | A CLI wrapper on your computer; end-to-end encrypted sync through a relay server | Not stated | Yes, MIT | Chat | Claude, Codex, Grok, Gemini and more; no herdr needed | Free |
+| [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) (Claude app, claude.ai/code) | Your computer connects out to the Anthropic API, which routes the messages | claude.ai plan | No | Chat | Claude Code | Included in Pro, Max, Ultra, Team and Enterprise plans |
+| [Blink Shell](https://blink.sh) with tmux (iPhone, iPad) | Direct SSH or Mosh | Not stated | Yes, GPL-3.0 | Terminal | Any program in a terminal | $19.99/year after a trial |
+
+### When another tool fits better
+
+- **You want only a terminal.** A plain SSH or Mosh client, such as Blink Shell, with tmux on the
+  computer is enough.
+- **You do not use herdr.** Moshi works with agents in any terminal. Happy and Claude Code Remote
+  Control need no terminal workspace at all.
+- **You use only Claude Code and have a claude.ai plan.** Remote Control is built in and needs no
+  extra software.
+- **Your phone cannot reach your computer, and you do not want a VPN.** Tools that route through a
+  relay, such as Happy and Remote Control, work without one. Herdling needs a network path: the
+  same Wi-Fi, or a VPN such as WireGuard or Tailscale.
+- **You want an iPad or Mac layout.** herdrup has one, and Moshi has an iPad mode. Herdling is made
+  for phones in portrait.
+- **You want a browser or desktop client next to the phone.** Ovis and ColliePWA run in any browser.
+
 ## Development
 
 You need Node 22 or later, pnpm 10 and Rust (stable). For the iOS app you need Xcode; for the

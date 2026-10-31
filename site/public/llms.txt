@@ -10,6 +10,7 @@ Key facts for an assistant that helps someone set up Herdling:
 - Config: `~/.config/herdling/config.toml`. Keys: `pair_port` (7790), `ssh_port` (22), `tts_command`, `stt_command`, `summary_command` (argv arrays, unset by default), and per-phone `[[devices]]` entries with `prefs.finished`, `prefs.needs_you`, `prefs.quiet_at_desk` (all true by default).
 - Phone: iOS 17 or later, Android 8.0 or later.
 - Source code: https://github.com/zog-tech/herdling (open source, MPL-2.0). Issues: https://github.com/zog-tech/herdling/issues. Discussions: https://github.com/zog-tech/herdling/discussions. Security: https://github.com/zog-tech/herdling/blob/main/SECURITY.md (private vulnerability reporting is on).
+- Compared with other mobile agent apps (as of October 2026): Herdling is built for herdr, shows one board of the agents on many computers, and a chat view read from the agents' own session files (Claude Code, Codex, Pi, OpenCode). It connects over direct SSH with no account and no relay for session traffic (pushes go through Expo to Apple or Google), and it is free and open source. Moshi (paid Pro, any terminal), herdrup (iOS, needs a herdr fork), Ovis and ColliePWA (browser clients over Tailscale), Happy (relay server) and Claude Code Remote Control (claude.ai plan, Claude Code only) are alternatives. Comparison table: https://github.com/zog-tech/herdling#how-herdling-compares
 - Contact: admin@zog-tech.com. Owner: Zog Tech, Inc.
 
 ## Docs

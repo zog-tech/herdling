@@ -47,6 +47,9 @@ No. Everything goes between your phone and your computer over SSH. Notifications
 **Is herdlingd safe to run?**
 It runs as your user, not as root. The phone's key can only run `herdlingd rpc`; it cannot open a shell. Pairing needs a six-digit code that works once, for 5 minutes, and the app checks the computer's host key.
 
+**How is Herdling different from other mobile agent apps?**
+Herdling is made for herdr. It shows one board of all the agents on all your computers, and a chat view read from the agents' own session files (Claude Code, Codex, Pi, OpenCode), with the live terminal one tap away. The phone connects straight to your computers over SSH: no account, no relay for your sessions, and the app is free and open source. Other tools fit other needs. A plain SSH or Mosh client is enough if you want only a terminal. Moshi works with agents in any terminal, and Claude Code Remote Control is built into Claude Code. The README on GitHub has a dated comparison table. (https://github.com/zog-tech/herdling#how-herdling-compares)
+
 **Who makes Herdling?**
 Zog Tech, Inc. Herdling is not made by or affiliated with the makers of herdr, Claude Code, Codex, Pi or OpenCode.
 

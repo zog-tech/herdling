@@ -15,6 +15,8 @@ Web version: https://herdling.zog-tech.com/docs
 
 There is no account. Zog Tech runs no server for Herdling. The phone talks only to your computers.
 
+Herdling is made for herdr. If you do not use herdr, or you want only a terminal, another tool can fit better. The README has a dated comparison with other mobile agent apps: https://github.com/zog-tech/herdling#how-herdling-compares
+
 ## 1. Install herdr
 
 Install herdr from https://herdr.dev and run your agents (Claude Code, Codex, Pi, OpenCode and others) inside it. herdlingd talks to herdr through its socket, `~/.config/herdr/herdr.sock`. If you run herdr with a different socket, set the `HERDR_SOCKET` environment variable for herdlingd.
