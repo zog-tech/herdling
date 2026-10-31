@@ -45,27 +45,31 @@ function fake() {
 }
 
 describe("speakWithHost", () => {
-  it("plays in order and prefetches the next sentence while one plays", async () => {
+  it("plays in order and keeps up to AHEAD requests in flight", async () => {
     const f = fake();
-    const done = speakWithHost(["a", "b", "c"], f.deps, () => false);
+    const done = speakWithHost(["a", "b", "c", "d", "e"], f.deps, () => false);
     await tick();
-    expect(f.log).toEqual(["tts a"]);
-    f.requests.a.resolve(audio("a"));
-    await tick();
-    // a plays as soon as it arrives, and b is asked for at once.
-    expect(f.log).toEqual(["tts a", "play a", "tts b"]);
+    // The first AHEAD sentences are asked for at once.
+    expect(f.log).toEqual(["tts a", "tts b", "tts c"]);
     f.requests.b.resolve(audio("b"));
     await tick();
-    expect(f.log).not.toContain("play b"); // b waits for a to end.
+    expect(f.log).not.toContain("play b"); // b waits for a.
+    f.requests.a.resolve(audio("a"));
+    await tick();
+    // a plays as soon as it arrives, and d is asked for at once.
+    expect(f.log).toEqual(["tts a", "tts b", "tts c", "play a", "tts d"]);
     f.plays.a.resolve();
     await tick();
-    expect(f.log).toEqual(["tts a", "play a", "tts b", "delete a", "play b", "tts c"]);
+    expect(f.log.slice(5)).toEqual(["delete a", "play b", "tts e"]);
     f.requests.c.resolve(audio("c"));
-    f.plays.b.resolve();
-    await tick();
-    f.plays.c.resolve();
+    f.requests.d.resolve(audio("d"));
+    f.requests.e.resolve(audio("e"));
+    for (const n of ["b", "c", "d", "e"]) {
+      f.plays[n].resolve();
+      await tick();
+    }
     await expect(done).resolves.toEqual({ status: "done" });
-    expect(f.log.filter((l) => l.startsWith("play"))).toEqual(["play a", "play b", "play c"]);
+    expect(f.log.filter((l) => l.startsWith("play"))).toEqual(["play a", "play b", "play c", "play d", "play e"]);
     expect(f.files.size).toBe(0);
   });
 
@@ -115,8 +119,9 @@ describe("speakWithHost", () => {
     await expect(done).resolves.toEqual({ status: "cancelled" });
     await tick();
     expect(f.log).not.toContain("play b");
-    expect(f.log).not.toContain("tts c");
-    expect(f.files.size).toBe(0);
+    f.requests.c.resolve(audio("c"));
+    await tick();
+    expect(f.files.size).toBe(0); // Clips that arrive after the stop are deleted too.
   });
 
   it("cancel while the first clip loads plays nothing", async () => {

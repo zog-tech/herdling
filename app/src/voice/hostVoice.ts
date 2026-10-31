@@ -16,9 +16,13 @@ export type HostVoiceDeps = {
 
 export type HostVoiceResult = { status: "done" } | { status: "cancelled" } | { status: "failed"; at: number };
 
+/** Sentences asked for ahead of the one that plays, so a slow request never leaves a gap. */
+export const AHEAD = 3;
+
 /**
- * Speaks `sentences` with the host voice. Asks for sentence 1, plays it as soon as it arrives,
- * and asks for sentence n+1 while n plays. Clips play in order and their files are deleted after.
+ * Speaks `sentences` with the host voice. Asks for the first sentences at once, plays each clip as
+ * soon as it arrives, and keeps up to `AHEAD` requests in flight past the one that plays.
+ * Clips play in order and their files are deleted after.
  * `cancelled()` is checked between steps; the caller stops the player to end the current clip.
  * A failed request or playback gives `failed` with the index of the first sentence not spoken.
  */
@@ -28,37 +32,41 @@ export async function speakWithHost(
   cancelled: () => boolean,
 ): Promise<HostVoiceResult> {
   const fetchClip = (i: number) => deps.tts(sentences[i]).then((a) => deps.writeClip(a));
-  // A prefetch that fails while the previous clip plays is handled when its turn comes.
+  // A prefetch that fails while an earlier clip plays is handled when its turn comes.
   const settle = (p: Promise<Clip>) => p.then((clip) => ({ clip }), () => ({ clip: undefined }));
-  let next = sentences.length ? settle(fetchClip(0)) : undefined;
+  const queue: Promise<{ clip: Clip | undefined }>[] = [];
+  let asked = 0;
+  const fill = (max: number) => {
+    while (queue.length < max && asked < sentences.length) queue.push(settle(fetchClip(asked++)));
+  };
+  fill(AHEAD);
   for (let i = 0; i < sentences.length; i++) {
-    const { clip } = await next!;
-    next = undefined;
+    const { clip } = await queue.shift()!;
     if (cancelled()) {
       if (clip) deps.deleteClip(clip);
-      return { status: "cancelled" };
+      return dropPending(queue, deps, { status: "cancelled" });
     }
-    if (!clip) return { status: "failed", at: i };
+    if (!clip) return dropPending(queue, deps, { status: "failed", at: i });
     try {
       const playing = deps.play(clip);
-      if (i + 1 < sentences.length) next = settle(fetchClip(i + 1));
+      fill(AHEAD);
       await playing;
     } catch {
-      return dropPending(next, deps, cancelled() ? { status: "cancelled" } : { status: "failed", at: i });
+      return dropPending(queue, deps, cancelled() ? { status: "cancelled" } : { status: "failed", at: i });
     } finally {
       deps.deleteClip(clip);
     }
-    if (cancelled()) return dropPending(next, deps, { status: "cancelled" });
+    if (cancelled()) return dropPending(queue, deps, { status: "cancelled" });
   }
   return { status: "done" };
 }
 
-/** Deletes the prefetched clip, when it arrives, and returns `result`. */
+/** Deletes the prefetched clips, when they arrive, and returns `result`. */
 function dropPending(
-  next: Promise<{ clip: Clip | undefined }> | undefined,
+  queue: Promise<{ clip: Clip | undefined }>[],
   deps: HostVoiceDeps,
   result: HostVoiceResult,
 ): HostVoiceResult {
-  void next?.then(({ clip }) => clip && deps.deleteClip(clip));
+  for (const p of queue) void p.then(({ clip }) => clip && deps.deleteClip(clip));
   return result;
 }

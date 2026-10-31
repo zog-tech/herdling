@@ -1,3 +1,6 @@
+/** Ends a line with a period when it has no end mark, so it does not run into the next line. */
+const endLine = (line: string) => (/[.!?:;,]["')\]]*\s*$/.test(line) ? line : `${line.trimEnd()}.`);
+
 /** Turns reply markdown into text that sounds right when read aloud. */
 export function speechText(markdown: string): string {
   let t = markdown.replace(/\r\n?/g, "\n");
@@ -9,9 +12,10 @@ export function speechText(markdown: string): string {
   t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   t = t.replace(/https?:\/\/[^\s)>\]]+/g, "a link");
   t = t.replace(/`+([^`\n]*)`+/g, "$1");
-  t = t.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "");
+  // A heading or list item is its own sentence.
+  t = t.replace(/^[ \t]{0,3}#{1,6}[ \t]+(.*)$/gm, (_, l: string) => endLine(l));
   t = t.replace(/^[ \t]*>[ \t]?/gm, "");
-  t = t.replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "");
+  t = t.replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(.*)$/gm, (_, l: string) => endLine(l));
   t = t.replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, "$1");
   t = t.replace(/(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)/g, "$1");
   t = t.replace(/\*(?=\S)(.+?)(?<=\S)\*/g, "$1");
