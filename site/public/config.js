@@ -12,7 +12,7 @@ window.HERDLING_CONFIG = {
   // The one-line herdlingd installer (public/install.sh). It needs a herdlingd release on GitHub.
   // Set ready to true after the first release (see README.md, "The installer").
   installer: {
-    ready: false,
+    ready: true,
     command: 'curl -fsSL https://herdling.zog-tech.com/install.sh | sh',
   },
   // Screenshot slots that have files in /img/ (<slot>-360.webp and <slot>-720.webp).

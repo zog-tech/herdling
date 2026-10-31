@@ -33,7 +33,7 @@ On Fedora, the service is `sshd`: `sudo systemctl enable --now sshd`.
 
 ## 3. Install herdlingd
 
-There are three ways. The first two need a herdlingd release on GitHub: they work after the first release. Until then, build from source.
+There are three ways. The first two download a prebuilt herdlingd from the GitHub releases.
 
 | Way | Good for |
 |---|---|
