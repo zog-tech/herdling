@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Herdling | Zog Tech Inc.</title>
+  <meta name="description" content="Herdling is an iPhone and Android app for herdr. Watch and talk to the coding agents that run on your own computers.">
+  <link rel="canonical" href="https://zog-tech.com/herdling/">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main navigation">
+      <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">ZT</span><span>Zog Tech Inc.</span></a>
+      <ul class="nav-links">
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="./" aria-current="page">Herdling</a></li>
+        <li><a href="../privacy.html">Privacy</a></li>
+        <li><a href="../terms.html">Terms</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <p class="eyebrow">iPhone and Android</p>
+          <h1>Herdling</h1>
+          <p class="hero-text">Your coding agents keep working when you leave your desk. Herdling lets you follow them from your phone. See which agent is busy, which one is done and which one needs an answer. Then reply in a few taps.</p>
+          <div class="hero-actions">
+            <a class="button" href="#get-started">Get started</a>
+            <a class="button button-secondary" href="privacy.html">Privacy policy</a>
+          </div>
+        </div>
+        <div class="hero-card">
+          <dl>
+            <dt>Works with</dt>
+            <dd>herdr and the agents it runs, such as Claude Code, Codex, Pi and OpenCode</dd>
+            <dt>Your computers</dt>
+            <dd>macOS or Linux, running the free herdlingd companion</dd>
+            <dt>Price</dt>
+            <dd>Free. No account, no ads, no tracking.</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <p class="eyebrow">What it does</p>
+        <h2>A remote control for herdr</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>See every agent</h3>
+            <p>One board shows the agents on all of your computers. Each one shows if it is working, done or waiting for you. Usage meters show how much of your plan is left.</p>
+          </article>
+          <article class="card">
+            <h3>Read and reply</h3>
+            <p>Open an agent to read its session as a chat, or switch to the live terminal. Type a reply, attach a photo or speak your prompt. Start a new session on any computer.</p>
+          </article>
+          <article class="card">
+            <h3>Get a ping</h3>
+            <p>Herdling sends a notification when an agent finishes or needs your input. Tap it to go straight to that session. Herdling can stay quiet while you sit at your computer.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-muted">
+      <div class="container split">
+        <div>
+          <p class="eyebrow">Private by design</p>
+          <h2>Your phone talks only to your computers</h2>
+          <p>Herdling connects straight to your own computers over SSH. Your prompts, replies, photos and recordings go from your phone to your computer and back. They never pass through Zog Tech. We run no servers for Herdling and we keep no copy of your data.</p>
+          <p>The SSH key is made on your phone and stays in the phone's secure storage. Read the <a href="privacy.html">Herdling privacy policy</a> for the full details, including how notifications are delivered.</p>
+        </div>
+        <div class="hero-card">
+          <dl>
+            <dt>Account</dt>
+            <dd>None needed</dd>
+            <dt>Zog Tech servers</dt>
+            <dd>None. The app connects to your computers.</dd>
+            <dt>Analytics and ads</dt>
+            <dd>None</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="get-started">
+      <div class="container content-card">
+        <p class="eyebrow">Get started</p>
+        <h2>Set up Herdling</h2>
+        <p>Herdling needs two things on each computer that you want to reach: herdr, and the herdlingd companion. herdlingd is a small program that lets the app read your herdr sessions and send notifications. It runs on macOS and Linux.</p>
+
+        <h3>1. Install herdr</h3>
+        <p>Install herdr from <a href="https://herdr.dev">herdr.dev</a> and run your agents inside it. Herdling shows the agents that herdr knows about.</p>
+
+        <h3>2. Turn on SSH</h3>
+        <p>The app connects to your computer over SSH. On a Mac, open System Settings, go to General, then Sharing, and turn on Remote Login. On Linux, install and start the OpenSSH server (for example, the <code>openssh-server</code> package).</p>
+
+        <h3>3. Install herdlingd</h3>
+        <p>Put the <code>herdlingd</code> program for your system on the computer. Then run this command in a terminal:</p>
+        <p><code>herdlingd install</code></p>
+        <p>This copies herdlingd to <code>~/.local/bin</code> and starts it as a background service for your user. On a Mac it uses launchd. On Linux it uses a systemd user service. On Linux, the command may also tell you to run <code>sudo loginctl enable-linger</code> so that herdlingd keeps running after you log out.</p>
+        <p class="note">A public download of herdlingd is on the way. Until it is ready, write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a> and we will send you a build for your system.</p>
+
+        <h3>4. Pair your phone</h3>
+        <p>On the computer, run:</p>
+        <p><code>herdlingd pair</code></p>
+        <p>It shows a QR code and a six-digit code. The code is valid for a few minutes. In Herdling, tap Add host and scan the QR code, or type the computer's address and the code. Keep your phone on the same network as the computer while you pair. Herdling can also find computers that run herdlingd on your network.</p>
+        <p>When pairing is done, your computers and their agents show up on the Overview tab.</p>
+      </div>
+    </section>
+
+    <section class="section section-muted" id="faq">
+      <div class="container">
+        <p class="eyebrow">Support</p>
+        <h2>Questions and answers</h2>
+
+        <h3>What is herdlingd?</h3>
+        <p>herdlingd is the companion program for Herdling. It runs on your computer next to herdr. When the app connects over SSH, herdlingd answers its questions: which agents are running, what they said and how much usage is left. It also sends the notifications. herdlingd only accepts the keys of phones that you paired.</p>
+
+        <h3>Do I need an account?</h3>
+        <p>No. There is no sign-up and no login. You pair each phone with each computer directly.</p>
+
+        <h3>Can I use Herdling away from home?</h3>
+        <p>Yes, if your phone can reach your computer. Herdling connects to the address that you saved for the computer. Away from home, use a VPN to your home network, such as WireGuard or Tailscale. You can also add a computer by its SSH login and password, which works well over a VPN.</p>
+
+        <h3>Herdling cannot find my computer.</h3>
+        <p>Check that herdlingd runs: on the computer, run <code>herdlingd install</code> again. It restarts the service. Check that your phone and your computer are on the same network, and that Herdling has local network access (on iPhone: Settings, Herdling, Local Network). If automatic discovery does not work on your network, add the computer by its IP address or its <code>.local</code> name and the pairing code.</p>
+
+        <h3>Pairing fails or the code does not work.</h3>
+        <p>The pairing code works once and only for a few minutes. Run <code>herdlingd pair</code> again to get a new code. A firewall on the computer can block the pairing port (7790 by default) or SSH (port 22). Allow both on your local network.</p>
+
+        <h3>The app says herdlingd is not installed or is out of date.</h3>
+        <p>Install the newest herdlingd and run <code>herdlingd install</code> again. Some features, such as automations, need a recent version.</p>
+
+        <h3>I do not get notifications.</h3>
+        <p>Allow notifications for Herdling in your phone's settings. In Herdling, open Settings and check the Finished and Needs you switches. If Quiet at the computer is on, Herdling stays silent while you are active at your computer. Your computer needs an internet connection to send a notification.</p>
+
+        <h3>Voice input or read aloud does not work.</h3>
+        <p>Allow microphone and speech recognition access for Herdling in your phone's settings. Voice input can run on your phone or on your computer. To use your computer, set a speech command in herdlingd's config file, <code>~/.config/herdling/config.toml</code>.</p>
+
+        <h3>How do I remove a phone or a computer?</h3>
+        <p>In Herdling, open Settings, tap the computer and choose Remove. If the computer is online, it also forgets your phone's key. To stop all access, remove herdlingd from the computer.</p>
+
+        <h3>How much does it cost?</h3>
+        <p>Herdling and herdlingd are free. There are no in-app purchases and no ads.</p>
+
+        <h3>Contact</h3>
+        <p>Questions, bugs and ideas are welcome. Write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a>. Please tell us your phone model, your computer's system and what you tried.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="container footer-grid"><p>&copy; 2026 Zog Tech Inc. All rights reserved.</p><ul class="footer-links"><li><a href="privacy.html">Herdling Privacy</a></li><li><a href="../privacy.html">Privacy Policy</a></li><li><a href="../terms.html">Terms of Use</a></li><li><a href="../contact.html">Contact</a></li></ul></div></footer>
+</body>
+</html>

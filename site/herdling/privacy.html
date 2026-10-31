@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Herdling Privacy Policy | Zog Tech Inc.</title>
+  <meta name="description" content="Privacy policy for the Herdling app by Zog Tech Inc.">
+  <link rel="canonical" href="https://zog-tech.com/herdling/privacy.html">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main navigation">
+      <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">ZT</span><span>Zog Tech Inc.</span></a>
+      <ul class="nav-links">
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="./" aria-current="page">Herdling</a></li>
+        <li><a href="../privacy.html">Privacy</a></li>
+        <li><a href="../terms.html">Terms</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main" class="page">
+    <div class="container content-card">
+      <p class="eyebrow">Herdling</p>
+      <h1>Herdling Privacy Policy</h1>
+      <p><strong>Effective date:</strong> October 31, 2026</p>
+      <p>This policy explains how the Herdling app for iPhone and Android handles your information. Herdling is made by Zog Tech Inc. ("Zog Tech," "we," "us"). The short version: Herdling connects your phone to your own computers. Zog Tech does not run servers for Herdling, does not collect your data and cannot see your sessions.</p>
+
+      <h2>No account, no analytics, no ads</h2>
+      <p>Herdling has no sign-up and no login. The app contains no analytics, no crash reporting service, no advertising and no tracking. We do not sell or share your data, because we do not have it.</p>
+
+      <h2>How Herdling works</h2>
+      <p>Herdling works with herdr, a terminal program for AI coding agents. You install a companion program called herdlingd on your own computers. The app connects straight to those computers over SSH, on your network or through your own VPN. Everything you see and send in the app travels between your phone and your computer, encrypted by SSH. This includes agent sessions, terminal output, your prompts, photos you attach and voice recordings you choose to send to your computer. None of it passes through Zog Tech.</p>
+
+      <h2>What stays on your phone</h2>
+      <p>Herdling keeps these items on your phone:</p>
+      <ul>
+        <li>The list of computers you added: their names, addresses, SSH user names and host key fingerprints.</li>
+        <li>An SSH key that the app makes on your phone. The private key stays in the phone's secure storage (the iOS Keychain or the Android Keystore). It never leaves the phone. Only the public key goes to your computer.</li>
+        <li>A random device ID that the app makes, so that your computer can tell your phones apart.</li>
+        <li>Your settings, such as voice and notification choices.</li>
+      </ul>
+      <p>If you add a computer by its SSH password, the app uses the password once to log in and add its key. The app does not save the password.</p>
+
+      <h2>What is kept on your computer</h2>
+      <p>herdlingd runs on your computer, under your control. For each paired phone it keeps the device ID, the phone's name as the system reports it, the phone's public key, the phone's push token and your notification choices. It keeps these in <code>~/.config/herdling/config.toml</code>. Photos that you attach are saved in a cache folder on your computer so that your agent can read them. herdlingd deletes them after seven days.</p>
+      <p>Pairing sends one request on your local network from the phone to your computer. It contains the pairing code, the device ID, the phone's name and the public key. It contains no password and no private key.</p>
+
+      <h2>Push notifications</h2>
+      <p>Notifications are optional. If you allow them, the app asks Expo's push service for a push token. Expo is the service that delivers notifications for apps built with the Expo tools. The app gives the token to your own computer over SSH. When an agent finishes or needs your input, herdlingd on your computer sends a message to Expo's push service. Expo passes it to Apple Push Notification service (on iPhone) or Firebase Cloud Messaging by Google (on Android), which shows it on your phone.</p>
+      <p>Each notification contains:</p>
+      <ul>
+        <li>a title with the agent's name, the pane's label or the workspace name, followed by "finished" or "needs you";</li>
+        <li>a short text with the kind of agent (for example, "Claude Code") and the agent's terminal title, which can describe the current task;</li>
+        <li>internal IDs of the computer and the pane, so that a tap opens the right session.</li>
+      </ul>
+      <p>Expo, Apple and Google handle these messages to deliver them, under their own privacy policies. Zog Tech does not receive them. Notifications do not include the agent's replies or your prompts. You can turn notifications off in Herdling's Settings or in your phone's settings. When you remove a computer from the app, that computer forgets your phone's key.</p>
+
+      <h2>Voice input</h2>
+      <p>The microphone is used only while you record with the mic button. You choose where your speech becomes text:</p>
+      <ul>
+        <li><strong>On the phone.</strong> On iPhone, Herdling uses Apple's speech recognition. It runs on the device when your language supports it. If it does not, Apple may process the audio on its servers, under Apple's privacy policy. On iPhone you can also download a speech model (Parakeet) that runs fully on the device. The download comes from Hugging Face, a public model host. Your audio is not sent there. On Android, Herdling uses the speech recognition service of your phone's system, which may process audio on the device or on the provider's servers, under the provider's policy.</li>
+        <li><strong>On your computer.</strong> The app records the audio and sends it to your computer over SSH. herdlingd passes it to a speech program that you set up there.</li>
+      </ul>
+
+      <h2>Read aloud</h2>
+      <p>Herdling can read agent replies out loud. It uses the voices on your phone, or a speech program on your computer that you set up. On iPhone with Apple Intelligence, short summaries of replies are made on the device.</p>
+
+      <h2>App updates</h2>
+      <p>Herdling can get small updates without a new store release. To do this, the app checks Expo's update service when it starts. The request includes technical details that are needed to choose the right update: the app version, the platform, the update channel and a random ID made by the update library. It does not include your sessions, your computers or any personal details.</p>
+
+      <h2>Usage meters</h2>
+      <p>The Usage tab shows how much of your Claude or ChatGPT plan is left. To get these numbers, herdlingd on your computer asks Anthropic or OpenAI for your usage. It uses the login that the Claude Code or Codex program already saved on that computer. herdlingd only reads that login. It does not change it, and it does not send it to the phone or to us.</p>
+
+      <h2>Other services</h2>
+      <p>The only outside services that the app or herdlingd contact are Expo (updates and notifications), Apple or Google (notification delivery and, if you use it, system speech recognition), Hugging Face (only if you download the optional speech model), and Anthropic or OpenAI (only from your computer, for the usage meters). Like any internet service, they see the IP address that a request comes from.</p>
+
+      <h2>Permissions</h2>
+      <ul>
+        <li><strong>Camera:</strong> to scan the pairing QR code. No pictures are saved.</li>
+        <li><strong>Microphone and speech recognition:</strong> for the mic button only.</li>
+        <li><strong>Photos:</strong> to attach photos that you pick to a prompt. The app sees only the photos you pick.</li>
+        <li><strong>Local network:</strong> to find and connect to your computers on your network.</li>
+        <li><strong>Notifications:</strong> to tell you when an agent finishes or needs you.</li>
+      </ul>
+      <p>You can change each permission at any time in your phone's settings.</p>
+
+      <h2>Deleting your data</h2>
+      <p>Zog Tech holds no data about you, so there is nothing for us to delete. To remove a computer, open Settings in the app, tap the computer and choose Remove. When the computer is online, it also forgets your phone. Deleting the app removes its data from your phone. On iPhone, the system can keep the app's Keychain entry after you delete the app, until you reset the phone. To remove everything from a computer, uninstall herdlingd and delete <code>~/.config/herdling</code> and <code>~/.cache/herdling</code>.</p>
+
+      <h2>Children</h2>
+      <p>Herdling is a tool for software developers. It is not directed to children under 13, and we do not knowingly collect information from anyone.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If the way Herdling handles data changes, we will update this page and change the effective date above.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about this policy can be sent to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a>. Zog Tech Inc. also has a <a href="../privacy.html">general privacy policy</a> for its website.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer"><div class="container footer-grid"><p>&copy; 2026 Zog Tech Inc. All rights reserved.</p><ul class="footer-links"><li><a href="./">Herdling</a></li><li><a href="../privacy.html">Privacy Policy</a></li><li><a href="../terms.html">Terms of Use</a></li><li><a href="../contact.html">Contact</a></li></ul></div></footer>
+</body>
+</html>
