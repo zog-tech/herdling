@@ -24,6 +24,19 @@ jest.mock("expo-notifications", () => ({
   },
 }));
 
+const mockAnswerCalls: { method: string; params: unknown }[] = [];
+const mockNotice = jest.fn();
+jest.mock("@/hosts/connection", () => ({
+  retryNow: jest.fn(),
+  waitForRpc: async () => ({
+    call: async (method: string, params: unknown) => {
+      mockAnswerCalls.push({ method, params });
+      return method === "pane.answer" ? { answered: true } : {};
+    },
+  }),
+}));
+jest.mock("@/ui/notice", () => ({ showNotice: (...a: unknown[]) => mockNotice(...a) }));
+
 import { isPushSession, notificationTarget, showBannerFor, useNotificationRouting } from "./useNotificationRouting";
 
 function response(id: string, data: unknown) {
@@ -146,5 +159,58 @@ describe("push for the open session", () => {
     });
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(false);
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p2" })).toBe(true);
+  });
+});
+
+describe("choice buttons", () => {
+  const data = {
+    hostId: "h_1",
+    paneId: "w1:p1",
+    choice: { yes: { key: "1", label: "Yes" }, no: { key: "3", label: "No, and tell Claude what to do differently (esc)" }, revision: 0 },
+  };
+  const tap = (id: string, actionIdentifier: string) => ({ actionIdentifier, ...response(id, data) });
+  const flush = async () => {
+    for (let i = 0; i < 5; i++) await act(async () => {});
+  };
+
+  beforeEach(() => {
+    mockAnswerCalls.length = 0;
+    mockNotice.mockReset();
+  });
+
+  it("a No tap opens the session and answers the menu", async () => {
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(tap("c1", "choice_no")));
+    expect(mockPush).toHaveBeenCalledWith("/session/h_1/w1%3Ap1?from=push");
+    await flush();
+    expect(mockAnswerCalls.at(-1)).toEqual({
+      method: "pane.answer",
+      params: { pane_id: "w1:p1", key: "3", expect_label: "No, and tell Claude what to do differently (esc)" },
+    });
+    expect(mockNotice).toHaveBeenCalledWith("Answered No");
+  });
+
+  it("the cold-start Yes tap answers once", async () => {
+    mockLast = tap("c2", "choice_yes");
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(tap("c2", "choice_yes")));
+    await flush();
+    expect(mockAnswerCalls.filter((c) => c.method === "pane.answer")).toEqual([
+      { method: "pane.answer", params: { pane_id: "w1:p1", key: "1", expect_label: "Yes" } },
+    ]);
+  });
+
+  it("a plain tap on a push with choices does not answer", async () => {
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(tap("c3", "expo.modules.notifications.actions.DEFAULT")));
+    await flush();
+    expect(mockAnswerCalls).toEqual([]);
+    expect(mockPush).toHaveBeenCalledTimes(1);
   });
 });

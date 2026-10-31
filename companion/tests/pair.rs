@@ -498,7 +498,7 @@ fn key_fingerprint_is_sha256_of_blob() {
 }
 
 fn device(id: &str, name: &str, key: Option<String>) -> Device {
-    Device { id: id.into(), name: name.into(), host_id: "h_1".into(), public_key: key, expo_token: None, prefs: Prefs::default() }
+    Device { id: id.into(), name: name.into(), host_id: "h_1".into(), public_key: key, expo_token: None, capabilities: vec![], prefs: Prefs::default() }
 }
 
 #[test]

@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { PEEK_DETENT_ANDROID } from "@/board/peekDetent";
 import { startConnections } from "@/hosts/connection";
 import { UpdateChecks } from "@/hosts/UpdateChecks";
+import { registerChoiceCategory } from "@/push/choiceActions";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
@@ -27,6 +28,8 @@ Notifications.setNotificationHandler({
     return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
   },
 });
+// The Yes and No buttons of a "needs you" push. Registered before the first push can show.
+void registerChoiceCategory();
 
 /** A native header on the page color. iOS 26 puts its back and bar buttons on Liquid Glass. */
 const hostHeader = solidHeader();

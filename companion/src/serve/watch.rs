@@ -156,9 +156,13 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     };
     let snap = snapshot(ctx).await.unwrap_or(Value::Null);
     let (title, body) = push::describe(&snap, pane);
-    let msgs = push::messages(&cfg, notice, pane, &title, &body, at_desk);
+    let choice = match notice {
+        Notice::NeedsYou if cfg.devices.iter().any(|d| d.can(config::CHOICE_ACTIONS)) => choice_of(ctx, pane).await,
+        _ => None,
+    };
+    let msgs = push::messages(&cfg, notice, pane, &title, &body, at_desk, choice.as_ref());
     if at_desk {
-        let skipped = push::messages(&cfg, notice, pane, &title, &body, false).len() - msgs.len();
+        let skipped = push::messages(&cfg, notice, pane, &title, &body, false, None).len() - msgs.len();
         if skipped > 0 {
             eprintln!("herdlingd serve: user is at the computer, skipped {skipped} push(es) for pane {pane}");
         }
@@ -190,6 +194,17 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
     if !matches!(cleared, Ok(Ok(()))) {
         eprintln!("herdlingd serve: could not remove unregistered push tokens");
     }
+}
+
+/// The Yes and No options of the permission menu on the visible screen of `pane`, if it has one.
+/// `None` when herdr does not answer: the push then goes out without buttons.
+async fn choice_of(ctx: &ServeCtx, pane: &str) -> Option<crate::choices::PushChoice> {
+    let mut c = herdr::Client::connect(&ctx.herdr_socket, HERDR_TIMEOUT).await.ok()?;
+    let r = c.call("pane.read", json!({ "pane_id": pane, "source": "visible", "format": "text" })).await.ok()?;
+    let read = r.get("read").unwrap_or(&r);
+    let text = read.get("text").and_then(Value::as_str)?;
+    let revision = read.get("revision").and_then(Value::as_u64).unwrap_or(0);
+    crate::choices::yes_no(&crate::choices::parse_choices(text), revision)
 }
 
 /// The inner `snapshot` object of `session.snapshot`. One connection per call.

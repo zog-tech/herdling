@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod automations;
 pub mod boot;
+pub mod choices;
 pub mod claude;
 pub mod commands;
 pub mod config;

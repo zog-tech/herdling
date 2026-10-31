@@ -67,3 +67,30 @@ async fn push_register_requires_device_id() {
     .await;
     assert_eq!(r["error"]["code"], "bad_request");
 }
+
+#[tokio::test]
+async fn capabilities_are_saved_and_cleared_by_an_older_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    let mut with = params(json!("ExponentPushToken[test]"), true);
+    with["capabilities"] = json!(["choice_actions"]);
+    assert_eq!(call(&p, with).await["result"], json!({"ok": true}));
+    let d = &config::load(&p).unwrap().devices[0];
+    assert_eq!(d.capabilities, ["choice_actions"]);
+    assert!(d.can(config::CHOICE_ACTIONS));
+    // An app without the field (an older app, or a rollback) has no capabilities.
+    call(&p, params(json!("ExponentPushToken[test]"), true)).await;
+    assert!(config::load(&p).unwrap().devices[0].capabilities.is_empty());
+}
+
+#[tokio::test]
+async fn capabilities_must_be_a_short_list_of_strings() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    let many: Vec<String> = (0..17).map(|i| format!("c{i}")).collect();
+    for bad in [json!("choice_actions"), json!([1]), json!([""]), json!(["x".repeat(65)]), json!(many)] {
+        let mut ps = params(Value::Null, true);
+        ps["capabilities"] = bad.clone();
+        assert_eq!(call(&p, ps).await["error"]["code"], "bad_request", "{bad}");
+    }
+}

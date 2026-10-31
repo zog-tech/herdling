@@ -28,7 +28,7 @@ fn ok_reply() -> Value {
     json!({"data": [{"status": "ok", "id": "r1"}]})
 }
 
-fn write_device(path: &Path, prefs: Prefs) {
+fn write_device(path: &Path, prefs: Prefs, capabilities: &[&str]) {
     config::update(path, |c| {
         c.devices.push(Device {
             id: "d1".into(),
@@ -36,6 +36,7 @@ fn write_device(path: &Path, prefs: Prefs) {
             host_id: "h_1".into(),
             public_key: None,
             expo_token: Some(TOKEN.into()),
+            capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
             prefs,
         })
     })
@@ -53,11 +54,16 @@ struct Setup {
 
 /// Fake herdr, mock push server and config with one device, then the watcher.
 async fn start(prefs: Prefs, reply: Value) -> Setup {
+    start_with(prefs, reply, snapshot(), &[]).await
+}
+
+/// Like [`start`], with the herdr snapshot (and screen) and the device capabilities.
+async fn start_with(prefs: Prefs, reply: Value, snap: Value, capabilities: &[&str]) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("herdr.sock");
     let config = config::default_path(dir.path());
-    write_device(&config, prefs);
-    let (push, reqs, _open) = spawn_fake_snapshot(&sock, snapshot(), &[]);
+    write_device(&config, prefs, capabilities);
+    let (push, reqs, _open) = spawn_fake_snapshot(&sock, snap, &[]);
     let http = MockHttp::start(reply).await;
     let ctx = ServeCtx {
         home: dir.path().into(),
@@ -173,4 +179,53 @@ async fn reconnects_after_herdr_restart() {
     assert_eq!(body[0]["title"], "herdling finished");
     assert_eq!(body.as_array().unwrap().len(), 1);
     s.assert_no_body(Duration::from_millis(300)).await;
+}
+
+const MENU: &str = "Bash command\n  git status\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again for git status commands\n  3. No, and tell Claude what to do differently (esc)";
+
+fn snapshot_with_screen(screen: &str) -> Value {
+    let mut s = snapshot();
+    s["screen"] = json!(screen);
+    s
+}
+
+#[tokio::test]
+async fn needs_you_push_has_choice_buttons_for_a_capable_device() {
+    let mut s = start_with(Prefs::default(), ok_reply(), snapshot_with_screen(MENU), &["choice_actions"]).await;
+    s.push.send(Push::Event(status_ev("w1:p1", "blocked"))).unwrap();
+    let body = s.next_body().await;
+    assert_eq!(
+        body,
+        json!([{"to": TOKEN, "title": "herdling needs you",
+                "body": "claude · api\nYes · No, and tell Claude what to do differently (esc)",
+                "sound": "default", "categoryId": "herdling_choice",
+                "data": {"hostId": "h_1", "paneId": "w1:p1",
+                         "choice": {"yes": {"key": "1", "label": "Yes"},
+                                    "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
+                                    "revision": 3}}}])
+    );
+    // The question text never leaves the computer.
+    assert!(!body.to_string().contains("proceed"));
+}
+
+#[tokio::test]
+async fn needs_you_push_has_no_buttons_for_an_older_app() {
+    let mut s = start_with(Prefs::default(), ok_reply(), snapshot_with_screen(MENU), &[]).await;
+    s.push.send(Push::Event(status_ev("w1:p1", "blocked"))).unwrap();
+    assert_eq!(
+        s.next_body().await,
+        json!([{"to": TOKEN, "title": "herdling needs you", "body": "claude · api", "sound": "default",
+                "data": {"hostId": "h_1", "paneId": "w1:p1"}}])
+    );
+}
+
+#[tokio::test]
+async fn needs_you_push_has_no_buttons_without_a_yes_no_menu() {
+    let menu = "❯ 1. Allow\n  2. Deny";
+    let mut s = start_with(Prefs::default(), ok_reply(), snapshot_with_screen(menu), &["choice_actions"]).await;
+    s.push.send(Push::Event(status_ev("w1:p1", "blocked"))).unwrap();
+    let body = s.next_body().await;
+    assert_eq!(body[0]["body"], "claude · api");
+    assert!(body[0].get("categoryId").is_none());
+    assert!(body[0]["data"].get("choice").is_none());
 }

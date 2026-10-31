@@ -380,6 +380,7 @@ pub const METHODS: &[&str] = &[
     "git.worktree_add",
     "pane.watch",
     "agents.installed",
+    "pane.answer",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -418,6 +419,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "git.worktree_add" => git_worktree_add(ctx, params).await,
         "pane.watch" => crate::watch::pane_watch(ctx, out, params).await,
         "agents.installed" => agents_installed(ctx).await,
+        "pane.answer" => pane_answer(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -556,6 +558,55 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     }
     let mut c = herdr::Client::connect(&ctx.herdr_socket, timeout).await.map_err(herdr_err)?;
     c.call(&method, p).await.map_err(herdr_err)
+}
+
+/// One herdr call on its own connection (herdr 0.9.0 closes a connection after one answer).
+async fn herdr_once(ctx: &Ctx, method: &str, params: Value) -> Result<Value, HerdrError> {
+    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await?;
+    c.call(method, params).await
+}
+
+fn stale(message: &str) -> RpcError {
+    err("stale", message)
+}
+
+/// `pane.answer`: answers a permission menu with one digit, after a check on the computer.
+/// The pane must still wait for the user, and the option at `key` must still have
+/// `expect_label` (or its cut form from a push). Otherwise the error is `stale` and no key is sent.
+async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let pane = str_param(&params, "pane_id", "pane.answer")?;
+    let key = str_param(&params, "key", "pane.answer")?;
+    let expect = str_param(&params, "expect_label", "pane.answer")?;
+    if pane.is_empty() {
+        return Err(err("bad_request", "pane.answer requires pane_id"));
+    }
+    if !matches!(key.as_bytes(), [b'1'..=b'9']) {
+        return Err(err("bad_request", "pane.answer: key must be one digit from 1 to 9"));
+    }
+    let gone = |e: HerdrError| match e {
+        HerdrError::Remote { code, .. } if code == "pane_not_found" => stale("the pane is gone"),
+        e => herdr_err(e),
+    };
+    let got = herdr_once(ctx, "pane.get", json!({ "pane_id": pane })).await.map_err(gone)?;
+    let status = got.get("pane").unwrap_or(&got).get("agent_status").and_then(Value::as_str);
+    if status.is_some_and(|s| s != "blocked") {
+        return Err(stale("the agent does not wait for an answer"));
+    }
+    let read = herdr_once(ctx, "pane.read", json!({ "pane_id": pane, "source": "visible", "format": "text" }))
+        .await
+        .map_err(gone)?;
+    let text = read.get("read").unwrap_or(&read).get("text").and_then(Value::as_str).unwrap_or("");
+    let choices = crate::choices::parse_choices(text);
+    let Some(choice) = choices.iter().find(|c| c.key == key) else {
+        return Err(stale("the menu changed"));
+    };
+    if !crate::choices::label_matches(&choice.label, expect) {
+        return Err(stale("the menu changed"));
+    }
+    // Mark phone input before herdr gets it, as `herdr.call` does.
+    let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
+    herdr_once(ctx, "pane.send_keys", json!({ "pane_id": pane, "keys": [key] })).await.map_err(herdr_err)?;
+    Ok(json!({ "answered": true }))
 }
 
 async fn notify(out: &Out, stream: &str, data: Value) -> bool {
@@ -932,6 +983,9 @@ async fn pane_info(ctx: &Ctx, pane_id: &str) -> (Option<String>, Option<String>)
     (text("cwd").or_else(|| text("foreground_cwd")), text("agent"))
 }
 
+/// Most entries accepted in `push.register` `capabilities`.
+const MAX_CAPABILITIES: usize = 16;
+
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     use crate::config::{self, Device, Prefs};
     let req = |key: &str| str_param(&params, key, "push.register").map(String::from);
@@ -951,6 +1005,16 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     };
     // An older app does not send `quiet_at_desk`: keep the saved value, else the default.
     let quiet_at_desk = flag("quiet_at_desk");
+    // An older app does not send `capabilities`: it has none, so the list is cleared.
+    let capabilities = match params.get("capabilities") {
+        None | Some(Value::Null) => vec![],
+        Some(Value::Array(a)) if a.len() <= MAX_CAPABILITIES => a
+            .iter()
+            .map(|v| v.as_str().filter(|s| !s.is_empty() && s.len() <= 64).map(String::from))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| err("bad_request", "capabilities must be short strings"))?,
+        Some(_) => return Err(err("bad_request", "capabilities must be an array of at most 16 strings")),
+    };
     let path = ctx.config_path.clone();
     tokio::task::spawn_blocking(move || {
         config::update(&path, |c| {
@@ -959,7 +1023,7 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
             let quiet_at_desk = quiet_at_desk.unwrap_or_else(|| old.map_or(Prefs::default().quiet_at_desk, |d| d.prefs.quiet_at_desk));
             config::upsert_device(
                 c,
-                Device { id, name, host_id, public_key, expo_token, prefs: Prefs { finished, needs_you, quiet_at_desk } },
+                Device { id, name, host_id, public_key, expo_token, capabilities, prefs: Prefs { finished, needs_you, quiet_at_desk } },
             );
         })
     })

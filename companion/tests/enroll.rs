@@ -87,6 +87,7 @@ fn enroll_appends_restricted_line() {
             host_id: "h_1".into(),
             public_key: Some(format!("ssh-ed25519 {blob}")),
             expo_token: None,
+            capabilities: vec![],
             prefs: Prefs::default(),
         }]
     );

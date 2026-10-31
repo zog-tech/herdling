@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { answerChoice, destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
+import { labelMatches, shortLabel, yesNo } from "./parseChoices";
 
 const mockCalls: { method: string; params: any }[] = [];
 let mockScreen = "";
@@ -110,6 +111,33 @@ describe("destructiveKey", () => {
   });
   it("is undefined when no label starts with No", () => {
     expect(destructiveKey([{ key: "1", label: "Allow", selected: true }, { key: "2", label: "Deny", selected: false }])).toBeUndefined();
+  });
+});
+
+describe("yesNo and labels (same rules as companion/src/choices.rs)", () => {
+  const c = (key: string, label: string, selected = false): Choice => ({ key, label, selected });
+
+  it("takes the first Yes and the last No option", () => {
+    expect(yesNo(parseChoices(fixture("claude_bash_permission")))).toEqual({
+      yes: { key: "1", label: "Yes" },
+      no: { key: "3", label: "No, and tell Claude what to do differently (esc)" },
+    });
+  });
+
+  it("is null for another menu", () => {
+    expect(yesNo([c("1", "Allow", true), c("2", "Deny")])).toBeNull();
+    expect(yesNo([c("1", "Yesterday", true), c("2", "No")])).toBeNull();
+    expect(yesNo([c("1", "Yes", true), c("2", "None of these")])).toBeNull();
+    expect(yesNo([])).toBeNull();
+  });
+
+  it("cuts labels to 60 characters", () => {
+    const long = `No, ${"é".repeat(80)}`;
+    expect(Array.from(shortLabel(long))).toHaveLength(60);
+    expect(shortLabel(long).endsWith("…")).toBe(true);
+    expect(shortLabel("Yes")).toBe("Yes");
+    expect(labelMatches(long, shortLabel(long))).toBe(true);
+    expect(labelMatches("Yes, and don't ask again", "Yes")).toBe(false);
   });
 });
 
