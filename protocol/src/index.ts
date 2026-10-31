@@ -36,15 +36,29 @@ export type ThreadItem =
       ts: number;
       agent_id: string;
       description: string;
+      /** "running", "done", "completed", "error", "stopped" (no write for a long time), … */
       status: string;
+      /** Only a real final result. A host before live subagents can send the launch text here. */
       result_summary?: string;
+      /** Live fields. A host before live subagents does not send them. Times are unix ms. */
+      started_at?: number;
+      finished_at?: number;
+      /** While running: its latest step, such as "Read parse.rs". Max 80 chars. */
+      activity?: string;
+      tool_count?: number;
+      model?: string;
+      agent_type?: string;
     }
   | { kind: "system"; id: string; ts: number; text: string };
 
 /** cursor = byte offset for the older page (null at file start); end = file size at read time, used as thread.follow `from`. */
 export type ThreadPage = { items: ThreadItem[]; cursor: number | null; end: number };
 /** `thread.subagent` result: a page plus the subagent transcript path (the `thread.follow` log). */
-export type SubagentPage = ThreadPage & { log_path: string };
+export type SubagentPage = ThreadPage & {
+  log_path: string;
+  /** True while the subagent runs, false when it stopped. Missing when the host does not know. */
+  running?: boolean;
+};
 export type ThreadRef = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 export type RecentSession = { session: string; first_prompt: string; last_activity: number; cwd: string };
 

@@ -3,6 +3,7 @@
 mod follow;
 mod parse;
 mod resolve;
+pub mod subagents;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -14,15 +15,18 @@ use crate::types::{ThreadItem, ThreadPage};
 
 pub use follow::{Follower, POLL_INTERVAL};
 pub use resolve::{resolve_with, ProcessTable, descendants, parse_ps, newest_jsonl, project_dir, recent_cwds, recent_sessions, resolve};
-pub use parse::{assemble, parse_line, parse_results, ResultInfo, RESULT_CAP};
+pub use parse::{assemble, merge_result, parse_line, parse_results, ResultInfo, ResultKind, LAUNCH_TEXT, RESULT_CAP};
 
 /// Default page size in thread items.
 pub const DEFAULT_LIMIT: usize = 60;
 
 /// Read one page of items ending at byte `before` (default EOF), newest last.
 /// `limit` counts items; a line is never split, so a page can hold a few more.
+/// Subagent items get their live fields from the files next to the log.
 pub fn thread_get(path: &Path, before: Option<u64>, limit: usize) -> io::Result<ThreadPage> {
-    thread_get_from(File::open(path)?, before, limit)
+    let mut page = thread_get_from(File::open(path)?, before, limit)?;
+    subagents::enrich_items(path, &mut page.items, std::time::SystemTime::now());
+    Ok(page)
 }
 
 pub fn thread_get_from<R: Read + Seek>(mut r: R, before: Option<u64>, limit: usize) -> io::Result<ThreadPage> {
@@ -68,7 +72,7 @@ pub fn thread_get_from<R: Read + Seek>(mut r: R, before: Option<u64>, limit: usi
         first = false;
         for (off, line) in lines.into_iter().rev() {
             for (id, res) in parse_results(&line) {
-                results.insert(id, res);
+                merge_result(&mut results, id, res);
             }
             let items = parse_line(&line);
             count += items.len();
@@ -106,7 +110,8 @@ fn scan_forward<R: Read + Seek>(
             ThreadItem::Tool { id, result: None, .. } | ThreadItem::Subagent { id, .. } => Some(id.as_str()),
             _ => None,
         })
-        .filter(|id| !results.contains_key(*id))
+        // A launch result is not final: a background subagent waits for its notification.
+        .filter(|id| results.get(*id).is_none_or(|r| r.kind == ResultKind::Launch))
         .collect();
     if pending.is_empty() || from >= len {
         return Ok(());
@@ -123,12 +128,15 @@ fn scan_forward<R: Read + Seek>(
         }
     }
     for line in String::from_utf8_lossy(&buf).lines() {
-        if !line.contains("tool_result") {
+        if !line.contains("tool_result") && !line.contains("<task-notification>") {
             continue;
         }
         for (id, info) in parse_results(line) {
-            if pending.remove(id.as_str()) {
-                results.insert(id, info);
+            if pending.contains(id.as_str()) {
+                if info.kind != ResultKind::Launch {
+                    pending.remove(id.as_str());
+                }
+                merge_result(results, id, info);
             }
         }
         if pending.is_empty() {

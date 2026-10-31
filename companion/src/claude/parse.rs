@@ -31,7 +31,24 @@ pub struct ResultInfo {
     pub result: ToolResult,
     pub agent_id: Option<String>,
     pub status: Option<String>,
+    pub kind: ResultKind,
 }
+
+/// Where a result comes from. A later kind replaces an earlier one for the same call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum ResultKind {
+    /// "Async agent launched": a background subagent started. It is not a final result.
+    Launch,
+    /// A `<task-notification>` line: a background task stopped. It applies to subagents only.
+    Notice,
+    /// An ordinary tool result.
+    #[default]
+    Final,
+}
+
+/// Start of the tool result Claude Code writes when it launches a background subagent.
+/// The text is internal. It must never show as a summary.
+pub const LAUNCH_TEXT: &str = "Async agent launched successfully";
 
 /// Tool results found on one line, keyed by `tool_use_id`.
 pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
@@ -39,8 +56,15 @@ pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
     if v.get("type").and_then(Value::as_str) != Some("user") {
         return Vec::new();
     }
-    let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else { return Vec::new() };
     let ts = v.get("timestamp").and_then(Value::as_str).and_then(parse_ts);
+    let content = v.pointer("/message/content");
+    if let Some(n) = content.and_then(notice_of) {
+        return n.into_iter().map(|(id, mut info)| {
+            info.result.ts = ts;
+            (id, info)
+        }).collect();
+    }
+    let Some(blocks) = content.and_then(Value::as_array) else { return Vec::new() };
     let blocks: Vec<&Value> =
         blocks.iter().filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result")).collect();
     // `toolUseResult` describes one call. Use it only when the line holds one result.
@@ -52,11 +76,56 @@ pub fn parse_results(line: &str) -> Vec<(String, ResultInfo)> {
         .filter_map(|b| {
             let id = b.get("tool_use_id")?.as_str()?.to_string();
             let ok = !b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
-            let (text, truncated) = cap(&result_text(b.get("content")), RESULT_CAP);
+            let full = result_text(b.get("content"));
+            let launch = status.as_deref() == Some("async_launched") || full.trim_start().starts_with(LAUNCH_TEXT);
+            let kind = if launch { ResultKind::Launch } else { ResultKind::Final };
+            let (text, truncated) = if launch { (String::new(), false) } else { cap(&full, RESULT_CAP) };
             let result = ToolResult { ok, text, truncated, ts };
-            Some((id, ResultInfo { result, agent_id: agent_id.clone(), status: status.clone() }))
+            Some((id, ResultInfo { result, agent_id: agent_id.clone(), status: status.clone(), kind }))
         })
         .collect()
+}
+
+/// A `<task-notification>` user line as a result for its `<tool-use-id>`. Text is the
+/// `<result>`, else the `<summary>`.
+fn notice_of(content: &Value) -> Option<Vec<(String, ResultInfo)>> {
+    let text = match content {
+        Value::String(s) => s.as_str(),
+        Value::Array(a) => a.iter().find_map(|b| b.get("text").and_then(Value::as_str))?,
+        _ => return None,
+    };
+    let t = text.trim_start();
+    if !t.starts_with("<task-notification>") {
+        return None;
+    }
+    let id = tag_text(t, "tool-use-id").filter(|s| !s.is_empty())?;
+    let status = tag_text(t, "status").filter(|s| !s.is_empty()).map(String::from);
+    let body = tag_text(t, "result").filter(|s| !s.is_empty()).or_else(|| tag_text(t, "summary")).unwrap_or("");
+    let ok = !status.as_deref().is_some_and(|s| ["fail", "error", "kill", "cancel"].iter().any(|w| s.contains(w)));
+    let (text, truncated) = cap(body, RESULT_CAP);
+    let agent_id = tag_text(t, "task-id").filter(|s| !s.is_empty()).map(String::from);
+    let result = ToolResult { ok, text, truncated, ts: None };
+    Some(vec![(id.to_string(), ResultInfo { result, agent_id, status, kind: ResultKind::Notice })])
+}
+
+/// Add a result to `map`. For the same call a later kind wins (a launch never hides a final
+/// result); for the same kind the newer line wins. The agent id survives from either.
+pub fn merge_result(map: &mut HashMap<String, ResultInfo>, id: String, new: ResultInfo) {
+    match map.get_mut(&id) {
+        None => {
+            map.insert(id, new);
+        }
+        Some(old) => {
+            let newer = (new.kind, new.result.ts.unwrap_or(0)) >= (old.kind, old.result.ts.unwrap_or(0));
+            let other = if newer { old.agent_id.take() } else { new.agent_id.clone() };
+            if newer {
+                *old = new;
+            }
+            if old.agent_id.is_none() {
+                old.agent_id = other;
+            }
+        }
+    }
 }
 
 /// Merge tool results into the tool and subagent items with the same id.
@@ -64,17 +133,29 @@ pub fn assemble(mut items: Vec<ThreadItem>, mut results: HashMap<String, ResultI
     for item in &mut items {
         match item {
             ThreadItem::Tool { id, result, .. } => {
-                if let Some(r) = results.remove(id.as_str()) {
-                    *result = Some(r.result);
+                // A task notification for a background command does not replace its tool result.
+                if results.get(id.as_str()).is_some_and(|r| r.kind != ResultKind::Notice) {
+                    if let Some(r) = results.remove(id.as_str()) {
+                        *result = Some(r.result);
+                    }
                 }
             }
-            ThreadItem::Subagent { id, agent_id, status, result_summary, .. } => {
+            ThreadItem::Subagent { id, agent_id, status, result_summary, finished_at, .. } => {
                 if let Some(r) = results.remove(id.as_str()) {
-                    *status = r.status.unwrap_or_else(|| if r.result.ok { "done" } else { "error" }.into());
                     if let Some(a) = r.agent_id {
                         *agent_id = a;
                     }
-                    *result_summary = Some(cap(&r.result.text, 500).0);
+                    if r.kind == ResultKind::Launch {
+                        // A background subagent runs on. Its summary comes with the notification.
+                        *status = "running".into();
+                        *result_summary = None;
+                        continue;
+                    }
+                    *status = r.status.unwrap_or_else(|| if r.result.ok { "done" } else { "error" }.into());
+                    *result_summary = Some(cap(&r.result.text, 500).0).filter(|s| !s.trim().is_empty());
+                    if finished_at.is_none() {
+                        *finished_at = r.result.ts;
+                    }
                 }
             }
             _ => {}
@@ -324,6 +405,7 @@ fn tool_item(b: &Value, uuid: &str, i: usize, ts: i64) -> ThreadItem {
             .and_then(Value::as_str)
             .map(|s| cap(s, 200).0)
             .unwrap_or_default();
+        let opt = |k: &str| input.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from);
         return ThreadItem::Subagent {
             agent_id: String::new(),
             id,
@@ -331,6 +413,12 @@ fn tool_item(b: &Value, uuid: &str, i: usize, ts: i64) -> ThreadItem {
             description,
             status: "running".into(),
             result_summary: None,
+            started_at: None,
+            finished_at: None,
+            activity: None,
+            tool_count: None,
+            model: opt("model"),
+            agent_type: opt("subagent_type"),
         };
     }
     ThreadItem::Tool { input_summary: summarize(&name, &input), id, ts, name, input, result: None }
@@ -376,7 +464,7 @@ fn result_text(c: Option<&Value>) -> String {
 }
 
 /// Cut `s` to at most `max` bytes on a char boundary.
-fn cap(s: &str, max: usize) -> (String, bool) {
+pub(crate) fn cap(s: &str, max: usize) -> (String, bool) {
     if s.len() <= max {
         return (s.to_string(), false);
     }
@@ -388,7 +476,7 @@ fn cap(s: &str, max: usize) -> (String, bool) {
 }
 
 /// ISO 8601 UTC (`2026-10-10T23:20:46.566Z`) to epoch milliseconds.
-fn parse_ts(s: &str) -> Option<i64> {
+pub(crate) fn parse_ts(s: &str) -> Option<i64> {
     let (date, time) = s.split_once('T')?;
     let mut d = date.split('-');
     let (y, m, day): (i64, i64, i64) = (d.next()?.parse().ok()?, d.next()?.parse().ok()?, d.next()?.parse().ok()?);

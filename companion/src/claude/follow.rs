@@ -1,12 +1,15 @@
 //! Follow a growing Claude log: emit new items, and updated tool items when results arrive.
+//! Running subagents do not write to the parent log, so the follower checks their own files
+//! every `AGENT_POLL` and emits the subagent item again when it changed.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
-use super::{assemble, parse_line, parse_results, ResultInfo};
+use super::subagents::{is_live, Tracked, AGENT_POLL};
+use super::{assemble, merge_result, parse_line, parse_results, ResultInfo, ResultKind};
 use crate::types::ThreadItem;
 
 /// Time between file size checks.
@@ -23,12 +26,21 @@ pub struct Follower {
     offset: u64,
     pending: HashMap<String, ThreadItem>,
     order: VecDeque<String>,
+    /// Running subagents by item id.
+    agents: HashMap<String, Tracked>,
+    next_check: Instant,
 }
 
 impl Follower {
     pub fn new(path: &Path, from: u64) -> Follower {
-        let mut f =
-            Follower { path: path.to_path_buf(), offset: from, pending: HashMap::new(), order: VecDeque::new() };
+        let mut f = Follower {
+            path: path.to_path_buf(),
+            offset: from,
+            pending: HashMap::new(),
+            order: VecDeque::new(),
+            agents: HashMap::new(),
+            next_check: Instant::now() + AGENT_POLL,
+        };
         // Calls before `from` may get their result later. Remember the unresolved ones.
         if let Some(text) = f.window_before(from) {
             // process() remembers the unresolved items. The output is not emitted.
@@ -55,7 +67,45 @@ impl Follower {
 
     /// Read the complete lines past the offset. Returns the items to emit and the new offset,
     /// or `None` when there is nothing new.
+    /// Running subagents are checked at most every `AGENT_POLL`; their changes come in the items.
     pub fn poll(&mut self) -> io::Result<Option<(Vec<ThreadItem>, u64)>> {
+        let main = self.poll_log()?;
+        let agents = if !self.agents.is_empty() && Instant::now() >= self.next_check {
+            self.poll_agents()
+        } else {
+            Vec::new()
+        };
+        match main {
+            Some(mut items) => {
+                items.extend(agents);
+                Ok(Some((items, self.offset)))
+            }
+            None if agents.is_empty() => Ok(None),
+            None => Ok(Some((agents, self.offset))),
+        }
+    }
+
+    /// Check the running subagents now. Returns the items that changed.
+    pub fn poll_agents(&mut self) -> Vec<ThreadItem> {
+        self.next_check = Instant::now() + AGENT_POLL;
+        let now = SystemTime::now();
+        let mut metas = None;
+        let mut out = Vec::new();
+        for t in self.agents.values_mut() {
+            if t.refresh(&self.path, &mut metas, now) {
+                out.push(t.last.clone());
+            }
+        }
+        self.agents.retain(|_, t| is_live(&t.last));
+        out
+    }
+
+    /// Byte offset of the next unread line.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    fn poll_log(&mut self) -> io::Result<Option<Vec<ThreadItem>>> {
         let mut f = File::open(&self.path)?;
         let len = f.metadata()?.len();
         if len < self.offset {
@@ -82,7 +132,7 @@ impl Follower {
         };
         self.offset += buf.len() as u64;
         let items = self.process(&String::from_utf8_lossy(&buf));
-        Ok(Some((items, self.offset)))
+        Ok(Some(items))
     }
 
     fn process(&mut self, text: &str) -> Vec<ThreadItem> {
@@ -90,25 +140,57 @@ impl Follower {
         let mut results: HashMap<String, ResultInfo> = HashMap::new();
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
             items.extend(parse_line(line));
-            results.extend(parse_results(line));
+            for (id, info) in parse_results(line) {
+                merge_result(&mut results, id, info);
+            }
         }
         // Results for calls emitted earlier come back as updated items with the same id.
         let mut updates = Vec::new();
-        for id in results.keys() {
+        for (id, info) in &results {
+            // A task notification is for subagents only. A tool keeps waiting for its own result.
+            let skip = info.kind == ResultKind::Notice && matches!(self.pending.get(id), Some(ThreadItem::Tool { .. }));
+            if skip {
+                continue;
+            }
             if let Some(item) = self.pending.remove(id) {
                 updates.push(item);
             }
         }
         self.order.retain(|id| self.pending.contains_key(id));
         let mut out = assemble(items, results.clone());
+        let updates = assemble(updates, results);
         // A call and its result can arrive in one read; `assemble` merged those already.
-        for item in &out {
+        // A launched background subagent stays unresolved until its notification.
+        for item in out.iter().chain(updates.iter()) {
             if is_unresolved(item) {
                 self.remember(item.clone());
             }
         }
-        out.extend(assemble(updates, results));
+        out.extend(updates);
+        self.track(&mut out);
         out
+    }
+
+    /// Give subagent items their live fields. Keep the running ones for `poll_agents`.
+    fn track(&mut self, items: &mut [ThreadItem]) {
+        let now = SystemTime::now();
+        let mut metas = None;
+        for item in items.iter_mut() {
+            let ThreadItem::Subagent { id, .. } = &*item else { continue };
+            let id = id.clone();
+            let mut t = match self.agents.remove(&id) {
+                Some(mut t) => {
+                    t.base = item.clone();
+                    t
+                }
+                None => Tracked::new(item.clone()),
+            };
+            t.refresh(&self.path, &mut metas, now);
+            item.clone_from(&t.last);
+            if is_live(&t.last) {
+                self.agents.insert(id, t);
+            }
+        }
     }
 
     fn remember(&mut self, item: ThreadItem) {

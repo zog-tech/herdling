@@ -65,7 +65,7 @@ pub struct Hello {
     pub methods: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
     pub ok: bool,
     pub text: String,
@@ -75,7 +75,7 @@ pub struct ToolResult {
     pub ts: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ThreadItem {
     User {
@@ -112,6 +112,22 @@ pub enum ThreadItem {
         status: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         result_summary: Option<String>,
+        /// Unix ms of the first line of the subagent transcript, else of the call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        started_at: Option<i64>,
+        /// Unix ms when the subagent stopped. Missing while it runs or when unknown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        finished_at: Option<i64>,
+        /// While running: its latest step ("Read parse.rs", "Bash cargo test"). Max 80 chars.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        activity: Option<String>,
+        /// Tool calls in the subagent transcript so far.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_count: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_type: Option<String>,
     },
     System {
         id: String,
@@ -133,6 +149,9 @@ pub struct SubagentPage {
     #[serde(flatten)]
     pub page: ThreadPage,
     pub log_path: String,
+    /// True while the subagent runs, false when it stopped. Missing when the host does not know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

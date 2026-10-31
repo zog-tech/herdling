@@ -399,8 +399,9 @@ async fn thread_subagent(params: Value) -> Result<Value, RpcError> {
     let path = claude::subagent_path(std::path::Path::new(log), agent)
         .ok_or_else(|| err("bad_request", "invalid agent_id"))?;
     let log_path = path.to_string_lossy().into_owned();
+    let running = claude::subagents::transcript_running(&path, std::time::SystemTime::now());
     let page = read_page(path, &params).await?;
-    serde_json::to_value(crate::types::SubagentPage { page, log_path }).map_err(|e| err("internal", e.to_string()))
+    serde_json::to_value(crate::types::SubagentPage { page, log_path, running }).map_err(|e| err("internal", e.to_string()))
 }
 
 async fn read_page(path: std::path::PathBuf, params: &Value) -> Result<crate::types::ThreadPage, RpcError> {
@@ -538,7 +539,21 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
     let stream = ctx.streams.spawn("thread", move |id| async move {
         let mut follower = claude::Follower::new(&path, from);
         let mut failures = 0u32;
+        // On a subagent transcript, tell the app when the subagent stops (`agent_running`).
+        let mut running = claude::subagents::transcript_running(&path, std::time::SystemTime::now());
+        let mut next_check = tokio::time::Instant::now() + claude::subagents::AGENT_POLL;
         loop {
+            if running == Some(true) && tokio::time::Instant::now() >= next_check {
+                next_check = tokio::time::Instant::now() + claude::subagents::AGENT_POLL;
+                let now = claude::subagents::transcript_running(&path, std::time::SystemTime::now());
+                if now == Some(false) {
+                    running = now;
+                    let data = json!({ "items": [], "offset": follower.offset(), "agent_running": false });
+                    if !notify(&out, &id, data).await {
+                        return;
+                    }
+                }
+            }
             let polled = follower.poll();
             failures = if polled.is_err() { failures + 1 } else { 0 };
             match polled {
