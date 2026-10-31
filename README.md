@@ -82,8 +82,43 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   herdlingd release. Until then, build from source.
 - **Setup guide:** [herdling.zog-tech.com/docs](https://herdling.zog-tech.com/docs).
 
-Each computer needs herdr (installed and running), an SSH server and `herdlingd`. The phone must
-reach the computer: on the same Wi-Fi, or through a VPN such as WireGuard or Tailscale.
+### Before you start
+
+Check these three things on each computer:
+
+1. **herdr is installed and runs.** Install it with its official installer,
+   `curl -fsSL https://herdr.dev/install.sh | sh` (to `~/.local/bin`, no sudo), and start it with
+   `herdr` in a terminal. Herdling works with herdr, the terminal app (herdr.dev also calls it
+   "Herdr TUI"), not with the agents of the separate Herdr desktop app. If herdr is missing, the
+   app's password setup offers **Install herdr and herdlingd**, and the installer has
+   `--with-herdr`. Neither installs herdr unless you ask.
+2. **SSH is on.** On a Mac: System Settings > General > Sharing > **Remote Login** (off on a new
+   Mac). On Linux: the OpenSSH server (`sudo apt install openssh-server`,
+   `sudo systemctl enable --now ssh`). When the phone cannot reach port 22, the app shows a
+   step-by-step guide.
+3. **The phone can reach the computer:** on the same Wi-Fi, or through a VPN such as WireGuard or
+   Tailscale.
+
+### Start at boot
+
+herdlingd runs as a user service, so it starts when you log in on the computer. After a restart
+with no login, the computer shows Offline. To start herdlingd at boot:
+
+- **macOS:** turn on automatic login: System Settings > Users & Groups > **Automatically log in
+  as** > your user. This is not possible while FileVault is on: then log in once after each restart.
+- **Linux:** run `sudo loginctl enable-linger $USER` once.
+
+The app shows "Starts after you log in on this computer" with a guide and a re-check
+(herdlingd 0.1.1 or later). herdr has no service of its own: after a restart, run `herdr` again.
+
+### Troubleshooting
+
+- **"Can't reach <address>:22":** SSH (Remote Login) is off, or the phone is on another network.
+  Tap **Turn on SSH on the computer** in the app.
+- **"herdr is not running":** run `herdr` in a terminal on that computer.
+- **Offline after a restart:** nobody is logged in. See "Start at boot".
+
+More in the [guide](https://herdling.zog-tech.com/docs#troubleshooting).
 
 ### Install herdlingd from source
 

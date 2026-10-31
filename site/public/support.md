@@ -31,6 +31,22 @@ No. There is no sign-up and no login. You pair each phone with each computer dir
 
 Install herdr, turn on SSH, then build herdlingd from source (https://github.com/zog-tech/herdling) and run `herdlingd install`. Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
 
+### What must be ready before I start?
+
+Three things on each computer: herdr is installed and runs (start it with `herdr` in a terminal); SSH is on (on a Mac: System Settings > General > Sharing > Remote Login, which is off on a new Mac); and the phone can reach the computer (the same Wi-Fi, or the same VPN). If herdr is missing, the app can install it with its official installer when you set up the computer with its SSH password.
+
+### The app cannot connect: "Can't reach <address>:22".
+
+SSH is off on the computer, or the phone is on another network. Tap **Turn on SSH on the computer** in the app for the steps. On a Mac: System Settings > General > Sharing, turn on **Remote Login**. On Linux: install and start the OpenSSH server (`sudo apt install openssh-server`, then `sudo systemctl enable --now ssh` on Debian and Ubuntu). Then tap **Done, check again**.
+
+### The computer shows "herdr is not running".
+
+herdlingd runs, but herdr does not. Open a terminal on that computer and run `herdr`. You can close the window after: herdr keeps running in the background. herdr does not start by itself after a restart.
+
+### The computer is offline after a restart.
+
+herdlingd starts when you log in on the computer. Log in once, or make it start at boot: on a Mac, turn on automatic login (System Settings > Users & Groups > Automatically log in as; not possible while FileVault is on). On Linux, run `sudo loginctl enable-linger $USER` once. The app shows a guide: tap **How to start at boot** on the computer in Settings > Hosts. Details: "Start at boot" in https://herdling.zog-tech.com/docs.md
+
 ### Can I use Herdling away from home?
 
 Yes, if your phone can reach your computer. Use a VPN to your home network, such as WireGuard or Tailscale, and set the computer's address in Settings > Hosts to its VPN address. You can also add a computer with **Set up with password**, which works well over a VPN.

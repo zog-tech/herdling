@@ -63,15 +63,15 @@
 <p class="kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>macOS and Linux</p>
 <h2 id="hd-title">herdlingd, the companion</h2>
 <p>A single program that runs on your computer next to herdr. It answers the app over SSH, pairs phones and sends notifications. It runs as your user, as a background service.</p>
-<p class="req">Needs herdr (installed and running) and an SSH server. On macOS: System Settings &rsaquo; General &rsaquo; Sharing &rsaquo; Remote Login. On Linux: the OpenSSH server.</p>
+<p class="req">Before you start: herdr is installed and runs (start it with <code>herdr</code>), SSH is on, and the phone can reach the computer (the same Wi-Fi or VPN). On macOS, SSH is System Settings &rsaquo; General &rsaquo; Sharing &rsaquo; Remote Login, and it is off on a new Mac. On Linux: the OpenSSH server. herdlingd starts when you log in; to start it at boot, see <a href="/docs#start-at-boot">Start at boot</a>.</p>
 </div>
 <div>
 <h3 class="steps-title">Set it up from the app</h3>
-<p class="req">The easiest way. In Herdling, tap Settings &rsaquo; Hosts &rsaquo; Add host &rsaquo; <strong>Set up with password</strong>. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers <strong>Install and pair</strong>: it runs the installer below over SSH, then pairs. No terminal and no admin rights. The app uses the password once and does not keep it.</p>
+<p class="req">The easiest way. In Herdling, tap Settings &rsaquo; Hosts &rsaquo; Add host &rsaquo; <strong>Set up with password</strong>. Enter the address of the computer, your user name and your SSH password. When herdlingd is missing, the app offers <strong>Install and pair</strong>: it runs the installer below over SSH, then pairs. When herdr is missing too, the app asks before it installs herdr. No terminal and no admin rights. The app uses the password once and does not keep it.</p>
 <p class="req" data-when="installer-soon">This works after the first herdlingd release. Until then, build from source.</p>
 <h3 class="steps-title">The one-line installer</h3>
 <div class="code soon"><span class="tag" data-when="installer-soon">After the first release</span><pre><code data-installer-command>curl -fsSL https://herdling.zog-tech.com/install.sh | sh</code></pre></div>
-<p class="req">It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to <code>~/.local/bin</code> and starts the user service. It does not use sudo. Install herdr first.</p>
+<p class="req">It downloads herdlingd for your system from the GitHub release, checks its SHA-256, copies it to <code>~/.local/bin</code> and starts the user service. It does not use sudo. Install herdr first, or add <code>--with-herdr</code> to run the official herdr installer first: <code>sh -s -- --with-herdr</code>.</p>
 <p class="req" data-when="installer-soon">The installer works after the first herdlingd release. Until then, build from source as below. Questions: <a href="https://github.com/zog-tech/herdling/issues">open an issue</a> or write to <a href="mailto:admin@zog-tech.com">admin@zog-tech.com</a>.</p>
 <h3 class="steps-title">Build it from source</h3>
 <p class="req">Herdling is open source (MPL-2.0). You need git, a C compiler (macOS: <code>xcode-select --install</code>; Debian and Ubuntu: <code>sudo apt install build-essential</code>) and Rust (stable), for example from <a href="https://rustup.rs">rustup</a>. herdr must be installed and running.</p>
