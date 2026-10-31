@@ -31,6 +31,8 @@ export function Screen({
       refreshControl={refreshControl}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
+      // iOS: the keyboard adds to the bottom inset, so a focused field near the bottom can scroll above it.
+      automaticallyAdjustKeyboardInsets
     >
       {children}
     </ScrollView>

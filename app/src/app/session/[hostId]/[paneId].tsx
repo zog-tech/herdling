@@ -1,7 +1,7 @@
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { Alert, Keyboard, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +34,7 @@ import { SearchBar } from "@/thread/SearchBar";
 import { SearchMarksContext } from "@/thread/searchMarks";
 import { useDebounced, useThreadSearch } from "@/thread/useThreadSearch";
 import * as haptics from "@/ui/haptics";
+import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
@@ -339,7 +340,8 @@ export default function SessionScreen() {
   }, []);
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
+    // Not KeyboardAvoidingView: below the native header it pads too little and the keyboard covers the composer.
+    <KeyboardAvoider style={{ backgroundColor: colors.bg }}>
       {/* A native header: iOS 26 draws the back button and the bar buttons on Liquid Glass. */}
       <Stack.Screen
         options={{
@@ -483,6 +485,6 @@ export default function SessionScreen() {
           visible={mode === "thread" && focused && !searchOpen}
         />
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }

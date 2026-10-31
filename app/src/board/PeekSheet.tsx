@@ -1,6 +1,6 @@
 import { X } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { markSeen, useSeen } from "@/herdr/seen";
@@ -13,6 +13,7 @@ import { useThread } from "@/thread/useThread";
 import { GlassButton } from "@/ui/GlassButton";
 import { glassAvailable } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
+import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
 import { useSheetKeyboardPad } from "@/ui/sheetKeyboard";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
@@ -176,8 +177,8 @@ export function PeekSheet({
   }
   // iOS 26: the sheet itself is Liquid Glass at the partial detent, so the page color stays off it.
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
+    <KeyboardAvoider style={{ backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
       {body}
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }
