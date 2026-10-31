@@ -1,3 +1,4 @@
+import type { CommandInfo } from "@herdling/protocol";
 import { File } from "expo-file-system";
 import { ArrowUp, Check } from "lucide-react-native";
 import { memo, useEffect, useRef, useState, type ComponentRef } from "react";
@@ -30,7 +31,7 @@ import {
 import { answerChoice, destructiveKey, useChoices, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
-import { filterCommands, slashQuery, useCommands } from "./commands";
+import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
 import { sendWithPending } from "./pending";
 import { PermissionButtons } from "./PermissionButtons";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
@@ -142,10 +143,13 @@ export const Composer = memo(function Composer({
   const [picking, setPicking] = useState(false);
   /** Lock against a double tap: two taps can land before `picking` re-renders. */
   const pickLock = useRef(false);
-  const query = slashQuery(text);
-  const slash = useCommands(hostId, paneId, visible && online && (query !== undefined || sheetOpen));
+  const agentKind = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent);
+  const typed = commandQuery(text, commandTriggers(agentKind));
+  const slash = useCommands(hostId, paneId, visible && online && (typed !== undefined || sheetOpen));
   const matches =
-    query !== undefined && slash.supported && slash.commands ? filterCommands(slash.commands, query).slice(0, MENU_MAX) : [];
+    typed && slash.supported && slash.commands
+      ? filterCommands(commandsFor(slash.commands, typed.trigger), typed.query).slice(0, MENU_MAX)
+      : [];
   const showMenu = visible && online && !showChoices && matches.length > 0;
   const canAttach = hasMethod(hello, "files.put") && photosAvailable();
   const pasteCount = useRef(0);
@@ -289,9 +293,9 @@ export const Composer = memo(function Composer({
     setSheetKey((k) => k + 1);
     setSheetOpen(true);
   };
-  /** Puts `/name ` in the prompt box. */
-  const insertCommand = (name: string) => {
-    setText(`/${name} `);
+  /** Puts `/name ` (or `$name ` for a Codex skill) in the prompt box. */
+  const insertCommand = (c: CommandInfo) => {
+    setText(`${c.trigger ?? "/"}${c.name} `);
     if (error) setError(undefined);
   };
 
@@ -331,7 +335,7 @@ export const Composer = memo(function Composer({
           Host offline — you can send when it reconnects.
         </Text>
       ) : null}
-      {showMenu ? <CommandMenu commands={matches} onPick={(c) => insertCommand(c.name)} /> : null}
+      {showMenu ? <CommandMenu commands={matches} onPick={insertCommand} /> : null}
       {plusOpen && showPlus && !showMenu ? (
         <PlusMenu
           onPhotos={canAttach && photos.length < MAX_PHOTOS ? () => void attachPhotos() : undefined}
@@ -467,7 +471,7 @@ export const Composer = memo(function Composer({
           commands={slash.commands}
           onClose={() => setSheetOpen(false)}
           onPick={(c) => {
-            insertCommand(c.name);
+            insertCommand(c);
             setSheetOpen(false);
           }}
           onDismiss={() => inputRef.current?.focus()}

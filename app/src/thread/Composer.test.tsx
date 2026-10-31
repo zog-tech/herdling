@@ -24,11 +24,17 @@ const mockCommands = [
   { name: "tools:compact-all", description: "Compact all", source: "plugin" },
   { name: "deploy", source: "user" },
 ];
+const mockCodexCommands = [
+  { name: "review", description: "Review the changes", source: "builtin" },
+  { name: "prompts:draft", source: "user" },
+  { name: "deploy", description: "Ship it", source: "project", trigger: "$" },
+  { name: "design", source: "user", trigger: "$" },
+];
 let mockUploadFails = false;
 const mockRpc = {
   call: async (method: string, params: any) => {
     mockRpcCalls.push({ method, params });
-    if (method === "commands.list") return { commands: mockCommands };
+    if (method === "commands.list") return { commands: params.kind === "codex" ? mockCodexCommands : mockCommands };
     if (method === "files.put") {
       if (mockUploadFails) throw new Error("disk full");
       return { path: `/up/${mockRpcCalls.filter((c) => c.method === "files.put").length}-${params.name}` };
@@ -175,7 +181,7 @@ const idle = (agent = "claude") =>
 const prompt = (t: ReactTestRenderer) => t.root.find((n) => n.props.accessibilityLabel === "Prompt" && !!n.props.onChangeText);
 const menuRows = (t: ReactTestRenderer) =>
   t.root
-    .findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("/") && !!n.props.onPress)
+    .findAll((n) => typeof n.props.accessibilityLabel === "string" && /^[/$]/.test(n.props.accessibilityLabel) && !!n.props.onPress)
     .map((n) => n.props.accessibilityLabel);
 
 test("typing_slash_shows_the_filtered_menu_and_a_tap_fills_the_name", async () => {
@@ -201,6 +207,58 @@ test("typing_slash_shows_the_filtered_menu_and_a_tap_fills_the_name", async () =
   await flush();
   expect(menuRows(tree!)).toHaveLength(4);
   expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(1);
+});
+
+const codexHost = () => {
+  mockHello = { ...helloWith(["commands.list"]), command_kinds: ["claude", "codex"] };
+};
+
+test("codex_dollar_opens_skills_and_slash_opens_commands", async () => {
+  idle("codex");
+  codexHost();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("$"));
+  await flush();
+  expect(menuRows(tree!)).toEqual(["$deploy", "$design"]);
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toEqual([
+    { method: "commands.list", params: { pane_id: "w1:p1", cwd: "/work/proj", kind: "codex" } },
+  ]);
+
+  await act(async () => prompt(tree!).props.onChangeText("$dep"));
+  expect(menuRows(tree!)).toEqual(["$deploy"]);
+  await act(async () => byLabel(tree!, "$deploy")[0].props.onPress());
+  expect(prompt(tree!).props.value).toBe("$deploy ");
+  expect(menuRows(tree!)).toEqual([]);
+
+  await act(async () => prompt(tree!).props.onChangeText("/"));
+  expect(menuRows(tree!)).toEqual(["/review", "/prompts:draft"]);
+  await act(async () => byLabel(tree!, "/prompts:draft")[0].props.onPress());
+  expect(prompt(tree!).props.value).toBe("/prompts:draft ");
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(1);
+});
+
+test("claude_ignores_dollar_and_codex_needs_the_host_to_list_it", async () => {
+  idle("claude");
+  codexHost();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("$"));
+  await flush();
+  expect(menuRows(tree!)).toEqual([]);
+  act(() => tree!.unmount());
+
+  idle("codex");
+  mockHello = helloWith(["commands.list"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("$"));
+  await flush();
+  expect(menuRows(tree!)).toEqual([]);
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(0);
 });
 
 test("no_menu_for_other_agents", async () => {

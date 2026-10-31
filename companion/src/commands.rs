@@ -1,7 +1,8 @@
-//! `commands.list`: the slash commands and skills that Claude Code offers in a folder.
+//! `commands.list`: the slash commands and skills that Claude Code or Codex offers in a folder.
 //!
-//! Sources: Claude Code built-ins, user and project skills and commands, and the skills and
-//! commands of enabled plugins. A missing or unreadable file or folder is skipped.
+//! Claude sources: built-ins, user and project skills and commands, and the skills and
+//! commands of enabled plugins. Codex sources: built-ins, custom prompts, and skills from the
+//! project, the user and the admin folder. A missing or unreadable file or folder is skipped.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -23,6 +24,9 @@ pub struct Command {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub source: &'static str,
+    /// `"$"` for a Codex skill. Missing means `/`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<&'static str>,
 }
 
 /// Common Claude Code built-ins. Claude Code has more; these are the ones used most.
@@ -38,6 +42,92 @@ const BUILTINS: &[(&str, &str)] = &[
     ("review", "Review a pull request"),
 ];
 
+/// Common Codex built-ins. Codex has more; these are the ones used most.
+const CODEX_BUILTINS: &[(&str, &str)] = &[
+    ("model", "Choose the model and reasoning effort"),
+    ("permissions", "Set what Codex may do without asking"),
+    ("review", "Review the working tree changes"),
+    ("new", "Start a new conversation"),
+    ("resume", "Resume an earlier conversation"),
+    ("init", "Write an AGENTS.md for this project"),
+    ("compact", "Summarize the conversation to free context"),
+    ("diff", "Show the git diff"),
+    ("mention", "Attach a file to the conversation"),
+    ("status", "Show the session settings and token use"),
+    ("mcp", "List the MCP tools"),
+    ("skills", "List the available skills"),
+    ("quit", "Exit Codex"),
+];
+
+/// Agent kinds that `list_for` answers for. Other kinds get the Claude list.
+pub const KINDS: &[&str] = &["claude", "codex"];
+
+/// The list for an agent `kind`. `codex` gives the Codex list; any other kind gives the Claude list.
+/// `codex_home` is `CODEX_HOME` when set, else `~/.codex`. `admin_skills` is `/etc/codex/skills`.
+pub fn list_for(kind: Option<&str>, home: &Path, codex_home: Option<&Path>, admin_skills: &Path, cwd: Option<&Path>) -> Vec<Command> {
+    if kind == Some("codex") {
+        let default = home.join(".codex");
+        codex_list(home, codex_home.unwrap_or(&default), admin_skills, cwd)
+    } else {
+        list(home, cwd)
+    }
+}
+
+/// All Codex commands for `cwd`, sorted by name. Skills have the `$` trigger.
+/// For a skill name: project beats user, user beats admin, and a nearer folder beats a farther one.
+/// Prompts are named `prompts:<file>`.
+pub fn codex_list(home: &Path, codex_home: &Path, admin_skills: &Path, cwd: Option<&Path>) -> Vec<Command> {
+    // A skill and a command can share a name: the trigger is part of the key.
+    let mut by_name: HashMap<(bool, String), Command> = HashMap::new();
+    // Add from the lowest priority to the highest: a later insert replaces an earlier one.
+    let mut add = |found: Vec<Command>| {
+        for c in found {
+            by_name.insert((c.trigger.is_some(), c.name.clone()), c);
+        }
+    };
+    let dollar = |mut v: Vec<Command>| {
+        v.iter_mut().for_each(|c| c.trigger = Some("$"));
+        v
+    };
+    add(CODEX_BUILTINS
+        .iter()
+        .map(|(n, d)| Command { name: (*n).into(), description: Some((*d).into()), source: "builtin", trigger: None })
+        .collect());
+    add(codex_prompts(&codex_home.join("prompts")));
+    add(dollar(skills(admin_skills, "user", "")));
+    add(dollar(skills(&home.join(".agents/skills"), "user", "")));
+    if let Some(cwd) = cwd {
+        // The folder nearest to `cwd` wins, so add the farthest first.
+        for dir in project_dirs(home, cwd).iter().rev() {
+            add(dollar(skills(&dir.join(".agents/skills"), "project", "")));
+        }
+    }
+    let mut out: Vec<Command> = by_name.into_values().collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.truncate(MAX_COMMANDS);
+    out
+}
+
+/// The top-level `*.md` files of a Codex prompts folder, named `prompts:<file>`.
+fn codex_prompts(dir: &Path) -> Vec<Command> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out = Vec::new();
+    for e in entries.flatten() {
+        let path = e.path();
+        // `metadata` follows symlinks.
+        let is_file = std::fs::metadata(&path).map(|m| m.is_file()).unwrap_or(false);
+        if !is_file || path.extension().and_then(|x| x.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()).filter(|s| valid_name(s)) else { continue };
+        let Some(head) = read_head(&path) else { continue };
+        let (front, _) = split_frontmatter(&head);
+        let description = front.and_then(|f| f.get("description").cloned());
+        out.push(Command { name: format!("prompts:{stem}"), description: clean(description), source: "user", trigger: None });
+    }
+    out
+}
+
 /// All commands for `cwd` (none from the project when `cwd` is `None`), sorted by name.
 /// When two have the same name, project beats user, user beats plugin, plugin beats built-in.
 pub fn list(home: &Path, cwd: Option<&Path>) -> Vec<Command> {
@@ -50,7 +140,7 @@ pub fn list(home: &Path, cwd: Option<&Path>) -> Vec<Command> {
     };
     add(BUILTINS
         .iter()
-        .map(|(n, d)| Command { name: (*n).into(), description: Some((*d).into()), source: "builtin" })
+        .map(|(n, d)| Command { name: (*n).into(), description: Some((*d).into()), source: "builtin", trigger: None })
         .collect());
     add(plugins(home));
     add(from_claude_dir(&home.join(".claude"), "user", ""));
@@ -96,7 +186,7 @@ fn from_claude_dir(dir: &Path, source: &'static str, prefix: &str) -> Vec<Comman
             .as_ref()
             .and_then(|f| f.get("description").cloned())
             .or_else(|| body.lines().map(str::trim).find(|l| !l.is_empty()).map(String::from));
-        out.push(Command { name: format!("{prefix}{rel}"), description: clean(description), source });
+        out.push(Command { name: format!("{prefix}{rel}"), description: clean(description), source, trigger: None });
     });
     out
 }
@@ -119,6 +209,7 @@ fn skills(dir: &Path, source: &'static str, prefix: &str) -> Vec<Command> {
             name: format!("{prefix}{name}"),
             description: clean(front.get("description").cloned()),
             source,
+            trigger: None,
         });
     }
     out

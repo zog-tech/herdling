@@ -16,6 +16,8 @@ export type Hello = {
   methods?: string[];
   /** herdr agent kinds with chat support. Missing on an older herdlingd, which supports only Claude. */
   thread_kinds?: string[];
+  /** Agent kinds that `commands.list` answers for. Missing on an older herdlingd, which answers only for Claude. */
+  command_kinds?: string[];
 };
 
 export type ThreadItem =
@@ -158,10 +160,12 @@ export type AgentPreview = {
   source: "log" | "screen";
 };
 
-/** `commands.list` item: one slash command or skill that Claude Code offers in the pane's folder. */
+/** `commands.list` item: one command or skill that Claude Code or Codex offers in the pane's folder. */
 export type CommandInfo = {
-  /** Without the leading `/`. Plugin items look like `plugin:name`. */
+  /** Without the leading `/` or `$`. Plugin items look like `plugin:name`. */
   name: string;
+  /** The character that starts the item in the prompt. Missing means `/`. Codex skills use `$`. */
+  trigger?: "/" | "$";
   description?: string;
   source: "builtin" | "user" | "project" | "plugin";
 };

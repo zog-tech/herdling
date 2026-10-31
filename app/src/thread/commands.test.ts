@@ -2,19 +2,41 @@ import type { CommandInfo } from "@herdling/protocol";
 
 jest.mock("@/hosts/connection", () => ({ useHostConn: () => ({ status: "offline", attempt: 0 }) }));
 
-import { commandsApply, filterCommands, slashQuery } from "./commands";
+import { commandQuery, commandsApply, commandsFor, commandTriggers, filterCommands } from "./commands";
 
 const c = (name: string): CommandInfo => ({ name, source: "user" });
 const list = [c("clear"), c("compact"), c("deploy-app"), c("superpowers:brainstorming"), c("tools:compact-all")];
 const names = (l: CommandInfo[]) => l.map((x) => x.name);
 
 test("slash_query_only_before_the_first_space", () => {
-  expect(slashQuery("/")).toBe("");
-  expect(slashQuery("/com")).toBe("com");
-  expect(slashQuery("/compact now")).toBeUndefined();
-  expect(slashQuery("/compact ")).toBeUndefined();
-  expect(slashQuery("hello /x")).toBeUndefined();
-  expect(slashQuery("")).toBeUndefined();
+  const q = (t: string) => commandQuery(t, commandTriggers("claude"));
+  expect(q("/")).toEqual({ trigger: "/", query: "" });
+  expect(q("/com")).toEqual({ trigger: "/", query: "com" });
+  expect(q("/compact now")).toBeUndefined();
+  expect(q("/compact ")).toBeUndefined();
+  expect(q("hello /x")).toBeUndefined();
+  expect(q("")).toBeUndefined();
+  // Claude has no `$` trigger.
+  expect(q("$sk")).toBeUndefined();
+});
+
+test("codex_query_opens_on_slash_or_dollar", () => {
+  const q = (t: string) => commandQuery(t, commandTriggers("codex"));
+  expect(q("$")).toEqual({ trigger: "$", query: "" });
+  expect(q("$dep")).toEqual({ trigger: "$", query: "dep" });
+  expect(q("/rev")).toEqual({ trigger: "/", query: "rev" });
+  expect(q("$dep now")).toBeUndefined();
+  expect(q("use $dep")).toBeUndefined();
+});
+
+test("commands_for_splits_by_trigger_and_a_missing_trigger_is_slash", () => {
+  const mixed: CommandInfo[] = [
+    { name: "review", source: "builtin" },
+    { name: "deploy", source: "user", trigger: "$" },
+    { name: "prompts:draft", source: "user", trigger: "/" },
+  ];
+  expect(names(commandsFor(mixed, "/"))).toEqual(["review", "prompts:draft"]);
+  expect(names(commandsFor(mixed, "$"))).toEqual(["deploy"]);
 });
 
 test("filter_puts_prefix_matches_before_substring_matches", () => {
@@ -32,9 +54,16 @@ test("filter_puts_prefix_matches_before_substring_matches", () => {
   expect(filterCommands(list, "zzz")).toEqual([]);
 });
 
-test("commands_apply_to_claude_or_unknown_agents", () => {
+test("commands_apply_to_kinds_the_host_lists", () => {
+  // An older host: Claude only.
   expect(commandsApply("claude")).toBe(true);
   expect(commandsApply(undefined)).toBe(true);
   expect(commandsApply("unknown")).toBe(true);
   expect(commandsApply("codex")).toBe(false);
+  expect(commandsApply("pi", ["claude", "codex"])).toBe(false);
+  // A newer host.
+  expect(commandsApply("codex", ["claude", "codex"])).toBe(true);
+  expect(commandsApply("claude", ["claude", "codex"])).toBe(true);
+  expect(commandsApply("codex", ["claude"])).toBe(false);
+  expect(commandsApply("claude", ["codex"])).toBe(false);
 });

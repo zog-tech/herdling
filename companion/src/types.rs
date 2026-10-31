@@ -65,6 +65,9 @@ pub struct Hello {
     pub methods: Vec<String>,    /// herdr agent kinds with chat support. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub thread_kinds: Vec<String>,
+    /// Agent kinds that `commands.list` answers for. An older herdlingd does not send the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_kinds: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

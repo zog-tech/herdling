@@ -7,12 +7,12 @@ import { Text } from "@/ui/Text";
 /** Rows visible before the list scrolls. */
 export const MENU_ROWS = 6;
 
-/** One command: `/name` and a one-line muted description. */
+/** One command: `/name` (`$name` for a Codex skill) and a one-line muted description. */
 export function CommandRow({ c, onPick }: { c: CommandInfo; onPick: (c: CommandInfo) => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`/${c.name}`}
+      accessibilityLabel={`${c.trigger ?? "/"}${c.name}`}
       accessibilityHint={c.description}
       onPress={() => onPick(c)}
       style={({ pressed }) => ({
@@ -23,7 +23,7 @@ export function CommandRow({ c, onPick }: { c: CommandInfo; onPick: (c: CommandI
       })}
     >
       <Text variant="small" mono numberOfLines={1}>
-        /{c.name}
+        {`${c.trigger ?? "/"}${c.name}`}
       </Text>
       {c.description ? (
         <Text variant="caption" muted numberOfLines={1}>

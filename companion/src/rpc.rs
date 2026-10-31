@@ -438,6 +438,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         herdr_protocol: None,
         methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
         thread_kinds: transcript::KINDS.iter().map(|k| (*k).to_string()).collect(),
+        command_kinds: crate::commands::KINDS.iter().map(|k| (*k).to_string()).collect(),
     };
     if let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await {
         if let Ok(snap) = c.call("session.snapshot", json!({})).await {
@@ -713,17 +714,30 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 
 /// Slash commands and skills for the folder `cwd`. When `cwd` is missing, the folder of
 /// `pane_id` comes from herdr. No folder gives the built-in, user and plugin commands only.
+/// `kind` picks the list (`codex` or Claude). When `kind` is missing, herdr gives the kind of the pane.
 async fn commands_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
-    let mut cwd = params.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
-    if cwd.is_none() {
+    let text = |k: &str| params.get(k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
+    let (mut cwd, mut kind) = (text("cwd"), text("kind"));
+    if cwd.is_none() || kind.is_none() {
         if let Some(pane) = params.get("pane_id").and_then(Value::as_str) {
-            cwd = pane_cwd(ctx, pane).await;
+            let (pane_cwd, pane_kind) = pane_info(ctx, pane).await;
+            cwd = cwd.or(pane_cwd);
+            kind = kind.or(pane_kind);
         }
     }
     let home = ctx.home.clone();
-    let commands = tokio::task::spawn_blocking(move || crate::commands::list(&home, cwd.as_deref().map(std::path::Path::new)))
-        .await
-        .map_err(|e| err("internal", e.to_string()))?;
+    let codex_home = std::env::var_os("CODEX_HOME").filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    let commands = tokio::task::spawn_blocking(move || {
+        crate::commands::list_for(
+            kind.as_deref(),
+            &home,
+            codex_home.as_deref(),
+            std::path::Path::new("/etc/codex/skills"),
+            cwd.as_deref().map(std::path::Path::new),
+        )
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?;
     Ok(json!({ "commands": commands }))
 }
 
@@ -738,14 +752,13 @@ async fn files_put(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "path": path.to_string_lossy() }))
 }
 
-/// The folder of a pane from herdr `pane.get`. `None` when herdr does not answer.
-async fn pane_cwd(ctx: &Ctx, pane_id: &str) -> Option<String> {
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.ok()?;
-    let got = c.call("pane.get", json!({ "pane_id": pane_id })).await.ok()?;
+/// The folder and the agent kind of a pane from herdr `pane.get`. Both `None` when herdr does not answer.
+async fn pane_info(ctx: &Ctx, pane_id: &str) -> (Option<String>, Option<String>) {
+    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return (None, None) };
+    let Ok(got) = c.call("pane.get", json!({ "pane_id": pane_id })).await else { return (None, None) };
     let pane = got.get("pane").unwrap_or(&got);
-    ["cwd", "foreground_cwd"]
-        .iter()
-        .find_map(|k| pane.get(*k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from))
+    let text = |k: &str| pane.get(k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
+    (text("cwd").or_else(|| text("foreground_cwd")), text("agent"))
 }
 
 async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {

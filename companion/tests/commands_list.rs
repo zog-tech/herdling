@@ -172,3 +172,157 @@ async fn rpc_resolves_the_cwd_from_the_pane() {
     let r = call(home.path().join("none.sock"), home.path().into(), json!({"pane_id": "w1:p1"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "clear"));
 }
+
+fn codex(home: &Path, cwd: Option<&Path>) -> Vec<Command> {
+    commands::codex_list(home, &home.join(".codex"), &home.join("etc-skills"), cwd)
+}
+
+#[test]
+fn codex_builtins_have_no_trigger() {
+    let home = tempfile::tempdir().unwrap();
+    let list = codex(home.path(), None);
+    assert_eq!(list.len(), 13);
+    assert!(list.iter().all(|c| c.source == "builtin" && c.trigger.is_none()));
+    assert!(find(&list, "permissions").is_some());
+    assert!(find(&list, "clear").is_none());
+}
+
+#[test]
+fn codex_prompts_are_top_level_md_files() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".codex/prompts/draft.md"), "---\ndescription: Draft a note\n---\nBody\n");
+    write(&h.join(".codex/prompts/bare.md"), "No frontmatter\n");
+    write(&h.join(".codex/prompts/sub/nested.md"), "Nested\n");
+    write(&h.join(".codex/prompts/readme.txt"), "text\n");
+    let list = codex(h, None);
+    let p = find(&list, "prompts:draft").unwrap();
+    assert_eq!((p.source, p.trigger, p.description.as_deref()), ("user", None, Some("Draft a note")));
+    assert_eq!(find(&list, "prompts:bare").unwrap().description, None);
+    assert!(find(&list, "prompts:nested").is_none());
+    assert!(find(&list, "prompts:readme").is_none());
+}
+
+#[test]
+fn codex_home_folder_can_move() {
+    let home = tempfile::tempdir().unwrap();
+    let alt = tempfile::tempdir().unwrap();
+    write(&alt.path().join("prompts/moved.md"), "Moved\n");
+    write(&home.path().join(".codex/prompts/old.md"), "Old\n");
+    let list = commands::list_for(Some("codex"), home.path(), Some(alt.path()), &home.path().join("none"), None);
+    assert!(find(&list, "prompts:moved").is_some());
+    assert!(find(&list, "prompts:old").is_none());
+    // Without `CODEX_HOME`: `~/.codex`.
+    let list = commands::list_for(Some("codex"), home.path(), None, &home.path().join("none"), None);
+    assert!(find(&list, "prompts:old").is_some());
+}
+
+#[test]
+fn codex_skills_walk_up_to_the_git_root_and_beat_user_and_admin() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = work.path().join("repo");
+    let cwd = root.join("pkg/sub");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+    let skill = |dir: &Path, name: &str, desc: &str| {
+        write(&dir.join(format!(".agents/skills/{name}/SKILL.md")), &format!("---\nname: {name}\ndescription: {desc}\n---\n"))
+    };
+    skill(h, "ship", "User ship");
+    skill(h, "only-user", "User only");
+    write(&h.join("etc-skills/ship/SKILL.md"), "---\nname: ship\ndescription: Admin ship\n---\n");
+    write(&h.join("etc-skills/admin-only/SKILL.md"), "---\nname: admin-only\n---\n");
+    skill(&root, "ship", "Repo ship");
+    skill(&root, "lint", "Repo lint");
+    skill(&cwd, "lint", "Sub lint");
+    // Above the git root and Claude folders: not used.
+    skill(work.path(), "outside", "Outside");
+    write(&root.join(".claude/skills/claude-only/SKILL.md"), "---\nname: claude-only\n---\n");
+
+    let list = codex(h, Some(&cwd));
+    let ship = find(&list, "ship").unwrap();
+    assert_eq!((ship.source, ship.trigger, ship.description.as_deref()), ("project", Some("$"), Some("Repo ship")));
+    assert_eq!(find(&list, "lint").unwrap().description.as_deref(), Some("Sub lint"));
+    assert_eq!(find(&list, "only-user").unwrap().source, "user");
+    assert_eq!(find(&list, "admin-only").unwrap().trigger, Some("$"));
+    assert!(find(&list, "outside").is_none());
+    assert!(find(&list, "claude-only").is_none());
+    assert_eq!(list.iter().filter(|c| c.name == "ship").count(), 1);
+}
+
+#[test]
+fn codex_user_skill_beats_admin_and_home_is_not_a_project() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".agents/skills/ship/SKILL.md"), "---\ndescription: User ship\n---\n");
+    write(&h.join("etc-skills/ship/SKILL.md"), "---\ndescription: Admin ship\n---\n");
+    // With no git root, only `cwd` counts, not its parents.
+    let cwd = h.join("loose/deep");
+    write(&h.join("loose/.agents/skills/parent/SKILL.md"), "---\n---\n");
+    write(&cwd.join(".agents/skills/here/SKILL.md"), "---\n---\n");
+    let list = codex(h, Some(&cwd));
+    assert_eq!(find(&list, "ship").unwrap().description.as_deref(), Some("User ship"));
+    assert!(find(&list, "here").is_some());
+    assert!(find(&list, "parent").is_none());
+    // `cwd` = home: no project skills, the user skills once.
+    let list = codex(h, Some(h));
+    assert_eq!(list.iter().filter(|c| c.name == "ship").count(), 1);
+}
+
+#[test]
+fn codex_follows_symlinked_skills_and_skips_unreadable_ones() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join("elsewhere/linked/SKILL.md"), "---\nname: linked\ndescription: Via link\n---\n");
+    std::fs::create_dir_all(h.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink(h.join("elsewhere/linked"), h.join(".agents/skills/linked")).unwrap();
+    std::fs::create_dir_all(h.join(".agents/skills/empty")).unwrap();
+    let list = codex(h, None);
+    assert_eq!(find(&list, "linked").unwrap().description.as_deref(), Some("Via link"));
+    assert!(find(&list, "empty").is_none());
+}
+
+#[test]
+fn kind_routing_and_claude_output_stays_the_same() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".claude/commands/mine.md"), "Mine\n");
+    write(&h.join(".agents/skills/cx/SKILL.md"), "---\n---\n");
+    let none = h.join("none");
+    let claude = commands::list(h, None);
+    for kind in [None, Some("claude"), Some("pi"), Some("unknown")] {
+        assert_eq!(commands::list_for(kind, h, None, &none, None), claude);
+    }
+    assert!(claude.iter().all(|c| c.trigger.is_none()));
+    assert!(!serde_json::to_string(&claude).unwrap().contains("trigger"));
+    let cx = commands::list_for(Some("codex"), h, None, &none, None);
+    assert!(find(&cx, "mine").is_none());
+    assert!(find(&cx, "cx").is_some());
+    assert!(serde_json::to_string(&cx).unwrap().contains(r#""trigger":"$""#));
+}
+
+#[tokio::test]
+async fn rpc_kind_param_and_pane_kind_pick_the_codex_list() {
+    let home = tempfile::tempdir().unwrap();
+    let proj = tempfile::tempdir().unwrap();
+    write(&proj.path().join(".agents/skills/cx/SKILL.md"), "---\ndescription: Codex skill\n---\n");
+    let sock = home.path().join("herdr.sock");
+    let mut m = HashMap::new();
+    m.insert("pane.get".to_string(), json!({"type": "pane_get", "pane": {"pane_id": "w1:p1", "cwd": proj.path(), "agent": "codex"}}));
+    fake_herdr::spawn(&sock, m);
+
+    // The kind from the pane.
+    let r = call(sock.clone(), home.path().into(), json!({"pane_id": "w1:p1"})).await;
+    let list = r["result"]["commands"].as_array().unwrap();
+    let cx = list.iter().find(|c| c["name"] == "cx").unwrap();
+    assert_eq!((cx["trigger"].as_str(), cx["source"].as_str()), (Some("$"), Some("project")));
+    // The explicit kind wins over the pane kind.
+    let r = call(sock.clone(), home.path().into(), json!({"pane_id": "w1:p1", "kind": "claude"})).await;
+    let list = r["result"]["commands"].as_array().unwrap();
+    assert!(list.iter().any(|c| c["name"] == "clear"));
+    assert!(!list.iter().any(|c| c["name"] == "cx"));
+    // The explicit kind works with no herdr.
+    let r = call(home.path().join("none.sock"), home.path().into(), json!({"kind": "codex"})).await;
+    assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "permissions"));
+}
