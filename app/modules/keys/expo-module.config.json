@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["HerdlingKeysModule"]
+  },
+  "android": {
+    "modules": ["com.zogtech.herdling.keys.HerdlingKeysModule"]
+  }
+}

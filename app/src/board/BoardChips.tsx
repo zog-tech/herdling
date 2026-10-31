@@ -1,7 +1,8 @@
 import { Pressable, ScrollView, View } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
+import { useHover } from "@/ui/hover";
 import { Text } from "@/ui/Text";
 
 import { BUCKETS, BUCKET_LABEL, toggleFilter, type Bucket, type Counts } from "./buckets";
@@ -24,8 +25,10 @@ function Chip({
   active: boolean;
   onPress: () => void;
 }) {
+  const { hovered, hoverProps } = useHover();
   return (
     <Pressable
+      {...hoverProps}
       accessibilityRole="tab"
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       accessibilityState={{ selected: active }}
@@ -46,7 +49,7 @@ function Chip({
             paddingHorizontal: space.md,
             borderRadius: radius.pill,
             // Selected: a filled pill in ivory text. At rest: text only, no edge, no icon.
-            backgroundColor: active ? colors.raised : pressed ? colors.card : "transparent",
+            backgroundColor: active ? colors.raised : pressed ? colors.card : hovered ? state.hoverFill : "transparent",
           }}
         >
           <Text variant="small" bold={active} muted={!active} maxFontSizeMultiplier={SCALE}>

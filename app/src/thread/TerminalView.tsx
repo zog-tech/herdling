@@ -101,6 +101,7 @@ export function TerminalView({
   controls,
   bottomInset = 0,
   search,
+  active = true,
 }: {
   hostId: string;
   paneId: string;
@@ -111,8 +112,10 @@ export function TerminalView({
    * the last one. `onCount` gets the number of matches after each change.
    */
   search?: { term: string; index: number; onCount: (n: number) => void };
+  /** False: the view follows nothing, although its screen has the focus (a session that is not selected). */
+  active?: boolean;
 }) {
-  const focused = useIsFocused();
+  const focused = useIsFocused() && active;
   const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
     format: "ansi",
   });

@@ -177,3 +177,17 @@ test("type_directly_sends_keystrokes_and_coalesces_text", async () => {
     { pane_id: "w1:p1", keys: ["enter"] },
   ]);
 });
+
+test("inactive_view_reads_nothing", async () => {
+  // A session that is not selected (the two-column layout) must not follow its pane.
+  await act(async () => {
+    tree = create(
+      <GestureHandlerRootView>
+        <TerminalView hostId="host-1" paneId="w1:p1" active={false} />
+      </GestureHandlerRootView>,
+    );
+  });
+  await flush();
+  await act(async () => jest.advanceTimersByTime(3000));
+  expect(reads()).toBe(0);
+});

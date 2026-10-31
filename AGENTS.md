@@ -13,7 +13,7 @@ Website: https://herdling.zog-tech.com. Contact: admin@zog-tech.com.
 | Part | Path | What it is |
 |---|---|---|
 | App | `app/` | Expo SDK 58 app for iOS and Android (Expo Router, TypeScript, React 19.3, React Compiler on) |
-| Native modules | `app/modules/` | Local Expo modules in Swift and Kotlin: `ssh`, `voice`, `paste` |
+| Native modules | `app/modules/` | Local Expo modules in Swift and Kotlin: `ssh`, `voice`, `paste`, `keys` |
 | Companion | `companion/` | `herdlingd`, one Rust binary per computer (macOS and Linux) |
 | Protocol | `protocol/` | Shared TypeScript types for the RPC (`@herdling/protocol`) |
 | Docs | `docs/` | `protocol.md`, `voice.md`, design specs and plans in `superpowers/` |
@@ -82,7 +82,7 @@ The path alias `@/` points to `app/src/`.
 | `push/` | Push token, registration with each computer, notification routing |
 | `voice/` | Recording, recognition, speech, summaries |
 | `usage/`, `automations/` | Plan usage meters and the automations tab |
-| `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts |
+| `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts. `ui/layout.ts`: compact or regular width (two columns from 700 pt); `ui/shortcuts.ts` and `ui/keyCommands.ts`: keyboard shortcuts |
 | `demo/` | The demo host and its scripted scenario |
 
 ### Companion (`companion/src/`)

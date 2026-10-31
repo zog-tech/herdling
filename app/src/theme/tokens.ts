@@ -264,6 +264,16 @@ export const state = {
   focusRing: { width: 2, color: colors.accent },
   /** A pressed raised control: scale plus the `raised` fill. */
   pressedScale: 0.97,
+  /**
+   * A light layer under the pointer (iPad trackpad or mouse): ivory at 5%, a little lighter than
+   * the pressed layer. Text keeps its contrast on it.
+   */
+  hoverFill: "rgba(245,242,234,0.05)",
+  /**
+   * The selected Board row in the two-column layout (the session on the right): ivory at 8%.
+   * A gold marker at the left edge also marks it.
+   */
+  selectedFill: "rgba(245,242,234,0.08)",
 } as const;
 
 /**

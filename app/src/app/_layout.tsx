@@ -13,9 +13,11 @@ import { registerChoiceCategory } from "@/push/choiceActions";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
+import { AppShortcuts } from "@/ui/AppShortcuts";
 import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
 import { solidHeader } from "@/ui/headerOptions";
+import { LayoutSync } from "@/ui/LayoutSync";
 import { NativeSheetHost } from "@/ui/nativeSheet";
 import { NoticeHost } from "@/ui/notice";
 import { refreshParakeet } from "@/voice/parakeet";
@@ -123,6 +125,9 @@ export default function RootLayout() {
       </Stack>
       </ThemeProvider>
       <NotificationRouting />
+      {/* Two columns on wide windows (iPad, tablets): moves the session between the column and its route. */}
+      <LayoutSync />
+      <AppShortcuts />
       <UpdateChecks />
       <NativeSheetHost />
       <NoticeHost />
