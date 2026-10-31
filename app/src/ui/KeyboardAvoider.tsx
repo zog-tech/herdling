@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
+  Dimensions,
   Keyboard,
   LayoutAnimation,
   Platform,
@@ -32,8 +33,20 @@ export function keyboardOverlap(viewY: number, viewHeight: number, keyboardTop: 
  *
  * The padding is inside the view, so the padding does not move the measured frame. iOS measures
  * again when the keyboard is fully up, because a sheet can move after the first event.
+ *
+ * `atScreenBottom`: the view ends at the bottom of the window, for example in a form sheet. The
+ * native sheet sets the sheet position, so `measureInWindow` gives y = 0 for the sheet content.
+ * With this prop, only the measured height is used, and the top is the window height minus it.
  */
-export function KeyboardAvoider({ style, children }: { style?: StyleProp<ViewStyle>; children: ReactNode }) {
+export function KeyboardAvoider({
+  style,
+  atScreenBottom = false,
+  children,
+}: {
+  style?: StyleProp<ViewStyle>;
+  atScreenBottom?: boolean;
+  children: ReactNode;
+}) {
   const ref = useRef<ComponentRef<typeof View> | null>(null);
   const [pad, setPad] = useState(0);
   const padRef = useRef(0);
@@ -55,7 +68,10 @@ export function KeyboardAvoider({ style, children }: { style?: StyleProp<ViewSty
       const top = e.endCoordinates.screenY;
       const view = ref.current;
       if (!view) return;
-      view.measureInWindow((_x, y, _w, h) => apply(keyboardOverlap(y, h, top), e));
+      view.measureInWindow((_x, y, _w, h) => {
+        const viewY = atScreenBottom ? Dimensions.get("window").height - h : y;
+        apply(keyboardOverlap(viewY, h, top), e);
+      });
     };
     const subs =
       Platform.OS === "ios"
@@ -69,11 +85,25 @@ export function KeyboardAvoider({ style, children }: { style?: StyleProp<ViewSty
       alive = false;
       subs.forEach((s) => s.remove());
     };
-  }, []);
+  }, [atScreenBottom]);
 
   return (
     <View ref={ref} style={[{ flex: 1 }, style, { paddingBottom: pad }]}>
       {children}
     </View>
   );
+}
+
+/** True while the software keyboard is up (iOS: from the moment it starts to come up). */
+export function useKeyboardShown(): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => setShown(true));
+    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setShown(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return shown;
 }

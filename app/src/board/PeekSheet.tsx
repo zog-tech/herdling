@@ -13,7 +13,7 @@ import { useThread } from "@/thread/useThread";
 import { GlassButton } from "@/ui/GlassButton";
 import { glassAvailable } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
-import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
+import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { useSheetKeyboardPad } from "@/ui/sheetKeyboard";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
@@ -45,6 +45,7 @@ export function PeekSheet({
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useSheetKeyboardPad(PEEK_DETENT_ANDROID);
+  const keyboardShown = useKeyboardShown();
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const preview = useBoard((s) => s.previews[`${hostId}:${paneId}`]);
@@ -159,7 +160,7 @@ export function PeekSheet({
         hostId={hostId}
         paneId={paneId}
         // The keyboard covers the navigation bar, so the composer needs no bottom inset above it.
-        bottomInset={keyboard.pad > 0 ? 0 : insets.bottom}
+        bottomInset={keyboard.pad > 0 || (Platform.OS === "ios" && keyboardShown) ? 0 : insets.bottom}
         autoFocus={focusComposer}
         onDraftChange={onDraftChange}
       />
@@ -176,8 +177,9 @@ export function PeekSheet({
     );
   }
   // iOS 26: the sheet itself is Liquid Glass at the partial detent, so the page color stays off it.
+  // The sheet ends at the bottom of the screen.
   return (
-    <KeyboardAvoider style={{ backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
+    <KeyboardAvoider atScreenBottom style={{ backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
       {body}
     </KeyboardAvoider>
   );

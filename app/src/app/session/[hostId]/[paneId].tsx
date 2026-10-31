@@ -1,7 +1,7 @@
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Keyboard, Platform, Pressable, View } from "react-native";
+import { Alert, Keyboard, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,7 +34,7 @@ import { SearchBar } from "@/thread/SearchBar";
 import { SearchMarksContext } from "@/thread/searchMarks";
 import { useDebounced, useThreadSearch } from "@/thread/useThreadSearch";
 import * as haptics from "@/ui/haptics";
-import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
+import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
@@ -128,19 +128,6 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
   }, [rpc, hello, agent, busy, run, router, hostId, back]);
 
   return { open, busy, enabled: !!rpc && !!agent && !busy };
-}
-
-function useKeyboardShown(): boolean {
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => setShown(true));
-    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setShown(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  return shown;
 }
 
 const SWIPE_DISTANCE = 80;

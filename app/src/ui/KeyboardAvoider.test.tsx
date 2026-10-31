@@ -1,4 +1,4 @@
-import { Keyboard, Platform, Text, View, type KeyboardEvent } from "react-native";
+import { Dimensions, Keyboard, Platform, Text, View, type KeyboardEvent } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { KeyboardAvoider, keyboardOverlap } from "./KeyboardAvoider";
@@ -42,11 +42,11 @@ describe("KeyboardAvoider", () => {
     const style = [t.root.findByType(View).props.style].flat(Infinity);
     return Object.assign({}, ...style).paddingBottom;
   };
-  const render = () => {
+  const render = (atScreenBottom = false) => {
     let t!: ReactTestRenderer;
     act(() => {
       t = create(
-        <KeyboardAvoider>
+        <KeyboardAvoider atScreenBottom={atScreenBottom}>
           <Text>Composer</Text>
         </KeyboardAvoider>,
       );
@@ -101,6 +101,20 @@ describe("KeyboardAvoider", () => {
     expect(padOf(t)).toBe(336);
     emit("keyboardDidHide", event(874));
     expect(padOf(t)).toBe(0);
+  });
+
+  test("a_sheet_at_the_screen_bottom_uses_its_height_not_the_y_that_measure_gives", () => {
+    Platform.OS = "ios";
+    jest.spyOn(Dimensions, "get").mockReturnValue({ width: 402, height: 874, scale: 3, fontScale: 1 });
+    // A form sheet at its half detent: the native sheet sets its position, so measure gives y = 0.
+    frame = { y: 0, h: 500 };
+    const t = render(true);
+    emit("keyboardWillChangeFrame", event(538));
+    expect(padOf(t)).toBe(336);
+    // The sheet goes to its largest height: the covered part stays the keyboard height.
+    frame = { y: 0, h: 812 };
+    emit("keyboardDidShow", event(538));
+    expect(padOf(t)).toBe(336);
   });
 
   test("it_stops_listening_when_it_unmounts", () => {
