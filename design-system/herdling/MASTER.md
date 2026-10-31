@@ -47,6 +47,20 @@ Contrast is measured on `bg` / `card` / `raised`.
 | `glassFallback` | `rgba(28,28,31,0.92)` | Glass control before iOS 26 | as `raised` |
 | `blockedTint` | `rgba(232,121,74,0.08)` | Tint of a Board row that needs you | text 15.9:1, textMuted 6.7:1, ember 5.9:1 |
 
+**Agent marks.** `ui/AgentMark` shows an agent kind as one or two letters in a muted tint on a
+`raised` tile (`colors.agent`). No brand logos. The name is always next to the mark, so the tint is
+never the only cue. The tints are never gold and never the ember of "needs you".
+
+| Kind | Tint | Contrast on `raised` |
+|---|---|---|
+| claude | `#E3A98C` clay | 8.4:1 |
+| codex | `#F5F2EA` ivory | 15.2:1 |
+| pi | `#B9A3E3` lavender | 7.6:1 |
+| opencode | `#9FC7C0` sea green | 9.2:1 |
+| omp | `#D7A3C9` heather | 8.1:1 |
+| gemini | `#7FA7F0` sky | 7.0:1 |
+| other kinds | `#A39E93` stone | 6.4:1 |
+
 **Status colors.** A status always shows a word + color: a small dot and the word (`ui/StatusDot`), no outlined pill. Color alone never carries the meaning. The session status row keeps its icon.
 
 | Status | Color | Icon | Label |

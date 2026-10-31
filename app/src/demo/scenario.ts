@@ -1,6 +1,7 @@
 import type {
   AgentPreview,
   AgentStatus,
+  FsDirs,
   RecentSession,
   SubagentPage,
   ThreadItem,
@@ -9,6 +10,7 @@ import type {
 } from "@herdling/protocol";
 
 import type { AgentInfo, HerdrEvent, PaneInfo, Snapshot, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
+import { baseName } from "@/newSession/paths";
 import type { FollowData } from "@/thread/followShared";
 
 import { PausableClock } from "./clock";
@@ -56,11 +58,37 @@ const API = `${HOME}/projects/api-server`;
 
 /** Folder tree for `fs.dirs`. A folder not in the map has no subfolders. */
 const DIRS: Record<string, string[]> = {
-  [HOME]: ["projects", "notes"],
-  [`${HOME}/projects`]: ["api-server", "docs-site", "webapp"],
-  [WEBAPP]: ["public", "src", "tests"],
-  [API]: ["docs", "src", "tests"],
+  ["/"]: ["home", "opt", "tmp"],
+  ["/home"]: ["demo"],
+  [HOME]: [".cache", ".config", "Documents", "notes", "projects", "scratch"],
+  [`${HOME}/projects`]: ["api-server", "design-system", "docs-site", "infra", "mobile-app", "webapp"],
+  [WEBAPP]: [".github", "public", "src", "tests"],
+  [`${WEBAPP}/src`]: ["components", "hooks", "pages", "styles"],
+  [API]: ["docs", "migrations", "src", "tests"],
   [`${HOME}/projects/docs-site`]: ["content", "theme"],
+  [`${HOME}/projects/mobile-app`]: ["android", "ios", "src"],
+  [`${HOME}/.config`]: ["herdling", "nvim"],
+};
+
+/** Folders of the demo that are git repos. */
+const GIT_REPOS = new Set([WEBAPP, API, `${HOME}/projects/docs-site`, `${HOME}/projects/mobile-app`, `${HOME}/projects/design-system`]);
+
+/** Recent agent folders, newest first, as herdlingd reads them from the agent logs. */
+const RECENT_CWDS = [WEBAPP, API, `${HOME}/projects/docs-site`, `${HOME}/projects/mobile-app`];
+
+/** Earlier sessions per folder for `sessions.recent`: first prompt and age in hours. */
+const PAST_SESSIONS: Record<string, [string, number][]> = {
+  [WEBAPP]: [
+    ["Add a loading state to the dashboard", 3],
+    ["Fix the flaky date test", 26],
+    ["Move the API client to its own file", 96],
+  ],
+  [API]: [
+    ["Add rate limits to the login route", 5],
+    ["Write a migration for the audit table", 50],
+  ],
+  [`${HOME}/projects/docs-site`]: [["Fix the broken links in the guide", 30]],
+  [`${HOME}/projects/mobile-app`]: [["Make the settings screen work with large text", 72]],
 };
 
 /** Agent kinds with a chat thread, as a current herdlingd reports them (`thread_kinds`). */
@@ -221,20 +249,38 @@ export class DemoScenario {
 
   recentSessions(cwd: string | undefined, kind: string | undefined, limit: number): RecentSession[] {
     const now = Date.now();
-    const base = cwd ?? WEBAPP;
+    const base = (cwd ?? WEBAPP).replace(/\/+$/, "") || "/";
     const k = kind ?? "claude";
-    return [
-      { session: `${k}-older-1`, first_prompt: "Add a loading state to the dashboard", last_activity: now - 3 * 3600_000, cwd: base },
-      { session: `${k}-older-2`, first_prompt: "Fix the flaky date test", last_activity: now - 26 * 3600_000, cwd: base },
-      { session: `${k}-older-3`, first_prompt: "Move the API client to its own file", last_activity: now - 4 * 86400_000, cwd: base },
-    ].slice(0, Math.max(0, limit));
+    // Each kind has its own history: a later kind in the list has its sessions a little older.
+    const shift = Math.max(0, CHAT_KINDS.indexOf(k)) * 2;
+    return (PAST_SESSIONS[base] ?? [])
+      .map(([first_prompt, hours], i) => ({
+        session: `${k}-${baseName(base)}-${i + 1}`,
+        first_prompt,
+        last_activity: now - (hours + shift) * 3600_000,
+        cwd: base,
+      }))
+      .slice(0, Math.max(0, limit));
   }
 
-  dirs(path: string | undefined): { path: string; dirs: string[]; recent_cwds: string[] } {
-    let p = (path ?? HOME).replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, "") || "/";
-    if (p === "/") return { path: "/", dirs: ["home"], recent_cwds: [WEBAPP, API] };
-    if (p === "/home") return { path: p, dirs: ["demo"], recent_cwds: [WEBAPP, API] };
-    return { path: p, dirs: DIRS[p] ?? [], recent_cwds: [WEBAPP, API] };
+  /**
+   * `fs.dirs`: the demo folder tree. A path that is not in the tree gives `not_found`, as on a
+   * real computer. Hidden folders show only with `hidden`.
+   */
+  dirs(path: string | undefined, o?: { hidden?: boolean; recent?: boolean }): FsDirs {
+    const p = (path ?? HOME).replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, "") || "/";
+    const parent = p.replace(/\/[^/]+$/, "") || "/";
+    const known = p in DIRS || (DIRS[parent] ?? []).includes(baseName(p));
+    if (!known) throw new DemoError("not_found", `No such file or directory: ${p}`);
+    const hidden = o?.hidden === true;
+    const dirs = (DIRS[p] ?? []).filter((d) => hidden || !d.startsWith("."));
+    return {
+      path: p,
+      dirs,
+      git_dirs: dirs.filter((d) => GIT_REPOS.has(`${p === "/" ? "" : p}/${d}`)),
+      hidden,
+      recent_cwds: o?.recent === false ? [] : RECENT_CWDS,
+    };
   }
 
   /** `pane.read`: a plausible terminal screen. `ansi` adds a few SGR colors. */

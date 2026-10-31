@@ -75,6 +75,7 @@ The path alias `@/` points to `app/src/`.
 | `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`) |
 | `pairing/` | Pairing by code and QR code, the pairing URL |
 | `herdr/` | herdr snapshot, start, restart, resume, rename and close actions |
+| `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents |
 | `board/` | The board: buckets, rows, the peek sheet, elapsed clocks |
 | `thread/` | The chat view: thread items, follow, composer, permission choices |
 | `terminal/` | The ANSI terminal view and the key row |

@@ -1,4 +1,6 @@
 import type {
+  AgentsInstalled,
+  FsDirs,
   AgentPreview,
   Automation,
   AutomationRun,
@@ -131,6 +133,17 @@ describe("DemoTransport", () => {
     const dirs = await call<{ path: string; dirs: string[]; recent_cwds: string[] }>("fs.dirs", {}).then(ok("fs.dirs"));
     expect(dirs.dirs).toContain("projects");
     expect((await call<{ dirs: string[] }>("fs.dirs", { path: `${dirs.path}/projects` })).dirs).toContain("webapp");
+    // New session: git marks, hidden folders on request, and `not_found` for a wrong path.
+    const projects = await call<FsDirs>("fs.dirs", { path: "~/projects", recent: false }).then(ok("fs.dirs"));
+    expect(projects.git_dirs).toContain("webapp");
+    expect(projects.recent_cwds).toEqual([]);
+    expect(dirs.dirs).not.toContain(".config");
+    expect((await call<FsDirs>("fs.dirs", { path: dirs.path, hidden: true })).dirs).toContain(".config");
+    expect(await callError("fs.dirs", { path: "~/no-such-folder" })).toMatchObject({ code: "not_found" });
+
+    const agents = await call<AgentsInstalled>("agents.installed").then(ok("agents.installed"));
+    expect(agents.installed).toContain("claude");
+    expect(agents.missing).not.toContain("claude");
 
     expect(await call("push.register", {}).then(ok("push.register"))).toEqual({});
     expect(await call("pair.revoke", {}).then(ok("pair.revoke"))).toEqual({});
