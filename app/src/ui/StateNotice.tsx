@@ -34,21 +34,20 @@ export function StateNotice({
           accessibilityLabel={action}
           onPress={onAction}
           hitSlop={4}
+          // A quiet text button: a filled capsule, no edge.
           style={({ pressed }) => ({
             minHeight: hitTarget,
             minWidth: hitTarget,
-            paddingHorizontal: space.md,
             alignItems: "center",
             justifyContent: "center",
-            borderRadius: radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
             opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
-          <Text variant="small" bold>
-            {action}
-          </Text>
+          <View style={{ paddingHorizontal: space.md, paddingVertical: space.xs + 2, borderRadius: radius.pill, backgroundColor: colors.raised }}>
+            <Text variant="small" bold>
+              {action}
+            </Text>
+          </View>
         </Pressable>
       ) : null}
     </View>

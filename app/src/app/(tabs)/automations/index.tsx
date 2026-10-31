@@ -12,7 +12,7 @@ import { retryNow, useHostConn } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, hitTarget, space, state as uiState } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { Group, Pad, Section } from "@/ui/Group";
 import { Screen } from "@/ui/Screen";
 import { CloseButton } from "@/ui/CloseButton";
 import { StateNotice } from "@/ui/StateNotice";
@@ -153,10 +153,10 @@ function HostAutomations({
   }, [host.id, refresh, register]);
   const names = state.kind === "ready" ? new Map(state.automations.map((a) => [a.id, a.name])) : undefined;
   return (
-    <Card style={online ? undefined : { opacity: uiState.offlineOpacity }}>
-      <Text variant="title" numberOfLines={1}>
-        {host.name}
-      </Text>
+    <Section title={host.name}>
+      <View style={online ? undefined : { opacity: uiState.offlineOpacity }}>
+      <Group>
+      <Pad>
       {!online ? (
         <StateNotice
           Icon={CircleSlash}
@@ -216,8 +216,11 @@ function HostAutomations({
           ) : null}
         </>
       )}
+      </Pad>
+      </Group>
+      </View>
       <ApproveSheet automation={reviewing} onClose={() => setReviewing(undefined)} onApprove={approve} />
-    </Card>
+    </Section>
   );
 }
 
@@ -239,9 +242,11 @@ export default function AutomationsScreen() {
     }
   }, []);
   return (
-    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
+    <Screen flush refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
       {hosts.length === 0 ? (
-        <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
+        <Pad>
+          <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
+        </Pad>
       ) : (
         hosts.map((h) => <HostAutomations key={h.id} host={h} register={register} />)
       )}

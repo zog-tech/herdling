@@ -1,6 +1,6 @@
-import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
+import { Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
@@ -17,7 +17,7 @@ import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
@@ -29,7 +29,7 @@ import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { runningSubagents } from "@/thread/subagentState";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
-import { HorizonLine } from "@/ui/HorizonLine";
+import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
@@ -39,6 +39,14 @@ import { useVoiceNotice } from "@/voice/voiceNotice";
 import { DelayedSpinner } from "@/ui/Delayed";
 
 type Mode = "thread" | "terminal";
+
+const MODES = [
+  { id: "thread", label: "Thread" },
+  { id: "terminal", label: "Terminal" },
+] as const satisfies readonly { id: Mode; label: string }[];
+
+/** A bar button in the header: 44 pt, the icon centered. */
+const HEADER_BUTTON = { width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" } as const;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -123,88 +131,6 @@ function useKeyboardShown(): boolean {
     };
   }, []);
   return shown;
-}
-
-const SEG_PAD = 3;
-
-/**
- * Thread / Terminal. The selected pill is one absolute view that slides to the selected segment
- * with a spring, on the UI thread. Reduce Motion: it moves at once.
- */
-function Segmented({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  const options: { id: Mode; label: string }[] = [
-    { id: "thread", label: "Thread" },
-    { id: "terminal", label: "Terminal" },
-  ];
-  const reduced = useReducedMotion();
-  const [width, setWidth] = useState(0);
-  const segW = width > 0 ? (width - SEG_PAD * 2) / options.length : 0;
-  const index = Math.max(0, options.findIndex((o) => o.id === mode));
-  const x = useSharedValue(0);
-  const placed = useRef(false);
-  useEffect(() => {
-    const to = index * segW;
-    // The first layout places the pill; later changes slide it.
-    if (reduced || !placed.current) x.set(to);
-    else x.set(withSpring(to, motion.segment));
-    if (segW > 0) placed.current = true;
-  }, [index, segW, reduced, x]);
-  const pill = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
-  return (
-    <View
-      accessibilityRole="tablist"
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-      style={{ flexDirection: "row", backgroundColor: colors.card, borderRadius: radius.md, padding: SEG_PAD, marginHorizontal: space.lg }}
-    >
-      {segW > 0 ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: "absolute",
-              top: SEG_PAD,
-              bottom: SEG_PAD,
-              left: SEG_PAD,
-              width: segW,
-              borderRadius: radius.sm + 1,
-              backgroundColor: colors.raised,
-              borderTopWidth: 1,
-              borderTopColor: colors.hairline,
-            },
-            pill,
-          ]}
-        />
-      ) : null}
-      {options.map((o) => {
-        const active = o.id === mode;
-        return (
-          <Pressable
-            key={o.id}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            onPress={() => {
-              if (o.id !== mode) haptics.tap();
-              onChange(o.id);
-            }}
-            hitSlop={{ top: 4, bottom: 4 }}
-            style={{
-              flex: 1,
-              minHeight: hitTarget - 8,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: radius.sm + 1,
-              // Before the first layout there is no pill: the selected segment carries its own fill.
-              backgroundColor: active && segW === 0 ? colors.raised : "transparent",
-            }}
-          >
-            <Text variant="small" bold={active} muted={!active}>
-              {o.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
 }
 
 const SWIPE_DISTANCE = 80;
@@ -384,80 +310,79 @@ export default function SessionScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ paddingTop: insets.top, gap: space.sm, paddingBottom: space.sm }}>
-        <View style={{ flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            onPress={back}
-            style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-          >
-            <ChevronLeft size={26} color={colors.text} />
-          </Pressable>
-          <Pressable
-            onLongPress={menu.open}
-            accessibilityRole="button"
-            accessibilityLabel={title}
-            accessibilityHint="Long press for session actions"
-            style={{ flex: 1, minHeight: hitTarget, justifyContent: "center" }}
-          >
-            <Text bold numberOfLines={1}>
-              {title}
-            </Text>
-            <Text variant="caption" muted numberOfLines={1}>
-              {menu.busy ?? (kind ? `${hostName} · ${kind}` : hostName)}
-            </Text>
-          </Pressable>
-          {/* While speech plays, the speaker button stops it. The speaker setting stays as it is. */}
-          {speaking ? (
+      {/* A native header: iOS 26 draws the back button and the bar buttons on Liquid Glass. */}
+      <Stack.Screen
+        options={{
+          headerTitle: () => (
             <Pressable
+              onLongPress={menu.open}
               accessibilityRole="button"
-              accessibilityLabel="Stop reading"
-              onPress={() => {
-                haptics.tap();
-                stopSpeaking();
-              }}
-              style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
+              accessibilityLabel={title}
+              accessibilityHint="Long press for session actions"
+              style={{ minHeight: hitTarget, justifyContent: "center", alignItems: "center", maxWidth: 220 }}
             >
-              <Square size={18} color={colors.accent} fill={colors.accent} />
+              <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+                {title}
+              </Text>
+              <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+                {menu.busy ?? (kind ? `${hostName} · ${kind}` : hostName)}
+              </Text>
             </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityLabel="Speak replies"
-              accessibilityState={{ checked: speakOn }}
-              onPress={() => {
-                haptics.tap();
-                setSpeak(sessionKey(hostId, paneId), !speakOn);
-              }}
-              style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-            >
-              {speakOn ? <Volume2 size={22} color={colors.accent} /> : <VolumeX size={22} color={colors.textMuted} />}
-            </Pressable>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Session actions"
-            accessibilityState={{ disabled: !menu.enabled, busy: !!menu.busy }}
-            disabled={!menu.enabled}
-            onPress={menu.open}
-            style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-          >
-            {menu.busy ? (
-              <DelayedSpinner color={colors.textMuted} />
-            ) : (
-              <Ellipsis size={22} color={menu.enabled ? colors.text : colors.textMuted} />
-            )}
-          </Pressable>
-        </View>
-        <Segmented mode={mode} onChange={setMode} />
+          ),
+          headerRight: () => (
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {/* While speech plays, the speaker button stops it. The speaker setting stays as it is. */}
+              {speaking ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop reading"
+                  onPress={() => {
+                    haptics.tap();
+                    stopSpeaking();
+                  }}
+                  style={HEADER_BUTTON}
+                >
+                  <Square size={icon.sm + 2} color={colors.accent} fill={colors.accent} />
+                </Pressable>
+              ) : (
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityLabel="Speak replies"
+                  accessibilityState={{ checked: speakOn }}
+                  onPress={() => {
+                    haptics.tap();
+                    setSpeak(sessionKey(hostId, paneId), !speakOn);
+                  }}
+                  style={HEADER_BUTTON}
+                >
+                  {speakOn ? <Volume2 size={icon.md} color={colors.accent} /> : <VolumeX size={icon.md} color={colors.textMuted} />}
+                </Pressable>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Session actions"
+                accessibilityState={{ disabled: !menu.enabled, busy: !!menu.busy }}
+                disabled={!menu.enabled}
+                onPress={menu.open}
+                style={HEADER_BUTTON}
+              >
+                {menu.busy ? (
+                  <DelayedSpinner color={colors.textMuted} />
+                ) : (
+                  <Ellipsis size={icon.md} color={menu.enabled ? colors.text : colors.textMuted} />
+                )}
+              </Pressable>
+            </View>
+          ),
+        }}
+      />
+      <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
+        <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ marginHorizontal: space.lg }} />
         {voiceNotice ? (
           <Text variant="caption" muted accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg }}>
             {voiceNotice}
           </Text>
         ) : null}
-        {/* The horizon hairline: the header's bottom edge. */}
-        <HorizonLine style={{ position: "absolute", left: 0, right: 0, bottom: 0 }} />
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>

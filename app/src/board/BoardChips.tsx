@@ -1,6 +1,4 @@
-import { LayoutGrid } from "lucide-react-native";
-import type { LucideIcon } from "lucide-react-native";
-import { Pressable, ScrollView } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 
 import { colors, hitTarget, radius, space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
@@ -9,60 +7,73 @@ import { Text } from "@/ui/Text";
 import { BUCKETS, BUCKET_LABEL, toggleFilter, type Bucket, type Counts } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
 
+const PILL_H = 32;
+const SCALE = 1.4;
+
 function Chip({
   label,
   count,
-  color,
-  Icon,
+  countColor,
   active,
   onPress,
 }: {
   label: string;
   count?: number;
-  color: string;
-  Icon: LucideIcon;
+  /** Color of the count at rest: the bucket color when it wants attention, else muted. */
+  countColor?: string;
   active: boolean;
   onPress: () => void;
 }) {
-  // Selected: a raised fill and an edge in the chip color (no large bright fill). Gold for "All".
-  // At rest "All" (no count) is ivory, so gold shows only when it is selected.
-  const fg = active ? color : count === undefined ? colors.text : count === 0 ? colors.textMuted : color;
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityRole="tab"
       accessibilityLabel={count === undefined ? label : `${label}, ${count}`}
       accessibilityState={{ selected: active }}
       onPress={() => {
         haptics.tap();
         onPress();
       }}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs,
-        borderRadius: radius.pill,
-        borderWidth: active ? 2 : 1,
-        // Keep the same outer size when the edge gets thicker.
-        paddingHorizontal: active ? space.md - 1 : space.md,
-        borderColor: active ? color : colors.edge,
-        backgroundColor: active || pressed ? colors.raised : colors.card,
-      })}
+      // The pill is 32 pt; the touch area is the full 44 pt row.
+      style={{ minHeight: hitTarget, justifyContent: "center" }}
     >
-      <Icon size={14} color={fg} />
-      <Text variant="small" bold color={fg} maxFontSizeMultiplier={1.4}>
-        {label}
-      </Text>
-      {count !== undefined ? (
-        <Text variant="small" mono bold color={fg} maxFontSizeMultiplier={1.4}>
-          {count}
-        </Text>
-      ) : null}
+      {({ pressed }) => (
+        <View
+          style={{
+            minHeight: PILL_H,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.xs + 2,
+            paddingHorizontal: space.md,
+            borderRadius: radius.pill,
+            // Selected: a filled pill in ivory text. At rest: text only, no edge, no icon.
+            backgroundColor: active ? colors.raised : pressed ? colors.card : "transparent",
+          }}
+        >
+          <Text variant="small" bold={active} muted={!active} maxFontSizeMultiplier={SCALE}>
+            {label}
+          </Text>
+          {count !== undefined ? (
+            <Text
+              variant="small"
+              bold
+              color={active ? colors.text : count === 0 ? colors.textMuted : (countColor ?? colors.textMuted)}
+              maxFontSizeMultiplier={SCALE}
+              style={{ fontVariant: ["tabular-nums"] }}
+            >
+              {count}
+            </Text>
+          ) : null}
+        </View>
+      )}
     </Pressable>
   );
 }
 
-/** "All" plus one chip per bucket with its live count. Tapping the active chip clears the filter. */
+/**
+ * The filter tabs: "All" plus one tab per bucket with its live count. Quiet text tabs; the selected
+ * one is a filled pill. Only the "Needs you" count keeps its ember color at rest. Tapping the active
+ * tab clears the filter.
+ */
 export function BoardChips({
   counts,
   filter,
@@ -76,17 +87,16 @@ export function BoardChips({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.sm }}
+      contentContainerStyle={{ gap: space.xs, paddingHorizontal: space.sm }}
       accessibilityRole="tablist"
     >
-      <Chip label="All" color={colors.accent} Icon={LayoutGrid} active={filter === null} onPress={() => onChange(null)} />
+      <Chip label="All" active={filter === null} onPress={() => onChange(null)} />
       {BUCKETS.map((b) => (
         <Chip
           key={b}
           label={BUCKET_LABEL[b]}
           count={counts[b]}
-          color={BUCKET_META[b].color}
-          Icon={BUCKET_META[b].Icon}
+          countColor={b === "needs_you" ? BUCKET_META[b].color : undefined}
           active={filter === b}
           onPress={() => onChange(toggleFilter(filter, b))}
         />

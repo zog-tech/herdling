@@ -1,31 +1,19 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { Check, ChevronRight, Keyboard, KeyRound, PenLine, Settings, TriangleAlert } from "lucide-react-native";
-import { type ReactNode, useCallback, useState } from "react";
+import { Settings, TriangleAlert } from "lucide-react-native";
+import { useCallback, useState } from "react";
 import { Linking, View } from "react-native";
 
 import { type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from "@/hosts/discovery";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { Badge } from "@/ui/StatusBadge";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
-
-function Divided({ children }: { children: ReactNode[] }) {
-  return (
-    <>
-      {children.map((c, i) => (
-        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm } : undefined}>
-          {c}
-        </View>
-      ))}
-    </>
-  );
-}
 
 function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
   const router = useRouter();
@@ -43,15 +31,10 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
     <Row
       accessibilityLabel={known ? `${d.name}, paired. Edit host` : `Pair with ${d.name}`}
       onPress={onPress}
-      trailing={
-        known ? (
-          <Badge label="Paired" color={colors.status.done} Icon={Check} />
-        ) : onPress ? (
-          <ChevronRight size={18} color={colors.textMuted} />
-        ) : null
-      }
+      title={d.name}
+      trailing={known ? <Badge label="Paired" color={colors.status.done} /> : null}
+      chevron={!!onPress}
     >
-      <Text bold>{d.name}</Text>
       <Text variant="small" muted mono={!!d.address}>
         {where}
       </Text>
@@ -61,6 +44,11 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
 
 /** Browse state as text: searching, empty, local network denied or failed. */
 function BrowseStatus({ state, onRetry }: { state: DiscoveryState; onRetry: () => void }) {
+  const status = browseStatus(state, onRetry);
+  return status ? <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>{status}</View> : null;
+}
+
+function browseStatus(state: DiscoveryState, onRetry: () => void) {
   if (state.status === "waiting") {
     return (
       <View style={{ gap: space.sm }} accessibilityLiveRegion="polite">
@@ -128,72 +116,41 @@ export default function DiscoverScreen() {
   const hosts = useHosts((s) => s.hosts);
 
   return (
-    <Screen>
-      <Text variant="section" accessibilityRole="header">
-        ON THIS NETWORK
-      </Text>
-      <Card style={{ paddingVertical: space.sm }}>
-        <BrowseStatus state={state} onRetry={retry} />
-        {state.list.length > 0 ? (
-          <Divided>
-            {state.list.map((d) => (
-              <FoundRow key={d.name} d={d} known={knownHostFor(d, hosts)} />
-            ))}
-          </Divided>
-        ) : null}
-      </Card>
+    <Screen flush>
+      <Section title="On this network">
+        <Group>
+          {browseStatus(state, retry) ? <BrowseStatus state={state} onRetry={retry} /> : null}
+          {state.list.map((d) => (
+            <FoundRow key={d.name} d={d} known={knownHostFor(d, hosts)} />
+          ))}
+        </Group>
+      </Section>
 
-      <Text variant="section" accessibilityRole="header">
-        OTHER WAYS
-      </Text>
-      <Card style={{ paddingVertical: space.sm }}>
-        <Divided>
-          {[
-            <Row
-              key="password"
-              accessibilityLabel="Set up with password"
-              onPress={() => router.push("/hosts/password")}
-              trailing={<ChevronRight size={18} color={colors.textMuted} />}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <KeyRound size={18} color={colors.text} />
-                <Text bold>Set up with password</Text>
-              </View>
-              <Text variant="small" muted>
-                Log in once with the SSH password. Works over a VPN.
-              </Text>
-            </Row>,
-            <Row
-              key="pair"
-              accessibilityLabel="Add by address"
-              onPress={() => router.push("/hosts/pair")}
-              trailing={<ChevronRight size={18} color={colors.textMuted} />}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <Keyboard size={18} color={colors.text} />
-                <Text bold>Add by address</Text>
-              </View>
-              <Text variant="small" muted>
-                Enter the address and the code from herdlingd pair.
-              </Text>
-            </Row>,
-            <Row
-              key="manual"
-              accessibilityLabel="Add manually"
-              onPress={() => router.push("/hosts/add")}
-              trailing={<ChevronRight size={18} color={colors.textMuted} />}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <PenLine size={18} color={colors.text} />
-                <Text bold>Add manually</Text>
-              </View>
-              <Text variant="small" muted>
-                Enter the SSH details and authorize the key yourself.
-              </Text>
-            </Row>,
-          ]}
-        </Divided>
-      </Card>
+      <Section title="Other ways">
+        <Group>
+          <Row
+            accessibilityLabel="Set up with password"
+            onPress={() => router.push("/hosts/password")}
+            title="Set up with password"
+            detail="Log in once with the SSH password. Works over a VPN."
+            chevron
+          />
+          <Row
+            accessibilityLabel="Add by address"
+            onPress={() => router.push("/hosts/pair")}
+            title="Add by address"
+            detail="Enter the address and the code from herdlingd pair."
+            chevron
+          />
+          <Row
+            accessibilityLabel="Add manually"
+            onPress={() => router.push("/hosts/add")}
+            title="Add manually"
+            detail="Enter the SSH details and authorize the key yourself."
+            chevron
+          />
+        </Group>
+      </Section>
     </Screen>
   );
 }

@@ -147,7 +147,7 @@ export function MicButton({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: RING,
-            borderColor: holding ? colors.danger : colors.border,
+            borderColor: holding ? colors.danger : colors.raised,
             backgroundColor: armed ? colors.danger : holding ? colors.card : colors.raised,
             opacity: off ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? motion.press.growScale : 1 }],

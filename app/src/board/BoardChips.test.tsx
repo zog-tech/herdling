@@ -14,6 +14,8 @@ test("chips_show_counts_and_toggle_the_filter", () => {
   });
   expect(chip(t, "Needs you").props.accessibilityLabel).toBe("Needs you, 2");
   expect(chip(t, "All").props.accessibilityState).toEqual({ selected: true });
+  // Quiet text tabs: every chip is a tab of one tab list.
+  expect(chip(t, "Ready").props.accessibilityRole).toBe("tab");
   act(() => chip(t, "Working").props.onPress());
   expect(onChange).toHaveBeenLastCalledWith("working");
 

@@ -10,6 +10,11 @@ export const colors = {
   card: "#141416",
   /** Raised fill (bubbles, icon tiles, the pressed row). Not an edge of a control. */
   raised: "#1C1C1F",
+  /**
+   * One step above `raised`: the selected pill of a segmented control on a `raised` track.
+   * text 13.9:1, textMuted 5.3:1 on it.
+   */
+  raisedHigh: "#2C2B2F",
   /** Below the page: terminal and code blocks. */
   sunken: "#070708",
   /** Lines that only group content (dividers, table rules). Not an edge of a control. */
@@ -30,8 +35,6 @@ export const colors = {
   accentPressed: "#B8903F",
   /** Text and icons on gold and on other status fills: 9.0:1 on accent. */
   onAccent: "#0A0A0B",
-  /** The horizon hairline under a main header: `accent` at this opacity, fading out to the right. */
-  horizonOpacity: 0.35,
   /** Links in replies: ivory with an underline, so gold stays scarce. */
   link: "#F5F2EA",
   /** 4.7:1 on card; always with an icon or a label. */
@@ -41,6 +44,16 @@ export const colors = {
    * with the sheet (at 0.5 it is 4.7:1, still readable as content).
    */
   scrim: "rgba(0,0,0,0.6)",
+  /**
+   * Fill of a glass control where Liquid Glass is not available (iOS 17 to 25): `raised` at 92%.
+   * Text and icons on it keep the `raised` ratios (text 15.2:1, textMuted 6.4:1).
+   */
+  glassFallback: "rgba(28,28,31,0.92)",
+  /**
+   * The tint of a Board row that needs you: ember at 8% over `bg` (about #1C120E).
+   * Measured on it: text 15.9:1, textMuted 6.7:1, ember 5.9:1.
+   */
+  blockedTint: "rgba(232,121,74,0.08)",
   /** Every status also has its own icon and label; color is never the only cue. */
   status: {
     /** The lantern: lit while work happens. Same gold as `accent`. 8.4:1 on card. */
@@ -97,9 +110,13 @@ export const type = {
  * where a larger size breaks a dense row. A dense row may pass a lower cap.
  */
 export const textRole = {
+  /** The one large number at the top of the Board. Tabular figures, tight tracking. */
+  display: { size: 44, weight: "700", maxScale: 1.3, letterSpacing: -1 },
   /** Tight tracking at large sizes. */
   largeTitle: { size: 28, weight: "700", maxScale: 1.6, letterSpacing: -0.4 },
   title: { size: 20, weight: "600", maxScale: 2 },
+  /** The title of a list row (an agent on the Board): iOS "headline". */
+  headline: { size: 17, weight: "600", maxScale: 2 },
   body: { size: 16, weight: "400", maxScale: 3 },
   callout: { size: 14, weight: "400", maxScale: 2.5 },
   caption: { size: 12, weight: "400", maxScale: 2 },
@@ -110,6 +127,9 @@ export const textRole = {
 
 /** Caps for dense rows: card pills, chips, header labels. */
 export const denseScale = { pill: 1.4, row: 1.6 } as const;
+
+/** A status dot (dot + word replaces the outlined pill). */
+export const dot = { size: 8 } as const;
 
 /** Minimum touch target in points. */
 export const hitTarget = 44;

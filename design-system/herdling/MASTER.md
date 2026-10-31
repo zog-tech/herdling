@@ -15,8 +15,10 @@ A shepherd keeps watch at night. The field is dark and quiet; the flock is the s
 
 Motif rules:
 - **Gold is scarce.** Gold marks only (a) the primary action (send, approve, pair, the primary button, the "+" new session button), (b) the "working" lantern, (c) the focus or selected state (tab bar, switches, a chosen option). Never decoration, never a large fill apart from the primary button.
-- **The lantern glow.** While an agent works, its status icon has a soft radial gold glow (`ui/LanternGlow`) that breathes: 2.4 s per breath, opacity 0.35 ↔ 0.7, on the UI thread. When work stops it fades out in 400 ms. Reduce Motion: static. Only on the Board card status pill and the session status row.
-- **The horizon hairline.** The bottom edge of a main screen header (the tab screens and the session screen) is a 1 pt line, gold at 35 % fading to clear, left to right (`ui/HorizonLine`). Other screens use a plain header.
+- **The lantern glow.** While an agent works, its status dot has a soft radial gold glow (`ui/LanternGlow`) that breathes: 2.4 s per breath, opacity 0.35 ↔ 0.7, on the UI thread. When work stops it fades out in 400 ms. Reduce Motion: static. Only on the Board row status and the session status row.
+- **Rows, not boxes.** Lists are flat rows split by spacing and an inset hairline (`ui/Group`, `ui/Row`, `board/AgentRow`). No bordered card around each item. Settings-style screens use full-width grouped bands (`Group` inside `Section`, `Screen flush`).
+- **One thing leads.** The Board opens with one large number (`board/summary`, `display` text role). "Needs you" is the only loud row: an ember marker at the left edge and an 8 % ember tint. Everything else is quiet.
+- **Liquid Glass.** The tab bar is the system tab bar (`NativeTabs`, SF Symbols, gold selected). Headers are native stack headers, so iOS 26 puts back and bar buttons on glass. Floating controls (the "+" button, the composer box, the plus button) use `ui/Glass` (`GlassSurface`, `GlassButton`). Before iOS 26 they fall back to `glassFallback`, a translucent `raised` fill. A control on a glass sheet uses a solid fill (`onGlass`), because glass on glass does not read. The peek sheet is a system glass sheet on iOS 26.
 
 ## 1. Color
 
@@ -41,8 +43,11 @@ Contrast is measured on `bg` / `card` / `raised`.
 | `link` | `#F5F2EA` | Links in replies, always underlined | as `text` |
 | `danger` | `#E5484D` | Destructive actions, errors | 4.7:1 on `card`; always with an icon or a label |
 | `scrim` | `rgba(0,0,0,0.6)` | Backdrop of a custom sheet | text behind drops to 3.3:1, so it does not compete |
+| `raisedHigh` | `#2C2B2F` | Selected pill of a segmented control | text 13.9:1, textMuted 5.3:1 |
+| `glassFallback` | `rgba(28,28,31,0.92)` | Glass control before iOS 26 | as `raised` |
+| `blockedTint` | `rgba(232,121,74,0.08)` | Tint of a Board row that needs you | text 15.9:1, textMuted 6.7:1, ember 5.9:1 |
 
-**Status colors.** A status always shows icon + label + color. Color alone never carries the meaning.
+**Status colors.** A status always shows a word + color: a small dot and the word (`ui/StatusDot`), no outlined pill. Color alone never carries the meaning. The session status row keeps its icon.
 
 | Status | Color | Icon | Label |
 |---|---|---|---|
@@ -78,15 +83,18 @@ Every text style is a role (`textRole`) and scales with Dynamic Type.
 
 | Role | Size | Weight | Tracking | Max scale |
 |---|---|---|---|---|
+| display | 44 | 700 | -1, tabular figures | 1.3 |
 | largeTitle | 28 | 700 | -0.4 | 1.6 |
 | title | 20 | 600 | — | 2 |
+| headline | 17 | 600 | — | 2 |
 | body | 16 | 400 | — | 3 |
 | callout | 14 | 400 | — | 2.5 |
 | caption | 12 | 400 | — | 2 |
 | section | 12 | 600 | +0.8, uppercase, `textMuted` | 1.6 |
 | mono | 13 | 400 | — | 2 |
 
-- Section headers (Board groups, "Hosts", Settings groups) use `section`: the small caps editorial touch. On the Board the bucket icon keeps its color; the text stays stone.
+- Section headers (Board groups, "Hosts", Settings groups) use `section`: the small caps editorial touch. No icon in a section header.
+- A row title is `headline` (Board) or `body` (Settings); its one line of detail is `callout` in `textMuted`.
 - Dense rows (status pills, chips, header labels) cap the scale lower (`denseScale.pill` 1.4, `denseScale.row` 1.6).
 - Titles wrap to 2 lines before they truncate. Timers, counters, CPU and usage use tabular figures.
 - Line height is 1.5 times the size.
@@ -107,7 +115,8 @@ There is no hover. Feedback starts on press-in, the action runs on release.
 |---|---|---|
 | Icon button, ghost button | opacity `state.pressedOpacity` 0.6 | instant |
 | Filled button | opacity `state.pressedFill` 0.85 | instant |
-| Card (Board) | scale 0.98, then toward 0.96 while a long press charges; light layer at 0.04 | 100 ms ease-out in, spring back (damping 15, stiffness 220) |
+| Row (Board) | scale 0.98, then toward 0.96 while a long press charges; light layer at 0.04 | 100 ms ease-out in, spring back (damping 15, stiffness 220) |
+| Glass control | the system glass response (iOS 26); fallback: opacity 0.6 | instant |
 | Row in a list or menu, a chip, a choice button, a key | fill `raised` | instant |
 | Primary (gold) button | fill `accentPressed` | instant |
 | Send button | scale 0.94 + `accentPressed` | 120 ms (scale), 150 ms (color) |
@@ -196,7 +205,8 @@ Each one has an icon, one sentence that says what is true, and an action when on
 
 - [ ] Only tokens: no raw hex, opacity, scale or duration in components.
 - [ ] Gold only on a primary action, the working lantern, or a selected state.
-- [ ] Status shows icon + label + color.
+- [ ] Status shows a word + color (dot + word).
+- [ ] No bordered card around a list item; no icon in a section header.
 - [ ] Touch targets 44 pt; 8 pt between targets.
 - [ ] Press feedback in 150 ms or less; no layout shift on press.
 - [ ] Reduce Motion: no scale, rotation or slide.

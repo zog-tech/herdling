@@ -1,23 +1,23 @@
-import { ExternalLink } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { KeyboardAvoidingView, Pressable, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHosts } from "@/hosts/store";
-import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { useThread } from "@/thread/useThread";
-import { CloseButton } from "@/ui/CloseButton";
+import { GlassButton } from "@/ui/GlassButton";
+import { glassAvailable } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
-import { StatusPill } from "./StatusPill";
+import { BucketStatus } from "./BucketStatus";
 import { useBoard } from "./boardStore";
-import { kindIcon } from "./bucketMeta";
 import { mergeBoard } from "./buckets";
 
 /**
@@ -77,29 +77,24 @@ export function PeekSheet({
     };
   }, [hostId, paneId]);
 
-  const KindIcon = kindIcon(agent?.agent ?? thread.ref?.kind ?? "");
   const title = item?.title ?? paneId;
 
   return (
     // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
     // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
+    // iOS 26: the sheet itself is Liquid Glass at the partial detent, so the page color stays off it.
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
       <View
         style={{
           flexDirection: "row",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: space.md,
           paddingLeft: space.lg,
-          paddingRight: space.sm,
+          paddingRight: space.md,
           paddingTop: space.xl,
           paddingBottom: space.md,
         }}
       >
-        <View
-          style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.raised, alignItems: "center", justifyContent: "center" }}
-        >
-          <KindIcon size={20} color={colors.text} />
-        </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Text variant="title" numberOfLines={2} accessibilityRole="header">
             {title}
@@ -107,38 +102,23 @@ export function PeekSheet({
           <Text variant="caption" muted numberOfLines={1}>
             {item ? item.subtitle : hostName}
           </Text>
-          {/* Own row: the pill never squeezes "<host> · <kind>". */}
+          {/* Own row: the status never squeezes "<host> · <kind>". */}
           {item ? (
             <View style={{ flexDirection: "row", marginTop: space.xs }}>
-              <StatusPill item={item} />
+              <BucketStatus bucket={item.bucket} />
             </View>
           ) : null}
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open session"
+        <GlassButton
+          label="Open session"
+          onGlass={glassAvailable()}
+          title="Open"
           onPress={() => {
             haptics.press();
             onOpenSession();
           }}
-          style={({ pressed }) => ({
-            minHeight: hitTarget,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: space.xs,
-            paddingHorizontal: space.md,
-            borderRadius: radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
-            opacity: pressed ? state.pressedFill : 1,
-          })}
-        >
-          <ExternalLink size={16} color={colors.text} />
-          <Text variant="small" bold maxFontSizeMultiplier={denseScale.row}>
-            Open
-          </Text>
-        </Pressable>
-        {onClose ? <CloseButton onPress={onClose} /> : null}
+        />
+        {onClose ? <GlassButton label="Close" Icon={X} onGlass={glassAvailable()} onPress={onClose} /> : null}
       </View>
 
       {!agent ? (

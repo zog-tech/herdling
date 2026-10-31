@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
 import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { GlassSurface, glassAvailable } from "@/ui/Glass";
 import { Text } from "@/ui/Text";
 
 import type { Photo } from "./attachments";
@@ -23,14 +24,16 @@ export function PlusButton({ open, disabled, onPress }: { open: boolean; disable
       style={({ pressed }) => ({
         width: hitTarget,
         height: hitTarget,
-        borderRadius: hitTarget / 2,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors.raised,
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedFill : 1,
+        opacity: disabled ? state.disabledOpacity : pressed && !glassAvailable() ? state.pressedFill : 1,
       })}
     >
-      {open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />}
+      <GlassSurface
+        interactive
+        pointerEvents="none"
+        style={{ flex: 1, borderRadius: hitTarget / 2, alignItems: "center", justifyContent: "center" }}
+      >
+        {open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />}
+      </GlassSurface>
     </Pressable>
   );
 }

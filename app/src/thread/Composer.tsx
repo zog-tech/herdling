@@ -9,7 +9,8 @@ import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
-import { colors, denseScale, hitTarget, motion, radius, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, motion, space, state, type } from "@/theme/tokens";
+import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -300,11 +301,9 @@ export const Composer = memo(function Composer({
   };
 
   return (
+    // No top rule and no fill: the glass prompt box and its buttons float on what is behind (the page, or the glass sheet).
     <View
       style={{
-        borderTopWidth: 1,
-        borderTopColor: colors.divider,
-        backgroundColor: colors.bg,
         paddingHorizontal: space.md,
         paddingTop: space.sm,
         paddingBottom: space.sm + bottomInset,
@@ -376,41 +375,46 @@ export const Composer = memo(function Composer({
           />
         ) : null}
         {voiceActive ? null : (
-        <TextInput
-          ref={inputRef}
-          key={inputKey}
-          value={text}
-          onChangeText={(t) => {
-            setText(t);
-            if (plusOpen) setPlusOpen(false);
-            if (error) setError(undefined);
-          }}
-          editable={online}
-          autoFocus={autoFocus}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          multiline
-          placeholder={online ? "Message the agent" : "Host offline"}
-          placeholderTextColor={colors.textMuted}
-          accessibilityLabel="Prompt"
-          maxFontSizeMultiplier={denseScale.row}
-          style={{
-            flex: 1,
-            minHeight: hitTarget,
-            maxHeight: Math.round(LINE * inputScale) * MAX_LINES + PAD_V * 2,
-            color: colors.text,
-            fontSize: type.size.body,
-            lineHeight: LINE,
-            backgroundColor: colors.card,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: radius.lg,
-            paddingHorizontal: space.md,
-            paddingTop: PAD_V,
-            paddingBottom: PAD_V,
-            opacity: online ? 1 : state.offlineOpacity,
-          }}
-        />
+          // The prompt box: a Liquid Glass capsule (a translucent fill before iOS 26). No outline.
+          <GlassSurface
+            style={{
+              flex: 1,
+              minHeight: hitTarget,
+              borderRadius: hitTarget / 2,
+              justifyContent: "center",
+              opacity: online ? 1 : state.offlineOpacity,
+            }}
+          >
+            <TextInput
+              ref={inputRef}
+              key={inputKey}
+              value={text}
+              onChangeText={(t) => {
+                setText(t);
+                if (plusOpen) setPlusOpen(false);
+                if (error) setError(undefined);
+              }}
+              editable={online}
+              autoFocus={autoFocus}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              multiline
+              placeholder={online ? "Message the agent" : "Host offline"}
+              placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Prompt"
+              maxFontSizeMultiplier={denseScale.row}
+              style={{
+                minHeight: hitTarget,
+                maxHeight: Math.round(LINE * inputScale) * MAX_LINES + PAD_V * 2,
+                color: colors.text,
+                fontSize: type.size.body,
+                lineHeight: LINE,
+                paddingHorizontal: space.lg,
+                paddingTop: PAD_V,
+                paddingBottom: PAD_V,
+              }}
+            />
+          </GlassSurface>
         )}
         {visible ? <MicButton dictation={dictation} disabled={!online || sending} size={hitTarget} hint={false} /> : null}
         {recordingNow ? (

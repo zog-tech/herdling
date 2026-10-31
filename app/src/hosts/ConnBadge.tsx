@@ -1,14 +1,35 @@
-import { Check, Loader } from "lucide-react-native";
-
 import { colors } from "@/theme/tokens";
-import { Badge, StatusBadge } from "@/ui/StatusBadge";
+import { StatusDot } from "@/ui/StatusDot";
+
 import type { HostConn } from "./connection";
 
-/** Connection state of a host: Online, Connecting or Offline. */
-export function ConnBadge({ status }: { status: HostConn["status"] }) {
-  if (status === "online") return <Badge label="Online" color={colors.status.done} Icon={Check} />;
-  if (status === "connecting") return <Badge label="Connecting" color={colors.status.working} Icon={Loader} />;
-  return <StatusBadge status="offline" />;
+const CONN: Record<HostConn["status"], { label: string; color: string }> = {
+  online: { label: "Online", color: colors.status.done },
+  connecting: { label: "Connecting", color: colors.status.working },
+  offline: { label: "Offline", color: colors.textMuted },
+};
+
+/** Connection state of a host as a dot and a word: Online, Connecting or Offline. */
+export function ConnStatus({ status }: { status: HostConn["status"] }) {
+  const { label, color } = CONN[status];
+  return <StatusDot label={label} color={color} quiet={status === "offline"} />;
+}
+
+/** The label of a connection state, for a row's accessibility label. */
+export const connLabel = (status: HostConn["status"]) => CONN[status].label;
+
+/**
+ * The plain line under a host in a list: where it is (`user@address`, the port when not 22) and,
+ * when it is not online, when it was last seen.
+ */
+export function hostDetail(
+  host: { user: string; address: string; port: number },
+  status: HostConn["status"],
+  lastSeen?: number,
+  now = Date.now(),
+): string {
+  const where = `${host.user}@${host.address}${host.port === 22 ? "" : `:${host.port}`}`;
+  return status === "online" || !lastSeen ? where : `${where} · seen ${timeAgo(lastSeen, now)}`;
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 d ago". */

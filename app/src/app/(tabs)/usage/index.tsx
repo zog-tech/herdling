@@ -10,7 +10,7 @@ import { HostMeters } from "@/hosts/HostMeters";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, space, state } from "@/theme/tokens";
 import { useUsage } from "@/usage/useUsage";
-import { Card } from "@/ui/Card";
+import { Group, Pad, Section } from "@/ui/Group";
 import { formatResetIn } from "@/ui/format";
 import { Meter } from "@/ui/Meter";
 import { Screen } from "@/ui/Screen";
@@ -23,9 +23,7 @@ function ProviderRows({ p, nowS }: { p: ProviderUsage; nowS: number }) {
   const Icon = p.status === "not_logged_in" ? LogIn : CircleAlert;
   return (
     <View style={{ gap: space.sm }}>
-      <Text variant="small" bold>
-        {NAMES[p.provider] ?? p.provider}
-      </Text>
+      <Text variant="headline">{NAMES[p.provider] ?? p.provider}</Text>
       {p.status === "ok" ? (
         p.windows.length === 0 ? (
           <Text variant="small" muted>
@@ -71,28 +69,43 @@ function HostUsage({ host, register }: { host: Host; register: (id: string, fn: 
   }, [host.id, refresh, register]);
   const nowS = Math.floor(Date.now() / 1000);
   return (
-    <Card style={online ? undefined : { opacity: state.offlineOpacity }}>
-      <Text variant="title" numberOfLines={1}>
-        {host.name}
-      </Text>
-      {!online ? (
-        <StateNotice
-          Icon={CircleSlash}
-          message={conn.status === "connecting" ? "Connecting…" : conn.lastSeen ? `Offline · seen ${timeAgo(conn.lastSeen)}` : "Offline"}
-          action={conn.status === "connecting" ? undefined : "Retry"}
-          onAction={() => retryNow(host.id)}
-        />
-      ) : usage ? (
-        usage.providers.map((p) => <ProviderRows key={p.provider} p={p} nowS={nowS} />)
-      ) : failed ? (
-        <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message="Can't read usage." action="Retry" onAction={() => void refresh()} />
-      ) : (
-        <Text variant="small" muted>
-          Loading…
-        </Text>
-      )}
-      {online ? <HostMeters hostId={host.id} /> : null}
-    </Card>
+    <Section title={host.name}>
+      <View style={online ? undefined : { opacity: state.offlineOpacity }}>
+        <Group>
+          {!online ? (
+            <Pad>
+              <StateNotice
+                Icon={CircleSlash}
+                message={conn.status === "connecting" ? "Connecting…" : conn.lastSeen ? `Offline · seen ${timeAgo(conn.lastSeen)}` : "Offline"}
+                action={conn.status === "connecting" ? undefined : "Retry"}
+                onAction={() => retryNow(host.id)}
+              />
+            </Pad>
+          ) : usage ? (
+            usage.providers.map((p) => (
+              <Pad key={p.provider}>
+                <ProviderRows p={p} nowS={nowS} />
+              </Pad>
+            ))
+          ) : failed ? (
+            <Pad>
+              <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message="Can't read usage." action="Retry" onAction={() => void refresh()} />
+            </Pad>
+          ) : (
+            <Pad>
+              <Text variant="small" muted>
+                Loading…
+              </Text>
+            </Pad>
+          )}
+          {online ? (
+            <Pad>
+              <HostMeters hostId={host.id} />
+            </Pad>
+          ) : null}
+        </Group>
+      </View>
+    </Section>
   );
 }
 
@@ -114,9 +127,11 @@ export default function UsageScreen() {
     }
   }, []);
   return (
-    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
+    <Screen flush refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}>
       {hosts.length === 0 ? (
-        <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
+        <Pad>
+          <StateNotice Icon={Server} message="No hosts yet." action="Add a host" onAction={() => router.push("/hosts/discover" as never)} />
+        </Pad>
       ) : (
         hosts.map((h) => <HostUsage key={h.id} host={h} register={register} />)
       )}

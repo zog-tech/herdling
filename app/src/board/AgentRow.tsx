@@ -17,20 +17,19 @@ import Animated, {
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, denseScale, hitTarget, motion, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
-import { TopHighlight } from "@/ui/TopHighlight";
 
 import type { BoardItem } from "./buckets";
-import { BUCKET_META, kindIcon } from "./bucketMeta";
+import { BUCKET_META } from "./bucketMeta";
+import { BucketStatus } from "./BucketStatus";
 import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
 import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
-import { StatusPill } from "./StatusPill";
 
 const ACTION_W = 84;
-/** Card title: room it keeps beside the pill, and its Dynamic Type cap (a dense row). */
+/** Row title: room it keeps beside the status, and its Dynamic Type cap (a dense row). */
 const TITLE_MIN = 140;
 const TITLE_SCALE = 2;
 /** A finger that moves further than this is a swipe or a scroll, not a press. */
@@ -38,6 +37,8 @@ const PRESS_SLOP = 10;
 /** Width of the ember glow at the left edge, and its peak opacity. */
 const EMBER_W = 56;
 const EMBER_PEAK = 0.45;
+/** Width of the ember marker at the left edge of a row that needs you. */
+const MARKER_W = 3;
 const EASE_OUT = Easing.bezier(...motion.ease.out);
 const EASE_IN_OUT = Easing.bezier(...motion.ease.inOut);
 export type CardActions = {
@@ -167,146 +168,125 @@ function useEmberPulse(needsYou: boolean) {
 }
 
 /**
- * One agent on the Board. Tap opens the session, long-press peeks. Swipe right marks it read;
- * swipe left reveals Reply and Restart. VoiceOver gets the same actions as custom actions.
+ * One agent on the Board: a flat row with no box. Title, then "host · agent", then the latest line.
+ * Status is a dot and a word. A row that needs you has an ember marker and a faint ember tint.
+ * Tap opens the session, long-press peeks. Swipe right marks it read; swipe left reveals Reply and
+ * Restart. VoiceOver gets the same actions as custom actions.
  */
-export const AgentCard = memo(function AgentCard({ item, ...actions }: { item: BoardItem } & CardActions) {
+export const AgentRow = memo(function AgentRow({ item, ...actions }: { item: BoardItem } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
   const { onOpen, onPeek } = actions;
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
   const press = useCardPress(open, peek);
   const enterStyle = useEnter();
-  const emberStyle = useEmberPulse(item.bucket === "needs_you");
-  const { agent, bucket } = item;
+  const needsYou = item.bucket === "needs_you";
+  const emberStyle = useEmberPulse(needsYou);
+  const { bucket } = item;
   const { color } = BUCKET_META[bucket];
-  const KindIcon = kindIcon(agent.agent);
   const line = item.line ?? item.terminalTitle;
-  const unread = bucket === "ready";
-  const flagged = bucket === "needs_you" || bucket === "ready";
   const close = () => swipe.current?.close();
   const label = cardLabel(item);
 
   return (
     <Animated.View style={enterStyle}>
-    <ReanimatedSwipeable
-      ref={swipe}
-      friction={1.5}
-      leftThreshold={ACTION_W * 0.8}
-      rightThreshold={ACTION_W * 0.6}
-      overshootLeft={false}
-      overshootRight={false}
-      containerStyle={{ borderRadius: radius.lg, backgroundColor: colors.raised }}
-      onSwipeableOpen={(dir) => {
-        // Swiping right opens the left panel: that is "mark read", done on release.
-        if (dir === SwipeDirection.RIGHT) {
-          actions.onMarkRead(item);
-          close();
-        }
-      }}
-      renderLeftActions={(_p, drag) => (
-        <>
-          <SwipeHaptic drag={drag} at={ACTION_W * 0.8} />
-          <SwipeAction label="Read" color={colors.status.done} Icon={MailOpen} />
-        </>
-      )}
-      renderRightActions={(_p, drag) => (
-        <View style={{ flexDirection: "row" }}>
-          <SwipeHaptic drag={drag} at={ACTION_W * 0.6} />
-          <SwipeAction
-            label="Reply"
-            color={colors.accent}
-            Icon={Reply}
-            onPress={() => {
-              close();
-              actions.onReply(item);
-            }}
-          />
-          <SwipeAction
-            label="Restart"
-            color={colors.danger}
-            Icon={RotateCcw}
-            onPress={() => {
-              close();
-              actions.onRestart(item);
-            }}
-          />
-        </View>
-      )}
-    >
-      <Animated.View style={press.cardStyle}>
-        <GestureDetector gesture={press.gesture}>
-          <Animated.View
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            accessibilityHint="Opens the session. Long press to peek."
-            accessibilityActions={CARD_ACTIONS}
-            onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
-            style={[
-              {
-                flexDirection: "row",
-                gap: space.md,
-                padding: space.md,
-                paddingLeft: space.md + 3,
-                minHeight: hitTarget + space.lg,
-                // Room for the "⋯" button on the right.
-                paddingRight: hitTarget,
-                backgroundColor: colors.card,
-                borderRadius: radius.lg,
-                borderWidth: 1,
-                borderColor: colors.edge,
-                overflow: "hidden",
-              },
-            ]}
-          >
-            <TopHighlight inset={radius.lg} />
-            {/* Pressed state: a light layer over the card, not a color swap. */}
-            <Animated.View
-              pointerEvents="none"
-              style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
+      <ReanimatedSwipeable
+        ref={swipe}
+        friction={1.5}
+        leftThreshold={ACTION_W * 0.8}
+        rightThreshold={ACTION_W * 0.6}
+        overshootLeft={false}
+        overshootRight={false}
+        containerStyle={{ backgroundColor: colors.bg }}
+        onSwipeableOpen={(dir) => {
+          // Swiping right opens the left panel: that is "mark read", done on release.
+          if (dir === SwipeDirection.RIGHT) {
+            actions.onMarkRead(item);
+            close();
+          }
+        }}
+        renderLeftActions={(_p, drag) => (
+          <>
+            <SwipeHaptic drag={drag} at={ACTION_W * 0.8} />
+            <SwipeAction label="Read" color={colors.status.done} Icon={MailOpen} />
+          </>
+        )}
+        renderRightActions={(_p, drag) => (
+          <View style={{ flexDirection: "row" }}>
+            <SwipeHaptic drag={drag} at={ACTION_W * 0.6} />
+            <SwipeAction
+              label="Reply"
+              color={colors.accent}
+              Icon={Reply}
+              onPress={() => {
+                close();
+                actions.onReply(item);
+              }}
             />
-            {/* Accent edge for cards that want attention; the pill still carries icon + label. */}
-            {flagged ? (
-              <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: color }} />
-            ) : null}
-            {/* The ember glow: one pulse from the left edge when the card starts to need you. */}
-            <Animated.View pointerEvents="none" style={[{ position: "absolute", left: 0, top: 0, bottom: 0, width: EMBER_W }, emberStyle]}>
-              <Svg width={EMBER_W} height="100%">
-                <Defs>
-                  <LinearGradient id="ember" x1="0" y1="0" x2="1" y2="0">
-                    <Stop offset="0" stopColor={colors.status.blocked} stopOpacity={1} />
-                    <Stop offset="1" stopColor={colors.status.blocked} stopOpacity={0} />
-                  </LinearGradient>
-                </Defs>
-                <Rect x="0" y="0" width={EMBER_W} height="100%" fill="url(#ember)" />
-              </Svg>
-            </Animated.View>
-            <View
+            <SwipeAction
+              label="Restart"
+              color={colors.danger}
+              Icon={RotateCcw}
+              onPress={() => {
+                close();
+                actions.onRestart(item);
+              }}
+            />
+          </View>
+        )}
+      >
+        <Animated.View style={[{ backgroundColor: colors.bg }, press.cardStyle]}>
+          <GestureDetector gesture={press.gesture}>
+            <Animated.View
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityHint="Opens the session. Long press to peek."
+              accessibilityActions={CARD_ACTIONS}
+              onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: radius.md,
-                backgroundColor: colors.raised,
-                alignItems: "center",
-                justifyContent: "center",
+                gap: 3,
+                paddingVertical: space.md + 2,
+                paddingLeft: space.lg,
+                // Room for the "⋯" button on the right.
+                paddingRight: hitTarget + space.xs,
+                minHeight: hitTarget + space.lg,
+                backgroundColor: needsYou ? colors.blockedTint : undefined,
+                overflow: "hidden",
               }}
             >
-              <KindIcon size={18} color={colors.text} />
-            </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              {/* Wraps: with large text the pill moves under the title instead of squeezing it. */}
-              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", columnGap: space.sm, rowGap: space.xs }}>
-                {unread ? (
-                  <View
-                    accessibilityElementsHidden
-                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.status.done }}
-                  />
-                ) : null}
+              {/* Pressed state: a light layer over the row, not a color swap. */}
+              <Animated.View
+                pointerEvents="none"
+                style={[{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.text }, press.overlayStyle]}
+              />
+              {/* The ember marker: the one loud edge on the Board. The status word still says "Needs you". */}
+              {needsYou ? (
+                <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: MARKER_W, backgroundColor: color }} />
+              ) : null}
+              {/* The ember glow: one pulse from the left edge when the row starts to need you. */}
+              <Animated.View pointerEvents="none" style={[{ position: "absolute", left: 0, top: 0, bottom: 0, width: EMBER_W }, emberStyle]}>
+                <Svg width={EMBER_W} height="100%">
+                  <Defs>
+                    <LinearGradient id="ember" x1="0" y1="0" x2="1" y2="0">
+                      <Stop offset="0" stopColor={colors.status.blocked} stopOpacity={1} />
+                      <Stop offset="1" stopColor={colors.status.blocked} stopOpacity={0} />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect x="0" y="0" width={EMBER_W} height="100%" fill="url(#ember)" />
+                </Svg>
+              </Animated.View>
+              {/* Wraps: with large text the status moves under the title instead of squeezing it. */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.md, rowGap: space.xs }}>
                 {/* Two lines before the title truncates (Dynamic Type makes long names wrap). */}
-                <Text bold numberOfLines={2} maxFontSizeMultiplier={TITLE_SCALE} style={{ flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}>
+                <Text
+                  variant="headline"
+                  numberOfLines={2}
+                  maxFontSizeMultiplier={TITLE_SCALE}
+                  style={{ flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}
+                >
                   {item.title}
                 </Text>
-                <StatusPill item={item} />
+                <BucketStatus bucket={bucket} />
               </View>
               <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
                 {item.subtitle}
@@ -316,36 +296,36 @@ export const AgentCard = memo(function AgentCard({ item, ...actions }: { item: B
                   variant="small"
                   numberOfLines={2}
                   maxFontSizeMultiplier={TITLE_SCALE}
-                  color={bucket === "needs_you" ? colors.status.blocked : bucket === "idle" ? colors.textMuted : colors.text}
+                  color={needsYou ? colors.text : colors.textMuted}
                   mono={bucket === "working" && !!item.line}
+                  style={{ marginTop: 3 }}
                 >
                   {line}
                 </Text>
               ) : null}
-            </View>
-          </Animated.View>
-        </GestureDetector>
-        {/* A sibling, not a child, of the card: its touches never reach the card's tap and long press. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`More actions for ${item.title}`}
-          onPress={() => actions.onMenu(item)}
-          hitSlop={4}
-          style={({ pressed }) => ({
-            position: "absolute",
-            right: 0,
-            top: 0,
-            width: hitTarget,
-            height: hitTarget,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? state.pressedOpacity : 1,
-          })}
-        >
-          <Ellipsis size={20} color={colors.textMuted} />
-        </Pressable>
-      </Animated.View>
-    </ReanimatedSwipeable>
+            </Animated.View>
+          </GestureDetector>
+          {/* A sibling, not a child, of the row: its touches never reach the row's tap and long press. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`More actions for ${item.title}`}
+            onPress={() => actions.onMenu(item)}
+            hitSlop={4}
+            style={({ pressed }) => ({
+              position: "absolute",
+              right: space.xs,
+              top: space.xs,
+              width: hitTarget,
+              height: hitTarget,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? state.pressedOpacity : 1,
+            })}
+          >
+            <Ellipsis size={icon.md} color={colors.textMuted} />
+          </Pressable>
+        </Animated.View>
+      </ReanimatedSwipeable>
     </Animated.View>
   );
 });

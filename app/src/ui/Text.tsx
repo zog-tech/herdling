@@ -3,12 +3,14 @@ import { Text as RNText, type TextProps } from "react-native";
 import { fontFamily } from "@/theme/fonts";
 import { colors, textRole, type } from "@/theme/tokens";
 
-type Variant = "body" | "small" | "caption" | "title" | "heading" | "section";
+type Variant = "body" | "small" | "caption" | "title" | "heading" | "section" | "display" | "headline";
 
 /** Each variant is one text role from the tokens. */
 const ROLE = {
+  display: textRole.display,
   heading: textRole.largeTitle,
   title: textRole.title,
+  headline: textRole.headline,
   body: textRole.body,
   small: textRole.callout,
   caption: textRole.caption,
@@ -52,6 +54,8 @@ export function textStyle({ variant = "body", muted, bold, color }: { variant?: 
     letterSpacing: "letterSpacing" in role ? role.letterSpacing : undefined,
     // Section headers read as small caps: uppercase with open tracking.
     textTransform: section ? "uppercase" : undefined,
+    // Numbers in the display role line up and do not jump when they change.
+    fontVariant: variant === "display" ? (["tabular-nums"] as const) : undefined,
   } as const;
 }
 

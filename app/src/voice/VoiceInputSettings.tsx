@@ -1,11 +1,12 @@
-import { Check, Download, Trash2, X } from "lucide-react-native";
+import { Check, Download, Trash2, X, type LucideIcon } from "lucide-react-native";
 import { useEffect } from "react";
-import { Alert, Switch, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
 
-import { colors, icon, radius, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
+import { GoldSwitch } from "@/ui/GoldSwitch";
+import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
+import { Segmented } from "@/ui/Segmented";
 import { Text } from "@/ui/Text";
 import * as haptics from "@/ui/haptics";
 
@@ -47,6 +48,47 @@ function Progress({ fraction }: { fraction: number }) {
   );
 }
 
+/** A quiet round icon button (download, cancel, delete): a filled circle, no edge, 44 pt target. */
+function IconAction({
+  label,
+  Icon,
+  onPress,
+  color = colors.text,
+  disabled,
+}: {
+  label: string;
+  Icon: LucideIcon;
+  onPress: () => void;
+  color?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: disabled ? state.disabledOpacity : 1 }}
+    >
+      {({ pressed }) => (
+        <View
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: radius.pill,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: pressed ? colors.divider : colors.raised,
+          }}
+        >
+          <Icon size={icon.sm} color={color} strokeWidth={icon.strokeWidth} />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 function ModelRow({ model }: { model: ParakeetModel }) {
   const status = useParakeet((s) => s.models[model]);
   const downloading = useParakeet((s) => s.downloading);
@@ -64,14 +106,13 @@ function ModelRow({ model }: { model: ParakeetModel }) {
     ]);
 
   const trailing = mine ? (
-    <Button label="Cancel download" iconOnly Icon={X} variant="secondary" onPress={cancelParakeetDownload} />
+    <IconAction label="Cancel download" Icon={X} onPress={cancelParakeetDownload} />
   ) : status.installed ? (
-    <Button label={`Delete ${MODEL_LABEL[model]}`} iconOnly Icon={Trash2} variant="danger" onPress={confirmDelete} />
+    <IconAction label={`Delete ${MODEL_LABEL[model]}`} Icon={Trash2} color={colors.danger} onPress={confirmDelete} />
   ) : (
-    <Button
-      label="Download"
+    <IconAction
+      label={`Download ${MODEL_LABEL[model]}`}
       Icon={Download}
-      variant="secondary"
       disabled={!!downloading}
       onPress={() => {
         haptics.tap();
@@ -87,25 +128,21 @@ function ModelRow({ model }: { model: ParakeetModel }) {
   );
 
   return (
-    <View style={{ gap: space.xs }}>
-      <Row
-        accessibilityLabel={`Use ${MODEL_LABEL[model]}`}
-        onPress={() => {
-          if (!chosen) haptics.tap();
-          set({ parakeetModel: model });
-        }}
-        trailing={trailing}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
-          {chosen ? <Check size={icon.sm} color={colors.accent} accessibilityLabel="Selected" /> : null}
-          <Text bold>{MODEL_LABEL[model]}</Text>
-        </View>
-        <Text variant="small" muted>
-          {mine ? `Downloading · ${Math.round(progress * 100)}% of ${formatBytes(MODEL_BYTES[model])}` : status.installed ? `Downloaded · ${size}` : size}
-        </Text>
-      </Row>
-      {mine ? <Progress fraction={progress} /> : null}
-    </View>
+    <Row
+      accessibilityLabel={`Use ${MODEL_LABEL[model]}${chosen ? ", selected" : ""}`}
+      onPress={() => {
+        if (!chosen) haptics.tap();
+        set({ parakeetModel: model });
+      }}
+      leading={
+        // The check marks the model in use; the empty box keeps the titles in one column.
+        <View style={{ width: icon.md }}>{chosen ? <Check size={icon.md} color={colors.accent} accessibilityLabel="Selected" /> : null}</View>
+      }
+      title={MODEL_LABEL[model]}
+      detail={mine ? `Downloading · ${Math.round(progress * 100)}% of ${formatBytes(MODEL_BYTES[model])}` : status.installed ? `Downloaded · ${size}` : size}
+      trailing={trailing}
+      below={mine ? <Progress fraction={progress} /> : undefined}
+    />
   );
 }
 
@@ -125,66 +162,34 @@ export function VoiceInputSection() {
   }, []);
   const label: Record<InputEngine, string> = { parakeet: "Parakeet", host: "Host", apple: "Apple" };
   return (
-    <>
-      <Text variant="section" accessibilityRole="header">
-        VOICE INPUT
-      </Text>
-      <Card style={{ paddingVertical: space.sm }}>
+    <Section title="Voice input">
+      <Group>
         <Row
-          trailing={
-            <View style={{ flexDirection: "row", gap: space.xs }}>
-              {engines.map((e) => (
-                <Button
-                  key={e}
-                  label={label[e]}
-                  variant={current === e ? "primary" : "secondary"}
-                  onPress={() => {
-                    haptics.tap();
-                    set({ input: e });
-                  }}
-                />
-              ))}
-            </View>
+          title="Engine"
+          detail={input === "parakeet" && !ready ? "Download a Parakeet model below. Until then, Apple is used." : DETAIL[current]}
+          below={
+            <Segmented
+              options={engines.map((e) => ({ id: e, label: label[e] }))}
+              value={current}
+              onChange={(e) => set({ input: e })}
+              label="Voice input engine"
+            />
           }
-        >
-          <Text bold>Engine</Text>
-        </Row>
-        <Text variant="small" muted style={{ paddingBottom: space.sm }}>
-          {input === "parakeet" && !ready ? "Download a Parakeet model below. Until then, Apple is used." : DETAIL[current]}
-        </Text>
-        {available ? (
-          <>
-            {MODELS.map((m) => (
-              <View key={m} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm, paddingBottom: space.xs }}>
-                <ModelRow model={m} />
-              </View>
-            ))}
-            {error ? (
-              <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            ) : null}
-            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm }}>
-              <Row
-                trailing={
-                  <Switch
-                    accessibilityLabel="Download over cellular"
-                    value={allowCellular}
-                    onValueChange={(v) => set({ allowCellular: v })}
-                    trackColor={{ false: colors.edge, true: colors.accent }}
-          ios_backgroundColor={colors.edge}
-                  />
-                }
-              >
-                <Text bold>Download over cellular</Text>
-                <Text variant="small" muted>
-                  Off: models download on Wi-Fi only.
-                </Text>
-              </Row>
-            </View>
-          </>
+        />
+        {available ? MODELS.map((m) => <ModelRow key={m} model={m} />) : null}
+        {available && error ? (
+          <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
+            {error}
+          </Text>
         ) : null}
-      </Card>
-    </>
+        {available ? (
+          <Row
+            title="Download over cellular"
+            detail="Off: models download on Wi-Fi only."
+            trailing={<GoldSwitch label="Download over cellular" value={allowCellular} onValueChange={(v) => set({ allowCellular: v })} />}
+          />
+        ) : null}
+      </Group>
+    </Section>
   );
 }

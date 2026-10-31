@@ -1,58 +1,35 @@
-import { Tabs } from "expo-router";
-import { Gauge, LayoutGrid, Settings, Workflow } from "lucide-react-native";
-import { View } from "react-native";
+import { NativeTabs } from "expo-router/native-tabs";
 
-import { colors, denseScale, hitTarget, type } from "@/theme/tokens";
-import { HorizonLine } from "@/ui/HorizonLine";
-import { Text } from "@/ui/Text";
+import { colors } from "@/theme/tokens";
 
-/** Header of a main screen: the night page with the horizon hairline at the bottom. */
-function HeaderBackground() {
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: "flex-end" }}>
-      <HorizonLine />
-    </View>
-  );
-}
-
+/**
+ * The system tab bar (UITabBarController): Liquid Glass on iOS 26, a blurred bar before.
+ * SF Symbols, gold for the selected tab. Each tab has its own native stack for its header.
+ */
 export default function TabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
-        headerBackground: HeaderBackground,
-        // The header bar has a fixed height: its title grows with Dynamic Type only up to the row cap.
-        headerTitle: ({ children }) => (
-          <Text variant="title" accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-            {children}
-          </Text>
-        ),
-        tabBarAllowFontScaling: false,
-        sceneStyle: { backgroundColor: colors.bg },
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.divider, minHeight: hitTarget },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: type.size.caption },
-      }}
+    <NativeTabs
+      tintColor={colors.accent}
+      iconColor={{ default: colors.textMuted, selected: colors.accent }}
+      labelStyle={{ default: { color: colors.textMuted }, selected: { color: colors.accent } }}
+      blurEffect="systemChromeMaterialDark"
     >
-      <Tabs.Screen
-        name="index"
-        options={{ title: "Overview", tabBarIcon: ({ color, size }) => <LayoutGrid color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="usage"
-        options={{ title: "Usage", tabBarIcon: ({ color, size }) => <Gauge color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="automations"
-        options={{ title: "Automations", tabBarIcon: ({ color, size }) => <Workflow color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: "Settings", tabBarIcon: ({ color, size }) => <Settings color={color} size={size} /> }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="(overview)">
+        <NativeTabs.Trigger.Icon sf={{ default: "square.grid.2x2", selected: "square.grid.2x2.fill" }} />
+        <NativeTabs.Trigger.Label>Overview</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="usage">
+        <NativeTabs.Trigger.Icon sf="gauge.with.dots.needle.67percent" />
+        <NativeTabs.Trigger.Label>Usage</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="automations">
+        <NativeTabs.Trigger.Icon sf={{ default: "flowchart", selected: "flowchart.fill" }} />
+        <NativeTabs.Trigger.Label>Automations</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

@@ -1,34 +1,38 @@
 import { useIsFocused, useNavigation, useRouter } from "expo-router";
-import { CircleSlash, Ellipsis, ListFilter, Loader, Moon, Plus, Server, TriangleAlert } from "lucide-react-native";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { CircleSlash, Ellipsis, ListFilter, Loader, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { ActionSheetIOS, Alert, Pressable, SectionList, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AgentCard } from "@/board/AgentCard";
+import { AgentRow } from "@/board/AgentRow";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
 import { setFilter, setGroupBy, updateFirstSeen, useBoard } from "@/board/boardStore";
 import { BUCKET_META } from "@/board/bucketMeta";
 import { countBuckets, filterBoard, groupBoard, mergeBoard, type BoardItem, type GroupBy } from "@/board/buckets";
+import { boardSummary, type BoardSummary } from "@/board/summary";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
-import { ConnBadge, timeAgo } from "@/hosts/ConnBadge";
+import { ConnStatus, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
 import { needsHerdlingdUpdate, UPDATE_HERDLINGD_HINT } from "@/hosts/methods";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
-import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { GlassButton } from "@/ui/GlassButton";
+import { Divider } from "@/ui/Group";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 const GROUP_LABEL: Record<GroupBy, string> = { status: "Status", host: "Host", workspace: "Workspace" };
 const GROUPS: GroupBy[] = ["status", "host", "workspace"];
+/** The floating "+" button: its size, and the room the list keeps under the last row. */
+const FAB = 56;
 
 /** Keeps one host's snapshot live and mirrors it into the shared store; polls previews while the Board is focused. */
 function HostWatcher({ hostId, focused }: { hostId: string; focused: boolean }) {
@@ -44,27 +48,25 @@ function HostWatcher({ hostId, focused }: { hostId: string; focused: boolean }) 
   return null;
 }
 
-/** Connection state, meters and herdr errors of one host, under the cards. */
-function HostCard({ host }: { host: Host }) {
+/** One host under the agents: name, connection state, meters and herdr errors. A flat row. */
+function HostRow({ host }: { host: Host }) {
   const conn = useHostConn(host.id);
   const snapshot = useSnapshots((s) => s.byHost[host.id]);
   const error = useSnapshots((s) => s.errors[host.id]);
   const online = conn.status === "online";
   return (
-    <Card style={online ? undefined : { opacity: state.offlineOpacity }}>
+    <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md, gap: space.sm, opacity: online ? 1 : state.offlineOpacity }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md }}>
-        <View style={{ flex: 1 }}>
-          <Text variant="title" numberOfLines={1}>
-            {host.name}
-          </Text>
-          {!online && conn.status === "offline" ? (
-            <Text variant="small" muted>
-              {conn.lastSeen ? `Offline · seen ${timeAgo(conn.lastSeen)}` : "Offline"}
-            </Text>
-          ) : null}
-        </View>
-        <ConnBadge status={conn.status} />
+        <Text variant="headline" numberOfLines={1} style={{ flex: 1 }}>
+          {host.name}
+        </Text>
+        <ConnStatus status={conn.status} />
       </View>
+      {!online && conn.status === "offline" && conn.lastSeen ? (
+        <Text variant="small" muted>
+          Seen {timeAgo(conn.lastSeen)}
+        </Text>
+      ) : null}
       {online ? <HostMeters hostId={host.id} /> : null}
       {online && needsHerdlingdUpdate(conn.hello) ? (
         <Text variant="small" muted>
@@ -76,7 +78,7 @@ function HostCard({ host }: { host: Host }) {
           {error ? "Can't read herdr" : "Loading…"}
         </Text>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
@@ -87,23 +89,11 @@ function useProblemHosts(hosts: Host[], online: Set<string>): Host[] {
   return useMemo(() => hosts.filter((h) => !online.has(h.id) || (errors[h.id] && !byHost[h.id])), [hosts, online, errors, byHost]);
 }
 
-/** Compact strip above the chips: one short sentence per host that is offline, connecting or can't read herdr. */
+/** One short line per host that is offline, connecting or can't read herdr. No box. */
 function HostStrip({ hosts }: { hosts: Host[] }) {
   if (hosts.length === 0) return null;
   return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={{
-        marginHorizontal: space.lg,
-        marginTop: space.sm,
-        paddingHorizontal: space.md,
-        paddingVertical: space.xs,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.divider,
-        backgroundColor: colors.card,
-      }}
-    >
+    <View accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg }}>
       {hosts.map((h) => (
         <HostStripRow key={h.id} host={h} />
       ))}
@@ -127,8 +117,8 @@ function HostStripRow({ host }: { host: Host }) {
     return <StateNotice Icon={Icon} color={color} message={text} action="Retry" onAction={() => retryNow(host.id)} />;
   }
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 28 }}>
-      <Icon size={14} color={color} />
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: hitTarget }}>
+      <Icon size={icon.sm} color={color} />
       <Text variant="small" color={color} numberOfLines={1} style={{ flex: 1 }}>
         {text}
       </Text>
@@ -142,8 +132,41 @@ function useOnlineHostIds(hosts: Host[]): Set<string> {
   return useMemo(() => new Set(key.split(",").filter(Boolean)), [key]);
 }
 
-function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: BoardItem["bucket"]; onMenu?: () => void }) {
-  const meta = bucket ? BUCKET_META[bucket] : undefined;
+const TONE_COLOR: Record<BoardSummary["tone"], string> = {
+  needs_you: BUCKET_META.needs_you.color,
+  working: BUCKET_META.working.color,
+  ready: BUCKET_META.ready.color,
+  quiet: colors.textMuted,
+};
+
+/**
+ * The headline of the Board: one large number in ivory and the words after it in the bucket color,
+ * then the other buckets in one muted line. No box.
+ */
+function Summary({ summary }: { summary: BoardSummary }) {
+  return (
+    <View
+      accessible
+      accessibilityRole="summary"
+      accessibilityLabel={summary.spoken}
+      style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.md, gap: 2 }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", columnGap: space.sm }}>
+        <Text variant="display">{summary.value}</Text>
+        <Text variant="title" color={TONE_COLOR[summary.tone]}>
+          {summary.label}
+        </Text>
+      </View>
+      {summary.detail ? (
+        <Text variant="small" muted>
+          {summary.detail}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function SectionHeader({ title, onMenu }: { title: string; onMenu?: () => void }) {
   return (
     <View
       style={{
@@ -151,13 +174,11 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
         alignItems: "center",
         gap: space.sm,
         paddingHorizontal: space.lg,
-        paddingTop: space.md,
-        paddingBottom: space.sm,
+        paddingTop: space.lg,
+        paddingBottom: space.xs,
         backgroundColor: colors.bg,
       }}
     >
-      {meta ? <meta.Icon size={14} color={meta.color} /> : <Server size={14} color={colors.textMuted} />}
-      {/* Small caps style in stone; the icon keeps the bucket color. */}
       <Text accessibilityRole="header" variant="section" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flex: 1 }}>
         {title}
       </Text>
@@ -170,12 +191,13 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
             width: hitTarget,
             height: hitTarget,
             marginVertical: -space.md,
+            marginRight: -space.md,
             alignItems: "center",
             justifyContent: "center",
             opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
-          <Ellipsis size={18} color={colors.textMuted} />
+          <Ellipsis size={icon.sm + 2} color={colors.textMuted} />
         </Pressable>
       ) : null}
     </View>
@@ -184,10 +206,9 @@ function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: Boar
 
 function Calm({ text }: { text: string }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md }}>
-      <Moon size={16} color={colors.textMuted} />
-      <Text muted>{text}</Text>
-    </View>
+    <Text muted style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
+      {text}
+    </Text>
   );
 }
 
@@ -195,7 +216,6 @@ export default function BoardScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const focused = useIsFocused();
-  const insets = useSafeAreaInsets();
   const hosts = useHosts((s) => s.hosts);
   const byHost = useSnapshots((s) => s.byHost);
   const seen = useSeen((s) => s.seen);
@@ -236,6 +256,7 @@ export default function BoardScreen() {
     [boardHosts, previews, hydrated, seen, firstSeen],
   );
   const counts = useMemo(() => countBuckets(items), [items]);
+  const summary = useMemo(() => boardSummary(counts), [counts]);
   useBucketAnnouncements(items, focused);
   const sections = useMemo(() => groupBoard(filterBoard(items, filter), groupBy), [items, filter, groupBy]);
 
@@ -250,18 +271,22 @@ export default function BoardScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
+      // A plain icon: iOS 26 puts it on Liquid Glass in the header.
       headerRight: () => (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Group by ${GROUP_LABEL[groupBy]}`}
           accessibilityHint="Changes how the agents are grouped"
           onPress={pickGroup}
-          style={{ minWidth: hitTarget, minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.xs, paddingHorizontal: space.md }}
+          style={({ pressed }) => ({
+            width: hitTarget,
+            height: hitTarget,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? state.pressedOpacity : 1,
+          })}
         >
-          <ListFilter size={18} color={colors.text} />
-          <Text variant="small" maxFontSizeMultiplier={denseScale.row}>
-            {GROUP_LABEL[groupBy]}
-          </Text>
+          <ListFilter size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
         </Pressable>
       ),
     });
@@ -347,28 +372,27 @@ export default function BoardScreen() {
             return (
               <SectionHeader
                 title={section.title}
-                bucket={section.bucket}
                 onMenu={ws && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
               />
             );
           }}
+          ItemSeparatorComponent={Divider}
           renderItem={({ item }) => (
-            <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
-              <AgentCard
-                item={item}
-                onOpen={onOpen}
-                onPeek={onPeek}
-                onMarkRead={onMarkRead}
-                onReply={onReply}
-                onRestart={onRestart}
-                onMenu={onMenu}
-              />
-            </View>
+            <AgentRow
+              item={item}
+              onOpen={onOpen}
+              onPeek={onPeek}
+              onMarkRead={onMarkRead}
+              onReply={onReply}
+              onRestart={onRestart}
+              onMenu={onMenu}
+            />
           )}
           ListHeaderComponent={
             <View>
+              {items.length > 0 ? <Summary summary={summary} /> : null}
               <HostStrip hosts={problemHosts} />
-              <BoardChips counts={counts} filter={filter} onChange={setFilter} />
+              {items.length > 0 ? <BoardChips counts={counts} filter={filter} onChange={setFilter} /> : null}
               {quiet && filter === null ? <Calm text="All quiet. Nothing needs you." /> : null}
               {items.length === 0 && online.size > 0 ? <Calm text="No agents running." /> : null}
               {items.length > 0 && filter !== null && sections.length === 0 ? (
@@ -377,37 +401,32 @@ export default function BoardScreen() {
             </View>
           }
           ListFooterComponent={
-            // Room so the floating button never covers the last card.
-            <View style={{ gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 56 + space.lg + insets.bottom }}>
-              <Text variant="section" accessibilityRole="header">
-                HOSTS
+            // Room so the floating button never covers the last host.
+            <View style={{ paddingTop: space.xl, paddingBottom: FAB + space.xl }}>
+              <Text variant="section" accessibilityRole="header" style={{ paddingHorizontal: space.lg, paddingBottom: space.xs }}>
+                Hosts
               </Text>
-              {hosts.map((h) => (
-                <HostCard key={h.id} host={h} />
+              {hosts.map((h, i) => (
+                <View key={h.id}>
+                  {i > 0 ? <Divider /> : null}
+                  <HostRow host={h} />
+                </View>
               ))}
             </View>
           }
         />
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="New session"
-        onPress={() => router.push("/new" as never)}
-        style={({ pressed }) => ({
-          position: "absolute",
-          right: space.lg,
-          bottom: space.lg,
-          width: 56,
-          height: 56,
-          minHeight: hitTarget,
-          borderRadius: radius.pill,
-          backgroundColor: pressed ? colors.accentPressed : colors.accent,
-          alignItems: "center",
-          justifyContent: "center",
-        })}
-      >
-        <Plus color={colors.onAccent} size={28} />
-      </Pressable>
+      {/* The native safe area here includes the tab bar, so the button sits just above it. */}
+      <SafeAreaView edges={["bottom"]} pointerEvents="box-none" style={{ position: "absolute", right: 0, bottom: 0 }}>
+        <GlassButton
+          label="New session"
+          Icon={Plus}
+          primary
+          size={FAB}
+          onPress={() => router.push("/new" as never)}
+          style={{ margin: space.lg }}
+        />
+      </SafeAreaView>
     </View>
   );
 }

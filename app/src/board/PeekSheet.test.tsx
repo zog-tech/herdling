@@ -17,7 +17,7 @@ jest.mock("expo-haptics", () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: "light" },
 }));
-jest.mock("./StatusPill", () => ({ StatusPill: () => null }));
+jest.mock("./BucketStatus", () => ({ BucketStatus: () => null }));
 jest.mock("@/thread/Composer", () => ({ Composer: () => null }));
 jest.mock("@/thread/items/AssistantMessage", () => ({ AssistantMessage: () => null }));
 jest.mock("@/thread/useThread", () => ({
