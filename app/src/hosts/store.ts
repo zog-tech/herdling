@@ -15,6 +15,19 @@ export type Host = {
   command: string;
   /** True for the in-app demo host (`src/demo`). It never uses SSH, pairing or push. */
   demo?: boolean;
+  /** The last `update.check` result (`src/hosts/updates.ts`). */
+  updateCheck?: UpdateCache;
+  /** The herdlingd version whose Overview notice the user closed. */
+  dismissedUpdate?: string;
+};
+
+export type UpdateCache = {
+  /** Unix ms of the check. */
+  checkedAt: number;
+  current: string;
+  latest: string;
+  updateAvailable: boolean;
+  notes: string;
 };
 
 export const DEFAULT_COMMAND = "herdlingd rpc";

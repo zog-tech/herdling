@@ -4,6 +4,7 @@ import * as ssh from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
 import { PairFailed, savedHostFor, saveHost, type HostValues } from "../pairing/pair";
 import { retryNow } from "./connection";
+import { runInstaller } from "./installer";
 import { newHostId, type Host } from "./store";
 
 export type SetupFailCode =
@@ -14,6 +15,7 @@ export type SetupFailCode =
   | "host_key_mismatch"
   | "auth_failed"
   | "not_installed"
+  | "install_failed"
   | "enroll_failed"
   | "bad_answer";
 
@@ -43,7 +45,9 @@ export function setupMessage(code: SetupFailCode, target?: { address: string; po
     case "auth_failed":
       return "The host did not accept the user name and password, or it does not allow password login.";
     case "not_installed":
-      return "herdlingd is not installed on this host. Install it first: copy the herdlingd binary to the host and run herdlingd install.";
+      return "herdlingd is not installed on this host. Install it from Herdling, or on the computer with the installer from herdling.zog-tech.com.";
+    case "install_failed":
+      return "herdlingd could not be installed. Nothing was saved.";
     case "enroll_failed":
       return "The host could not add this phone's key. Nothing was saved.";
     case "bad_answer":
@@ -89,7 +93,16 @@ export type SetupOptions = {
   password: string;
   /** Shows the probed host key to the user; false stops setup before the password is sent. */
   confirm: (fingerprint: string) => Promise<boolean>;
+  /**
+   * Asks the user to install herdlingd when the host does not have it. True runs the installer
+   * with the same password and host key. Missing or false: setup stops with "not_installed".
+   */
+  confirmInstall?: (target: { address: string }) => Promise<boolean>;
+  /** The current step, for the screen. */
+  onProgress?: (step: SetupStep) => void;
 };
+
+export type SetupStep = "connecting" | "installing" | "pairing";
 
 /**
  * "Set up with password": reads the host key and asks the user to confirm it, logs in once with
@@ -103,6 +116,7 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
   const port = o.port;
   const target = { address, port };
 
+  o.onProgress?.("connecting");
   const { fingerprint } = await native(() => deps.probeHostKey({ host: address, port, timeoutMs: PROBE_TIMEOUT_MS }), target);
   const values: HostValues = { address, port, user, fingerprint };
   // Refuse before the password goes anywhere when a saved pin for this host differs.
@@ -118,25 +132,43 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
     host_id: hostId,
     public_key: key.publicKey,
   };
-  const res = await native(
-    () =>
-      deps.execWithPassword({
-        host: address,
-        port,
-        user,
-        password: o.password,
-        command: ENROLL_COMMAND,
-        stdin: `${JSON.stringify(request)}\n`,
-        expectedFingerprint: fingerprint,
-        timeoutMs: EXEC_TIMEOUT_MS,
-      }),
-    target,
-  );
-  if (res.hostFingerprint !== fingerprint) throw new SetupFailed("host_key_mismatch");
+  const enrollOnce = async (): Promise<ParsedEnroll | "not_installed" | undefined> => {
+    const res = await native(
+      () =>
+        deps.execWithPassword({
+          host: address,
+          port,
+          user,
+          password: o.password,
+          command: ENROLL_COMMAND,
+          stdin: `${JSON.stringify(request)}\n`,
+          expectedFingerprint: fingerprint,
+          timeoutMs: EXEC_TIMEOUT_MS,
+        }),
+      target,
+    );
+    if (res.hostFingerprint !== fingerprint) throw new SetupFailed("host_key_mismatch");
+    const parsed = parseEnroll(res.stdout);
+    if ((parsed && !parsed.ok && parsed.code === "not_installed") || (!parsed && res.exitCode === 3)) return "not_installed";
+    return parsed;
+  };
 
-  const answer = parseEnroll(res.stdout);
-  if ((answer && !answer.ok && answer.code === "not_installed") || (!answer && res.exitCode === 3)) {
-    throw new SetupFailed("not_installed");
+  o.onProgress?.("pairing");
+  let answer = await enrollOnce();
+  if (answer === "not_installed") {
+    if (!o.confirmInstall || !(await o.confirmInstall({ address }))) throw new SetupFailed("not_installed");
+    o.onProgress?.("installing");
+    const installed = await runInstaller(deps, { host: address, port, user, password: o.password, expectedFingerprint: fingerprint });
+    if (!installed.ok) {
+      if (installed.code === "host_key_mismatch" || installed.code === "auth_failed" || installed.code === "timeout") {
+        throw new SetupFailed(installed.code);
+      }
+      throw new SetupFailed("install_failed", `${installed.message} Nothing was saved.`);
+    }
+    o.onProgress?.("pairing");
+    answer = await enrollOnce();
+    // The installer said it worked, but the enroll command still finds no herdlingd.
+    if (answer === "not_installed") throw new SetupFailed("install_failed");
   }
   if (!answer) throw new SetupFailed("bad_answer");
   if (!answer.ok) {

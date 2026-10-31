@@ -13,6 +13,7 @@ import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
 import { retryNow, useHostConn } from "./connection";
+import { UpdateCard } from "./UpdateCard";
 import { editPatch } from "./editPatch";
 import { DEFAULT_COMMAND, useHosts, type Host } from "./store";
 
@@ -122,6 +123,7 @@ export function HostForm({ host }: { host?: Host }) {
 
   return (
     <Screen>
+      {host ? <UpdateCard hostId={host.id} /> : null}
       <Card>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
         <Field

@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { PEEK_DETENT_ANDROID } from "@/board/peekDetent";
 import { startConnections } from "@/hosts/connection";
+import { UpdateChecks } from "@/hosts/UpdateChecks";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
@@ -80,6 +81,7 @@ export default function RootLayout() {
         <Stack.Screen name="hosts/scan" options={{ ...hostHeader, title: "Scan QR" }} />
         <Stack.Screen name="hosts/add" options={{ ...hostHeader, title: "Add manually" }} />
         <Stack.Screen name="hosts/password" options={{ ...hostHeader, title: "Set up with password" }} />
+        <Stack.Screen name="hosts/update" options={{ ...hostHeader, title: "Update herdlingd" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
@@ -112,6 +114,7 @@ export default function RootLayout() {
       </Stack>
       </ThemeProvider>
       <NotificationRouting />
+      <UpdateChecks />
       <NativeSheetHost />
     </GestureHandlerRootView>
   );

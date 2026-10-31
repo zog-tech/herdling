@@ -20,6 +20,37 @@ export type Hello = {
   command_kinds?: string[];
 };
 
+/** Params of `update.check`. Without `version` the host reads the latest release. */
+export type UpdateCheckParams = { version?: string };
+
+/** Result of `update.check`: the running herdlingd and the newest release for this computer. */
+export type UpdateCheck = {
+  /** Version of the running herdlingd. */
+  current: string;
+  /** Version in the release manifest. */
+  latest: string;
+  /** True when `latest` is newer than `current`. */
+  update_available: boolean;
+  /** Release notes. Can be empty. */
+  notes: string;
+  /** Release date, `YYYY-MM-DD`. */
+  date?: string;
+  /** The release asset target for this computer, for example `aarch64-apple-darwin`. */
+  target: string;
+};
+
+/** Params of `update.apply`. Without `version` the host installs the latest release. */
+export type UpdateApplyParams = { version?: string; allow_downgrade?: boolean };
+
+/** Result of `update.apply`. The running rpc process keeps the old code: reconnect to use the new binary. */
+export type UpdateApply = {
+  from: string;
+  to: string;
+  status: "updated" | "up_to_date";
+  /** False when no service is installed, or when the restart command failed. */
+  service_restarted: boolean;
+};
+
 export type ThreadItem =
   | { kind: "user"; id: string; ts: number; text: string; images?: number }
   | { kind: "assistant"; id: string; ts: number; markdown: string }

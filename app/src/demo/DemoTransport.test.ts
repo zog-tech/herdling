@@ -11,6 +11,8 @@ import type {
   ThreadItem,
   ThreadPage,
   ThreadRef,
+  UpdateApply,
+  UpdateCheck,
   Usage,
 } from "@herdling/protocol";
 
@@ -112,6 +114,12 @@ describe("DemoTransport", () => {
     );
     expect(recent).toHaveLength(2);
     for (const r of recent) expect(r).toEqual({ session: expect.any(String), first_prompt: expect.any(String), last_activity: expect.any(Number), cwd: expect.any(String) });
+
+    // The demo is always up to date, so the app never offers an update for it.
+    const check = await call<UpdateCheck>("update.check", {}).then(ok("update.check"));
+    expect(check).toMatchObject({ update_available: false });
+    expect(check.latest).toBe(check.current);
+    expect(await call<UpdateApply>("update.apply", {}).then(ok("update.apply"))).toMatchObject({ status: "up_to_date" });
 
     const dirs = await call<{ path: string; dirs: string[]; recent_cwds: string[] }>("fs.dirs", {}).then(ok("fs.dirs"));
     expect(dirs.dirs).toContain("projects");

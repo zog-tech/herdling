@@ -11,6 +11,7 @@ import { connLabel, ConnStatus, hostDetail } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
 import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts, type Host } from "@/hosts/store";
+import { updateStatus } from "@/hosts/updates";
 import { useNotifPrefs } from "@/push/prefs";
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
@@ -29,16 +30,22 @@ function HostRow({ host }: { host: Host }) {
   const router = useRouter();
   const conn = useHostConn(host.id);
   const demo = isDemoHost(host);
+  const update = updateStatus(host, conn.status === "online" ? conn.hello : undefined);
+  const updateText = update.kind === "available" ? `Update available: ${update.from} → ${update.to}` : undefined;
   return (
     <Row
-      accessibilityLabel={demo ? `${host.name}, demo host, ${connLabel(conn.status)}. Open demo` : `${host.name}, ${connLabel(conn.status)}. Edit host`}
+      accessibilityLabel={
+        demo
+          ? `${host.name}, demo host, ${connLabel(conn.status)}. Open demo`
+          : `${host.name}, ${connLabel(conn.status)}${updateText ? `, ${updateText}` : ""}. Edit host`
+      }
       accessibilityActions={[{ name: "remove", label: demo ? "Remove demo" : `Remove ${host.name}` }]}
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "remove") confirmRemoveHost(host);
       }}
       onPress={() => router.push({ pathname: "/hosts/[id]", params: { id: host.id } })}
       title={host.name}
-      detail={demo ? DEMO_HOST_DETAIL : hostDetail(host, conn.status, conn.lastSeen)}
+      detail={demo ? DEMO_HOST_DETAIL : (updateText ?? hostDetail(host, conn.status, conn.lastSeen))}
       trailing={
         demo ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>

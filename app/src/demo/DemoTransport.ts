@@ -6,6 +6,8 @@ import type {
   FilePut,
   Hello,
   Stats,
+  UpdateApply,
+  UpdateCheck,
   Usage,
 } from "@herdling/protocol";
 
@@ -186,6 +188,11 @@ export class DemoTransport implements LineTransport {
         } satisfies Hello;
       case "ping":
         return {};
+      // The demo herdlingd is always up to date: it never offers an update.
+      case "update.check":
+        return { current: "demo", latest: "demo", update_available: false, notes: "", target: "demo" } satisfies UpdateCheck;
+      case "update.apply":
+        return { from: "demo", to: "demo", status: "up_to_date", service_restarted: false } satisfies UpdateApply;
       case "rpc.cancel": {
         const id = need(p, "stream", method);
         this.streams.get(id)?.();

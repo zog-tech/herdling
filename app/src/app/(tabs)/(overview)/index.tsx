@@ -21,7 +21,7 @@ import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnStatus, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
-import { needsHerdlingdUpdate, UPDATE_HERDLINGD_HINT } from "@/hosts/methods";
+import { UpdateNotice } from "@/hosts/UpdateNotice";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
@@ -74,11 +74,7 @@ function HostRow({ host }: { host: Host }) {
         </Text>
       ) : null}
       {online ? <HostMeters hostId={host.id} /> : null}
-      {online && needsHerdlingdUpdate(conn.hello) ? (
-        <Text variant="small" muted>
-          {UPDATE_HERDLINGD_HINT}
-        </Text>
-      ) : null}
+      {online && !isDemoHost(host) ? <UpdateNotice host={host} conn={conn} /> : null}
       {online && !snapshot ? (
         <Text muted variant="small">
           {error ? "Can't read herdr" : "Loading…"}

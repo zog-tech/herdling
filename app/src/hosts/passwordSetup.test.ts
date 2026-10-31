@@ -10,6 +10,7 @@ jest.mock("expo-device", () => ({ deviceName: "Sam's iPhone" }));
 
 import type { PasswordExecOptions, PasswordExecResult } from "../../modules/ssh";
 import { ENROLL_COMMAND, parseEnroll, type SetupDeps, SetupFailed, setUpWithPassword } from "./passwordSetup";
+import { INSTALL_COMMAND } from "./installer";
 import { useHosts } from "./store";
 
 const FP = "SHA256:" + "a".repeat(43);
@@ -36,6 +37,20 @@ function deps(over: { stdout?: string; exitCode?: number; probe?: string; seen?:
     deviceName: () => "Sam's iPhone",
     reconnect: jest.fn(),
   };
+  return d;
+}
+
+/** The first enroll finds no herdlingd; the installer prints `installOut`; the next enroll works. */
+function installDeps(installOut: string, installExit = 0) {
+  const d = deps();
+  let enrolls = 0;
+  d.execWithPassword.mockImplementation(async (o: PasswordExecOptions): Promise<PasswordExecResult> => {
+    if (o.command === INSTALL_COMMAND) return { stdout: installOut, stderr: "", exitCode: installExit, hostFingerprint: FP };
+    enrolls++;
+    const stdout =
+      enrolls === 1 ? '{"ok":false,"code":"not_installed"}\n' : `${JSON.stringify({ ok: true, host_fingerprint: FP, hostname: "studio" })}\n`;
+    return { stdout, stderr: "", exitCode: enrolls === 1 ? 3 : 0, hostFingerprint: FP };
+  });
   return d;
 }
 
@@ -74,7 +89,37 @@ describe("setUpWithPassword", () => {
     const d = deps({ stdout: '{"ok":false,"code":"not_installed"}\n', exitCode: 3 });
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, d));
     expect(e.code).toBe("not_installed");
-    expect(e.message).toMatch(/^herdlingd is not installed on this host\. Install it first/);
+    expect(e.message).toMatch(/^herdlingd is not installed on this host\. Install it from Herdling/);
+    expect(useHosts.getState().hosts).toEqual([]);
+  });
+
+  it("installs herdlingd when the user confirms, then enrolls", async () => {
+    const d = installDeps("HERDLINGD_STEP check\nHERDLINGD_INSTALLED 0.2.0\n");
+    const confirmInstall = jest.fn(async () => true);
+    const steps: string[] = [];
+    const host = await setUpWithPassword({ ...base, confirm: yes, confirmInstall, onProgress: (s) => steps.push(s) }, d);
+    expect(confirmInstall).toHaveBeenCalledWith({ address: "10.0.0.5" });
+    expect(d.execWithPassword.mock.calls.map(([o]) => o.command)).toEqual([ENROLL_COMMAND, INSTALL_COMMAND, ENROLL_COMMAND]);
+    for (const [o] of d.execWithPassword.mock.calls) expect(o.expectedFingerprint).toBe(FP);
+    expect(steps).toEqual(["connecting", "pairing", "installing", "pairing"]);
+    expect(useHosts.getState().hosts.map((h) => h.id)).toEqual([host.id]);
+    expect(JSON.stringify(useHosts.getState())).not.toContain(PASSWORD);
+  });
+
+  it("cancel at the install question gives not_installed and runs nothing", async () => {
+    const d = installDeps("HERDLINGD_INSTALLED 0.2.0\n");
+    const e = await failure(setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => false }, d));
+    expect(e.code).toBe("not_installed");
+    expect(d.execWithPassword).toHaveBeenCalledTimes(1);
+    expect(useHosts.getState().hosts).toEqual([]);
+  });
+
+  it("an installer failure gives install_failed with its message", async () => {
+    const d = installDeps("HERDLINGD_STEP check\nHERDLINGD_ERROR no_herdr herdr is not installed\n", 1);
+    const e = await failure(setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => true }, d));
+    expect(e.code).toBe("install_failed");
+    expect(e.message).toContain("https://herdr.dev");
+    expect(d.execWithPassword).toHaveBeenCalledTimes(2);
     expect(useHosts.getState().hosts).toEqual([]);
   });
 

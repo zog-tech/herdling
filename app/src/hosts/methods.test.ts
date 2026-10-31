@@ -1,6 +1,6 @@
 import type { Hello } from "@herdling/protocol";
 
-import { APP_METHODS, hasMethod, needsHerdlingdUpdate } from "./methods";
+import { APP_METHODS, hasMethod, listsMethod, needsHerdlingdUpdate } from "./methods";
 
 const hello = (methods?: string[]): Hello => ({ host: "h", os: "linux", herdlingd: "1", herdr_ok: true, methods });
 
@@ -19,4 +19,11 @@ test("update_hint_when_methods_missing_or_incomplete", () => {
   expect(needsHerdlingdUpdate(hello())).toBe(true);
   expect(needsHerdlingdUpdate(hello(APP_METHODS.slice(1)))).toBe(true);
   expect(needsHerdlingdUpdate(hello([...APP_METHODS]))).toBe(false);
+});
+
+test("listsMethod_is_false_when_methods_is_missing", () => {
+  expect(listsMethod(undefined, "update.apply")).toBe(false);
+  expect(listsMethod(hello(), "update.apply")).toBe(false);
+  expect(listsMethod(hello(["ping"]), "update.apply")).toBe(false);
+  expect(listsMethod(hello(["update.apply"]), "update.apply")).toBe(true);
 });

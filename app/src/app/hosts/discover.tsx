@@ -85,7 +85,8 @@ function browseStatus(state: DiscoveryState, onRetry: () => void) {
   if (state.status === "ready") {
     return (
       <Text muted>
-        No hosts found yet. Run herdlingd serve on your computer and keep this phone on the same network.
+        No hosts found yet. Run herdlingd serve on your computer and keep this phone on the same network. No
+        herdlingd yet? Use Set up with password below.
       </Text>
     );
   }
@@ -132,7 +133,7 @@ export default function DiscoverScreen() {
             accessibilityLabel="Set up with password"
             onPress={() => router.push("/hosts/password")}
             title="Set up with password"
-            detail="Log in once with the SSH password. Works over a VPN."
+            detail="Log in once with the SSH password. Installs herdlingd when it is not there. Works over a VPN."
             chevron
           />
           <Row

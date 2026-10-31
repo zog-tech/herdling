@@ -26,12 +26,19 @@ export const APP_METHODS = [
   "commands.list",
   "files.put",
   "stt.make",
+  "update.check",
+  "update.apply",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */
 export function hasMethod(hello: Hello | undefined, method: string): boolean {
   const methods = hello?.methods;
   return methods === undefined || methods.includes(method);
+}
+
+/** True only when the host lists its methods and the list holds `method`. An older herdlingd that does not list them gives false. */
+export function listsMethod(hello: Hello | undefined, method: string): boolean {
+  return hello?.methods?.includes(method) ?? false;
 }
 
 /** True when the host is online and misses a method the app uses, or does not list its methods at all. */
