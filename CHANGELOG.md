@@ -23,6 +23,18 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Start at boot.** herdlingd reports when it starts (`hello.boot`: at boot, or after a login;
+  `boot.check`). The host screen and Settings show "Starts after you log in on this computer" with
+  a step-by-step guide: automatic login on a Mac (and why FileVault blocks it), lingering on
+  Linux. On a Mac, "Open this setting on my Mac" opens the System Settings page on the Mac
+  screen (`mac.open_settings`, three allow-listed pages only). Needs herdlingd 0.1.1.
+- **Turn on SSH guide.** When the phone cannot reach port 22, password setup and manual add offer
+  a step-by-step guide for Remote Login on a Mac and the SSH server on Linux, with
+  "Done, check again".
+- **Install herdr from the phone.** When herdr is missing, password setup offers "Install herdr and
+  herdlingd". It runs the official herdr installer with the new `--with-herdr` option of
+  `install.sh`. The installer never installs herdr without this option.
+- **herdr is not running.** The host screen, Settings and the board say so, with how to start herdr.
 - **Install and update herdlingd from the phone.** "Set up with password" installs herdlingd when it
   is missing ("Install and pair"), with the installer `https://herdling.zog-tech.com/install.sh`.
   The app shows "Update available" and updates herdlingd with one tap (`update.check`,

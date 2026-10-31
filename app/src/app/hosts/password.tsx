@@ -1,10 +1,13 @@
 import { useRouter } from "expo-router";
-import { Download, ExternalLink, KeyRound } from "lucide-react-native";
+import { Download, ExternalLink, KeyRound, LifeBuoy, Power } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { Alert, Linking, View } from "react-native";
 
-import { HERDR_URL } from "@/hosts/installer";
+import { LOGIN_HINT } from "@/hosts/boot";
+import { HERDR_URL, type InstallBoot } from "@/hosts/installer";
 import { SetupFailed, setUpWithPassword, type SetupStep } from "@/hosts/passwordSetup";
+import type { ReachFailure } from "@/hosts/sshHelp";
+import { StateNotice } from "@/ui/StateNotice";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -36,8 +39,53 @@ function portOf(text: string): number | undefined {
 const STEP_TEXT: Record<SetupStep, string> = {
   connecting: "Connecting…",
   installing: "Installing herdlingd. This can take a minute…",
+  installing_herdr: "Installing herdr and herdlingd. This can take a few minutes…",
   pairing: "Adding this phone's key…",
 };
+
+/** The question when the computer has no herdr: what herdr is, who makes it, and two answers. */
+function HerdrQuestion({ address, onAnswer }: { address: string; onAnswer: (yes: boolean) => void }) {
+  return (
+    <Card>
+      <Text variant="headline" accessibilityRole="header">
+        herdr is not on {address}
+      </Text>
+      <Text variant="small" muted>
+        herdr is the terminal workspace that Herdling works with. Your agents run in herdr on the computer. herdr is made
+        by its own project, not by Zog Tech.
+      </Text>
+      <Text variant="small" muted>
+        Herdling can run the official herdr installer (herdr.dev/install.sh) with the same password:{"\n"}• It downloads
+        herdr from herdr.dev and checks its checksum.{"\n"}• It installs herdr to ~/.local/bin.{"\n"}• It needs no admin
+        rights and does not use sudo.{"\n"}Then Herdling installs herdlingd and pairs.
+      </Text>
+      <Button label="About herdr" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
+      <View style={{ gap: space.sm }}>
+        <Button label="Install herdr and herdlingd" Icon={Download} onPress={() => onAnswer(true)} />
+        <Button label="Cancel" variant="secondary" onPress={() => onAnswer(false)} />
+      </View>
+    </Card>
+  );
+}
+
+/** After the setup: herdlingd starts only after a login on the computer. Shown once. */
+function InstalledLoginHint({ name, onHow, onDone }: { name: string; onHow: () => void; onDone: () => void }) {
+  return (
+    <Card>
+      <Text variant="headline" accessibilityRole="header">
+        {name} is added
+      </Text>
+      <StateNotice Icon={Power} message={LOGIN_HINT} />
+      <Text variant="small" muted>
+        After a restart, herdlingd starts only when you log in on {name}. You can make it start at boot.
+      </Text>
+      <View style={{ gap: space.sm }}>
+        <Button label="How to start at boot" variant="secondary" onPress={onHow} />
+        <Button label="Done" onPress={onDone} />
+      </View>
+    </Card>
+  );
+}
 
 /** The question before the install: what happens on the computer, and two answers. */
 function InstallQuestion({ address, onAnswer }: { address: string; onAnswer: (yes: boolean) => void }) {
@@ -55,7 +103,7 @@ function InstallQuestion({ address, onAnswer }: { address: string; onAnswer: (ye
         no admin rights and does not use sudo.
       </Text>
       <Text variant="small" muted>
-        herdr must be on the computer already.
+        herdlingd needs herdr. If herdr is not on the computer, Herdling asks you before it installs herdr.
       </Text>
       <View style={{ gap: space.sm }}>
         <Button label="Install and pair" Icon={Download} onPress={() => onAnswer(true)} />
@@ -80,7 +128,11 @@ export default function PasswordSetupScreen() {
   const [step, setStep] = useState<SetupStep>();
   const [ask, setAsk] = useState<string>();
   const answer = useRef<(yes: boolean) => void>(undefined);
+  const [askHerdr, setAskHerdr] = useState<string>();
+  const herdrAnswer = useRef<(yes: boolean) => void>(undefined);
   const [error, setError] = useState<string>();
+  const [reach, setReach] = useState<ReachFailure>();
+  const [added, setAdded] = useState<{ id: string; name: string }>();
 
   const port = portOf(portText);
   const valid = address.trim() !== "" && user.trim() !== "" && password !== "" && port !== undefined;
@@ -97,23 +149,66 @@ export default function PasswordSetupScreen() {
     answer.current = undefined;
   };
 
+  const confirmHerdrInstall = (target: { address: string }) =>
+    new Promise<boolean>((resolve) => {
+      herdrAnswer.current = resolve;
+      setAskHerdr(target.address);
+    });
+
+  const onHerdrAnswer = (yes: boolean) => {
+    setAskHerdr(undefined);
+    herdrAnswer.current?.(yes);
+    herdrAnswer.current = undefined;
+  };
+
   const connect = async () => {
     if (!valid || busy || port === undefined) return;
     setBusy(true);
     setError(undefined);
+    setReach(undefined);
+    let boot: InstallBoot | undefined;
     try {
-      await setUpWithPassword({ name, address, port, user, password, confirm: confirmProbedKey, confirmInstall, onProgress: setStep });
-      router.dismissTo("/");
+      const host = await setUpWithPassword({
+        name,
+        address,
+        port,
+        user,
+        password,
+        confirm: confirmProbedKey,
+        confirmInstall,
+        confirmHerdrInstall,
+        onInstalled: (r) => {
+          boot = r.boot;
+        },
+        onProgress: setStep,
+      });
+      // The install says herdlingd starts only after a login: tell the user once.
+      if (boot === "login") setAdded({ id: host.id, name: host.name });
+      else router.dismissTo("/");
     } catch (e) {
       setError(e instanceof SetupFailed ? e.message : "Setup failed. Nothing was saved.");
+      setReach(e instanceof SetupFailed ? e.reach : undefined);
     } finally {
       // The password is used for this one setup only.
       setPassword("");
       setBusy(false);
       setStep(undefined);
       setAsk(undefined);
+      setAskHerdr(undefined);
     }
   };
+
+  if (added) {
+    return (
+      <Screen>
+        <InstalledLoginHint
+          name={added.name}
+          onHow={() => router.push({ pathname: "/hosts/boot-help", params: { id: added.id } })}
+          onDone={() => router.dismissTo("/")}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -164,9 +259,23 @@ export default function PasswordSetupScreen() {
         {error?.includes(HERDR_URL) ? (
           <Button label="Open herdr.dev" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
         ) : null}
+        {error && reach ? (
+          <Button
+            label="Turn on SSH on the computer"
+            variant="secondary"
+            Icon={LifeBuoy}
+            onPress={() =>
+              router.push({
+                pathname: "/hosts/ssh-help",
+                params: { address: address.trim(), port: String(port ?? 22), user: user.trim(), kind: reach },
+              })
+            }
+          />
+        ) : null}
       </Card>
       {ask ? <InstallQuestion address={ask} onAnswer={onAnswer} /> : null}
-      {busy && step && !ask ? (
+      {askHerdr ? <HerdrQuestion address={askHerdr} onAnswer={onHerdrAnswer} /> : null}
+      {busy && step && !ask && !askHerdr ? (
         <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <DelayedSpinner color={colors.textMuted} />
           <Text muted style={{ flex: 1 }}>
@@ -174,7 +283,7 @@ export default function PasswordSetupScreen() {
           </Text>
         </View>
       ) : null}
-      {ask ? null : (
+      {ask || askHerdr ? null : (
         <View style={{ gap: space.md }}>
           <Button label="Connect" Icon={KeyRound} loading={busy} disabled={!valid} onPress={() => void connect()} />
         </View>

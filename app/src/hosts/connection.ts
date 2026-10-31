@@ -18,6 +18,8 @@ export type HostConn = {
   rpc?: RpcClient;
   hello?: Hello;
   error?: string;
+  /** Code of the native error of the last failed attempt (for example "connect_failed"), when it had one. */
+  errorCode?: string;
   /** Number of connection attempts started for this host. A caller that wants a fresh result compares it. */
   attempt: number;
 };
@@ -305,7 +307,7 @@ class HostConnection {
         setConn(host.id, { status: "offline", error: `Host key changed: ${message}`, attempt: this.attemptNo });
         return;
       }
-      this.fail(message);
+      this.fail(message, typeof code === "string" ? code : undefined);
     }
   }
 
@@ -336,9 +338,9 @@ class HostConnection {
     }
   }
 
-  private fail(error: string): void {
+  private fail(error: string, errorCode?: string): void {
     const prev = getHostConn(this.id);
-    setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error, attempt: this.attemptNo });
+    setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error, errorCode, attempt: this.attemptNo });
     const delay = BACKOFF_S[Math.min(this.failures, BACKOFF_S.length - 1)];
     this.failures++;
     this.timer = setTimeout(() => this.connectNow(), delay * 1000);

@@ -1,7 +1,7 @@
 jest.mock("../../modules/ssh", () => ({}));
 
 import type { PasswordExecOptions, PasswordExecResult } from "../../modules/ssh";
-import { INSTALL_COMMAND, INSTALL_TIMEOUT_MS, parseInstallOutput, runInstaller } from "./installer";
+import { INSTALL_COMMAND, INSTALL_TIMEOUT_MS, installCommand, parseInstallOutput, runInstaller } from "./installer";
 
 const FP = "SHA256:" + "a".repeat(43);
 const PASSWORD = "correct horse battery staple";
@@ -22,6 +22,38 @@ describe("INSTALL_COMMAND", () => {
     );
     // The login shell gets one single-quoted word: no single quote may appear inside it.
     expect(INSTALL_COMMAND.slice(7, -1)).not.toContain("'");
+  });
+});
+
+describe("installCommand", () => {
+  it("adds --with-herdr only when asked", () => {
+    expect(installCommand()).toBe(INSTALL_COMMAND);
+    expect(installCommand(true)).toBe(INSTALL_COMMAND.replace("--quiet'", "--quiet --with-herdr'"));
+    expect(installCommand(true).slice(7, -1)).not.toContain("'");
+  });
+
+  it("runs --with-herdr with a longer timeout", async () => {
+    const run = exec({ stdout: "HERDLINGD_INSTALLED 0.2.0\n" });
+    await runInstaller({ execWithPassword: run }, { ...target, withHerdr: true });
+    expect(run.mock.calls[0][0].command).toBe(installCommand(true));
+    expect(run.mock.calls[0][0].timeoutMs).toBeGreaterThan(INSTALL_TIMEOUT_MS);
+  });
+});
+
+describe("HERDLINGD_BOOT", () => {
+  it("reads the boot line, and is missing for an older script", () => {
+    expect(parseInstallOutput("HERDLINGD_BOOT login\nHERDLINGD_INSTALLED 0.2.0\n", "", 0)).toEqual({ ok: true, version: "0.2.0", boot: "login" });
+    expect(parseInstallOutput("HERDLINGD_BOOT boot\nHERDLINGD_INSTALLED 0.2.0\n", "", 0)).toMatchObject({ boot: "boot" });
+    expect(parseInstallOutput("HERDLINGD_BOOT later\nHERDLINGD_INSTALLED 0.2.0\n", "", 0)).toMatchObject({ boot: "unknown" });
+    const old = parseInstallOutput("HERDLINGD_INSTALLED 0.2.0\n", "", 0);
+    expect(old).toEqual({ ok: true, version: "0.2.0" });
+    expect("boot" in old).toBe(false);
+  });
+
+  it("maps herdr_install_failed", () => {
+    const r = parseInstallOutput("HERDLINGD_STEP herdr\nHERDLINGD_ERROR herdr_install_failed The herdr installer failed: x\n", "", 1);
+    expect(r).toMatchObject({ ok: false, code: "herdr_install_failed" });
+    expect(!r.ok && r.message).toContain("https://herdr.dev");
   });
 });
 
