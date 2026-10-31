@@ -23,7 +23,7 @@
         "NSSpeechRecognitionUsageDescription": "Herdling turns what you say into a prompt for the agent. Recognition runs on the device when your language supports it.",
         "NSPhotoLibraryUsageDescription": "Herdling attaches photos you pick to prompts for your agents."
       },
-      "buildNumber": "2"
+      "buildNumber": "3"
     },
     "android": {
       "adaptiveIcon": {
@@ -41,6 +41,14 @@
         "android.permission.CHANGE_WIFI_MULTICAST_STATE",
         "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },
     "web": {
@@ -57,7 +65,12 @@
           "imageWidth": 140
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       "expo-notifications",
       [
         "expo-camera",
@@ -75,7 +88,9 @@
             "minSdkVersion": 26,
             "usesCleartextTraffic": true,
             "packagingOptions": {
-              "exclude": ["META-INF/versions/9/OSGI-INF/MANIFEST.MF"]
+              "exclude": [
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+              ]
             }
           }
         }
