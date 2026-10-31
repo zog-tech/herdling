@@ -48,7 +48,6 @@ export function PeekSheet({
   const seen = useSeen((s) => s.seen);
   const agent = snapshot?.agents.find((a) => a.pane_id === paneId);
   const thread = useThread(hostId, paneId, agent?.agent_status);
-  const now = Date.now();
 
   const item = useMemo(() => {
     if (!agent || !snapshot) return undefined;
@@ -111,7 +110,7 @@ export function PeekSheet({
           {/* Own row: the pill never squeezes "<host> · <kind>". */}
           {item ? (
             <View style={{ flexDirection: "row", marginTop: space.xs }}>
-              <StatusPill item={item} now={now} />
+              <StatusPill item={item} />
             </View>
           ) : null}
         </View>

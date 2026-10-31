@@ -170,7 +170,7 @@ function useEmberPulse(needsYou: boolean) {
  * One agent on the Board. Tap opens the session, long-press peeks. Swipe right marks it read;
  * swipe left reveals Reply and Restart. VoiceOver gets the same actions as custom actions.
  */
-export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { item: BoardItem; now: number } & CardActions) {
+export const AgentCard = memo(function AgentCard({ item, ...actions }: { item: BoardItem } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
   const { onOpen, onPeek } = actions;
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
@@ -184,7 +184,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
   const unread = bucket === "ready";
   const flagged = bucket === "needs_you" || bucket === "ready";
   const close = () => swipe.current?.close();
-  const label = cardLabel(item, now);
+  const label = cardLabel(item);
 
   return (
     <Animated.View style={enterStyle}>
@@ -306,7 +306,7 @@ export const AgentCard = memo(function AgentCard({ item, now, ...actions }: { it
                 <Text bold numberOfLines={2} maxFontSizeMultiplier={TITLE_SCALE} style={{ flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}>
                   {item.title}
                 </Text>
-                <StatusPill item={item} now={now} />
+                <StatusPill item={item} />
               </View>
               <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
                 {item.subtitle}

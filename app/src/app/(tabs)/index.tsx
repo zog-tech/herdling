@@ -27,8 +27,6 @@ import { Card } from "@/ui/Card";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
-/** Pills show seconds; refresh the clock this often while the Board is visible. */
-const CLOCK_MS = 5_000;
 const GROUP_LABEL: Record<GroupBy, string> = { status: "Status", host: "Host", workspace: "Workspace" };
 const GROUPS: GroupBy[] = ["status", "host", "workspace"];
 
@@ -144,18 +142,6 @@ function useOnlineHostIds(hosts: Host[]): Set<string> {
   return useMemo(() => new Set(key.split(",").filter(Boolean)), [key]);
 }
 
-/** Wall clock that ticks every `ms` while `on`. */
-function useNow(ms: number, on: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!on) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(t);
-  }, [ms, on]);
-  return now;
-}
-
 function SectionHeader({ title, bucket, onMenu }: { title: string; bucket?: BoardItem["bucket"]; onMenu?: () => void }) {
   const meta = bucket ? BUCKET_META[bucket] : undefined;
   return (
@@ -217,7 +203,6 @@ export default function BoardScreen() {
   const online = useOnlineHostIds(hosts);
   const problemHosts = useProblemHosts(hosts, online);
   const { previews, firstSeen, filter, groupBy } = useBoard();
-  const now = useNow(CLOCK_MS, focused);
 
   const boardHosts = useMemo(
     () =>
@@ -371,7 +356,6 @@ export default function BoardScreen() {
             <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
               <AgentCard
                 item={item}
-                now={now}
                 onOpen={onOpen}
                 onPeek={onPeek}
                 onMarkRead={onMarkRead}

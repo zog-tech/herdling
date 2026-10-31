@@ -38,11 +38,21 @@ let audioOwner = -1;
 /** The reply that a play button speaks now. `owner` is the epoch of that speak. */
 export const useManualSpeech = create<{ key?: string; owner: number }>()(() => ({ key: undefined, owner: -1 }));
 
+/** True while a speak holds the audio session: speech plays or is about to play. */
+export const useSpeaking = create<{ speaking: boolean }>()(() => ({ speaking: false }));
+
 function stopSpeech() {
   epoch++;
   quiet(Speech.stop());
   stopHostAudio();
   useManualSpeech.setState({ key: undefined, owner: -1 });
+  useSpeaking.setState({ speaking: false });
+}
+
+/** Stops the speech that plays now. The speaker setting does not change. */
+export function stopSpeaking(): void {
+  logSpeech("stopped by the user");
+  stopSpeech();
 }
 
 const local = {
@@ -80,6 +90,7 @@ async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | 
   const release = () => {
     if (audioOwner !== mine) return;
     audioOwner = -1;
+    useSpeaking.setState({ speaking: false });
     quiet(releaseAudio());
   };
   const stale = () => mine !== epoch || useRecording.getState().recording;
@@ -104,6 +115,7 @@ async function speak(text: string, mine: number, rpc: Pick<RpcClient, "call"> | 
       }
     }
     audioOwner = mine;
+    useSpeaking.setState({ speaking: true });
     if (stale()) return release();
     let rest = text;
     if (engine === "host" && rpc) {
@@ -215,6 +227,15 @@ export function useSpeakReplies(
   const speakPending = useRef(false);
   /** The settle delay runs. */
   const settling = useRef(false);
+  /**
+   * Assistant items in the first loaded thread, when the agent was finished then. A later status
+   * change (for example a short false "working") never speaks one of these old replies.
+   * Opened while working, the set stays empty: the reply of that turn may already be there.
+   */
+  const atOpen = useRef<Set<string> | null>(null);
+  if (atOpen.current === null && items.length > 0 && status !== undefined) {
+    atOpen.current = new Set(finished(status) ? items.filter((i) => i.kind === "assistant").map((i) => i.id) : []);
+  }
 
   // iOS pauses JS in the background, so a pending speak cannot run there. Log it.
   useEffect(() => {
@@ -231,7 +252,8 @@ export function useSpeakReplies(
     clearTimeout(giveUp.current);
   };
 
-  const settleThenSpeak = () => {
+  /** `onlyNew`: skip a reply that was already in the thread when the screen opened. */
+  const settleThenSpeak = (onlyNew = false) => {
     clearTimeout(timer.current);
     settling.current = true;
     timer.current = setTimeout(() => {
@@ -247,6 +269,7 @@ export function useSpeakReplies(
       if (AppState.currentState === "background" || AppState.currentState === "inactive") return skip("app not active");
       if (!reply) return skip("no reply");
       if (id === spokenId.current) return skip("same reply");
+      if (onlyNew && id && atOpen.current?.has(id)) return skip("reply from before the screen opened");
       if (useRecording.getState().recording) return skip("recording");
       if (!speechText(reply)) return skip("no reply");
       spokenId.current = id;
@@ -339,7 +362,7 @@ export function useSpeakReplies(
         clearTimeout(giveUp.current);
         giveUp.current = setTimeout(endPush, PUSH_WAIT_MS);
       } else if (finished(status) && o?.speakNow) pushDone.current = true;
-      settleThenSpeak();
+      settleThenSpeak(!fromPush);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, o?.speakNow]);

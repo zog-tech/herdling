@@ -12,7 +12,7 @@ import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
 export default function SubagentScreen() {
-  const { hostId, agentId, log, title, since } = useLocalSearchParams<{
+  const { hostId, agentId, log, title } = useLocalSearchParams<{
     hostId: string;
     agentId: string;
     log: string;
@@ -27,8 +27,7 @@ export default function SubagentScreen() {
   const { status, items } = thread;
   // "Working" while the host says the subagent runs. An older host does not tell: no pill.
   const badge = thread.running ? "working" : "idle";
-  const sinceMs = since && Number.isFinite(Number(since)) ? Number(since) : undefined;
-  const pill = <StatusRow status={badge} since={sinceMs} />;
+  const pill = <StatusRow status={badge} />;
 
   let body;
   if (items.length === 0) {

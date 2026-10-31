@@ -1,5 +1,5 @@
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, Ellipsis, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
+import { ChevronLeft, Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
@@ -12,7 +12,6 @@ import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
-import { useStatusSince } from "@/herdr/statusSince";
 import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { renameItems } from "@/herdr/rename";
 import { closeAgent } from "@/herdr/sessionActions";
@@ -35,7 +34,7 @@ import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
-import { useSpeakReplies } from "@/voice/useSpeakReplies";
+import { stopSpeaking, useSpeakReplies, useSpeaking } from "@/voice/useSpeakReplies";
 import { useVoiceNotice } from "@/voice/voiceNotice";
 import { DelayedSpinner } from "@/ui/Delayed";
 
@@ -269,14 +268,12 @@ function ThreadBody({
   paneId,
   focused,
   badge,
-  since,
 }: {
   thread: Thread;
   hostId: string;
   paneId: string;
   focused: boolean;
   badge: BadgeStatus;
-  since?: number;
 }) {
   const { status, items } = thread;
   const pending = usePendingList(hostId, paneId);
@@ -288,7 +285,7 @@ function ThreadBody({
           No conversation log for this agent. Showing its terminal.
         </Text>
         <TerminalView hostId={hostId} paneId={paneId} />
-        <StatusRow status={badge} since={since} />
+        <StatusRow status={badge} />
       </View>
     );
   }
@@ -312,7 +309,7 @@ function ThreadBody({
             {note}
           </Text>
         ) : null}
-        <StatusRow status={badge} since={since} />
+        <StatusRow status={badge} />
       </View>
     );
   }
@@ -336,7 +333,7 @@ function ThreadBody({
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
-          footer={<StatusRow status={badge} since={since} subagents={subagents} />}
+          footer={<StatusRow status={badge} subagents={subagents} />}
           footerShown={isStatusShown(badge)}
           live={{ hostId, paneId, active: focused }}
         />
@@ -368,6 +365,7 @@ export default function SessionScreen() {
 
   const speakOn = useSpeakEnabled(hostId, paneId);
   const setSpeak = useSessionSpeak((s) => s.setSpeak);
+  const speaking = useSpeaking((s) => s.speaking);
   useSpeakReplies(hostId, paneId, agent?.agent_status, thread.items, { speakNow: from === "push", focused });
   const voiceNotice = useVoiceNotice((s) => s.text);
 
@@ -381,7 +379,6 @@ export default function SessionScreen() {
   const title = agent && snapshot ? agentTitle(snapshot, agent) : thread.ref?.kind || paneId;
   const kind = agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
-  const since = useStatusSince(hostId, paneId, agent?.agent_status);
   const back = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
   const menu = useSessionMenu(hostId, agent, back);
 
@@ -411,18 +408,33 @@ export default function SessionScreen() {
               {menu.busy ?? (kind ? `${hostName} · ${kind}` : hostName)}
             </Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel="Speak replies"
-            accessibilityState={{ checked: speakOn }}
-            onPress={() => {
-              haptics.tap();
-              setSpeak(sessionKey(hostId, paneId), !speakOn);
-            }}
-            style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-          >
-            {speakOn ? <Volume2 size={22} color={colors.accent} /> : <VolumeX size={22} color={colors.textMuted} />}
-          </Pressable>
+          {/* While speech plays, the speaker button stops it. The speaker setting stays as it is. */}
+          {speaking ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Stop reading"
+              onPress={() => {
+                haptics.tap();
+                stopSpeaking();
+              }}
+              style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
+            >
+              <Square size={18} color={colors.accent} fill={colors.accent} />
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="Speak replies"
+              accessibilityState={{ checked: speakOn }}
+              onPress={() => {
+                haptics.tap();
+                setSpeak(sessionKey(hostId, paneId), !speakOn);
+              }}
+              style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
+            >
+              {speakOn ? <Volume2 size={22} color={colors.accent} /> : <VolumeX size={22} color={colors.textMuted} />}
+            </Pressable>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Session actions"
@@ -449,7 +461,7 @@ export default function SessionScreen() {
       </View>
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId}>
-          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} since={since} />
+          <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} />
         </SwipeBetweenAgents>
       ) : (
         // Terminal mode types straight into the pane: key row + one-line box instead of the prompt composer.

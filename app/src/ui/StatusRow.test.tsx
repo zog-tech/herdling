@@ -7,26 +7,18 @@ const label = (t: ReactTestRenderer) => t.root.findByProps({ accessibilityRole: 
 
 const clock = (t: ReactTestRenderer) => t.root.findAll((n) => typeof n.type === "string" && n.props.testID === "ticking-duration");
 
-test("status_row_shows_the_clock_and_keeps_its_label", () => {
-  jest.useFakeTimers();
-  const since = Date.now() - 71_000;
+test("status_row_shows_no_clock_and_keeps_its_label", () => {
   let t!: ReactTestRenderer;
   act(() => {
-    t = create(<StatusRow status="working" since={since} />);
+    t = create(<StatusRow status="working" />);
   });
-  expect(clock(t)[0].props.defaultValue).toBe("1m 11s");
-  // VoiceOver hears whole minutes, so the label does not change every second.
-  expect(label(t)).toBe("Working, 1 minute");
-  act(() => jest.advanceTimersByTime(1000));
-  expect(label(t)).toBe("Working, 1 minute");
-  act(() => jest.advanceTimersByTime(60_000));
-  expect(label(t)).toBe("Working, 2 minutes");
-  act(() => t.update(<StatusRow status="blocked" since={since} />));
+  expect(clock(t)).toHaveLength(0);
+  expect(label(t)).toBe("Working");
+  act(() => t.update(<StatusRow status="blocked" />));
   expect(label(t)).toBe("Needs you");
   act(() => t.update(<StatusRow status="offline" />));
   expect(label(t)).toBe("Offline");
   act(() => t.unmount());
-  jest.useRealTimers();
 });
 
 test("status_row_hides_from_voiceover_when_idle", () => {
@@ -35,7 +27,7 @@ test("status_row_hides_from_voiceover_when_idle", () => {
     t = create(<StatusRow status="done" />);
   });
   expect(t.root.findByProps({ accessibilityRole: "text" }).props.accessible).toBe(false);
-  act(() => t.update(<StatusRow status="working" since={Date.now()} />));
+  act(() => t.update(<StatusRow status="working" />));
   expect(t.root.findByProps({ accessibilityRole: "text" }).props.accessible).toBe(true);
   act(() => t.unmount());
 });
@@ -55,7 +47,7 @@ test("status_row_announces_on_change", () => {
   spy.mockClear();
   let t!: ReactTestRenderer;
   act(() => {
-    t = create(<StatusRow status="working" since={Date.now()} />);
+    t = create(<StatusRow status="working" />);
   });
   expect(spy).not.toHaveBeenCalled();
   act(() => t.update(<StatusRow status="done" />));
@@ -70,21 +62,18 @@ test("status_pill_shows_only_for_working_blocked_and_offline", () => {
 });
 
 test("status_row_adds_running_subagents_while_working", () => {
-  jest.useFakeTimers();
-  const since = Date.now() - 5_000;
   let t!: ReactTestRenderer;
   act(() => {
-    t = create(<StatusRow status="working" since={since} subagents={2} />);
+    t = create(<StatusRow status="working" subagents={2} />);
   });
   const texts = () => t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
   expect(texts()).toContain("· 2 subagents");
-  expect(label(t)).toBe("Working, under a minute, 2 subagents");
-  act(() => t.update(<StatusRow status="working" since={since} subagents={1} />));
-  expect(label(t)).toBe("Working, under a minute, 1 subagent");
-  act(() => t.update(<StatusRow status="working" since={since} subagents={0} />));
+  expect(label(t)).toBe("Working, 2 subagents");
+  act(() => t.update(<StatusRow status="working" subagents={1} />));
+  expect(label(t)).toBe("Working, 1 subagent");
+  act(() => t.update(<StatusRow status="working" subagents={0} />));
   expect(texts().some((c) => typeof c === "string" && c.includes("subagent"))).toBe(false);
-  act(() => t.update(<StatusRow status="blocked" since={since} subagents={2} />));
+  act(() => t.update(<StatusRow status="blocked" subagents={2} />));
   expect(label(t)).toBe("Needs you");
   act(() => t.unmount());
-  jest.useRealTimers();
 });

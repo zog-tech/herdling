@@ -4,7 +4,7 @@ import { act, create as createRenderer } from "react-test-renderer";
 import { useRecording } from "./recording";
 import { useSessionSpeak, useVoiceSettings } from "./settings";
 import { logSpeech, useSpeechLog } from "./speechLog";
-import { speakReplyNow, testVoice, useManualSpeech, useSpeakReplies } from "./useSpeakReplies";
+import { speakReplyNow, stopSpeaking, testVoice, useManualSpeech, useSpeakReplies, useSpeaking } from "./useSpeakReplies";
 import { HOST_VOICE_FAILED, resetVoiceNotice, useVoiceNotice } from "./voiceNotice";
 
 const mockSpeak = jest.fn();
@@ -116,6 +116,38 @@ describe("useSpeakReplies", () => {
     await act(async () => r.update(<Probe status="idle" items={items} />));
     await flush();
     expect(mockSpeak).toHaveBeenCalledWith("Hello there", expect.objectContaining({ voice: "v1", rate: 1.2 }));
+  });
+
+  it("opened on a finished agent, a short false working never speaks the old reply", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="idle" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="working" items={items} />));
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(mockSpeak).not.toHaveBeenCalled();
+    expect(useSpeechLog.getState().events.map((e) => e.text)).toContain("skipped: reply from before the screen opened");
+    // A real new turn still speaks.
+    const next = [...items, user("3"), asst("4", "New answer")];
+    await act(async () => r.update(<Probe status="working" items={next} />));
+    await act(async () => r.update(<Probe status="idle" items={next} />));
+    await flush();
+    expect(mockSpeak).toHaveBeenCalledWith("New answer", expect.anything());
+  });
+
+  it("speaking shows while speech plays, and stopSpeaking stops it", async () => {
+    let r: any;
+    await act(async () => {
+      r = create(<Probe status="working" items={items} />);
+    });
+    await act(async () => r.update(<Probe status="idle" items={items} />));
+    await flush();
+    expect(useSpeaking.getState().speaking).toBe(true);
+    mockStop.mockClear();
+    act(() => stopSpeaking());
+    expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(useSpeaking.getState().speaking).toBe(false);
   });
 
   it("stays quiet when the session speaker is off, or from a non-working status", async () => {

@@ -1,9 +1,9 @@
 import type { BoardItem } from "./buckets";
 import { pillText } from "./elapsed";
 
-/** What VoiceOver reads for a card: title, status with elapsed time, host · kind, the preview line, unread. */
-export function cardLabel(item: BoardItem, now: number): string {
-  const parts = [item.title, pillText(item.bucket, item.since, now), item.subtitle];
+/** What VoiceOver reads for a card: title, status, host · kind, the preview line, unread. */
+export function cardLabel(item: BoardItem): string {
+  const parts = [item.title, pillText(item.bucket), item.subtitle];
   const line = item.line ?? item.terminalTitle;
   if (line) parts.push(line);
   if (item.bucket === "ready") parts.push("unread");

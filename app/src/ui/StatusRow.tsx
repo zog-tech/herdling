@@ -5,9 +5,8 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 import { colors, motion, radius, space } from "@/theme/tokens";
 import { subagentCount } from "@/thread/subagentState";
 import { LanternGlow } from "./LanternGlow";
-import { STATUS_META, StatusIcon, statusSpoken, useElapsed, type BadgeStatus } from "./StatusIcon";
+import { STATUS_META, StatusIcon, statusSpoken, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
-import { SPOKEN_TICK_MS, TickingDuration } from "./TickingDuration";
 
 /** Only these states show a row. Idle, done and unknown hide it. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
@@ -34,18 +33,14 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
 
 /**
  * Agent status pill, the last item of the thread list (below the newest message). Working shows the
- * icon, "Working" and a ticking clock. The pill is centered, fades and slides in and out, and takes no height when hidden.
- * The clock ticks on the UI thread (`TickingDuration`), so a busy JS thread does not freeze it, and
- * it pauses while the row is hidden. VoiceOver reads the time in whole minutes.
+ * icon and "Working". The pill is centered, fades and slides in and out, and takes no height when hidden.
  * `subagents`: running subagents; while working, the pill adds " · 2 subagents".
  */
 export const StatusRow = memo(function StatusRow({
   status,
-  since,
   subagents = 0,
 }: {
   status: BadgeStatus;
-  since?: number;
   subagents?: number;
 }) {
   const reduced = useReducedMotion();
@@ -73,11 +68,9 @@ export const StatusRow = memo(function StatusRow({
   }, [status]);
 
   const working = status === "working";
-  // Coarse JS clock, for the VoiceOver label only.
-  const elapsed = useElapsed(working ? since : undefined, working, SPOKEN_TICK_MS);
   const { label, color } = STATUS_META[shown];
   const subs = shown === "working" && subagents > 0 ? subagentCount(subagents) : undefined;
-  const spoken = statusSpoken(shown, shown === "working" ? elapsed : undefined);
+  const spoken = statusSpoken(shown);
   const text = subs ? `${spoken}, ${subs}` : spoken;
 
   const style = useAnimatedStyle(() => ({
@@ -118,9 +111,6 @@ export const StatusRow = memo(function StatusRow({
         <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {label}
         </Text>
-        {shown === "working" && since !== undefined ? (
-          <TickingDuration variant="small" since={since} active={working} maxFontSizeMultiplier={1.3} accessible={false} />
-        ) : null}
         {subs ? (
           <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
             {`· ${subs}`}
