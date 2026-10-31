@@ -286,6 +286,7 @@ function ThreadBody({
           No conversation log for this agent. Showing its terminal.
         </Text>
         <TerminalView hostId={hostId} paneId={paneId} />
+        <StatusRow status={badge} since={since} />
       </View>
     );
   }
@@ -309,6 +310,7 @@ function ThreadBody({
             {note}
           </Text>
         ) : null}
+        <StatusRow status={badge} since={since} />
       </View>
     );
   }
