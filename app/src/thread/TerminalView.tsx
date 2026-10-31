@@ -1,11 +1,18 @@
 import { useIsFocused } from "expo-router";
-import { ArrowUp } from "lucide-react-native";
-import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  ArrowUp,
+  Maximize2,
+  WrapText,
+  MoveHorizontal,
+} from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Keyboard,
   Pressable,
   ScrollView,
   TextInput,
   View,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollViewInstance,
@@ -14,10 +21,20 @@ import {
 import { useHostConn } from "@/hosts/connection";
 import { parseAnsi } from "@/terminal/ansi";
 import { AnsiText } from "@/terminal/AnsiText";
+import {
+  FIT_MIN_SIZE,
+  fitFontSize,
+  lineHeightFor,
+  nextWidthMode,
+  widestCols,
+  type WidthMode,
+} from "@/terminal/fit";
 import { KeyRow } from "@/terminal/KeyRow";
+import { useTerminalWidth } from "@/terminal/widthMode";
 import { sendKey, sendLine } from "@/terminal/keys";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
@@ -28,7 +45,13 @@ import { useTerminalText } from "./useTerminalText";
 const MAX_LINES = 300;
 /** Within this many points of the end counts as "at the end": new output scrolls into view. */
 const STICK_PX = 40;
-const LINE_HEIGHT = 17;
+const LINE_HEIGHT = lineHeightFor(type.size.caption);
+
+const MODES: Record<WidthMode, { label: string; Icon: typeof Maximize2 }> = {
+  fit: { label: "Fit to screen", Icon: Maximize2 },
+  wrap: { label: "Wrap lines", Icon: WrapText },
+  scroll: { label: "Scroll sideways", Icon: MoveHorizontal },
+};
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -49,46 +72,126 @@ export function TerminalView({
   bottomInset?: number;
 }) {
   const focused = useIsFocused();
-  const { text, error, refresh } = useTerminalText(hostId, paneId, focused, { format: "ansi" });
+  const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
+    format: "ansi",
+  });
   // Parsed once per new screen: the hook keeps the same string while the screen is unchanged.
-  const lines = useMemo(() => (text === undefined ? undefined : parseAnsi(text, colors.ansi).slice(-MAX_LINES)), [text]);
+  const lines = useMemo(
+    () =>
+      text === undefined
+        ? undefined
+        : parseAnsi(text, colors.ansi).slice(-MAX_LINES),
+    [text],
+  );
   const scroll = useRef<ScrollViewInstance>(null);
   const atEnd = useRef(true);
+  const mode = useTerminalWidth((s) => s.mode);
+  const setMode = useTerminalWidth((s) => s.set);
+  const [viewWidth, setViewWidth] = useState(0);
+  const cols = useMemo(() => (lines ? widestCols(lines) : 0), [lines]);
+  // Depends on the column count and the view width only, so it does not jump on small refreshes.
+  const fontSize =
+    mode === "fit"
+      ? fitFontSize(cols, viewWidth - 2 * space.md, type.size.caption)
+      : type.size.caption;
+  const lineHeight = mode === "fit" ? lineHeightFor(fontSize) : LINE_HEIGHT;
+  const toEnd = useCallback(() => {
+    atEnd.current = true;
+    scroll.current?.scrollToEnd({ animated: false });
+  }, []);
+  // The keyboard opens: keep the latest output in view, even after the user scrolled up.
+  useEffect(() => {
+    if (!controls) return;
+    const sub = Keyboard.addListener("keyboardDidShow", toEnd);
+    return () => sub.remove();
+  }, [controls, toEnd]);
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    setViewWidth(e.nativeEvent.layout.width);
+    // The view got shorter (keyboard): stay at the end.
+    if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
+  }, []);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    atEnd.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - STICK_PX;
+    atEnd.current =
+      contentOffset.y + layoutMeasurement.height >=
+      contentSize.height - STICK_PX;
   }, []);
+
+  const body = lines ? (
+    <AnsiText lines={lines} style={{ fontSize, lineHeight }} />
+  ) : (
+    <Text mono variant="caption" muted>
+      {error ? `Can't read the terminal: ${error}` : "Loading…"}
+    </Text>
+  );
+  const { label, Icon } = MODES[mode];
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        ref={scroll}
-        style={{ flex: 1, backgroundColor: colors.terminal.bg }}
-        contentContainerStyle={{ padding: space.md }}
-        onScroll={onScroll}
-        scrollEventThrottle={100}
-        onContentSizeChange={() => {
-          if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
-        }}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-      >
-        <HScrollView showsHorizontalScrollIndicator={false}>
-          {lines ? (
-            <AnsiText lines={lines} style={{ fontSize: type.size.caption, lineHeight: LINE_HEIGHT }} />
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          ref={scroll}
+          onLayout={onLayout}
+          style={{ flex: 1, backgroundColor: colors.terminal.bg }}
+          contentContainerStyle={{ padding: space.md }}
+          onScroll={onScroll}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => {
+            if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
+          }}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+        >
+          {mode === "wrap" ? (
+            body
           ) : (
-            <Text mono variant="caption" muted>
-              {error ? `Can't read the terminal: ${error}` : "Loading…"}
-            </Text>
+            <HScrollView showsHorizontalScrollIndicator={false}>
+              {body}
+            </HScrollView>
           )}
-        </HScrollView>
-      </ScrollView>
+        </ScrollView>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Terminal width: ${label}`}
+          accessibilityHint="Double tap to change how the terminal text fits the screen"
+          onPress={() => {
+            haptics.tap();
+            setMode(nextWidthMode(mode));
+          }}
+          style={({ pressed }) => ({
+            position: "absolute",
+            top: space.sm,
+            right: space.sm,
+            width: hitTarget,
+            height: hitTarget,
+            borderRadius: radius.md,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.raised,
+            opacity: pressed ? state.pressedFill : 0.8,
+          })}
+        >
+          <Icon size={18} color={colors.textMuted} />
+        </Pressable>
+      </View>
       {lines && error ? (
-        <Text variant="caption" color={colors.status.blocked} numberOfLines={1} style={{ paddingHorizontal: space.lg }}>
+        <Text
+          variant="caption"
+          color={colors.status.blocked}
+          numberOfLines={1}
+          style={{ paddingHorizontal: space.lg }}
+        >
           {`Can't refresh: ${error}`}
         </Text>
       ) : null}
-      {controls ? <TerminalControls hostId={hostId} paneId={paneId} bottomInset={bottomInset} onSent={refresh} /> : null}
+      {controls ? (
+        <TerminalControls
+          hostId={hostId}
+          paneId={paneId}
+          bottomInset={bottomInset}
+          onSent={refresh}
+        />
+      ) : null}
     </View>
   );
 }
@@ -152,7 +255,12 @@ function TerminalControls({
     >
       <KeyRow onKey={key} disabled={!online} />
       {error ? (
-        <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.md }}>
+        <Text
+          variant="small"
+          color={colors.status.blocked}
+          accessibilityLiveRegion="polite"
+          style={{ paddingHorizontal: space.md }}
+        >
           {error}
         </Text>
       ) : !online ? (
@@ -160,7 +268,14 @@ function TerminalControls({
           Host offline — keys work when it reconnects.
         </Text>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.md }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.sm,
+          paddingHorizontal: space.md,
+        }}
+      >
         <TextInput
           value={line}
           onChangeText={(t) => {
@@ -207,7 +322,14 @@ function TerminalControls({
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          {sending ? <DelayedSpinner color={colors.onAccent} /> : <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />}
+          {sending ? (
+            <DelayedSpinner color={colors.onAccent} />
+          ) : (
+            <ArrowUp
+              size={22}
+              color={canSend ? colors.onAccent : colors.textMuted}
+            />
+          )}
         </Pressable>
       </View>
     </View>
