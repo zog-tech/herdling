@@ -32,5 +32,5 @@ export function getDeviceId(): Promise<string> {
 
 /** The phone's name as the user set it, for the host's device list. */
 export function deviceName(): string {
-  return Device.deviceName ?? "iPhone";
+  return Device.deviceName ?? Device.modelName ?? "Phone";
 }

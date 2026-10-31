@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import { RpcError, type RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
+import { promptText } from "@/ui/nativeSheet";
 
 import { renameAgent } from "./sessionActions";
 import type { AgentInfo, Snapshot } from "./snapshot";
@@ -127,7 +128,7 @@ const PROMPT_TEXT: Record<RenameKind, string> = {
 export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: RenameTarget): void {
   const snap = useSnapshots.getState().byHost[hostId];
   const current = snap ? currentName(snap, kind, t) : "";
-  Alert.prompt(
+  promptText(
     RENAME_LABEL[kind],
     PROMPT_TEXT[kind],
     [
@@ -145,7 +146,6 @@ export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
         },
       },
     ],
-    "plain-text",
     current,
   );
 }

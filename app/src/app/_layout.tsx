@@ -10,6 +10,7 @@ import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRou
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
+import { NativeSheetHost } from "@/ui/nativeSheet";
 import { refreshParakeet } from "@/voice/parakeet";
 
 SplashScreen.preventAutoHideAsync();
@@ -79,6 +80,7 @@ export default function RootLayout() {
         />
       </Stack>
       <NotificationRouting />
+      <NativeSheetHost />
     </GestureHandlerRootView>
   );
 }

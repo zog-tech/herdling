@@ -1,7 +1,7 @@
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Ellipsis, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,7 @@ import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { runningSubagents } from "@/thread/subagentState";
 import { useThread, type Thread } from "@/thread/useThread";
 import * as haptics from "@/ui/haptics";
+import { showActionSheet } from "@/ui/nativeSheet";
 import { HorizonLine } from "@/ui/HorizonLine";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
@@ -99,7 +100,7 @@ function useSessionMenu(hostId: string, agent: AgentInfo | undefined, back: () =
       },
     );
     const options = [...items.map((i) => i.label), "Cancel"];
-    ActionSheetIOS.showActionSheetWithOptions(
+    showActionSheet(
       {
         options,
         cancelButtonIndex: items.length,
