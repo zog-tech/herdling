@@ -351,7 +351,7 @@ summary_command = ["/usr/local/bin/ollama", "run", "llama3.2"]
 | `~/.config/herdling/config.toml` | The config file. |
 | `~/.config/herdling/pair.json` | The open pairing window (only while `herdlingd pair` runs). |
 | `~/.ssh/authorized_keys` | One line per paired phone, ending in `herdling:<phone name>`, limited to `herdlingd rpc`. |
-| `~/.cache/herdling/uploads/` | Photos that you attach. Deleted after 7 days. Maximum 10 MB each. |
+| `~/.cache/herdling/uploads/` | Photos and files that you attach. Deleted after 7 days. Maximum 25 MB each (10 MB with an older herdlingd). |
 | `~/Library/LaunchAgents/com.zogtech.herdlingd.plist` | The macOS service. |
 | `~/Library/Logs/herdlingd.log` | The macOS service log. |
 | `~/.config/systemd/user/herdlingd.service` | The Linux service. Log: `journalctl --user -u herdlingd.service`. |

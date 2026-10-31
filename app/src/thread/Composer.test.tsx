@@ -8,6 +8,7 @@ import * as haptics from "@/ui/haptics";
 import { MicButton } from "@/voice/MicButton";
 
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 
 import { clearCommandsCache } from "./commands";
@@ -69,7 +70,6 @@ jest.mock("@/voice/useDictation", () => ({
     return { state: { phase: mockVoicePhase, partial: "" }, dispatch: mockVoiceDispatch, clearError: () => {} };
   },
 }));
-jest.mock("expo-file-system", () => ({ File: class {} }));
 jest.mock("@/voice/RecordBar", () => ({ RecordBar: () => null }));
 const { RecordBar: MockRecordBar } = jest.requireMock("@/voice/RecordBar");
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
@@ -78,10 +78,28 @@ jest.mock("expo-image-picker", () => ({
   UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" },
 }));
 // The test runtime has no ExpoClipboard native module: report it as present.
+// The document picker is present only when a test sets `mockDocPicker`.
+let mockDocPicker = false;
 jest.mock("expo", () => {
   const actual = jest.requireActual("expo");
-  return { ...actual, requireOptionalNativeModule: (n: string) => (n === "ExpoClipboard" ? {} : actual.requireOptionalNativeModule(n)) };
+  return {
+    ...actual,
+    requireOptionalNativeModule: (n: string) =>
+      n === "ExpoClipboard" ? {} : n === "ExpoDocumentPicker" ? (mockDocPicker ? {} : null) : actual.requireOptionalNativeModule(n),
+  };
 });
+jest.mock("expo-document-picker", () => ({ getDocumentAsync: jest.fn() }));
+jest.mock("expo-file-system", () => ({
+  File: class {
+    mockUri: string;
+    constructor(u: string) {
+      this.mockUri = u;
+    }
+    base64() {
+      return Promise.resolve(`b64-of-${this.mockUri}`);
+    }
+  },
+}));
 jest.mock("expo-clipboard", () => ({ getImageAsync: jest.fn() }));
 // The native paste hook: on by default, like build 7 and later.
 let mockNativePaste = true;
@@ -424,7 +442,7 @@ test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
   await act(async () => prompt(tree!).props.onChangeText("look"));
   await press(tree!, "Send");
   expect(prompts()).toEqual([]);
-  expect(tree!.root.findAll((n) => n.props.children === "Photo upload failed, nothing sent: disk full").length).toBeGreaterThan(0);
+  expect(tree!.root.findAll((n) => n.props.children === "Upload failed, nothing sent: disk full").length).toBeGreaterThan(0);
   // The photo and the text stay for a retry.
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
   expect(prompt(tree!).props.value).toBe("look");
@@ -442,6 +460,38 @@ test("a_removed_photo_is_not_uploaded", async () => {
   await press(tree!, "Send");
   expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params.name)).toEqual(["b.jpg"]);
   expect(prompts()).toEqual(["/up/1-b.jpg"]);
+});
+
+test("attach_file_shows_only_with_the_document_picker_and_sends_the_path", async () => {
+  idle();
+  mockDocPicker = false;
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  // An older binary without the module: no "Files" row, nothing crashes.
+  expect(byLabel(tree!, "Files")).toHaveLength(0);
+  act(() => tree!.unmount());
+
+  mockDocPicker = true;
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  expect(byLabel(tree!, "Files")).toHaveLength(1);
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValueOnce({
+    canceled: false,
+    assets: [{ uri: "file:///cache/crash.log", name: "crash.log", size: 2048, mimeType: "text/plain", lastModified: 0 }],
+  });
+  await press(tree!, "Files");
+  expect(byLabel(tree!, "Remove crash.log")).toHaveLength(1);
+  await act(async () => prompt(tree!).props.onChangeText("Why does it crash?"));
+  await press(tree!, "Send");
+  expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params)).toEqual([
+    { name: "crash.log", data_b64: "b64-of-file:///cache/crash.log" },
+  ]);
+  expect(prompts()).toEqual(["Why does it crash?\n/up/1-crash.log"]);
+  mockDocPicker = false;
 });
 
 test("plus_menu_rows_follow_the_host_methods", async () => {

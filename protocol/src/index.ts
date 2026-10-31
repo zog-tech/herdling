@@ -203,7 +203,7 @@ export type CommandInfo = {
 /** `commands.list` result, sorted by name. */
 export type CommandList = { commands: CommandInfo[] };
 
-/** `files.put` result: where the host saved the file (`~/.cache/herdling/uploads/...`). */
+/** `files.put` result: where the host saved the file (`~/.cache/herdling/uploads/...`). Any file type, at most 25 MiB (10 MiB on an older herdlingd). */
 export type FilePut = { path: string };
 
 /** Params of `git.status`: a folder, or a pane whose folder herdr reports. */

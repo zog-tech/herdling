@@ -5,10 +5,19 @@ import type { RpcClient } from "@/rpc/RpcClient";
 
 /** Most photos on one prompt. */
 export const MAX_PHOTOS = 4;
+/** Most attachments (photos and files together) on one prompt. */
+export const MAX_ATTACHMENTS = 6;
+/**
+ * Largest file the app sends. A current herdlingd takes up to 25 MiB (`files.put`); an older one takes
+ * 10 MiB and answers `too_large` for a larger file.
+ */
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 /** JPEG quality the picker uses. */
 export const PHOTO_QUALITY = 0.8;
 /** Bound for one `files.put` call. A large photo over a slow link takes a while. */
 const UPLOAD_TIMEOUT_MS = 60_000;
+/** Bound for one `files.put` of a document, which can be up to 25 MiB. */
+const FILE_UPLOAD_TIMEOUT_MS = 180_000;
 
 /**
  * True when this binary has the photo picker. Builds before the picker was added do not, and an
@@ -26,8 +35,72 @@ export function clipboardAvailable(): boolean {
   return requireOptionalNativeModule("ExpoClipboard") != null;
 }
 
+/**
+ * True when this binary has the document picker. Builds before it was added do not, and an
+ * over-the-air update must not crash them, so "Attach file" hides there and the module loads only on use.
+ */
+export function documentsAvailable(): boolean {
+  return requireOptionalNativeModule("ExpoDocumentPicker") != null;
+}
+
 /** A picked photo, ready to upload. */
-export type Photo = { uri: string; name: string; base64: string };
+export type Photo = { uri: string; name: string; base64: string; kind?: "photo" };
+
+/** A picked document (text, code, a log, PDF, JSON, CSV, zip, ...). Its data is read only at upload. */
+export type DocFile = { kind: "file"; uri: string; name: string; size?: number; mime?: string };
+
+/** A photo or a file on the next prompt. */
+export type Attachment = Photo | DocFile;
+
+export const isFile = (a: Attachment): a is DocFile => a.kind === "file";
+
+/** How many more photos fit: at most `MAX_PHOTOS` photos and `MAX_ATTACHMENTS` items in all. */
+export function photoRoom(items: readonly Attachment[]): number {
+  const photos = items.filter((a) => !isFile(a)).length;
+  return Math.max(0, Math.min(MAX_PHOTOS - photos, MAX_ATTACHMENTS - items.length));
+}
+
+/** How many more files fit. */
+export function fileRoom(items: readonly Attachment[]): number {
+  return Math.max(0, MAX_ATTACHMENTS - items.length);
+}
+
+/** "12 KB", "3.4 MB". */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The result of a document pick: the files to attach, and the names of files that are too large. */
+export type PickedFiles = { files: DocFile[]; tooLarge: string[] };
+
+/**
+ * Opens the system file picker for up to `max` files of any type. Returns no files when the user
+ * cancels or when this binary has no picker. A file over `MAX_FILE_BYTES` is left out and named in `tooLarge`.
+ */
+export async function pickFiles(max: number): Promise<PickedFiles> {
+  if (max <= 0 || !documentsAvailable()) return { files: [], tooLarge: [] };
+  const DocumentPicker = require("expo-document-picker") as typeof import("expo-document-picker");
+  const r = await DocumentPicker.getDocumentAsync({ type: "*/*", multiple: true, copyToCacheDirectory: true });
+  if (r.canceled) return { files: [], tooLarge: [] };
+  const tooLarge: string[] = [];
+  const files: DocFile[] = [];
+  for (const a of r.assets) {
+    if (a.size != null && a.size > MAX_FILE_BYTES) {
+      tooLarge.push(a.name);
+      continue;
+    }
+    files.push({ kind: "file", uri: a.uri, name: a.name || `file-${files.length + 1}`, size: a.size, mime: a.mimeType });
+  }
+  return { files: files.slice(0, max), tooLarge };
+}
+
+/** Reads a picked file as base64 with expo-file-system (present in every build). */
+async function readBase64(uri: string): Promise<string> {
+  const { File } = require("expo-file-system") as typeof import("expo-file-system");
+  return new File(uri).base64();
+}
 
 /**
  * Opens the photo library for up to `max` images. Returns [] when the user cancels.
@@ -73,18 +146,27 @@ export function jpegName(fileName: string | null | undefined, index: number): st
   return `${base || `photo-${index + 1}`}.jpg`;
 }
 
-/** Uploads each photo with `files.put`, in order. `progress(done)` runs after each one. Throws on the first failure. */
-export async function uploadPhotos(rpc: RpcClient, photos: Photo[], progress?: (done: number) => void): Promise<string[]> {
+/**
+ * Uploads each attachment with `files.put`, in order. `progress(done)` runs after each one. Throws on
+ * the first failure. `read` gives the base64 data of a file (a test passes its own).
+ */
+export async function uploadPhotos(
+  rpc: RpcClient,
+  items: Attachment[],
+  progress?: (done: number) => void,
+  read: (uri: string) => Promise<string> = readBase64,
+): Promise<string[]> {
   const paths: string[] = [];
-  for (const p of photos) {
-    const r = await rpc.call<FilePut>("files.put", { name: p.name, data_b64: p.base64 }, UPLOAD_TIMEOUT_MS);
+  for (const a of items) {
+    const data = isFile(a) ? await read(a.uri) : a.base64;
+    const r = await rpc.call<FilePut>("files.put", { name: a.name, data_b64: data }, isFile(a) ? FILE_UPLOAD_TIMEOUT_MS : UPLOAD_TIMEOUT_MS);
     paths.push(r.path);
     progress?.(paths.length);
   }
   return paths;
 }
 
-/** The prompt text, then each path on its own line. Claude Code reads image paths in a prompt. */
+/** The prompt text, then each path on its own line. The agents read the files at these paths. */
 export function withPaths(text: string, paths: string[]): string {
   const body = text.trimEnd();
   return [...(body ? [body] : []), ...paths].join("\n");

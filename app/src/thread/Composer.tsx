@@ -22,11 +22,19 @@ import { DelayedSpinner } from "@/ui/Delayed";
 import { addPasteImageListener, hasNativePaste, type PastedImage } from "../../modules/paste";
 import {
   clipboardAvailable,
+  documentsAvailable,
+  fileRoom,
+  formatBytes,
+  MAX_ATTACHMENTS,
+  MAX_FILE_BYTES,
   MAX_PHOTOS,
   pasteImage,
+  photoRoom,
   photosAvailable,
+  pickFiles,
   pickPhotos,
   uploadPhotos, withPaths,
+  type Attachment,
   type Photo,
 } from "./attachments";
 import { answerChoice, destructiveKey, useChoices, type Choice } from "./choices";
@@ -51,7 +59,7 @@ export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the termi
  * Voice input: the mic records, a record bar takes the place of the box (✕ discards, ✓ stops),
  * and the text lands in the box after its text, for editing. It is not sent.
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
- * The "+" button attaches photos (uploaded with `files.put`, their paths go at the end of the prompt)
+ * The "+" button attaches photos and files (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
  */
@@ -92,9 +100,9 @@ export const Composer = memo(function Composer({
   const latest = useRef(text);
   latest.current = text;
   const online = status === "online" && !!rpc;
-  /** Photos to attach to the next prompt. */
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  /** While photos upload: how many are done. */
+  /** Photos and files to attach to the next prompt. */
+  const [photos, setPhotos] = useState<Attachment[]>([]);
+  /** While attachments upload: how many are done. */
   const [uploaded, setUploaded] = useState<number>();
   const [plusOpen, setPlusOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -155,12 +163,15 @@ export const Composer = memo(function Composer({
   const canAttach = hasMethod(hello, "files.put") && photosAvailable();
   const pasteCount = useRef(0);
   /** Old builds without the native paste hook paste with a row in the "+" menu. */
-  const canPasteRow = !hasNativePaste && canAttach && clipboardAvailable() && photos.length < MAX_PHOTOS;
-  const showPlus = canAttach || slash.supported;
+  const canPasteRow = !hasNativePaste && canAttach && clipboardAvailable() && photoRoom(photos) > 0;
+  /** Builds without the document picker (older binaries that got this code over the air) hide "Files". */
+  const canAttachFiles = hasMethod(hello, "files.put") && documentsAvailable();
+  const showPlus = canAttach || canAttachFiles || slash.supported;
   /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
   const [focused, setFocused] = useState(false);
-  const photoCount = useRef(photos.length);
-  photoCount.current = photos.length;
+  /** Room for more photos, read by the paste listener between renders. */
+  const photoCount = useRef(0);
+  photoCount.current = MAX_PHOTOS - photoRoom(photos);
 
   /** Attaches an image pasted from the edit menu of the prompt box. */
   const onPastedImage = (img: PastedImage) => {
@@ -174,7 +185,7 @@ export const Composer = memo(function Composer({
     }
     const photo: Photo = { uri: `data:image/jpeg;base64,${img.base64}`, name: `pasted-${++pasteCount.current}.jpg`, base64: img.base64 };
     photoCount.current += 1;
-    setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
+    setPhotos((cur) => [...cur, photo].slice(0, MAX_ATTACHMENTS));
     if (error) setError(undefined);
   };
   const onPastedImageRef = useRef(onPastedImage);
@@ -227,7 +238,14 @@ export const Composer = memo(function Composer({
         paths = await uploadPhotos(rpc, sent, setUploaded);
       } catch (e) {
         haptics.fail();
-        setError(`Photo upload failed, nothing sent: ${e instanceof Error ? e.message : String(e)}`);
+        const code = (e as { code?: unknown })?.code;
+        const why =
+          code === "too_large"
+            ? "a file is larger than this computer accepts. Update herdlingd for files up to 25 MB"
+            : e instanceof Error
+              ? e.message
+              : String(e);
+        setError(`Upload failed, nothing sent: ${why}`);
         if (!fromInput && !latest.current.trim()) setText(prompt);
         setUploaded(undefined);
         setSending(false);
@@ -265,10 +283,21 @@ export const Composer = memo(function Composer({
   const attachPhotos = async () => {
     setPlusOpen(false);
     try {
-      const picked = await pickPhotos(MAX_PHOTOS - photos.length);
-      if (picked.length > 0) setPhotos((cur) => [...cur, ...picked].slice(0, MAX_PHOTOS));
+      const picked = await pickPhotos(photoRoom(photos));
+      if (picked.length > 0) setPhotos((cur) => [...cur, ...picked].slice(0, MAX_ATTACHMENTS));
     } catch (e) {
       setError(`Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  const attachFiles = async () => {
+    setPlusOpen(false);
+    try {
+      const { files, tooLarge } = await pickFiles(fileRoom(photos));
+      if (files.length > 0) setPhotos((cur) => [...cur, ...files].slice(0, MAX_ATTACHMENTS));
+      if (tooLarge.length > 0) setError(`Too large to attach (max ${formatBytes(MAX_FILE_BYTES)}): ${tooLarge.join(", ")}`);
+      else if (error) setError(undefined);
+    } catch (e) {
+      setError(`Could not open the files: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   /**
@@ -284,7 +313,7 @@ export const Composer = memo(function Composer({
         return;
       }
       pasteCount.current += 1;
-      setPhotos((cur) => [...cur, photo].slice(0, MAX_PHOTOS));
+      setPhotos((cur) => [...cur, photo].slice(0, MAX_ATTACHMENTS));
     } catch (e) {
       setError(`Could not paste the image: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -337,14 +366,15 @@ export const Composer = memo(function Composer({
       {showMenu ? <CommandMenu commands={matches} onPick={insertCommand} /> : null}
       {plusOpen && showPlus && !showMenu ? (
         <PlusMenu
-          onPhotos={canAttach && photos.length < MAX_PHOTOS ? () => void attachPhotos() : undefined}
+          onPhotos={canAttach && photoRoom(photos) > 0 ? () => void attachPhotos() : undefined}
+          onFiles={canAttachFiles && fileRoom(photos) > 0 ? () => void attachFiles() : undefined}
           onPaste={canPasteRow ? () => void pasteClipboard() : undefined}
           onCommands={slash.supported ? openSheet : undefined}
         />
       ) : null}
       {uploaded !== undefined ? (
         <Text variant="small" muted accessibilityLiveRegion="polite">
-          Uploading photo {Math.min(uploaded + 1, photos.length)} of {photos.length}…
+          Uploading {Math.min(uploaded + 1, photos.length)} of {photos.length}…
         </Text>
       ) : null}
       {photos.length > 0 ? (

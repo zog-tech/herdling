@@ -153,7 +153,7 @@ JS-only dependencies.
   `version` cuts every installed binary off from new updates. Only the maintainer decides on a
   version change. EAS sets the build number (`appVersionSource: remote`).
 - Old binaries get new JS. **New JS must not need a native module that older binaries lack.**
-  Load a new native module lazily and handle its absence (see the photo picker, which loads only on use).
+  Load a new native module lazily and handle its absence (see the photo picker and the document picker in `thread/attachments.ts`, which load only on use).
 - Before an OTA update, compare the native dependencies and plugins with the oldest build still
   in use (`docs/protocol.md`, "Before an OTA update").
 - EAS profiles (`app/eas.json`): `development`, `preview`, `production`. Each has its own channel.

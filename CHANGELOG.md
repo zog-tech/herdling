@@ -23,6 +23,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Attach any file.** The "+" menu of the composer has "Files" next to "Photos": text, code, logs,
+  PDF, JSON, CSV, zip and other files, up to 6 attachments per prompt. The agent gets the saved
+  path in the prompt, as for photos. herdlingd takes files up to 25 MiB (was 10 MiB) and keeps the
+  7-day cleanup. `expo-document-picker` is a new native module: binaries without it hide "Files".
 - **New session in a git worktree.** When the folder is in a git repo, New session offers "In a
   new git worktree" with a branch name (default `herdling/<random>`). herdlingd makes the branch
   and the folder `.worktrees/<branch>` in the repo (`git.worktree_add`), and the agent starts there

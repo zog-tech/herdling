@@ -108,3 +108,31 @@ async fn deletes_old_uploads() {
     assert!(!old.exists());
     assert!(fresh.exists());
 }
+
+#[test]
+fn the_largest_file_fits_in_one_request_line() {
+    let b64 = uploads::MAX_BYTES.div_ceil(3) * 4;
+    assert!(b64 + 256 < rpc::MAX_LINE, "{b64} vs {}", rpc::MAX_LINE);
+    assert_eq!(uploads::MAX_BYTES, 25 << 20);
+}
+
+#[tokio::test]
+async fn accepts_documents_of_any_type() {
+    let home = tempfile::tempdir().unwrap();
+    for (name, saved) in [
+        ("notes.md", "notes.md"),
+        ("data.csv", "data.csv"),
+        ("archive.zip", "archive.zip"),
+        ("report (final).pdf", "report__final_.pdf"),
+        ("crash.log", "crash.log"),
+        ("config.json", "config.json"),
+        ("../../etc/passwd", "passwd"),
+    ] {
+        let r = call(home.path(), json!({"name": name, "data_b64": b64(b"%PDF or text")})).await;
+        let path = PathBuf::from(r["result"]["path"].as_str().unwrap_or_else(|| panic!("{name}: {r}")));
+        assert_eq!(path.parent().unwrap(), uploads::dir(home.path()));
+        assert!(path.file_name().unwrap().to_str().unwrap().ends_with(&format!("-{saved}")), "{name}: {path:?}");
+        // Saved as data only: never executable.
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o111, 0);
+    }
+}

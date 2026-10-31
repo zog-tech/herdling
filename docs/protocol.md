@@ -69,6 +69,19 @@ Error codes:
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
 
+## Attachments: `files.put`
+
+Params: `{"name": "crash.log", "data_b64": "..."}`. Result: `{"path": "/home/sam/.cache/herdling/uploads/<unix-ms>-crash.log"}`.
+The app puts each path on its own line at the end of the prompt, and the agent reads the file there.
+
+- Any file type: photos, text, code, logs, PDF, JSON, CSV, zip. The file is only data. It is saved
+  with mode 0600 in a 0700 folder, never with the execute bit.
+- The name keeps `[A-Za-z0-9._-]` of its last path part. Other chars become `_`.
+- At most 25 MiB decoded (10 MiB before documents were accepted). A larger file gives `too_large`.
+- herdlingd deletes uploads older than 7 days on the next call.
+- The document picker (`expo-document-picker`) is a native module. The app loads it only when the
+  binary has it, so an older binary that gets new JavaScript hides "Files" in the "+" menu.
+
 ## Git views: `git.status` and `git.diff`
 
 The app checks `hello.methods` before it calls these methods. Both take `{"cwd": "/abs/path"}` or
