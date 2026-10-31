@@ -1,0 +1,169 @@
+name: Release herdlingd
+
+# Builds herdlingd for macOS and Linux and publishes a GitHub Release.
+# Start it with a tag: git tag herdlingd-v0.2.0 && git push origin herdlingd-v0.2.0
+# The tag version must be the version in companion/Cargo.toml.
+# See "Releasing herdlingd" in CONTRIBUTING.md and the spec in
+# docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md.
+
+on:
+  push:
+    tags: ["herdlingd-v*"]
+
+concurrency:
+  group: release-herdlingd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      # Actions are pinned to a commit. The comment names the version.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the tag with companion/Cargo.toml
+        id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cargo_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' companion/Cargo.toml | head -n 1)
+          tag_version=${TAG#herdlingd-v}
+          echo "Cargo.toml: $cargo_version  tag: $tag_version"
+          if [ -z "$cargo_version" ] || [ "$cargo_version" != "$tag_version" ]; then
+            echo "::error::The tag $TAG does not match version $cargo_version in companion/Cargo.toml"
+            exit 1
+          fi
+          echo "version=$cargo_version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+            cross: false
+          - target: x86_64-apple-darwin
+            os: macos-15
+            cross: false
+          # Static musl binaries run on every Linux distribution.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Add the Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cross@0.2.5
+      - name: Build
+        working-directory: companion
+        env:
+          TARGET: ${{ matrix.target }}
+          USE_CROSS: ${{ matrix.cross }}
+        run: |
+          if [ "$USE_CROSS" = "true" ]; then
+            cross build --release --locked --target "$TARGET"
+          else
+            cargo build --release --locked --target "$TARGET"
+          fi
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p dist pkg
+          cp "companion/target/$TARGET/release/herdlingd" pkg/herdlingd
+          cp LICENSE pkg/LICENSE
+          chmod 0755 pkg/herdlingd
+          tar -C pkg -czf "dist/herdlingd-$TARGET.tar.gz" herdlingd LICENSE
+          ls -l dist
+      - name: Smoke test
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-unknown-linux-musl'
+        run: pkg/herdlingd version
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: herdlingd-${{ matrix.target }}
+          path: dist/herdlingd-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish the release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          pattern: herdlingd-*
+          merge-multiple: true
+      - name: Make SHA256SUMS, the notes and latest.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          cd dist
+          sha256sum herdlingd-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          # The notes are the CHANGELOG section "## [herdlingd X.Y.Z]", when there is one.
+          awk -v head="## [herdlingd $VERSION]" '
+            index($0, head) == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' ../CHANGELOG.md | sed '/./,$!d' > notes.md
+          if [ ! -s notes.md ]; then
+            echo "herdlingd $VERSION" > notes.md
+          fi
+          python3 - <<'EOF'
+          import datetime, json, os
+          version, tag, repo = os.environ["VERSION"], os.environ["TAG"], os.environ["REPO"]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          assets = {}
+          for line in open("SHA256SUMS"):
+              sha, name = line.split()
+              target = name.removeprefix("herdlingd-").removesuffix(".tar.gz")
+              assets[target] = {"url": f"{base}/{name}", "sha256": sha}
+          manifest = {
+              "version": version,
+              "date": datetime.date.today().isoformat(),
+              "notes": open("notes.md").read().strip(),
+              "assets": assets,
+          }
+          with open("latest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          EOF
+          cat latest.json
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$TAG" \
+            --title "herdlingd $VERSION" \
+            --notes-file dist/notes.md \
+            --latest \
+            --verify-tag \
+            dist/herdlingd-*.tar.gz dist/SHA256SUMS dist/latest.json
