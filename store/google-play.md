@@ -122,7 +122,7 @@ Choose: **"All or some functionality is restricted"**, and add one instruction s
 - **Instructions:**
 
 ```
-Herdling has no accounts. In normal use it connects over SSH to the user's own Mac or Linux computers, which run our free companion program, herdlingd. A review device has no such computer, so the app has a built-in demo mode with a simulated computer and agents. (verify once the demo build lands)
+Herdling has no accounts. In normal use it connects over SSH to the user's own Mac or Linux computers, which run our free companion program, herdlingd. A review device has no such computer, so the app has a built-in demo mode with a simulated computer and agents.
 
 1. On first launch, tap "Try the demo" (or open herdling://demo).
 2. Overview: the board lists the demo agents. The one marked "Needs you" is at the top.
@@ -131,7 +131,7 @@ Herdling has no accounts. In normal use it connects over SSH to the user's own M
 5. Go back, start a new session from the new-session button, then open the Usage tab.
 6. Open Settings: hosts, notification switches and voice settings.
 
-Permission prompts appear only when a feature is used: camera (scan a pairing QR code), microphone (mic button), notifications. The demo works if you decline them. (verify once the demo build lands)
+Permission prompts appear only when a feature is used: camera (scan a pairing QR code), microphone (mic button), notifications. The demo works if you decline them.
 
 Setup guide: https://herdling.zog-tech.com/docs  Contact: admin@zog-tech.com
 ```

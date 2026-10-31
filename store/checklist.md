@@ -11,19 +11,19 @@ Done already:
 
 ## Before either store
 
-1. **Demo mode lands on main** (agent, in progress in a separate worktree). Then check every "(verify once the demo build lands)" sentence in both store files against the real demo: button label "Try the demo", link `herdling://demo`, the 6 steps, "works with no network and no permissions". Remove the markers.
-2. **Public download for herdlingd** (maintainer decides). The repo is public (MPL-2.0), so a source build is available now: the website, the README and the guide give the steps (`git clone`, `cargo build --release`, `herdlingd install`). Still to do: the one-line installer, which needs public release binaries for macOS and Linux (GitHub releases or a download link on zog-tech.com) and the script at `releases.zog-tech.com/herdlingd/install.sh`. Then set `installer.ready` in `site/public/config.js`, update the "coming soon" sentences (list in `site/README.md`) and redeploy with `site/scripts/deploy.sh`.
+1. **Demo mode** (done). The demo is on main. The store text matches it: button "Try the demo", link `herdling://demo`.
+2. **Public download for herdlingd** (done). Release binaries are on GitHub releases, and the one-line installer is at https://herdling.zog-tech.com/install.sh.
 3. **Privacy label stance: decided.** Keep "Data Not Collected" (Apple) and "No data collected" (Play). The conservative fallback (declare the push token as a device ID) is described in both store files.
 4. **Review contact phone number: decided.** It goes into App Store Connect only, never into this public repo.
 
 ## App Store (iOS)
 
-5. **Production build with demo mode** (agent). `eas build -p ios --profile production`. `eas.json` uses `appVersionSource: "remote"` with `autoIncrement`, so EAS sets the build number; `buildNumber: "3"` in `app/app.json` is ignored. Keep `version` at 1.0.0 (runtime policy `appVersion`). Then `eas submit -p ios` to TestFlight.
+5. **Production build** (done). Built locally with `xcodebuild` and uploaded with `xcrun altool`. Build 4 (version 1.0.0) is in TestFlight. Keep `version` at 1.0.0 (runtime policy `appVersion`); raise `ios.buildNumber` in `app/app.json` for each build.
 6. **Screenshots** (agent, after step 1). Required: iPhone 6.9" display, 1320 x 2868 portrait, 3 to 10 images. Take them from the demo on an iPhone 16/17 Pro Max simulator. Suggested set: Overview board, agent chat with a "needs you" question, terminal view, new session, Usage, notification. No iPad set is needed (`supportsTablet: false`).
-7. **Version 1.0.0 metadata** (agent, through `asc`). Create the App Store version 1.0.0 entry if it does not exist. Fill: subtitle, promotional text, description, keywords, support URL, marketing URL, copyright, from `store/app-store.md`. Set privacy policy URL on the app info.
-8. **App information** (agent with `asc`, or maintainer in the web UI): categories Developer Tools and Productivity, content rights (no third-party content), age rating answers (4+), price Free, availability (all territories, or as chosen).
+7. **Version 1.0.0 metadata** (done 2026-10-31 through the API): version string 1.0.0, release type manual, subtitle, promotional text, description, keywords, support URL, marketing URL, copyright, privacy policy URL.
+8. **App information** (done 2026-10-31 through the API): categories Developer Tools and Productivity, no third-party content, age rating answers (all None or No), price Free, all 175 territories and new territories.
 9. **App Privacy** (maintainer in App Store Connect; the API does not cover it). Answer "No, we do not collect data".
-10. **App Review information** (agent with `asc`): sign-in not required, notes from `store/app-store.md`, contact name "Zog Tech Inc. App Review" or a role name, email admin@zog-tech.com, phone from step 4.
+10. **App Review information** (done 2026-10-31 through the API): sign-in not required, notes from `store/app-store.md`, contact "Zog Tech App Review", admin@zog-tech.com, phone in App Store Connect only.
 11. **Attach the build, submit for review** (maintainer gives the final go). Choose manual or automatic release.
 
 ## Google Play (Android)

@@ -129,9 +129,9 @@ Conservative alternative (only if the maintainer prefers it): declare **Identifi
 ```
 Herdling is a client for herdr, a terminal workspace for AI coding agents. It has no accounts and no login. In normal use it connects over SSH to the user's own Mac or Linux computers, which run our free companion program, herdlingd.
 
-Because a review device has no paired computer, the app has a built-in demo mode. (verify once the demo build lands) The demo shows a simulated computer with several agents. It needs no network and no permissions. (verify once the demo build lands)
+Because a review device has no paired computer, the app has a built-in demo mode. The demo shows a simulated computer with several agents. It needs no network and no permissions.
 
-How to review the whole app (verify once the demo build lands):
+How to review the whole app:
 1. On first launch, tap "Try the demo". You can also open the link herdling://demo.
 2. Overview: the board lists the demo agents with their status. The agent marked "Needs you" is at the top.
 3. Tap that agent. It asks a question. Tap an answer to reply, and watch the agent continue.
