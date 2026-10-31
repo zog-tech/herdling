@@ -1,5 +1,5 @@
 import { memo, useEffect } from "react";
-import { TextInput, View, type StyleProp, type TextStyle } from "react-native";
+import { TextInput, useWindowDimensions, View, type StyleProp, type TextStyle } from "react-native";
 import Animated, { useAnimatedProps, useFrameCallback, useSharedValue } from "react-native-reanimated";
 
 import { formatDuration, spokenDuration } from "./format";
@@ -91,6 +91,10 @@ export const TickingDuration = memo(function TickingDuration({
   const animatedProps = useAnimatedProps(() => ({ text: text.get(), defaultValue: text.get() }));
 
   const elapsed = useElapsed(since, active && accessible, SPOKEN_TICK_MS);
+  const base = textStyle({ variant, muted, bold, color });
+  // The height grows with Dynamic Type, up to the same cap as the text.
+  const { fontScale } = useWindowDimensions();
+  const height = Math.ceil(base.lineHeight * Math.min(fontScale, maxFontSizeMultiplier ?? maxScaleOf(variant)));
   return (
     <View
       accessible={accessible}
@@ -112,7 +116,9 @@ export const TickingDuration = memo(function TickingDuration({
         defaultValue={initial}
         animatedProps={animatedProps}
         maxFontSizeMultiplier={maxFontSizeMultiplier ?? maxScaleOf(variant)}
-        style={[textStyle({ variant, muted, bold, color }), { padding: 0, margin: 0, fontVariant: ["tabular-nums"] }, style]}
+        // A single-line TextInput centers its text in its height and ignores lineHeight. Give it the
+        // text role's line height as its height, so it sits on the same line as a Text next to it.
+        style={[{ ...base, lineHeight: undefined, height }, { padding: 0, margin: 0, fontVariant: ["tabular-nums"] }, style]}
       />
     </View>
   );
