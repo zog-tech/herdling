@@ -6,7 +6,7 @@ import { motion, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 
 import { ThreadPaneContext } from "./LiveToolContext";
-import { copyText, openRowMenu, type MenuTarget } from "./rowMenu";
+import { copyText, openRowMenu, readableText, type MenuTarget } from "./rowMenu";
 
 const EASE_OUT = Easing.bezier(...motion.ease.out);
 const { press } = motion;
@@ -49,7 +49,7 @@ export function MenuPressable({ menu, feedback = "none", onPress, onPressIn, onP
   const onAction = (e: AccessibilityActionEvent) => {
     const name = e.nativeEvent.actionName;
     if (name === "activate") onPress?.(e as never);
-    else if (name === "copy" && menu) void copyText(menu.text);
+    else if (name === "copy" && menu) void copyText(readableText(menu));
     else if (name === "menu") open();
   };
   return (

@@ -6,6 +6,7 @@ import { showActionSheet } from "@/ui/nativeSheet";
 import { showNotice } from "@/ui/notice";
 
 import type { ThreadPane } from "./LiveToolContext";
+import { plainText } from "./plainText";
 import { requestQuote } from "./quote";
 import { openSelectText } from "./selectText";
 import { fullInputText, type ToolResult } from "./toolView";
@@ -21,7 +22,7 @@ const speech = () => require("@/voice/useSpeakReplies") as typeof import("@/voic
 
 export type RowKind = "user" | "assistant" | "thinking" | "tool" | "subagent" | "system";
 
-/** What a long press acts on. `text` is the copy text: the markdown source for a reply. */
+/** What a long press acts on. `text` is the markdown source for a reply, the plain text otherwise. */
 export type MenuTarget = {
   kind: RowKind;
   text: string;
@@ -31,7 +32,12 @@ export type MenuTarget = {
   code?: string;
 };
 
-export type RowAction = "copyCode" | "copy" | "select" | "share" | "read" | "quote";
+export type RowAction = "copyCode" | "copy" | "copyMarkdown" | "select" | "share" | "read" | "quote";
+
+/** What a reader sees: a reply without its markdown marks. Other rows are plain already. */
+export function readableText(t: MenuTarget): string {
+  return t.kind === "assistant" ? plainText(t.text) : t.text;
+}
 
 /**
  * The menu items of a row, in menu order. Read aloud and Quote need a live pane (a session thread);
@@ -41,6 +47,8 @@ export function rowActions(t: MenuTarget, pane: ThreadPane | null): RowAction[] 
   const out: RowAction[] = [];
   if (t.code !== undefined) out.push("copyCode");
   out.push("copy");
+  // Only offered when the reply has markdown marks; otherwise both copies are the same.
+  if (t.kind === "assistant" && plainText(t.text) !== t.text.trim()) out.push("copyMarkdown");
   if (t.kind === "system") return out;
   out.push("select");
   if (t.kind !== "user" && t.kind !== "assistant") return out;
@@ -56,6 +64,8 @@ export function actionLabel(a: RowAction, t: MenuTarget): string {
       return "Copy code";
     case "copy":
       return "Copy";
+    case "copyMarkdown":
+      return "Copy as Markdown";
     case "select":
       return "Select text";
     case "share":
@@ -106,13 +116,16 @@ export function runRowAction(a: RowAction, t: MenuTarget, pane: ThreadPane | nul
       void copyText(t.code ?? "", "Code copied");
       return;
     case "copy":
-      void copyText(t.text);
+      void copyText(readableText(t));
+      return;
+    case "copyMarkdown":
+      void copyText(t.text, "Markdown copied");
       return;
     case "select":
-      openSelectText({ title: SELECT_TITLE[t.kind], text: t.text });
+      openSelectText({ title: SELECT_TITLE[t.kind], text: readableText(t) });
       return;
     case "share":
-      Share.share({ message: t.text }).catch(() => {});
+      Share.share({ message: readableText(t) }).catch(() => {});
       return;
     case "read":
       // A second call for the reply that speaks now stops it, the same as the play button.

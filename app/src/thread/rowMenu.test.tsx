@@ -44,6 +44,7 @@ jest.mock("@ronradtke/react-native-markdown-display", () => {
 
 const PANE: ThreadPane = { hostId: "studio", paneId: "w1:p1" };
 const REPLY = "Run **this**:\n\n```sh\npnpm test\n```\n\nThen see [docs](https://example.com).";
+const REPLY_PLAIN = "Run this:\n\npnpm test\n\nThen see docs.";
 const sheet = showActionSheet as jest.Mock;
 
 let tree: ReactTestRenderer | undefined;
@@ -141,7 +142,7 @@ test("quote_request_goes_only_to_the_composer_of_its_pane", () => {
 });
 
 describe("assistant reply", () => {
-  test("copy_copies_the_markdown_source_and_shows_copied", async () => {
+  test("copy_copies_plain_text_and_copy_as_markdown_the_source", async () => {
     const t = create(<></>);
     tree = t;
     act(() => {
@@ -155,12 +156,15 @@ describe("assistant reply", () => {
       );
     });
     const menu = longPress(menuPressables(t)[0]);
-    expect(menu.labels).toEqual(["Copy", "Select text", "Share", "Read aloud", "Quote in reply", "Cancel"]);
-    expect(menu.cancel).toBe(5);
+    expect(menu.labels).toEqual(["Copy", "Copy as Markdown", "Select text", "Share", "Read aloud", "Quote in reply", "Cancel"]);
+    expect(menu.cancel).toBe(6);
     await menu.pick("Copy");
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(REPLY);
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(REPLY_PLAIN);
     expect(useNotice.getState().notice?.text).toBe("Copied");
     expect(t.root.findAll((n) => n.props.children === "Copied").length).toBeGreaterThan(0);
+    await longPress(menuPressables(t)[0]).pick("Copy as Markdown");
+    expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith(REPLY);
+    expect(useNotice.getState().notice?.text).toBe("Markdown copied");
   });
 
   test("long_press_on_a_code_block_offers_copy_code_with_the_code_only", async () => {
@@ -178,12 +182,12 @@ describe("assistant reply", () => {
   test("select_share_read_and_quote_items", async () => {
     const t = render(<AssistantMessage markdown={REPLY} id="a1" />);
     await longPress(menuPressables(t)[0]).pick("Select text");
-    expect(useSelectText.getState().current).toEqual({ title: "Reply", text: REPLY });
+    expect(useSelectText.getState().current).toEqual({ title: "Reply", text: REPLY_PLAIN });
     expect(mockPush).toHaveBeenCalledWith("/select-text");
 
     const share = jest.spyOn(Share, "share").mockResolvedValue({ action: "sharedAction", activityType: undefined });
     await longPress(menuPressables(t)[0]).pick("Share");
-    expect(share).toHaveBeenCalledWith({ message: REPLY });
+    expect(share).toHaveBeenCalledWith({ message: REPLY_PLAIN });
 
     await longPress(menuPressables(t)[0]).pick("Read aloud");
     expect(speakReplyNow).toHaveBeenCalledWith("studio", REPLY, "a1");
@@ -201,7 +205,7 @@ describe("assistant reply", () => {
       { name: "menu", label: "More options" },
     ]);
     await act(async () => outer.props.onAccessibilityAction({ nativeEvent: { actionName: "copy" } }));
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(REPLY);
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(REPLY_PLAIN);
     act(() => outer.props.onAccessibilityAction({ nativeEvent: { actionName: "menu" } }));
     expect(sheet).toHaveBeenCalledTimes(1);
   });

@@ -36,7 +36,8 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
   `install.sh`. The installer never installs herdr without this option.
 - **herdr is not running.** The host screen, Settings and the board say so, with how to start herdr.
 - **Message menu in the thread.** Hold a prompt, a reply, a tool card or a note to get Copy,
-  Select text, Share, Read aloud and Quote in reply. Hold a code block to copy only that code.
+  Select text, Share, Read aloud and Quote in reply. Copy gives plain text; "Copy as Markdown"
+  gives the source of a reply. Hold a code block to copy only that code.
 - **Install and update herdlingd from the phone.** "Set up with password" installs herdlingd when it
   is missing ("Install and pair"), with the installer `https://herdling.zog-tech.com/install.sh`.
   The app shows "Update available" and updates herdlingd with one tap (`update.check`,
