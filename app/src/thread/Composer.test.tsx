@@ -30,11 +30,23 @@ const mockCodexCommands = [
   { name: "deploy", description: "Ship it", source: "project", trigger: "$" },
   { name: "design", source: "user", trigger: "$" },
 ];
+const mockOpencodeCommands = [
+  { name: "compact", description: "Summarize", source: "builtin" },
+  { name: "nested/sync", source: "user" },
+  { name: "deploy", description: "Ship it", source: "project", trigger: "@" },
+  { name: "design", source: "user", trigger: "@" },
+];
+const mockPiCommands = [
+  { name: "model", source: "builtin" },
+  { name: "skill:deploy", description: "Ship it", source: "user" },
+  { name: "odd", source: "user", trigger: "@" },
+];
+const mockByKind: Record<string, unknown[]> = { codex: mockCodexCommands, opencode: mockOpencodeCommands, pi: mockPiCommands };
 let mockUploadFails = false;
 const mockRpc = {
   call: async (method: string, params: any) => {
     mockRpcCalls.push({ method, params });
-    if (method === "commands.list") return { commands: params.kind === "codex" ? mockCodexCommands : mockCommands };
+    if (method === "commands.list") return { commands: mockByKind[params.kind] ?? mockCommands };
     if (method === "files.put") {
       if (mockUploadFails) throw new Error("disk full");
       return { path: `/up/${mockRpcCalls.filter((c) => c.method === "files.put").length}-${params.name}` };
@@ -181,7 +193,7 @@ const idle = (agent = "claude") =>
 const prompt = (t: ReactTestRenderer) => t.root.find((n) => n.props.accessibilityLabel === "Prompt" && !!n.props.onChangeText);
 const menuRows = (t: ReactTestRenderer) =>
   t.root
-    .findAll((n) => typeof n.props.accessibilityLabel === "string" && /^[/$]/.test(n.props.accessibilityLabel) && !!n.props.onPress)
+    .findAll((n) => typeof n.props.accessibilityLabel === "string" && /^[/$@]/.test(n.props.accessibilityLabel) && !!n.props.onPress)
     .map((n) => n.props.accessibilityLabel);
 
 test("typing_slash_shows_the_filtered_menu_and_a_tap_fills_the_name", async () => {
@@ -258,6 +270,86 @@ test("claude_ignores_dollar_and_codex_needs_the_host_to_list_it", async () => {
   await act(async () => prompt(tree!).props.onChangeText("$"));
   await flush();
   expect(menuRows(tree!)).toEqual([]);
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(0);
+});
+
+const hostWithAllKinds = () => {
+  mockHello = { ...helloWith(["commands.list"]), command_kinds: ["claude", "codex", "pi", "opencode"] };
+};
+
+test("opencode_at_opens_skills_and_slash_opens_commands", async () => {
+  idle("opencode");
+  hostWithAllKinds();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("@"));
+  await flush();
+  expect(menuRows(tree!)).toEqual(["@deploy", "@design"]);
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toEqual([
+    { method: "commands.list", params: { pane_id: "w1:p1", cwd: "/work/proj", kind: "opencode" } },
+  ]);
+  await act(async () => prompt(tree!).props.onChangeText("@des"));
+  expect(menuRows(tree!)).toEqual(["@design"]);
+  await act(async () => byLabel(tree!, "@design")[0].props.onPress());
+  expect(prompt(tree!).props.value).toBe("@design ");
+  expect(menuRows(tree!)).toEqual([]);
+
+  await act(async () => prompt(tree!).props.onChangeText("/"));
+  expect(menuRows(tree!)).toEqual(["/compact", "/nested/sync"]);
+  await act(async () => byLabel(tree!, "/nested/sync")[0].props.onPress());
+  expect(prompt(tree!).props.value).toBe("/nested/sync ");
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(1);
+  // A mention in the middle of a sentence is not a trigger.
+  await act(async () => prompt(tree!).props.onChangeText("see @des"));
+  expect(menuRows(tree!)).toEqual([]);
+});
+
+test("pi_opens_on_slash_only_and_sends_its_kind", async () => {
+  idle("pi");
+  hostWithAllKinds();
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("@"));
+  await flush();
+  expect(menuRows(tree!)).toEqual([]);
+  await act(async () => prompt(tree!).props.onChangeText("/"));
+  await flush();
+  expect(menuRows(tree!)).toEqual(["/model", "/skill:deploy"]);
+  expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toEqual([
+    { method: "commands.list", params: { pane_id: "w1:p1", cwd: "/work/proj", kind: "pi" } },
+  ]);
+  await act(async () => byLabel(tree!, "/skill:deploy")[0].props.onPress());
+  expect(prompt(tree!).props.value).toBe("/skill:deploy ");
+});
+
+test("claude_and_codex_ignore_at_and_pi_opencode_need_the_host_to_list_them", async () => {
+  for (const agent of ["claude", "codex"]) {
+    idle(agent);
+    hostWithAllKinds();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText("@"));
+    await flush();
+    expect(menuRows(tree!)).toEqual([]);
+    act(() => tree!.unmount());
+  }
+  mockRpcCalls.length = 0;
+  for (const agent of ["pi", "opencode"]) {
+    idle(agent);
+    codexHost();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText("/"));
+    await flush();
+    await act(async () => prompt(tree!).props.onChangeText("@"));
+    await flush();
+    expect(menuRows(tree!)).toEqual([]);
+    act(() => tree!.unmount());
+  }
   expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(0);
 });
 

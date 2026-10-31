@@ -209,11 +209,11 @@ fn codex_home_folder_can_move() {
     let alt = tempfile::tempdir().unwrap();
     write(&alt.path().join("prompts/moved.md"), "Moved\n");
     write(&home.path().join(".codex/prompts/old.md"), "Old\n");
-    let list = commands::list_for(Some("codex"), home.path(), Some(alt.path()), &home.path().join("none"), None);
+    let list = commands::list_for(Some("codex"), &roots(home.path(), &home.path().join("none"), Some(alt.path())), None);
     assert!(find(&list, "prompts:moved").is_some());
     assert!(find(&list, "prompts:old").is_none());
     // Without `CODEX_HOME`: `~/.codex`.
-    let list = commands::list_for(Some("codex"), home.path(), None, &home.path().join("none"), None);
+    let list = commands::list_for(Some("codex"), &roots(home.path(), &home.path().join("none"), None), None);
     assert!(find(&list, "prompts:old").is_some());
 }
 
@@ -291,12 +291,12 @@ fn kind_routing_and_claude_output_stays_the_same() {
     write(&h.join(".agents/skills/cx/SKILL.md"), "---\n---\n");
     let none = h.join("none");
     let claude = commands::list(h, None);
-    for kind in [None, Some("claude"), Some("pi"), Some("unknown")] {
-        assert_eq!(commands::list_for(kind, h, None, &none, None), claude);
+    for kind in [None, Some("claude"), Some("unknown")] {
+        assert_eq!(commands::list_for(kind, &roots(h, &none, None), None), claude);
     }
     assert!(claude.iter().all(|c| c.trigger.is_none()));
     assert!(!serde_json::to_string(&claude).unwrap().contains("trigger"));
-    let cx = commands::list_for(Some("codex"), h, None, &none, None);
+    let cx = commands::list_for(Some("codex"), &roots(h, &none, None), None);
     assert!(find(&cx, "mine").is_none());
     assert!(find(&cx, "cx").is_some());
     assert!(serde_json::to_string(&cx).unwrap().contains(r#""trigger":"$""#));
@@ -325,4 +325,325 @@ async fn rpc_kind_param_and_pane_kind_pick_the_codex_list() {
     // The explicit kind works with no herdr.
     let r = call(home.path().join("none.sock"), home.path().into(), json!({"kind": "codex"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "permissions"));
+}
+
+fn roots<'a>(home: &'a Path, admin: &'a Path, codex_home: Option<&'a Path>) -> commands::Roots<'a> {
+    commands::Roots { home, codex_home, admin_skills: admin, pi_agent_dir: None, xdg_config: None }
+}
+
+fn pi(home: &Path, cwd: Option<&Path>) -> Vec<Command> {
+    commands::list_for(Some("pi"), &roots(home, &home.join("none"), None), cwd)
+}
+
+fn opencode(home: &Path, cwd: Option<&Path>) -> Vec<Command> {
+    commands::list_for(Some("opencode"), &roots(home, &home.join("none"), None), cwd)
+}
+
+/// A temp repo with a `.git` folder and a `pkg/sub` folder below it.
+fn repo() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().join("repo");
+    let cwd = root.join("pkg/sub");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+    (work, root, cwd)
+}
+
+#[test]
+fn pi_builtins_have_no_trigger() {
+    let home = tempfile::tempdir().unwrap();
+    let list = pi(home.path(), None);
+    assert_eq!(list.len(), 23);
+    assert!(list.iter().all(|c| c.source == "builtin" && c.trigger.is_none() && c.description.is_some()));
+    assert!(find(&list, "scoped-models").is_some());
+    assert!(find(&list, "clear").is_none());
+}
+
+#[test]
+fn pi_skills_are_found_recursively_and_named_skill_colon() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".pi/agent/skills/deploy/SKILL.md"), "---\nname: ship-it\ndescription: Ship the app\n---\n");
+    write(&h.join(".pi/agent/skills/group/inner/SKILL.md"), "---\ndescription: Deep one\n---\n");
+    // A folder with `SKILL.md` is a skill: its subfolders are not searched.
+    write(&h.join(".pi/agent/skills/deploy/refs/SKILL.md"), "---\ndescription: Not a skill\n---\n");
+    // No description: not loaded.
+    write(&h.join(".pi/agent/skills/nodesc/SKILL.md"), "---\nname: nodesc\n---\n");
+    write(&h.join(".agents/skills/shared/SKILL.md"), "---\ndescription: Shared\n---\n");
+    let list = pi(h, None);
+    let s = find(&list, "skill:ship-it").unwrap();
+    assert_eq!((s.source, s.trigger, s.description.as_deref()), ("user", None, Some("Ship the app")));
+    assert_eq!(find(&list, "skill:inner").unwrap().description.as_deref(), Some("Deep one"));
+    assert!(find(&list, "skill:refs").is_none());
+    assert!(find(&list, "skill:nodesc").is_none());
+    assert!(find(&list, "skill:shared").is_some());
+    assert!(find(&list, "ship-it").is_none());
+}
+
+#[test]
+fn pi_root_md_files_are_skills_only_under_pi_folders() {
+    let home = tempfile::tempdir().unwrap();
+    let (_w, root, cwd) = repo();
+    let h = home.path();
+    write(&h.join(".pi/agent/skills/note.md"), "---\ndescription: A root skill\n---\nBody\n");
+    write(&h.join(".pi/agent/skills/plain.md"), "No frontmatter\n");
+    write(&h.join(".pi/agent/skills/empty.md"), "---\nname: empty\ndescription:\n---\n");
+    // Nested md files in a pi skills folder are not root files.
+    write(&h.join(".pi/agent/skills/group/nested.md"), "---\ndescription: Nested\n---\n");
+    write(&h.join(".agents/skills/ignored.md"), "---\ndescription: Ignored\n---\n");
+    write(&cwd.join(".pi/skills/proj.md"), "---\ndescription: Project root skill\n---\n");
+    write(&root.join(".agents/skills/ignored2.md"), "---\ndescription: Ignored\n---\n");
+    let list = pi(h, Some(&cwd));
+    assert_eq!(find(&list, "skill:note").unwrap().description.as_deref(), Some("A root skill"));
+    assert_eq!(find(&list, "skill:proj").unwrap().source, "project");
+    for gone in ["skill:plain", "skill:empty", "skill:nested", "skill:ignored", "skill:ignored2"] {
+        assert!(find(&list, gone).is_none(), "{gone}");
+    }
+}
+
+#[test]
+fn pi_project_skills_walk_to_the_git_root_and_beat_user_ones() {
+    let home = tempfile::tempdir().unwrap();
+    let (work, root, cwd) = repo();
+    let h = home.path();
+    let skill = |dir: &Path, desc: &str| write(&dir.join("ship/SKILL.md"), &format!("---\ndescription: {desc}\n---\n"));
+    skill(&h.join(".pi/agent/skills"), "User pi");
+    skill(&h.join(".agents/skills"), "User agents");
+    skill(&root.join(".agents/skills"), "Root agents");
+    write(&root.join(".agents/skills/rootonly/SKILL.md"), "---\ndescription: Root only\n---\n");
+    write(&work.path().join(".agents/skills/outside/SKILL.md"), "---\ndescription: Outside\n---\n");
+    let list = pi(h, Some(&cwd));
+    let ship = find(&list, "skill:ship").unwrap();
+    assert_eq!((ship.source, ship.description.as_deref()), ("project", Some("Root agents")));
+    assert!(find(&list, "skill:rootonly").is_some());
+    assert!(find(&list, "skill:outside").is_none());
+    assert_eq!(list.iter().filter(|c| c.name == "skill:ship").count(), 1);
+    // A `.pi/skills` folder in `cwd` beats `.agents/skills` above it.
+    skill(&cwd.join(".pi/skills"), "Sub pi");
+    let list = pi(h, Some(&cwd));
+    assert_eq!(find(&list, "skill:ship").unwrap().description.as_deref(), Some("Sub pi"));
+    // Without the project: the user `.pi/agent` folder beats `~/.agents`.
+    let list = pi(h, None);
+    assert_eq!(find(&list, "skill:ship").unwrap().description.as_deref(), Some("User pi"));
+}
+
+#[test]
+fn pi_prompts_are_named_by_file_and_beat_builtins() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".pi/agent/prompts/review.md"), "---\ndescription: Review staged changes\n---\nBody\n");
+    write(&h.join(".pi/agent/prompts/bare.md"), "\n\nFirst line wins.\nMore.\n");
+    write(&h.join(".pi/agent/prompts/sub/nested.md"), "Nested\n");
+    write(&h.join(".pi/agent/prompts/notes.txt"), "text\n");
+    write(&h.join(".pi/agent/prompts/model.md"), "---\ndescription: My model prompt\n---\n");
+    let proj = h.join("work");
+    write(&proj.join(".pi/prompts/review.md"), "---\ndescription: Project review\n---\n");
+    let list = pi(h, Some(&proj));
+    let r = find(&list, "review").unwrap();
+    assert_eq!((r.source, r.trigger, r.description.as_deref()), ("project", None, Some("Project review")));
+    assert_eq!(find(&list, "bare").unwrap().description.as_deref(), Some("First line wins."));
+    assert!(find(&list, "nested").is_none() && find(&list, "notes").is_none());
+    let m = find(&list, "model").unwrap();
+    assert_eq!((m.source, m.description.as_deref()), ("user", Some("My model prompt")));
+    assert_eq!(list.iter().filter(|c| c.name == "model").count(), 1);
+}
+
+#[test]
+fn pi_agent_dir_can_move() {
+    let home = tempfile::tempdir().unwrap();
+    let alt = tempfile::tempdir().unwrap();
+    write(&alt.path().join("prompts/moved.md"), "Moved\n");
+    write(&home.path().join(".pi/agent/prompts/old.md"), "Old\n");
+    let none = home.path().join("none");
+    let mut r = roots(home.path(), &none, None);
+    r.pi_agent_dir = Some(alt.path());
+    let list = commands::list_for(Some("pi"), &r, None);
+    assert!(find(&list, "moved").is_some() && find(&list, "old").is_none());
+}
+
+#[test]
+fn pi_settings_paths_add_skills_and_prompts() {
+    let home = tempfile::tempdir().unwrap();
+    let extra = tempfile::tempdir().unwrap();
+    let h = home.path();
+    write(&h.join(".pi/agent/extra-skills/one/SKILL.md"), "---\ndescription: One\n---\n");
+    write(&extra.path().join("two/SKILL.md"), "---\ndescription: Two\n---\n");
+    write(&h.join("loose/three.md"), "---\nname: three\ndescription: Three\n---\n");
+    write(&h.join(".pi/agent/extra-prompts/p1.md"), "P1\n");
+    write(
+        &h.join(".pi/agent/settings.json"),
+        &format!(
+            r#"{{
+  // comment
+  "skills": ["extra-skills", "{}", "~/loose/three.md", "!skipped", "*.glob",],
+  "prompts": ["extra-prompts", "missing"],
+}}"#,
+            extra.path().display()
+        ),
+    );
+    // A project settings file resolves against `.pi`.
+    let proj = h.join("work");
+    write(&proj.join(".pi/more/four/SKILL.md"), "---\ndescription: Four\n---\n");
+    write(&proj.join(".pi/settings.json"), r#"{"skills": ["more"]}"#);
+    let list = pi(h, Some(&proj));
+    for n in ["skill:one", "skill:two", "skill:three", "skill:four", "p1"] {
+        assert!(find(&list, n).is_some(), "{n}");
+    }
+    assert_eq!(find(&list, "skill:four").unwrap().source, "project");
+    // A broken settings file is skipped.
+    write(&h.join(".pi/agent/settings.json"), "{ not json");
+    assert!(find(&pi(h, None), "skill:one").is_none());
+}
+
+#[test]
+fn opencode_builtins_have_no_trigger() {
+    let home = tempfile::tempdir().unwrap();
+    let list = opencode(home.path(), None);
+    assert_eq!(list.len(), 11);
+    assert!(list.iter().all(|c| c.source == "builtin" && c.trigger.is_none()));
+    assert!(find(&list, "connect").is_some() && find(&list, "clear").is_none());
+}
+
+#[test]
+fn opencode_command_folders_in_both_spellings_with_nested_names() {
+    let home = tempfile::tempdir().unwrap();
+    let (_w, root, cwd) = repo();
+    let h = home.path();
+    write(&h.join(".config/opencode/command/test.md"), "---\ndescription: Run tests\n---\nBody\n");
+    write(&h.join(".config/opencode/commands/git/sync.md"), "---\ndescription: Sync\n---\n");
+    write(&h.join(".config/opencode/commands/nodesc.md"), "First body line is not used.\n");
+    write(&h.join(".config/opencode/commands/readme.txt"), "text\n");
+    write(&root.join(".opencode/commands/a/b/deep.md"), "---\ndescription: Deep\n---\n");
+    write(&root.join(".opencode/command/lint.md"), "---\ndescription: Lint\n---\n");
+    let list = opencode(h, Some(&cwd));
+    let t = find(&list, "test").unwrap();
+    assert_eq!((t.source, t.trigger, t.description.as_deref()), ("user", None, Some("Run tests")));
+    assert_eq!(find(&list, "git/sync").unwrap().description.as_deref(), Some("Sync"));
+    assert_eq!(find(&list, "nodesc").unwrap().description, None);
+    assert!(find(&list, "readme").is_none());
+    assert_eq!(find(&list, "a/b/deep").unwrap().source, "project");
+    assert_eq!(find(&list, "lint").unwrap().source, "project");
+}
+
+#[test]
+fn opencode_xdg_config_home_moves_the_global_folder() {
+    let home = tempfile::tempdir().unwrap();
+    let xdg = tempfile::tempdir().unwrap();
+    write(&xdg.path().join("opencode/command/moved.md"), "Moved\n");
+    write(&home.path().join(".config/opencode/command/old.md"), "Old\n");
+    let none = home.path().join("none");
+    let mut r = roots(home.path(), &none, None);
+    r.xdg_config = Some(xdg.path());
+    let list = commands::list_for(Some("opencode"), &r, None);
+    assert!(find(&list, "moved").is_some() && find(&list, "old").is_none());
+}
+
+#[test]
+fn opencode_config_command_object_with_jsonc() {
+    let home = tempfile::tempdir().unwrap();
+    let (_w, root, cwd) = repo();
+    let h = home.path();
+    write(
+        &h.join(".config/opencode/opencode.jsonc"),
+        r#"{
+  // global config
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "a // not a comment",
+  /* block
+     comment */
+  "command": {
+    "global-cmd": { "description": "From global, with \"quotes\"", "template": "x", },
+    "nodesc": { "template": "y" },
+  },
+}"#,
+    );
+    write(&root.join("opencode.json"), r#"{"command": {"proj-cmd": {"description": "From project", "template": "z"}}}"#);
+    // Broken file: skipped.
+    write(&cwd.join("opencode.json"), r#"{"command": {"never": "#);
+    // A file with no `command` object: skipped.
+    write(&cwd.join("opencode.jsonc"), r#"{"theme": "x"}"#);
+    let list = opencode(h, Some(&cwd));
+    let g = find(&list, "global-cmd").unwrap();
+    assert_eq!((g.source, g.description.as_deref()), ("user", Some("From global, with \"quotes\"")));
+    assert_eq!(find(&list, "nodesc").unwrap().description, None);
+    let p = find(&list, "proj-cmd").unwrap();
+    assert_eq!((p.source, p.description.as_deref()), ("project", Some("From project")));
+    assert!(find(&list, "never").is_none());
+}
+
+#[test]
+fn opencode_project_beats_global_and_custom_beats_builtin() {
+    let home = tempfile::tempdir().unwrap();
+    let (_w, root, cwd) = repo();
+    let h = home.path();
+    write(&h.join(".config/opencode/command/ship.md"), "---\ndescription: Global ship\n---\n");
+    write(&h.join(".config/opencode/command/compact.md"), "---\ndescription: My compact\n---\n");
+    write(&root.join(".opencode/command/ship.md"), "---\ndescription: Repo ship\n---\n");
+    write(&root.join("opencode.json"), r#"{"command": {"ship": {"description": "Config ship"}, "init": {"description": "My init"}}}"#);
+    write(&cwd.join(".opencode/command/ship.md"), "---\ndescription: Sub ship\n---\n");
+    let list = opencode(h, Some(&cwd));
+    let ship = find(&list, "ship").unwrap();
+    assert_eq!((ship.source, ship.description.as_deref()), ("project", Some("Sub ship")));
+    assert_eq!(find(&list, "compact").unwrap().description.as_deref(), Some("My compact"));
+    assert_eq!(find(&list, "init").unwrap().description.as_deref(), Some("My init"));
+    for n in ["ship", "compact", "init"] {
+        assert_eq!(list.iter().filter(|c| c.name == n && c.trigger.is_none()).count(), 1, "{n}");
+    }
+    // Without the project folders: the global command, then the built-in.
+    let list = opencode(h, None);
+    assert_eq!(find(&list, "ship").unwrap().description.as_deref(), Some("Global ship"));
+    assert_eq!(find(&list, "init").unwrap().source, "builtin");
+}
+
+#[test]
+fn opencode_walk_stops_at_the_git_root() {
+    let home = tempfile::tempdir().unwrap();
+    let (work, root, cwd) = repo();
+    write(&work.path().join(".opencode/command/outside.md"), "Outside\n");
+    write(&work.path().join(".claude/skills/outside-skill/SKILL.md"), "---\n---\n");
+    write(&root.join(".opencode/command/inside.md"), "Inside\n");
+    let list = opencode(home.path(), Some(&cwd));
+    assert!(find(&list, "inside").is_some());
+    assert!(find(&list, "outside").is_none() && find(&list, "outside-skill").is_none());
+}
+
+#[test]
+fn opencode_skills_use_the_at_trigger_from_all_six_folders() {
+    let home = tempfile::tempdir().unwrap();
+    let (_w, root, cwd) = repo();
+    let h = home.path();
+    let skill = |dir: &Path, name: &str, desc: &str| {
+        write(&dir.join(format!("skills/{name}/SKILL.md")), &format!("---\nname: {name}\ndescription: {desc}\n---\n"))
+    };
+    skill(&root.join(".opencode"), "p-oc", "Project opencode");
+    skill(&root.join(".claude"), "p-claude", "Project claude");
+    skill(&cwd.join(".agents"), "p-agents", "Project agents");
+    skill(&h.join(".config/opencode"), "u-oc", "User opencode");
+    skill(&h.join(".claude"), "u-claude", "User claude");
+    skill(&h.join(".agents"), "u-agents", "User agents");
+    skill(&root.join(".opencode"), "dup", "Project dup");
+    skill(&h.join(".claude"), "dup", "User dup");
+    // A skill and a command can share a name: both stay.
+    write(&root.join(".opencode/command/p-oc.md"), "Same name\n");
+    let list = opencode(h, Some(&cwd));
+    for n in ["p-oc", "p-claude", "p-agents", "u-oc", "u-claude", "u-agents"] {
+        let s = list.iter().find(|c| c.name == n && c.trigger == Some("@")).unwrap_or_else(|| panic!("{n}"));
+        assert_eq!(s.source, if n.starts_with('p') { "project" } else { "user" });
+    }
+    let dup = list.iter().find(|c| c.name == "dup").unwrap();
+    assert_eq!((dup.trigger, dup.description.as_deref()), (Some("@"), Some("Project dup")));
+    assert!(list.iter().any(|c| c.name == "p-oc" && c.trigger.is_none()));
+    // Skills never take the `/` trigger; built-ins keep none.
+    assert!(find(&list, "skills").unwrap().trigger.is_none());
+    assert!(serde_json::to_string(&list).unwrap().contains(r#""trigger":"@""#));
+}
+
+#[tokio::test]
+async fn rpc_kind_param_picks_the_pi_and_opencode_lists() {
+    let home = tempfile::tempdir().unwrap();
+    let none = home.path().join("none.sock");
+    let r = call(none.clone(), home.path().into(), json!({"kind": "pi"})).await;
+    assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "scoped-models"));
+    let r = call(none, home.path().into(), json!({"kind": "opencode"})).await;
+    assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "connect"));
 }

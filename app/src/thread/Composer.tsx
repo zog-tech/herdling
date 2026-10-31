@@ -293,7 +293,7 @@ export const Composer = memo(function Composer({
     setSheetKey((k) => k + 1);
     setSheetOpen(true);
   };
-  /** Puts `/name ` (or `$name ` for a Codex skill) in the prompt box. */
+  /** Puts `/name ` (or `$name` for a Codex skill, `@name` for an OpenCode skill) in the prompt box. */
   const insertCommand = (c: CommandInfo) => {
     setText(`${c.trigger ?? "/"}${c.name} `);
     if (error) setError(undefined);

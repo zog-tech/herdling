@@ -29,6 +29,30 @@ test("codex_query_opens_on_slash_or_dollar", () => {
   expect(q("use $dep")).toBeUndefined();
 });
 
+test("opencode_query_opens_on_slash_or_at_and_pi_on_slash_only", () => {
+  const q = (kind: string, t: string) => commandQuery(t, commandTriggers(kind));
+  expect(q("opencode", "@")).toEqual({ trigger: "@", query: "" });
+  expect(q("opencode", "@dep")).toEqual({ trigger: "@", query: "dep" });
+  expect(q("opencode", "/nested/sy")).toEqual({ trigger: "/", query: "nested/sy" });
+  expect(q("opencode", "$dep")).toBeUndefined();
+  expect(q("opencode", "@dep now")).toBeUndefined();
+  expect(q("opencode", "see @dep")).toBeUndefined();
+  expect(q("pi", "/skill:dep")).toEqual({ trigger: "/", query: "skill:dep" });
+  expect(q("pi", "@dep")).toBeUndefined();
+  expect(q("pi", "$dep")).toBeUndefined();
+  expect(q("codex", "@dep")).toBeUndefined();
+  expect(q("claude", "@dep")).toBeUndefined();
+});
+
+test("commands_for_splits_by_at_trigger", () => {
+  const mixed: CommandInfo[] = [
+    { name: "init", source: "builtin" },
+    { name: "deploy", source: "user", trigger: "@" },
+  ];
+  expect(names(commandsFor(mixed, "@"))).toEqual(["deploy"]);
+  expect(names(commandsFor(mixed, "/"))).toEqual(["init"]);
+});
+
 test("commands_for_splits_by_trigger_and_a_missing_trigger_is_slash", () => {
   const mixed: CommandInfo[] = [
     { name: "review", source: "builtin" },
@@ -66,4 +90,7 @@ test("commands_apply_to_kinds_the_host_lists", () => {
   expect(commandsApply("claude", ["claude", "codex"])).toBe(true);
   expect(commandsApply("codex", ["claude"])).toBe(false);
   expect(commandsApply("claude", ["codex"])).toBe(false);
+  expect(commandsApply("pi", ["claude", "codex", "pi", "opencode"])).toBe(true);
+  expect(commandsApply("opencode", ["claude", "codex", "pi", "opencode"])).toBe(true);
+  expect(commandsApply("opencode", ["claude", "codex", "pi"])).toBe(false);
 });

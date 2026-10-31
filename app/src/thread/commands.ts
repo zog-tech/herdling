@@ -6,7 +6,7 @@ import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
 import type { RpcClient } from "@/rpc/RpcClient";
 
-export type Trigger = "/" | "$";
+export type Trigger = "/" | "$" | "@";
 
 /**
  * The trigger and the text after it while the user types a command name: the text starts with one of
@@ -22,9 +22,16 @@ export function commandsFor(list: CommandInfo[], trigger: Trigger): CommandInfo[
   return list.filter((c) => (c.trigger ?? "/") === trigger);
 }
 
-/** The characters that open the picker for an agent kind. Codex skills start with `$`. */
+/** The characters that open the picker for an agent kind. Codex skills start with `$`, OpenCode skills with `@`. */
 export function commandTriggers(kind: string | undefined): readonly Trigger[] {
-  return kind === "codex" ? ["/", "$"] : ["/"];
+  if (kind === "codex") return ["/", "$"];
+  if (kind === "opencode") return ["/", "@"];
+  return ["/"];
+}
+
+/** The kind that picks the host list: a kind with its own list, else Claude. */
+function listKind(kind: string | undefined): "claude" | "codex" | "pi" | "opencode" {
+  return kind === "codex" || kind === "pi" || kind === "opencode" ? kind : "claude";
 }
 
 /** Names that start with `query` first, then names that contain it. Case is ignored; the list order is kept. */
@@ -61,10 +68,11 @@ export function clearCommandsCache(): void {
 function load(rpc: RpcClient, key: string, paneId: string, cwd: string | undefined, kind: string | undefined): Promise<CommandInfo[]> {
   let p = cache.get(key);
   if (!p) {
-    // Only Codex sends `kind`: the Claude call stays as before.
+    // Only a non-Claude kind sends `kind`: the Claude call stays as before.
     const params: Record<string, string> = { pane_id: paneId };
     if (cwd) params.cwd = cwd;
-    if (kind === "codex") params.kind = kind;
+    const k = listKind(kind);
+    if (k !== "claude") params.kind = k;
     p = rpc.call<CommandList>("commands.list", params).then((r) => r.commands ?? []);
     // A failed call is not kept: the next request tries again.
     p.catch(() => cache.delete(key));
@@ -89,7 +97,7 @@ export function useCommands(
   const kind = agent?.agent;
   const cwd = agent?.cwd;
   const supported = hasMethod(hello, "commands.list") && commandsApply(kind, hello?.command_kinds);
-  const key = `${hostId}\n${kind === "codex" ? "codex" : "claude"}\n${cwd ?? `pane:${paneId}`}`;
+  const key = `${hostId}\n${listKind(kind)}\n${cwd ?? `pane:${paneId}`}`;
   const [got, setGot] = useState<{ key: string; commands: CommandInfo[] }>();
 
   useEffect(() => {

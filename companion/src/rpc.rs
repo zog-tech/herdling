@@ -714,7 +714,7 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 
 /// Slash commands and skills for the folder `cwd`. When `cwd` is missing, the folder of
 /// `pane_id` comes from herdr. No folder gives the built-in, user and plugin commands only.
-/// `kind` picks the list (`codex` or Claude). When `kind` is missing, herdr gives the kind of the pane.
+/// `kind` picks the list (`codex`, `pi`, `opencode` or Claude). When `kind` is missing, herdr gives the kind of the pane.
 async fn commands_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let text = |k: &str| params.get(k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
     let (mut cwd, mut kind) = (text("cwd"), text("kind"));
@@ -726,15 +726,19 @@ async fn commands_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         }
     }
     let home = ctx.home.clone();
-    let codex_home = std::env::var_os("CODEX_HOME").filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    let env_path = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    let (codex_home, pi_agent_dir) = (env_path("CODEX_HOME"), env_path("PI_CODING_AGENT_DIR"));
+    // The XDG rule: a relative `XDG_CONFIG_HOME` is not valid.
+    let xdg_config = env_path("XDG_CONFIG_HOME").filter(|p| p.is_absolute());
     let commands = tokio::task::spawn_blocking(move || {
-        crate::commands::list_for(
-            kind.as_deref(),
-            &home,
-            codex_home.as_deref(),
-            std::path::Path::new("/etc/codex/skills"),
-            cwd.as_deref().map(std::path::Path::new),
-        )
+        let roots = crate::commands::Roots {
+            home: &home,
+            codex_home: codex_home.as_deref(),
+            admin_skills: std::path::Path::new("/etc/codex/skills"),
+            pi_agent_dir: pi_agent_dir.as_deref(),
+            xdg_config: xdg_config.as_deref(),
+        };
+        crate::commands::list_for(kind.as_deref(), &roots, cwd.as_deref().map(std::path::Path::new))
     })
     .await
     .map_err(|e| err("internal", e.to_string()))?;

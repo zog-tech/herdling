@@ -160,12 +160,12 @@ export type AgentPreview = {
   source: "log" | "screen";
 };
 
-/** `commands.list` item: one command or skill that Claude Code or Codex offers in the pane's folder. */
+/** `commands.list` item: one command or skill that Claude Code, Codex, Pi or OpenCode offers in the pane's folder. */
 export type CommandInfo = {
   /** Without the leading `/` or `$`. Plugin items look like `plugin:name`. */
   name: string;
-  /** The character that starts the item in the prompt. Missing means `/`. Codex skills use `$`. */
-  trigger?: "/" | "$";
+  /** The character that starts the item in the prompt. Missing means `/`. Codex skills use `$`. OpenCode skills use `@`. */
+  trigger?: "/" | "$" | "@";
   description?: string;
   source: "builtin" | "user" | "project" | "plugin";
 };

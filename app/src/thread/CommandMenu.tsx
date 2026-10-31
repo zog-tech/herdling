@@ -7,7 +7,7 @@ import { Text } from "@/ui/Text";
 /** Rows visible before the list scrolls. */
 export const MENU_ROWS = 6;
 
-/** One command: `/name` (`$name` for a Codex skill) and a one-line muted description. */
+/** One command: `/name` (`$name` for a Codex skill, `@name` for an OpenCode skill) and a one-line muted description. */
 export function CommandRow({ c, onPick }: { c: CommandInfo; onPick: (c: CommandInfo) => void }) {
   return (
     <Pressable
