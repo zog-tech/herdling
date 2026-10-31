@@ -36,6 +36,7 @@ import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands
 import { sendWithPending } from "./pending";
 import { PermissionButtons } from "./PermissionButtons";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
+import { useQuoteInto, withQuote } from "./quote";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -116,6 +117,11 @@ export const Composer = memo(function Composer({
     },
     onPartial: setPartial,
     hostStt,
+  });
+  // "Quote in reply" from a thread row: the quote goes at the end of the draft.
+  useQuoteInto(hostId, paneId, (q) => {
+    setText((cur) => withQuote(cur, q));
+    inputRef.current?.focus();
   });
   const voicePhase = dictation.state.phase;
   /** The record bar takes the place of the "+" button and the prompt box. */

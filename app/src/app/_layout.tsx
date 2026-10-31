@@ -16,6 +16,7 @@ import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
 import { solidHeader } from "@/ui/headerOptions";
 import { NativeSheetHost } from "@/ui/nativeSheet";
+import { NoticeHost } from "@/ui/notice";
 import { refreshParakeet } from "@/voice/parakeet";
 
 SplashScreen.preventAutoHideAsync();
@@ -85,6 +86,7 @@ export default function RootLayout() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
+        <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />
         {/* The session screen sets its own title view and bar buttons. */}
         <Stack.Screen name="session/[hostId]/[paneId]" options={{ ...hostHeader, title: "" }} />
         <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
@@ -116,6 +118,7 @@ export default function RootLayout() {
       <NotificationRouting />
       <UpdateChecks />
       <NativeSheetHost />
+      <NoticeHost />
     </GestureHandlerRootView>
   );
 }

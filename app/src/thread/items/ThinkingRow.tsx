@@ -1,11 +1,16 @@
 import { Brain, ChevronDown, ChevronRight } from "lucide-react-native";
 import { memo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import { colors, hitTarget, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
-/** Collapsed "Thought" marker. Expands to the thinking text when the log has it (null = redacted). */
+import { MenuPressable } from "../MenuPressable";
+
+/**
+ * Collapsed "Thought" marker. Expands to the thinking text when the log has it (null = redacted).
+ * A long press opens the row menu (Copy, Select text); a tap still expands or collapses.
+ */
 export const ThinkingRow = memo(function ThinkingRow({ text }: { text: string | null }) {
   const [open, setOpen] = useState(false);
   const hasText = !!text?.trim();
@@ -19,9 +24,10 @@ export const ThinkingRow = memo(function ThinkingRow({ text }: { text: string | 
       {hasText ? <Chevron size={14} color={colors.textMuted} /> : null}
     </View>
   );
-  if (!hasText) return header;
+  if (!hasText || !text) return header;
   return (
-    <Pressable
+    <MenuPressable
+      menu={{ kind: "thinking", text }}
       accessibilityRole="button"
       accessibilityLabel={open ? "Hide thinking" : "Show thinking"}
       accessibilityState={{ expanded: open }}
@@ -29,10 +35,10 @@ export const ThinkingRow = memo(function ThinkingRow({ text }: { text: string | 
     >
       {header}
       {open ? (
-        <Text variant="small" muted selectable style={{ paddingLeft: space.xl, fontStyle: "italic" }}>
+        <Text variant="small" muted style={{ paddingLeft: space.xl, fontStyle: "italic" }}>
           {text}
         </Text>
       ) : null}
-    </Pressable>
+    </MenuPressable>
   );
 });

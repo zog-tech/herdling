@@ -1,11 +1,15 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
-import { memo } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { createContext, memo, useContext, type ReactNode } from "react";
+import { Linking, StyleSheet, Text, View, type StyleProp, type TextStyle } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
 import { colors, radius, space, type } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 
 import { HScrollView } from "../HScrollView";
+import { ThreadPaneContext } from "../LiveToolContext";
+import { MenuPressable } from "../MenuPressable";
+import { openRowMenu, type MenuTarget } from "../rowMenu";
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
@@ -17,15 +21,40 @@ const openLink = (url: string) => {
   if (/^(https?:|mailto:)/i.test(url)) Linking.openURL(url).catch(() => {});
 };
 
-/** Code block: JetBrains Mono, scrolls sideways instead of wrapping. */
+/** The menu target of the reply being drawn: its code blocks and links open the same menu. */
+const ReplyMenu = createContext<MenuTarget | null>(null);
+
+/**
+ * Code block: JetBrains Mono, scrolls sideways instead of wrapping. A long press opens the reply
+ * menu with "Copy code" (this block only) on top. The text is not `selectable`: on iOS that adds
+ * its own long press, which fights the menu. "Select text" in the menu is the way to copy a part.
+ */
 function CodeBlock({ content }: { content: string }) {
+  const reply = useContext(ReplyMenu);
   const text = content.endsWith("\n") ? content.slice(0, -1) : content;
   return (
-    <HScrollView showsHorizontalScrollIndicator={false} style={styles.codeScroll} contentContainerStyle={{ padding: space.md }}>
-      <Text selectable style={styles.codeText}>
-        {text}
-      </Text>
-    </HScrollView>
+    <MenuPressable menu={reply ? { ...reply, code: text } : null} accessible={false}>
+      <HScrollView showsHorizontalScrollIndicator={false} style={styles.codeScroll} contentContainerStyle={{ padding: space.md }}>
+        <Text style={styles.codeText}>{text}</Text>
+      </HScrollView>
+    </MenuPressable>
+  );
+}
+
+/** A link: a tap opens it, a long press opens the reply menu (not the link). */
+function Link({ href, style, children }: { href: string; style: StyleProp<TextStyle>; children: ReactNode }) {
+  const reply = useContext(ReplyMenu);
+  const pane = useContext(ThreadPaneContext);
+  const menu = reply
+    ? () => {
+        haptics.press();
+        openRowMenu(reply, pane);
+      }
+    : undefined;
+  return (
+    <Text style={style} accessibilityRole="link" onPress={() => openLink(href)} onLongPress={menu}>
+      {children}
+    </Text>
   );
 }
 
@@ -40,9 +69,9 @@ const rules: RenderRules = {
   ),
   // A Text link (not the default Pressable) so it wraps with the paragraph; opens the system browser.
   link: (node, children, _parent, s) => (
-    <Text key={node.key} style={s.link} accessibilityRole="link" onPress={() => openLink(String(node.attributes.href ?? ""))}>
+    <Link key={node.key} style={s.link} href={String(node.attributes.href ?? "")}>
       {children}
-    </Text>
+    </Link>
   ),
 };
 
@@ -94,13 +123,19 @@ const styles = StyleSheet.create({
   codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
 });
 
-/** Assistant reply rendered as markdown, full width. */
-export const AssistantMessage = memo(function AssistantMessage({ markdown }: { markdown: string }) {
+/**
+ * Assistant reply rendered as markdown, full width. A long press opens the reply menu; Copy copies
+ * the markdown source, the way the chat apps copy. `id` is the thread item id (for Read aloud).
+ */
+export const AssistantMessage = memo(function AssistantMessage({ markdown, id }: { markdown: string; id?: string }) {
+  const menu: MenuTarget = { kind: "assistant", text: markdown, id };
   return (
-    <View>
-      <Markdown style={mdStyles} rules={rules}>
-        {markdown}
-      </Markdown>
-    </View>
+    <ReplyMenu.Provider value={menu}>
+      <MenuPressable menu={menu} feedback="scale">
+        <Markdown style={mdStyles} rules={rules}>
+          {markdown}
+        </Markdown>
+      </MenuPressable>
+    </ReplyMenu.Provider>
   );
 });

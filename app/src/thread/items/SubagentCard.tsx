@@ -1,7 +1,7 @@
 import { Bot, Check, ChevronRight, CircleHelp, CircleX, Loader, type LucideIcon } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { memo } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import { colors, radius, space } from "@/theme/tokens";
 import { formatDuration, spokenDuration } from "@/ui/format";
@@ -9,6 +9,8 @@ import { LanternGlow } from "@/ui/LanternGlow";
 import { Text } from "@/ui/Text";
 import { TickingDuration } from "@/ui/TickingDuration";
 import { TopHighlight } from "@/ui/TopHighlight";
+import { MenuPressable } from "../MenuPressable";
+import { subagentCopyText } from "../rowMenu";
 import { useThreadLog } from "../ThreadLogContext";
 import { shownSummary } from "../subagentState";
 
@@ -35,7 +37,8 @@ const tools = (n: number) => `${n} tool${n === 1 ? "" : "s"}`;
  * A subagent run. While it runs: the lantern glow, "Running", a ticking clock, its tool count and
  * its latest step. When it stops: the status, how long it took and its summary. Tapping opens its
  * own thread once `agentId` is known, also while it runs. VoiceOver hears the description, the
- * status and the tool count, not each new step.
+ * status and the tool count, not each new step. A long press opens the row menu: Copy (the
+ * description and the summary) and Select text. It works also before the thread can open.
  */
 export const SubagentCard = memo(function SubagentCard({
   description,
@@ -68,12 +71,13 @@ export const SubagentCard = memo(function SubagentCard({
     .filter(Boolean)
     .join(", ");
   return (
-    <Pressable
+    <MenuPressable
+      menu={{ kind: "subagent", text: subagentCopyText(description, summary) }}
       accessible
       accessibilityRole={canOpen ? "button" : undefined}
       accessibilityLabel={`Subagent: ${description}. ${spoken}`}
       accessibilityHint={canOpen ? "Opens the subagent thread" : undefined}
-      disabled={!canOpen}
+      // Not `disabled` when it cannot open: a disabled Pressable has no long press either.
       onPress={() =>
         threadLog &&
         agentId &&
@@ -143,6 +147,6 @@ export const SubagentCard = memo(function SubagentCard({
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </MenuPressable>
   );
 });

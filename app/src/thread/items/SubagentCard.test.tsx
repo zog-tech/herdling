@@ -50,7 +50,7 @@ test("running_card_shows_clock_activity_and_tools", () => {
   expect(shown.some((s) => s.includes("Async agent"))).toBe(false);
   // VoiceOver: no activity, so it does not change with each step.
   expect(pressable(t).props.accessibilityLabel).toBe("Subagent: Fix the parser. Running, 3 tools");
-  expect(pressable(t).props.disabled).toBe(false);
+  expect(pressable(t).props.accessibilityRole).toBe("button");
   act(() => pressable(t).props.onPress());
   expect(mockPush).toHaveBeenCalledWith(
     expect.objectContaining({ params: expect.objectContaining({ agentId: "a1", since: String(T0), title: "Fix the parser" }) }),
@@ -73,5 +73,8 @@ test("done_card_shows_duration_and_summary", () => {
 test("old_host_launch_summary_is_hidden_and_card_waits_for_agent_id", () => {
   const t = render(<SubagentCard description="Bg" status="async_launched" agentId="" resultSummary={LAUNCH} />);
   expect(texts(t).some((s) => s.includes("Async agent"))).toBe(false);
-  expect(pressable(t).props.disabled).toBe(true);
+  // Not disabled (the long-press menu still works), but not a button and the tap does nothing.
+  expect(pressable(t).props.accessibilityRole).toBeUndefined();
+  act(() => pressable(t).props.onPress());
+  expect(mockPush).not.toHaveBeenCalled();
 });
