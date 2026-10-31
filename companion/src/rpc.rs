@@ -78,6 +78,8 @@ pub struct Ctx {
     pub boot_cache: crate::boot::BootCache,
     /// Keeps typing calls to one pane in arrival order, see [`crate::input_order`].
     pub input_order: crate::input_order::InputOrder,
+    /// The last listener list of `ports.list` and `preview.open`, see [`crate::ports::CACHE_TTL`].
+    pub ports_cache: crate::ports::PortsCache,
 }
 
 impl Ctx {
@@ -105,6 +107,7 @@ impl Ctx {
             host_os: crate::boot::Os::current(),
             boot_cache: crate::boot::BootCache::default(),
             input_order: crate::input_order::InputOrder::default(),
+            ports_cache: crate::ports::PortsCache::default(),
         }
     }
 }
@@ -380,6 +383,9 @@ pub const METHODS: &[&str] = &[
     "git.worktree_add",
     "pane.watch",
     "agents.installed",
+    "ports.list",
+    "preview.open",
+    "preview.close",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -418,6 +424,9 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "git.worktree_add" => git_worktree_add(ctx, params).await,
         "pane.watch" => crate::watch::pane_watch(ctx, out, params).await,
         "agents.installed" => agents_installed(ctx).await,
+        "ports.list" => ports_list(ctx, params).await,
+        "preview.open" => preview_open(ctx, params).await,
+        "preview.close" => preview_close(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -997,4 +1006,80 @@ async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     })
     .await
     .map_err(|e| err("internal", e.to_string()))?
+}
+
+/// The pairing port of `serve`. It is never listed or proxied.
+fn reserved_port(ctx: &Ctx) -> u16 {
+    crate::config::load(&ctx.config_path).unwrap_or_default().pair_port
+}
+
+/// The shell and foreground PIDs of a pane, from herdr `pane.process_info`. Empty when herdr does not answer.
+async fn pane_roots(ctx: &Ctx, pane_id: &str) -> Vec<u32> {
+    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return Vec::new() };
+    let info = c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null);
+    let (fg, shell) = crate::transcript::procs::pane_pids(info.get("process_info").unwrap_or(&info));
+    shell.into_iter().chain(fg).collect()
+}
+
+/// `ports.list`: the TCP ports that a process of this user listens on, on loopback or on all
+/// addresses. With `pane_id`, the ports of that pane come first. See [`crate::ports`].
+async fn ports_list(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let pane = match params.get("pane_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(p)) if !p.is_empty() => Some(p.clone()),
+        Some(_) => return Err(err("bad_request", "ports.list: pane_id must be a string")),
+    };
+    let roots = match &pane {
+        Some(p) => pane_roots(ctx, p).await,
+        None => Vec::new(),
+    };
+    let (cache, reserved) = (ctx.ports_cache.clone(), reserved_port(ctx));
+    let ports = tokio::task::spawn_blocking(move || {
+        let listeners = cache.get(crate::ports::host_listeners);
+        let procs = crate::transcript::procs::host_procs();
+        crate::ports::build(&listeners, &procs, pane.as_deref().map(|id| (id, roots.as_slice())), reserved)
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?;
+    Ok(json!({ "ports": ports }))
+}
+
+/// `preview.open`: a grant for the proxy mode, for one port that a process of this user listens
+/// on, on loopback or on all addresses. See [`crate::proxy`].
+async fn preview_open(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let port = params
+        .get("port")
+        .and_then(Value::as_u64)
+        .filter(|p| (1..=65535).contains(p))
+        .ok_or_else(|| err("bad_request", "preview.open requires port, a number from 1 to 65535"))? as u16;
+    if port == reserved_port(ctx) {
+        return Err(err("bad_request", "preview.open: this port is reserved for herdlingd"));
+    }
+    let (cache, home) = (ctx.ports_cache.clone(), ctx.home.clone());
+    tokio::task::spawn_blocking(move || {
+        use crate::ports::{host_listeners, is_listening};
+        // A dev server that started after the last list is not in the cache: look again once.
+        if !is_listening(&cache.get(host_listeners), port) && !is_listening(&cache.refresh(host_listeners), port) {
+            return Err(err("port_not_listening", format!("nothing of this user listens on port {port} on loopback")));
+        }
+        let g = crate::proxy::issue(&crate::proxy::grants_path(&home), port, crate::proxy::now_secs())
+            .map_err(|e| err("io_error", format!("preview.open: {e}")))?;
+        Ok(json!({ "grant": g.grant, "port": g.port, "expires_at": g.expires }))
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?
+}
+
+/// `preview.close`: removes a grant. A grant that is not live gives `closed: false`.
+async fn preview_close(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let grant = str_param(&params, "grant", "preview.close")?.to_string();
+    if !crate::proxy::valid_grant(&grant) {
+        return Err(err("grant_invalid", "preview.close: grant must be 32 lowercase hex characters"));
+    }
+    let path = crate::proxy::grants_path(&ctx.home);
+    let closed = tokio::task::spawn_blocking(move || crate::proxy::revoke(&path, &grant, crate::proxy::now_secs()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| err("io_error", format!("preview.close: {e}")))?;
+    Ok(json!({ "closed": closed }))
 }
