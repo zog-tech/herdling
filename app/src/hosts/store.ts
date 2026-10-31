@@ -13,6 +13,8 @@ export type Host = {
   fingerprint?: string;
   /** Command for the exec channel. Default "herdlingd rpc". */
   command: string;
+  /** True for the in-app demo host (`src/demo`). It never uses SSH, pairing or push. */
+  demo?: boolean;
 };
 
 export const DEFAULT_COMMAND = "herdlingd rpc";

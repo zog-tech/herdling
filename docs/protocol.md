@@ -38,6 +38,7 @@ An app and a host can run different versions. Follow these rules so they do not 
 - Ignore unknown params and unknown fields.
 - Check `hello.methods` before you use a method added after this rule. Treat a missing `methods` as "unknown": try the call and fall back.
 - When you add a method, add its name to `METHODS` in `companion/src/rpc.rs` and to `APP_METHODS` in `app/src/hosts/methods.ts`.
+- Also answer the new method in the demo host (`app/src/demo/DemoTransport.ts`). The demo advertises `APP_METHODS`, and its test fails when a method has no answer.
 
 ## Before an OTA update
 

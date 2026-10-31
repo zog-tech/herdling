@@ -3,6 +3,9 @@ import { AppState } from "react-native";
 import { create } from "zustand";
 
 import * as ssh from "../../modules/ssh";
+import { isDemoHost } from "../demo/demoHost";
+import { DemoTransport } from "../demo/DemoTransport";
+import { showDemoNotice } from "../demo/notify";
 import { useNotifPrefs } from "../push/prefs";
 import { registerPush } from "../push/register";
 import { RpcClient } from "../rpc/RpcClient";
@@ -162,6 +165,8 @@ class HostConnection {
   private failures = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private rpc?: RpcClient;
+  /** The in-app transport of the demo host; undefined for a real host. */
+  private demo?: DemoTransport;
   private pingTimer?: ReturnType<typeof setInterval>;
   private foreground: boolean;
   /** Set on a host key mismatch: no retries until the host entry changes. */
@@ -206,6 +211,8 @@ class HostConnection {
   /** The app came to the foreground or left it. */
   setForeground(active: boolean): void {
     this.foreground = active;
+    // The demo scripts stop while the app is in the background.
+    this.demo?.setActive(active);
     if (!active) {
       this.stopPings();
       return;
@@ -228,7 +235,7 @@ class HostConnection {
   stop(): void {
     this.stopped = true;
     this.teardown();
-    ssh.disconnect(this.id).catch(() => {});
+    if (!isDemoHost(this.host)) ssh.disconnect(this.id).catch(() => {});
     useConns.setState((s) => {
       const { [this.id]: _, ...rest } = s.conns;
       return { conns: rest };
@@ -250,6 +257,7 @@ class HostConnection {
   }
 
   private async attempt(gen: number): Promise<void> {
+    if (isDemoHost(this.host)) return this.attemptDemo(gen);
     const host = this.host;
     const prev = getHostConn(host.id);
     setConn(host.id, { status: "connecting", lastSeen: prev.lastSeen, hello: prev.hello, attempt: ++this.attemptNo });
@@ -301,6 +309,33 @@ class HostConnection {
     }
   }
 
+  /**
+   * The demo host: an in-process transport. No SSH, no host key, no push registration.
+   * Its agents start again with each new transport (each launch).
+   */
+  private async attemptDemo(gen: number): Promise<void> {
+    const id = this.host.id;
+    setConn(id, { status: "connecting", attempt: ++this.attemptNo });
+    const transport = new DemoTransport({ onNotice: (n) => void showDemoNotice(n), active: this.foreground });
+    const rpc = new RpcClient(transport);
+    this.rpc = rpc;
+    this.demo = transport;
+    transport.onClose((reason) => {
+      if (gen === this.generation) this.dropped(`demo closed: ${reason}`);
+    });
+    try {
+      const hello = await rpc.call<Hello>("hello");
+      if (gen !== this.generation) return;
+      this.failures = 0;
+      setConn(id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
+      if (this.foreground) this.startPings();
+    } catch (e) {
+      if (gen !== this.generation) return;
+      this.teardown();
+      this.fail(errorText(e));
+    }
+  }
+
   private fail(error: string): void {
     const prev = getHostConn(this.id);
     setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error, attempt: this.attemptNo });
@@ -345,6 +380,7 @@ class HostConnection {
     this.timer = undefined;
     const rpc = this.rpc;
     this.rpc = undefined;
+    this.demo = undefined;
     this.generation++;
     rpc?.close();
   }
@@ -419,6 +455,7 @@ export function startConnections(): void {
     useNotifPrefs.subscribe((p, prev) => {
       if (p.finished === prev.finished && p.needs_you === prev.needs_you && p.quiet_at_desk === prev.quiet_at_desk) return;
       for (const id of state.conns.keys()) {
+        if (isDemoHost(id)) continue;
         const conn = getHostConn(id);
         if (conn.status === "online" && conn.rpc) void registerPush(conn.rpc, id);
       }
