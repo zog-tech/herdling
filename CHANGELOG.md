@@ -52,6 +52,9 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Agent logos.** The agent mark shows the brand logo of the tool (Claude, Codex, Gemini, Copilot,
+  Cursor, OpenCode, Pi, Kimi, Qwen, Cline) in a single tint. Other agents keep the letter badge. The
+  mark now also shows before the title of an agent row on the Board and in the session header.
 - **Theme and accent.** Settings, Appearance, Theme: three dark themes (Night Watch, the default;
   Midnight, true black for OLED; Graphite, cool greys) and five accents (Lantern gold, the default;
   Ember, Sea glass, Iris, Ivory). The working lantern follows the accent. With Ember, "needs you"

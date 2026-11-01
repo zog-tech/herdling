@@ -47,6 +47,11 @@
     "opencode": "#9FC7C0",
     "omp": "#D7A3C9",
     "gemini": "#7FA7F0",
+    "copilot": "#C3A6F2",
+    "cursor": "#D9D6CE",
+    "kimi": "#6FC0E8",
+    "qwen": "#A5A0F0",
+    "cline": "#D8C9A8",
     "other": "#A39E93"
   },
   "terminal": {

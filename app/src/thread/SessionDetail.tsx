@@ -50,6 +50,7 @@ import { showActionSheet } from "@/ui/nativeSheet";
 import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
+import { AgentMark } from "@/ui/AgentMark";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { stopSpeaking, useSpeakReplies, useSpeaking } from "@/voice/useSpeakReplies";
@@ -324,13 +325,15 @@ function ThreadBody({
 
 type Menu = ReturnType<typeof useSessionMenu>;
 
-/** The title (long press for the menu), then "host · agent" or the busy text of the menu. */
+/** The agent mark, then the title (long press for the menu) and "host · agent" or the busy text of the menu. */
 function SessionTitle({
+  kind,
   title,
   subtitle,
   menu,
   inline,
 }: {
+  kind: string | undefined;
   title: string;
   subtitle: string;
   menu: Menu;
@@ -342,18 +345,23 @@ function SessionTitle({
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityHint="Long press for session actions"
-      style={
-        inline
-          ? { flex: 1, minHeight: hitTarget, justifyContent: "center" }
-          : { minHeight: hitTarget, justifyContent: "center", alignItems: "center", maxWidth: 220 }
-      }
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.sm,
+        minHeight: hitTarget,
+        ...(inline ? { flex: 1 } : { maxWidth: 240 }),
+      }}
     >
-      <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-        {title}
-      </Text>
-      <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-        {menu.busy ?? subtitle}
-      </Text>
+      {kind ? <AgentMark kind={kind} size={28} /> : null}
+      <View style={{ flexShrink: 1, justifyContent: "center", alignItems: inline ? "flex-start" : "center" }}>
+        <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+          {title}
+        </Text>
+        <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+          {menu.busy ?? subtitle}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -421,6 +429,7 @@ export function SessionHeader({
   placement,
   hostId,
   paneId,
+  kind,
   title,
   subtitle,
   menu,
@@ -428,6 +437,8 @@ export function SessionHeader({
   placement: "native" | "inline";
   hostId: string;
   paneId: string;
+  /** The agent kind, for the mark before the title. Unknown: no mark. */
+  kind: string | undefined;
   title: string;
   subtitle: string;
   menu: Menu;
@@ -436,7 +447,7 @@ export function SessionHeader({
     return (
       <Stack.Screen
         options={{
-          headerTitle: () => <SessionTitle title={title} subtitle={subtitle} menu={menu} inline={false} />,
+          headerTitle: () => <SessionTitle kind={kind} title={title} subtitle={subtitle} menu={menu} inline={false} />,
           headerRight: () => <SessionActions hostId={hostId} paneId={paneId} menu={menu} />,
         }}
       />
@@ -444,7 +455,7 @@ export function SessionHeader({
   }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingLeft: space.lg, paddingRight: space.xs }}>
-      <SessionTitle title={title} subtitle={subtitle} menu={menu} inline />
+      <SessionTitle kind={kind} title={title} subtitle={subtitle} menu={menu} inline />
       <SessionActions hostId={hostId} paneId={paneId} menu={menu} />
     </View>
   );
@@ -554,6 +565,7 @@ export function SessionDetail({
         placement={header}
         hostId={hostId}
         paneId={paneId}
+        kind={kind}
         title={title}
         subtitle={kind ? `${hostName} · ${kind}` : hostName}
         menu={menu}

@@ -103,10 +103,11 @@ const nightWatch = {
     currentFg: "#0A0A0B",
   },
   /**
-   * The letter mark of an agent kind (`ui/AgentMark`) on a `raised` tile. Muted tints, never gold
-   * and never the ember of "needs you". The name is always next to the mark, so the tint is
-   * never the only cue. On `raised`: claude 8.4:1, codex 15.2:1, pi 7.6:1, opencode 9.2:1,
-   * omp 8.1:1, gemini 7.0:1, other 6.4:1.
+   * The tint of the logo or letter mark of an agent kind (`ui/AgentMark`) on a `raised` tile. Muted
+   * tints, never gold and never the ember of "needs you". The name is always next to the mark, so
+   * the tint is never the only cue. On `raised`: claude 8.4:1, codex 15.2:1, pi 7.6:1, opencode
+   * 9.2:1, omp 8.1:1, gemini 7.0:1, copilot 8.1:1, cursor 11.7:1, kimi 8.4:1, qwen 7.2:1,
+   * cline 10.4:1, other 6.4:1.
    */
   agent: {
     claude: "#E3A98C",
@@ -115,6 +116,11 @@ const nightWatch = {
     opencode: "#9FC7C0",
     omp: "#D7A3C9",
     gemini: "#7FA7F0",
+    copilot: "#C3A6F2",
+    cursor: "#D9D6CE",
+    kimi: "#6FC0E8",
+    qwen: "#A5A0F0",
+    cline: "#D8C9A8",
     other: "#A39E93",
   },
   /** Terminal view: screen background and default text color (15.7:1). */
