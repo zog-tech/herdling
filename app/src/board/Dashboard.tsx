@@ -1,22 +1,23 @@
 import { ChevronDown, Plus, Server } from "lucide-react-native";
-import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { FlatList, Image, Pressable, StyleSheet, View, type ListViewToken } from "react-native";
+import { memo, useCallback, useMemo } from "react";
+import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
-import { useTerminalText } from "@/thread/useTerminalText";
-import { colors, denseScale, dot, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
+import { agentKind } from "@/herdr/names";
+import { colors, denseScale, dot, hitTarget, icon, motion, space, state } from "@/theme/tokens";
+import { AgentMark } from "@/ui/AgentMark";
 import { useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 
 import { useCardPress } from "./AgentRow";
-import { cardLabel } from "./a11y";
+import { useBoard } from "./boardStore";
 import { BucketStatus } from "./BucketStatus";
+import { BUCKET_META } from "./bucketMeta";
 import type { BoardItem } from "./buckets";
 import { cardActions } from "./cardPress";
-import { shortElapsed } from "./rowText";
-import { hostBadges, lastLines, spotlightLabel, tileWidth, type Spotlight } from "./spotlight";
+import { hostBadges, spotlightLabel, tileWidth, type Spotlight } from "./spotlight";
+import { currentPreview, showsTime, statusLine, tileLabel, tileMain, tilePlace, tileTitle, type TileMain } from "./tileText";
 
 /**
  * The Dashboard top of the Board: the brand header, the carousel of large agent tiles, and the
@@ -26,24 +27,17 @@ import { hostBadges, lastLines, spotlightLabel, tileWidth, type Spotlight } from
  */
 
 /** The tile: height, corner radius, the space between tiles, and the inset of the first tile. */
-export const TILE_H = 210;
+export const TILE_H = 188;
 const TILE_RADIUS = 24;
 const TILE_GAP = space.md;
 const TILE_INSET = space.lg;
-/** The terminal snapshot: lines it shows, lines it reads (blank lines at the end are dropped). */
-const SNAP_LINES = 10;
-const SNAP_READ = 40;
-/** A slow read: the tile is a glance, not the live terminal. `pane.watch` reads at this interval. */
-const SNAP_MS = 5_000;
-/** Snapshot text: line height, and the room it keeps at the bottom for the title, status and subtitle. */
-const SNAP_LH = 16;
-const SNAP_BOTTOM = Math.round(TILE_H * 0.38);
-/** The fade to the tile fill: it starts and ends at these shares of the tile height. */
-const FADE_FROM = 0.5;
-const FADE_TO = 0.75;
+/** The main text of a tile: at most this many lines, then an ellipsis. */
+const MAIN_LINES = 3;
+/** The agent mark at the left of the tile title. */
+const TILE_MARK = 24;
 /** The edge of a tile that needs you. */
 const EMBER_EDGE = 1.5;
-/** The elapsed chip shows whole minutes. */
+/** The status time shows whole minutes. */
 const CHIP_TICK_MS = 30_000;
 /** The computers button: circle size and how far each circle overlaps the one before. */
 const BADGE = 26;
@@ -152,92 +146,52 @@ export function HostsButton({
   );
 }
 
-/** The last lines of the agent's screen, small and dim. Without a screen: the latest line, larger. */
-function Snapshot({ item, read }: { item: BoardItem; read: boolean }) {
-  const { text } = useTerminalText(item.hostId, item.agent.pane_id, read, { lines: SNAP_READ, refreshMs: SNAP_MS });
-  const lines = useMemo(() => lastLines(text, SNAP_LINES), [text]);
-  const fallback = item.line ?? item.terminalTitle;
+/** The main text of a tile, in the color of its kind. A question takes the attention color. */
+function MainText({ main }: { main: TileMain }) {
+  const quiet = main.kind === "empty" || main.kind === "background";
+  const color = main.kind === "question" ? BUCKET_META.needs_you.color : quiet ? colors.textMuted : colors.text;
   return (
-    <View
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      // The newest line sits just above the title. Older lines go up and the tile clips them.
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        top: 0,
-        bottom: 0,
-        paddingHorizontal: space.md,
-        paddingBottom: SNAP_BOTTOM,
-        justifyContent: "flex-end",
-      }}
-    >
-      {lines.length > 0 ? (
-        lines.map((l, i) => (
-          <Text key={i} variant="caption" mono numberOfLines={1} maxFontSizeMultiplier={1} color={colors.textMuted} style={{ lineHeight: SNAP_LH }}>
-            {l || " "}
-          </Text>
-        ))
-      ) : fallback ? (
-        <Text variant="title" numberOfLines={3} maxFontSizeMultiplier={1.2} color={colors.textMuted}>
-          {fallback}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-/** How long a working agent works, or how long an agent waits for you: "4 min". */
-function ElapsedChip({ since }: { since: number }) {
-  const elapsed = useElapsed(since, true, CHIP_TICK_MS);
-  if (elapsed === undefined) return null;
-  return (
-    <View
-      style={{
-        position: "absolute",
-        top: space.md,
-        right: space.md,
-        paddingHorizontal: space.sm,
-        paddingVertical: 2,
-        borderRadius: radius.pill,
-        backgroundColor: colors.glassFallback,
-      }}
-    >
-      <Text variant="caption" bold maxFontSizeMultiplier={denseScale.pill} style={{ fontVariant: ["tabular-nums"] }}>
-        {shortElapsed(elapsed)}
-      </Text>
-    </View>
+    <Text variant="body" mono={main.kind === "background"} numberOfLines={MAIN_LINES} maxFontSizeMultiplier={denseScale.pill} color={color}>
+      {main.text}
+    </Text>
   );
 }
 
 /**
- * One large agent tile: the terminal snapshot on `sunken`, a fade to the tile fill, and the title,
- * status and "host · agent" at the bottom. Needs you: an ember edge and the ember tint. Working: a
- * quiet gold edge. Tap opens the session; a long press peeks.
+ * One large agent tile, on `sunken`. The top line: the agent mark, the title, and the status with
+ * its time. Under it: the folder (and the computer when more than one is connected). Then the main
+ * text: the question, the activity, the last reply or the background command (see `tileMain`).
+ * Needs you: an ember edge and the ember tint. Working: a quiet gold edge. Tap opens the session;
+ * a long press peeks.
  */
 export const SpotlightTile = memo(function SpotlightTile({
   item,
   width,
-  read,
+  focused,
+  multiHost,
   onOpen,
   onPeek,
 }: {
   item: BoardItem;
   width: number;
-  /** True while the tile is on screen and the Board is focused: the snapshot reads the screen. */
-  read: boolean;
+  /** True while the Board is focused: the status time ticks. */
+  focused: boolean;
+  /** True when more than one computer is connected: the folder line also names the computer. */
+  multiHost: boolean;
   onOpen: (i: BoardItem) => void;
   onPeek: (i: BoardItem) => void;
 }) {
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
   // A large tile: the hold stays at the first press scale (0.98).
   const press = useCardPress(open, peek, motion.press.scale);
+  const entry = useBoard((s) => s.previews[item.key]);
+  const main = useMemo(() => tileMain(item.bucket, currentPreview(item, entry)), [item, entry]);
+  const elapsed = useElapsed(showsTime(item) ? item.since : undefined, focused, CHIP_TICK_MS);
+  const status = statusLine(item.bucket, elapsed);
+  const title = tileTitle(item);
+  const place = tilePlace(item, multiHost);
   const needsYou = item.bucket === "needs_you";
   const working = item.bucket === "working";
-  // An SVG id: letters, digits and "-" only.
-  const gradId = `fade-${item.key.replace(/[^A-Za-z0-9-]/g, "-")}`;
   return (
     <Animated.View
       style={[
@@ -257,34 +211,35 @@ export const SpotlightTile = memo(function SpotlightTile({
         <Animated.View
           accessible
           accessibilityRole="button"
-          accessibilityLabel={cardLabel(item)}
+          accessibilityLabel={tileLabel(title, status, place, main, item.bucket)}
           accessibilityHint="Opens the session. Long press to peek."
           accessibilityActions={TILE_A11Y_ACTIONS}
           onAccessibilityAction={(e) => (e.nativeEvent.actionName === "longpress" ? onPeek(item) : onOpen(item))}
           style={{ flex: 1 }}
         >
-          <Snapshot item={item} read={read} />
           {needsYou ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.blockedTint }]} /> : null}
-          <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height="100%">
-            <Defs>
-              <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset={FADE_FROM} stopColor={colors.sunken} stopOpacity={0} />
-                <Stop offset={FADE_TO} stopColor={colors.sunken} stopOpacity={1} />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradId})`} />
-          </Svg>
-          {(needsYou || working) && item.since !== undefined ? <ElapsedChip since={item.since} /> : null}
-          <View style={{ position: "absolute", left: space.lg, right: space.lg, bottom: space.md, gap: 2 }}>
-            <Text variant="headline" numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-              {item.title}
-            </Text>
-            <View style={{ flexDirection: "row" }}>
-              <BucketStatus bucket={item.bucket} />
+          <View style={{ flex: 1, padding: space.lg, gap: space.sm }}>
+            <View style={{ gap: 2 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <AgentMark kind={agentKind(item.agent)} size={TILE_MARK} />
+                <Text variant="headline" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flex: 1 }}>
+                  {title}
+                </Text>
+                {/* The status does not truncate: the title gives way to it. */}
+                <View style={{ flexShrink: 0 }}>
+                  <BucketStatus bucket={item.bucket} label={status} />
+                </View>
+              </View>
+              {place ? (
+                <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ paddingLeft: TILE_MARK + space.sm }}>
+                  {place}
+                </Text>
+              ) : null}
             </View>
-            <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-              {item.subtitle}
-            </Text>
+            {/* The tile clips the main text at large text sizes; three lines fit at the default size. */}
+            <View style={{ flex: 1, overflow: "hidden" }}>
+              <MainText main={main} />
+            </View>
           </View>
           {/* Pressed state: a light layer over the tile, not a color swap. */}
           <Animated.View
@@ -326,17 +281,17 @@ function NewSessionTile({ width, onPress }: { width: number; onPress: () => void
 }
 
 type Slot = { kind: "agent"; item: BoardItem } | { kind: "new" };
-const VIEWABILITY = { itemVisiblePercentThreshold: 10 };
 const NEW_KEY = "new";
 
 /**
  * The carousel: a section label ("Highlights" or "Recent"), then the tiles in one row that snaps
- * tile by tile. Only the tiles on screen read their agent's screen. No auto scroll.
+ * tile by tile. No auto scroll.
  */
 export function SpotlightCarousel({
   spot,
   room,
   focused,
+  multiHost = false,
   onOpen,
   onPeek,
   onNew,
@@ -345,26 +300,22 @@ export function SpotlightCarousel({
   /** The width the Board has, in points. */
   room: number;
   focused: boolean;
+  /** True when more than one computer is connected. */
+  multiHost?: boolean;
   onOpen: (i: BoardItem) => void;
   onPeek: (i: BoardItem) => void;
   onNew: () => void;
 }) {
   const width = tileWidth(room);
   const data = useMemo<Slot[]>(() => [...spot.items.map((item): Slot => ({ kind: "agent", item })), { kind: "new" }], [spot.items]);
-  const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set());
-  // FlatList needs the same callback for its whole life.
-  const onViewable = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
-    // The keys are the item keys (see `keyExtractor`); "new" is the New session tile.
-    setVisible(new Set(viewableItems.flatMap((v) => (v.key && v.key !== NEW_KEY ? [v.key] : []))));
-  }).current;
   const renderItem = useCallback(
     ({ item: s }: { item: Slot }) =>
       s.kind === "agent" ? (
-        <SpotlightTile item={s.item} width={width} read={focused && visible.has(s.item.key)} onOpen={onOpen} onPeek={onPeek} />
+        <SpotlightTile item={s.item} width={width} focused={focused} multiHost={multiHost} onOpen={onOpen} onPeek={onPeek} />
       ) : (
         <NewSessionTile width={width} onPress={onNew} />
       ),
-    [width, focused, visible, onOpen, onPeek, onNew],
+    [width, focused, multiHost, onOpen, onPeek, onNew],
   );
   return (
     <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.md }}>
@@ -376,15 +327,12 @@ export function SpotlightCarousel({
         data={data}
         keyExtractor={(s) => (s.kind === "agent" ? s.item.key : NEW_KEY)}
         renderItem={renderItem}
-        extraData={visible}
         showsHorizontalScrollIndicator={false}
         snapToInterval={width + TILE_GAP}
         snapToAlignment="start"
         decelerationRate="fast"
         contentContainerStyle={{ paddingHorizontal: TILE_INSET }}
         ItemSeparatorComponent={TileGap}
-        onViewableItemsChanged={onViewable}
-        viewabilityConfig={VIEWABILITY}
       />
     </View>
   );

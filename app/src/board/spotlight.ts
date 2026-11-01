@@ -64,10 +64,3 @@ export function hostBadges(
     hosts.length === 0 ? "Computers, none added" : `Computers, ${on} of ${hosts.length} online`;
   return { badges: sorted.slice(0, HOST_BADGES_MAX), more: Math.max(0, all.length - HOST_BADGES_MAX), online: on, label };
 }
-
-/** The last `n` lines of a screen with text, after the blank lines at the end are removed. */
-export function lastLines(text: string | undefined, n: number): string[] {
-  if (!text) return [];
-  const lines = text.replace(/\s+$/, "").split("\n").map((l) => l.replace(/\s+$/, ""));
-  return lines.slice(-n);
-}

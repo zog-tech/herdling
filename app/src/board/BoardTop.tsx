@@ -74,6 +74,7 @@ export function BoardTop({
   spot,
   room,
   focused,
+  multiHost = false,
   group,
   sort,
   onGroup,
@@ -88,6 +89,8 @@ export function BoardTop({
   spot: Spotlight;
   room: number;
   focused: boolean;
+  /** True when more than one computer is connected: the tiles also name the computer. */
+  multiHost?: boolean;
   group: string;
   sort: string;
   onGroup: () => void;
@@ -101,7 +104,7 @@ export function BoardTop({
   return (
     <View>
       {spot.items.length > 0 ? (
-        <SpotlightCarousel spot={spot} room={room} focused={focused} onOpen={onOpen} onPeek={onPeek} onNew={onNew} />
+        <SpotlightCarousel spot={spot} room={room} focused={focused} multiHost={multiHost} onOpen={onOpen} onPeek={onPeek} onNew={onNew} />
       ) : null}
       <SummaryLine summary={summary} />
       <AllAgentsBar count={items.length} group={group} sort={sort} onGroup={onGroup} onSort={onSort} />

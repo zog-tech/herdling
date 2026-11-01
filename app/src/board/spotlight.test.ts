@@ -1,5 +1,5 @@
 import type { BoardItem, Bucket } from "./buckets";
-import { hostBadges, lastLines, spotlight, spotlightLabel, tileWidth } from "./spotlight";
+import { hostBadges, spotlight, spotlightLabel, tileWidth } from "./spotlight";
 
 const item = (key: string, bucket: Bucket, patch: Partial<BoardItem> = {}): BoardItem => ({
   key,
@@ -67,10 +67,4 @@ test("host_badges_show_3_online_first_and_count_the_rest", () => {
   expect(r.label).toBe("Computers, 2 of 5 online");
   expect(hostBadges(hosts.slice(0, 2), new Set()).more).toBe(0);
   expect(hostBadges([], new Set()).label).toBe("Computers, none added");
-});
-
-test("last_lines_drop_the_blank_end_and_keep_n", () => {
-  expect(lastLines("a\nb\nc\n\n  \n", 2)).toEqual(["b", "c"]);
-  expect(lastLines(undefined, 3)).toEqual([]);
-  expect(lastLines("one  ", 3)).toEqual(["one"]);
 });
