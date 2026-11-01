@@ -18,6 +18,8 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { colors, denseScale, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
+import { agentKind } from "@/herdr/names";
+import { AgentMark } from "@/ui/AgentMark";
 import * as haptics from "@/ui/haptics";
 import { useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
@@ -36,6 +38,8 @@ const ACTION_W = 84;
 /** Row title: room it keeps beside the status, and its Dynamic Type cap (a dense row). */
 const TITLE_MIN = 140;
 const TITLE_SCALE = 2;
+/** Side of the agent mark before the row title. */
+const MARK_SIZE = 24;
 /** A finger that moves further than this is a swipe or a scroll, not a press. */
 const PRESS_SLOP = 10;
 /** Width of the ember glow at the left edge, and its peak opacity. */
@@ -382,15 +386,13 @@ export const AgentRow = memo(function AgentRow({
               </Animated.View>
               {/* Wraps: with large text the status moves under the title instead of squeezing it. */}
               <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.md, rowGap: space.xs }}>
-                {/* Two lines before the title truncates (Dynamic Type makes long names wrap). */}
-                <Text
-                  variant="headline"
-                  numberOfLines={2}
-                  maxFontSizeMultiplier={TITLE_SCALE}
-                  style={{ flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}
-                >
-                  {item.title}
-                </Text>
+                {/* The agent mark, then the title: two lines before it truncates (Dynamic Type makes long names wrap). */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}>
+                  <AgentMark kind={agentKind(item.agent)} size={MARK_SIZE} />
+                  <Text variant="headline" numberOfLines={2} maxFontSizeMultiplier={TITLE_SCALE} style={{ flexShrink: 1 }}>
+                    {item.title}
+                  </Text>
+                </View>
                 <BucketStatus bucket={bucket} />
               </View>
               <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>

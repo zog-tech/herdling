@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import Svg from "react-native-svg";
 
 import { AgentRow } from "./AgentRow";
 import { BoardHint } from "./BoardHint";
@@ -85,6 +86,16 @@ test("cards_show_the_footer_with_open_and_the_time", () => {
   // VoiceOver still gets the same label and actions.
   const row = t.root.find((n) => n.props.accessibilityHint === "Opens the session. Long press to peek.");
   expect(row.props.accessibilityLabel).toContain("api");
+});
+
+test("every_row_style_shows_the_agent_mark_before_the_title", () => {
+  for (const style of ["flat", "divided", "cards"] as const) {
+    const t = render(<AgentRow item={item()} rowStyle={style} {...actions()} />);
+    expect(t.root.findAllByType(Svg).length).toBeGreaterThan(0);
+  }
+  // A kind with no logo shows its letters.
+  const t = render(<AgentRow item={item({ agent: { ...item().agent, agent: "amp" } })} {...actions()} />);
+  expect(texts(t)).toContain("Am");
 });
 
 test("the_hint_close_button_dismisses_it", () => {
