@@ -171,17 +171,19 @@ function CollapseChevron({ collapsed }: { collapsed: boolean }) {
 }
 
 /**
- * A section header: the title in small caps. A computer or workspace section also shows its count,
+ * A section header: the title in small caps. A computer, workspace or folder section also shows its count,
  * and a tap collapses or expands it (VoiceOver: a button with the expanded state).
  */
 function SectionHeader({
   title,
+  subtitle,
   count,
   collapsed,
   onToggle,
   onMenu,
 }: {
   title: string;
+  subtitle?: string;
   count?: number;
   collapsed?: boolean;
   onToggle?: () => void;
@@ -193,6 +195,11 @@ function SectionHeader({
       <Text variant="section" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
         {title}
       </Text>
+      {subtitle ? (
+        <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 2 }}>
+          {subtitle}
+        </Text>
+      ) : null}
       {count !== undefined ? (
         <Text variant="section" maxFontSizeMultiplier={denseScale.row} style={{ fontVariant: ["tabular-nums"] }}>
           {count}
@@ -215,7 +222,7 @@ function SectionHeader({
       {onToggle ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${title}, ${count ?? 0} ${count === 1 ? "agent" : "agents"}`}
+          accessibilityLabel={`${title}${subtitle ? `, ${subtitle}` : ""}, ${count ?? 0} ${count === 1 ? "agent" : "agents"}`}
           accessibilityHint={collapsed ? "Shows the agents of this group" : "Hides the agents of this group"}
           accessibilityState={{ expanded: !collapsed }}
           onPress={onToggle}
@@ -571,6 +578,7 @@ export default function BoardScreen() {
             return (
               <SectionHeader
                 title={section.title}
+                subtitle={section.subtitle}
                 count={folds ? section.count : undefined}
                 collapsed={section.collapsed}
                 onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}

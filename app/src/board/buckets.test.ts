@@ -4,6 +4,7 @@ import {
   bucketOf,
   countBuckets,
   filterBoard,
+  folderTitles,
   groupBoard,
   mergeBoard,
   previewLine,
@@ -145,7 +146,55 @@ test("group_by_status_host_workspace", () => {
     ["Working", 2],
   ]);
   expect(groupBoard(items, "host").map((s) => s.title)).toEqual(["A", "B"]);
-  expect(groupBoard(items, "workspace").map((s) => s.title)).toEqual(["A · web", "A · api", "B · api"]);
+  expect(groupBoard(items, "workspace").map((s) => s.title)).toEqual(["A · web", "api"]);
+});
+
+test("workspace_sections_merge_equal_names_across_computers", () => {
+  const items = mergeBoard(
+    [host("a", [agent("p1", "working", 1, "w1"), agent("p2", "blocked", 1, "w2")]), host("b", [agent("p3", "working")]), host("c", [agent("p4", "idle")])],
+    {},
+    {},
+    {},
+  );
+  const s = groupBoard(items, "workspace");
+  const api = s.find((x) => x.key === "ws:api")!;
+  expect(api.title).toBe("api");
+  expect(api.subtitle).toBe("3 computers");
+  expect(api.workspace).toBeUndefined();
+  expect(api.data).toHaveLength(3);
+  const web = s.find((x) => x.key === "ws:web")!;
+  expect(web.title).toBe("A · web");
+  expect(web.subtitle).toBeUndefined();
+  expect(web.workspace).toEqual({ hostId: "a", workspaceId: "w2" });
+  expect(groupBoard(items.filter((i) => i.hostId !== "c"), "workspace").find((x) => x.key === "ws:api")!.subtitle).toBe("A, B");
+});
+
+test("folder_titles_use_the_last_part_and_add_parts_for_equal_names", () => {
+  const t = folderTitles(["/home/sam/apps/web", "/home/sam/old/web", "/home/sam/api", "/srv/x/web", "/home/sam"]);
+  expect(t.get("/home/sam/apps/web")).toBe("apps/web");
+  expect(t.get("/home/sam/old/web")).toBe("old/web");
+  expect(t.get("/srv/x/web")).toBe("x/web");
+  expect(t.get("/home/sam/api")).toBe("api");
+  expect(t.get("/home/sam")).toBe("~");
+  expect(folderTitles(["/home/sam/web", "/Users/jo/web"]).get("/home/sam/web")).toBe("~/web");
+});
+
+test("folder_sections_merge_computers_and_put_no_folder_last", () => {
+  const withCwd = (a: AgentInfo, cwd?: string): AgentInfo => ({ ...a, cwd });
+  const items = mergeBoard(
+    [
+      host("a", [withCwd(agent("p1", "working"), "/home/sam/projects/web"), agent("p2", "idle")]),
+      host("b", [withCwd(agent("p3", "idle"), "/home/sam/projects/web/")]),
+    ],
+    {},
+    {},
+    {},
+  );
+  const s = groupBoard(items, "folder");
+  expect(s.map((x) => [x.key, x.title, x.data.length])).toEqual([
+    ["dir:/home/sam/projects/web", "web", 2],
+    ["dir:", "No folder", 1],
+  ]);
 });
 
 test("first_seen_starts_on_change_and_drops_gone_panes", () => {

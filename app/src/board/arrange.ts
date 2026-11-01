@@ -13,6 +13,7 @@ export const BOARD_GROUPS: readonly { id: BoardGroup; label: string }[] = [
   { id: "status", label: "Status" },
   { id: "host", label: "Computer" },
   { id: "workspace", label: "Workspace" },
+  { id: "folder", label: "Folder" },
   { id: "none", label: "None" },
 ];
 
@@ -69,15 +70,15 @@ export function sortItems(items: BoardItem[], by: SortBy): BoardItem[] {
 
 /**
  * Sections in display order. "none" gives one section with no title. Status sections stay in the
- * bucket order; computer and workspace sections follow their first item. Items keep the given order.
+ * bucket order; computer, workspace and folder sections follow their first item (no folder is last). Items keep the given order.
  */
 export function groupItems(items: BoardItem[], by: BoardGroup): BoardSection[] {
   if (by === "none") return items.length > 0 ? [{ key: "all", title: "", data: items }] : [];
   return groupBoard(items, by);
 }
 
-/** True when a group's section headers can collapse: computer and workspace. */
-export const collapsible = (by: BoardGroup) => by === "host" || by === "workspace";
+/** True when a group's section headers can collapse: computer, workspace and folder. */
+export const collapsible = (by: BoardGroup) => by === "host" || by === "workspace" || by === "folder";
 
 /** A Board section with the number of its items, which stays when the section is collapsed. */
 export type ShownSection = BoardSection & { count: number; collapsed: boolean };

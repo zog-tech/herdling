@@ -52,6 +52,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Folder group and shared workspaces.** The Board Group menu has "Folder": agents with the same
+  folder form one section across all computers, titled by the last part of the path (more parts
+  when two folders share a name; the home folder shows as `~`), and agents with no folder go in
+  "No folder". "Workspace" now merges workspaces with the same name on different computers into
+  one section, with the computer names under the title. Saved collapsed workspace sections open
+  once after this update.
 - **Theme and accent.** Settings, Appearance, Theme: three dark themes (Night Watch, the default;
   Midnight, true black for OLED; Graphite, cool greys) and five accents (Lantern gold, the default;
   Ember, Sea glass, Iris, Ivory). The working lantern follows the accent. With Ember, "needs you"

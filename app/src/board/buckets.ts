@@ -168,15 +168,67 @@ export function toggleFilter(current: Bucket | null, tapped: Bucket): Bucket | n
   return current === tapped ? null : tapped;
 }
 
-export type GroupBy = "status" | "host" | "workspace";
+export type GroupBy = "status" | "host" | "workspace" | "folder";
 export type BoardSection = {
   key: string;
   title: string;
+  /** A second line for the header: the computers of a workspace that spans more than one. */
+  subtitle?: string;
   bucket?: Bucket;
-  /** Set when grouped by workspace: the workspace the section shows. */
+  /** Set when grouped by workspace and the section has one workspace on one computer. */
   workspace?: { hostId: string; workspaceId: string };
   data: BoardItem[];
 };
+
+/** Key of the section for agents with no folder. */
+export const NO_FOLDER_KEY = "dir:";
+
+/** The workspace name as a key: trimmed and lower case, so "API " and "api" are one workspace. */
+export const workspaceKey = (name: string) => `ws:${name.trim().toLowerCase()}`;
+
+/** The folder as a key: trimmed, with no trailing slash. An empty result means no folder. */
+export const folderPath = (cwd: string | null | undefined) => {
+  const t = (cwd ?? "").trim();
+  return t.length > 1 ? t.replace(/\/+$/, "") || "/" : t;
+};
+
+/** The parts of a folder path for display. The home folder of a user becomes "~". */
+function folderParts(path: string): string[] {
+  const home = /^(?:\/Users|\/home)\/[^/]+(?=\/|$)/.exec(path);
+  const rest = home ? path.slice(home[0].length) : path;
+  const parts = rest.split("/").filter(Boolean);
+  return home ? ["~", ...parts] : parts;
+}
+
+/**
+ * Titles for folder paths: the last part of the path. When two paths share the last part, each one
+ * gets more parts from the end until the titles differ. A path never shows its full home folder.
+ */
+export function folderTitles(paths: readonly string[]): Map<string, string> {
+  const parts = new Map(paths.map((p) => [p, folderParts(p)] as const));
+  const depth = new Map<string, number>(paths.map((p) => [p, 1]));
+  const title = (p: string) => {
+    const ps = parts.get(p)!;
+    const n = Math.min(depth.get(p)!, ps.length);
+    return ps.length === 0 ? "/" : ps.slice(ps.length - n).join("/");
+  };
+  for (let round = 0; round < 64; round++) {
+    const byTitle = new Map<string, string[]>();
+    for (const p of paths) byTitle.set(title(p), [...(byTitle.get(title(p)) ?? []), p]);
+    let grew = false;
+    for (const group of byTitle.values()) {
+      if (group.length < 2) continue;
+      for (const p of group) {
+        if (depth.get(p)! < parts.get(p)!.length) {
+          depth.set(p, depth.get(p)! + 1);
+          grew = true;
+        }
+      }
+    }
+    if (!grew) break;
+  }
+  return new Map(paths.map((p) => [p, title(p)] as const));
+}
 
 /** Sections in display order. Items keep their sorted order inside a section. */
 export function groupBoard(items: BoardItem[], by: GroupBy): BoardSection[] {
@@ -185,18 +237,57 @@ export function groupBoard(items: BoardItem[], by: GroupBy): BoardSection[] {
       (s) => s.data.length > 0,
     );
   }
+  if (by === "folder") return groupByFolder(items);
+  if (by === "workspace") return groupByWorkspace(items);
   const sections = new Map<string, BoardSection>();
   for (const i of items) {
-    const key = by === "host" ? i.hostId : `${i.hostId}:${i.agent.workspace_id}`;
-    const title = by === "host" ? i.hostName : `${i.hostName} · ${i.workspace}`;
-    const s =
-      sections.get(key) ??
-      (by === "workspace" ? { key, title, workspace: { hostId: i.hostId, workspaceId: i.agent.workspace_id }, data: [] } : { key, title, data: [] });
+    const s = sections.get(i.hostId) ?? { key: i.hostId, title: i.hostName, data: [] };
     s.data.push(i);
-    sections.set(key, s);
+    sections.set(i.hostId, s);
   }
-  // Sections follow their most urgent card.
   return [...sections.values()];
+}
+
+/** One section per folder across all computers. Agents with no folder go last. */
+function groupByFolder(items: BoardItem[]): BoardSection[] {
+  const byPath = new Map<string, BoardItem[]>();
+  const none: BoardItem[] = [];
+  for (const i of items) {
+    const path = folderPath(i.agent.cwd);
+    if (!path) none.push(i);
+    else byPath.set(path, [...(byPath.get(path) ?? []), i]);
+  }
+  const titles = folderTitles([...byPath.keys()]);
+  const out: BoardSection[] = [...byPath].map(([path, data]) => ({ key: `dir:${path}`, title: titles.get(path)!, data }));
+  if (none.length > 0) out.push({ key: NO_FOLDER_KEY, title: "No folder", data: none });
+  return out;
+}
+
+/**
+ * One section per workspace name across all computers (trimmed, case-insensitive). A name on one
+ * computer keeps the "<computer> · <workspace>" title and its menu. A name on more computers shows
+ * the workspace name with the computers as the subtitle.
+ */
+function groupByWorkspace(items: BoardItem[]): BoardSection[] {
+  type Group = { label: string; hosts: Map<string, string>; ids: Set<string>; data: BoardItem[] };
+  const groups = new Map<string, Group>();
+  for (const i of items) {
+    const key = workspaceKey(i.workspace);
+    const g: Group = groups.get(key) ?? { label: i.workspace.trim() || i.workspace, hosts: new Map(), ids: new Set(), data: [] };
+    g.hosts.set(i.hostId, i.hostName);
+    g.ids.add(i.agent.workspace_id);
+    g.data.push(i);
+    groups.set(key, g);
+  }
+  return [...groups].map(([key, g]) => {
+    const names = [...g.hosts.values()];
+    if (g.hosts.size === 1 && g.ids.size === 1) {
+      const [hostId] = g.hosts.keys();
+      return { key, title: `${names[0]} · ${g.label}`, workspace: { hostId, workspaceId: [...g.ids][0] }, data: g.data };
+    }
+    const subtitle = names.length <= 2 ? names.join(", ") : `${names.length} computers`;
+    return { key, title: g.label, subtitle, data: g.data };
+  });
 }
 
 /**
