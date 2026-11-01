@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd Unreleased]
+## [herdlingd 0.1.3] - 2026-11-01
 
 - Tidy notifications: one notification per agent (`collapseId`, `tag`), grouped by computer
   (`threadId`), "needs you" as time-sensitive and "finished" as passive with no sound. Three new
