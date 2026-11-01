@@ -615,6 +615,7 @@ export default function BoardScreen() {
                 spot={spot}
                 room={regular ? BOARD_COLUMN_WIDTH : windowWidth}
                 focused={focused}
+                multiHost={online.size > 1}
                 group={groupLabel(groupBy)}
                 sort={sortLabel(sortBy)}
                 onGroup={pickGroup}

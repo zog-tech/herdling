@@ -67,8 +67,8 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
   turns rose. A change applies at once and the app stays on the same screen. No light theme yet.
 - **Dashboard top on the Board.** The Board opens with the Herdling name and a computers button
   (one circle per computer with an online dot), then a row of large agent tiles: "Highlights"
-  (needs you, working, unread) or "Recent" (recent idle agents), each with the last lines of its
-  screen. A last tile starts a new session. Under the tiles: one summary line and "All agents"
+  (needs you, working, unread) or "Recent" (recent idle agents), each with the status, the folder and the
+  latest question, activity or reply. A last tile starts a new session. Under the tiles: one summary line and "All agents"
   with Group (Status, Computer, Workspace, None) and Sort (Status, Recent activity, Name, Running
   longest) menus. Computer and workspace groups collapse with a tap on the header. The group, the
   sort and the collapsed groups are saved. Settings, "Overview top", has "Summary" for the large
@@ -229,6 +229,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Changed
 
+- **Dashboard tiles show the facts, not the screen.** Each tile shows the agent mark, the name and
+  the status with its time ("Working · 4m"), then the folder (and the computer when more than one
+  is connected). The main text is the question when the agent needs you, else the activity, else
+  the last reply, else the background command. The terminal snippet is gone.
 - A long press on a message in the thread dims it. It no longer makes the message smaller.
 - The product name changed from the working name to Herdling. The companion is now `herdlingd`.
 - The app no longer asks for permissions it does not use (Face ID, storage, biometrics, overlay, boot).
