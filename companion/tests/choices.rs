@@ -60,6 +60,23 @@ fn numbered_prose_is_ignored() {
 }
 
 #[test]
+fn ask_user_question_labels_are_joined() {
+    // The app splits these labels for display only; the labels stay the same on both sides.
+    let v = parse_choices(&fixture("claude_ask_user_question"));
+    assert_eq!(
+        labels(&v),
+        [
+            "Run tests in parallel (Recommended) Jest runs the test files on four workers, so the run takes about a quarter of the time. I change the config and run the suite again.",
+            "Keep config, skip slow tests Make no config change. I mark the three slowest tests as skipped, so the run is faster, but those tests do not run.",
+            "Mock the network Replace the real network calls with a mock server. This needs a new test helper.",
+            "Type something.",
+            "Chat about this",
+        ]
+    );
+    assert!(v[0].selected);
+}
+
+#[test]
 fn idle_prompt() {
     assert_eq!(parse_choices(&fixture("claude_idle_prompt")), vec![]);
 }

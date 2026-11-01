@@ -77,3 +77,22 @@ test("status_row_adds_running_subagents_while_working", () => {
   expect(label(t)).toBe("Needs you");
   act(() => t.unmount());
 });
+
+test("status_row_shows_background_work_of_an_idle_agent", () => {
+  expect(isStatusShown("idle", "1 shell running")).toBe(true);
+  expect(isStatusShown("done", "1 shell running")).toBe(true);
+  expect(isStatusShown("unknown", "1 shell running")).toBe(false);
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="idle" background="1 shell running" />);
+  });
+  const texts = () => t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
+  expect(texts()).toContain("Idle");
+  expect(texts()).toContain("· 1 shell running");
+  expect(label(t)).toBe("Idle, 1 shell running");
+  expect(t.root.findByProps({ accessibilityRole: "text" }).props.accessible).toBe(true);
+  // While working, the background text does not show.
+  act(() => t.update(<StatusRow status="working" background="1 shell running" />));
+  expect(label(t)).toBe("Working");
+  act(() => t.unmount());
+});

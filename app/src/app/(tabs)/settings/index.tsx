@@ -4,8 +4,9 @@ import * as Updates from "expo-updates";
 import * as Speech from "expo-speech";
 import { Check, Minus, Play, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 
+import { AppearanceSection } from "@/board/AppearanceSection";
 import { DemoTag } from "@/demo/DemoTag";
 import { DEMO_HOST_DETAIL, isDemoHost, startDemo } from "@/demo/demoHost";
 import { PHONE, PHONE_LABEL } from "@/device";
@@ -15,7 +16,7 @@ import { useHostConn } from "@/hosts/connection";
 import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts, type Host } from "@/hosts/store";
 import { updateStatus } from "@/hosts/updates";
-import { useNotifPrefs } from "@/push/prefs";
+import { useNotifPrefs, type NotifPref } from "@/push/prefs";
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
 import { Group, Section } from "@/ui/Group";
@@ -76,7 +77,10 @@ function HostRow({ host }: { host: Host }) {
   );
 }
 
-function PrefRow({ pref, label, detail }: { pref: "finished" | "needs_you" | "quiet_at_desk"; label: string; detail: string }) {
+/** Android has no push groups and no passive pushes: the row says so. */
+const IOS_ONLY = Platform.OS === "ios" ? undefined : "Only on iPhone and iPad.";
+
+function PrefRow({ pref, label, detail }: { pref: NotifPref; label: string; detail: string }) {
   const value = useNotifPrefs((s) => s[pref]);
   const setPref = useNotifPrefs((s) => s.setPref);
   return <Row title={label} detail={detail} trailing={<GoldSwitch label={label} value={value} onValueChange={(v) => setPref(pref, v)} />} />;
@@ -323,11 +327,19 @@ export default function SettingsScreen() {
             label="Quiet at the computer"
             detail="No pushes while you use herdr on the computer, until 5 minutes after your last activity."
           />
+          <PrefRow pref="replace" label="One notification per agent" detail="A new event replaces the old notification for the same agent." />
+          <PrefRow pref="group" label="Group by computer" detail={IOS_ONLY ?? "Notifications from the same computer stay together."} />
+          <PrefRow
+            pref="quiet_finished"
+            label="Deliver 'finished' quietly"
+            detail={IOS_ONLY ?? "Finished notifications arrive without sound or banner."}
+          />
         </Group>
       </Section>
       <VoiceSection />
       <VoiceInputSection />
       <FeelSection />
+      <AppearanceSection />
       <Section title="About">
         <Group>
           <Row title="Version" detail={versionText()} />

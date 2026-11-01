@@ -1,6 +1,6 @@
 import { useContext, type ComponentProps, type ReactNode } from "react";
 import { Pressable, type AccessibilityActionEvent } from "react-native";
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
 
 import { motion, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
@@ -18,28 +18,23 @@ type Props = Omit<
   children?: ReactNode;
   /** What the menu acts on. Null: no menu (for example a redacted thought). */
   menu: MenuTarget | null;
-  /** "scale": the content dips while the finger is down. "none": the caller draws its own pressed state. */
-  feedback?: "scale" | "none";
+  /** "dim": the content dims while the finger is down. "none": the caller draws its own pressed state. */
+  feedback?: "dim" | "none";
 };
 
 /**
  * A Pressable whose long press opens the row menu (Copy, Select text, Share, ...). A tap still runs
  * `onPress`, and a fired long press never runs it. A move (a scroll) cancels the long press.
  * VoiceOver and TalkBack get the actions "Copy" and "More options".
- * Press feedback: after `motion.press.inMs` the content scales to `motion.press.scale`, so a quick
- * scroll shows none. Reduce Motion: an opacity dip in place of the scale.
+ * Press feedback: after `motion.press.inMs` the content dims to `state.pressedFill`, so a quick
+ * scroll shows none. The size does not change: a message that shrinks under the finger looks wrong.
  */
 export function MenuPressable({ menu, feedback = "none", onPress, onPressIn, onPressOut, children, ...rest }: Props) {
   const pane = useContext(ThreadPaneContext);
-  const reduced = useReducedMotion();
   const dip = useSharedValue(0);
-  const anim = useAnimatedStyle(() =>
-    reduced
-      ? { opacity: 1 - dip.get() * (1 - state.pressedFill) }
-      : { transform: [{ scale: 1 - dip.get() * (1 - press.scale) }] },
-  );
-  const scales = feedback === "scale" && !!menu;
-  const release = () => dip.set(withSpring(0, motion.spring.release));
+  const anim = useAnimatedStyle(() => ({ opacity: 1 - dip.get() * (1 - state.pressedFill) }));
+  const dims = feedback === "dim" && !!menu;
+  const release = () => dip.set(withTiming(0, { duration: press.inMs, easing: EASE_OUT }));
   const open = () => {
     if (!menu) return;
     release();
@@ -59,11 +54,11 @@ export function MenuPressable({ menu, feedback = "none", onPress, onPressIn, onP
       onLongPress={menu ? open : undefined}
       delayLongPress={press.longPressMs}
       onPressIn={(e) => {
-        if (scales) dip.set(withDelay(press.inMs, withTiming(1, { duration: press.inMs, easing: EASE_OUT })));
+        if (dims) dip.set(withDelay(press.inMs, withTiming(1, { duration: press.inMs, easing: EASE_OUT })));
         onPressIn?.(e);
       }}
       onPressOut={(e) => {
-        if (scales) release();
+        if (dims) release();
         onPressOut?.(e);
       }}
       accessibilityActions={
@@ -73,7 +68,7 @@ export function MenuPressable({ menu, feedback = "none", onPress, onPressIn, onP
       }
       onAccessibilityAction={menu ? onAction : undefined}
     >
-      {scales ? <Animated.View style={anim}>{children}</Animated.View> : children}
+      {dims ? <Animated.View style={anim}>{children}</Animated.View> : children}
     </Pressable>
   );
 }

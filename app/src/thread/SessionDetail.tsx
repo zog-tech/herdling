@@ -13,6 +13,7 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 
+import { useSessionBackground } from "@/board/useSessionBackground";
 import { getHostConn, useHostConn } from "@/hosts/connection";
 import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
@@ -240,6 +241,7 @@ function ThreadBody({
   paneId,
   focused,
   badge,
+  background,
   focusId,
 }: {
   thread: Thread;
@@ -247,6 +249,8 @@ function ThreadBody({
   paneId: string;
   focused: boolean;
   badge: BadgeStatus;
+  /** Background work of an idle agent ("1 shell running"), shown in the status row. */
+  background?: string;
   /** Search: the item to scroll into view. */
   focusId?: string;
 }) {
@@ -260,7 +264,7 @@ function ThreadBody({
           No conversation log for this agent. Showing its terminal.
         </Text>
         <TerminalView hostId={hostId} paneId={paneId} active={focused} />
-        <StatusRow status={badge} />
+        <StatusRow status={badge} background={background} />
       </View>
     );
   }
@@ -284,7 +288,7 @@ function ThreadBody({
             {note}
           </Text>
         ) : null}
-        <StatusRow status={badge} />
+        <StatusRow status={badge} background={background} />
       </View>
     );
   }
@@ -308,8 +312,8 @@ function ThreadBody({
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
-          footer={<StatusRow status={badge} subagents={subagents} />}
-          footerShown={isStatusShown(badge)}
+          footer={<StatusRow status={badge} subagents={subagents} background={background} />}
+          footerShown={isStatusShown(badge, background)}
           live={{ hostId, paneId, active: focused }}
           focusId={focusId}
         />
@@ -505,6 +509,7 @@ export function SessionDetail({
   const title = agent && snapshot ? agentTitle(snapshot, agent) : thread.ref?.kind || paneId;
   const kind = agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
+  const background = useSessionBackground(hostId, paneId, agent?.agent_status, focused && conn.status === "online");
   // Browser preview: only on a build and a herdlingd that have it. The port list loads while the session is in view.
   const previewOn = usePreviewSupported(hostId);
   const livePorts = usePorts(hostId, paneId, previewOn && focused);
@@ -612,7 +617,7 @@ export function SessionDetail({
       {mode === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId} openPane={onOpenPane}>
           <SearchMarksContext.Provider value={threadSearch.marks}>
-            <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} focusId={threadSearch.currentId} />
+            <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} background={background} focusId={threadSearch.currentId} />
           </SearchMarksContext.Provider>
         </SwipeBetweenAgents>
       ) : (

@@ -8,8 +8,10 @@ import { LanternGlow } from "./LanternGlow";
 import { STATUS_META, StatusIcon, statusSpoken, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
 
-/** Only these states show a row. Idle, done and unknown hide it. */
+/** Only these states show a row. Idle, done and unknown hide it, unless background work runs. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
+/** These states show the row while background work runs: "Idle · 1 shell running". */
+const QUIET: readonly BadgeStatus[] = ["idle", "done"];
 const PILL_HEIGHT = 40;
 const ROW_ICON = 20;
 /** Space between the newest message and the pill. */
@@ -21,8 +23,9 @@ const EASE_OUT = Easing.bezier(...motion.ease.out);
 /** Hide-and-show time of the pill, so the list can keep it in view while it grows. */
 export const STATUS_ANIM_MS = motion.stateMs;
 
-/** Whether this state shows the pill. */
-export const isStatusShown = (status: BadgeStatus) => SHOWN.includes(status);
+/** Whether this state shows the pill. `background`: the text of the background work, if any. */
+export const isStatusShown = (status: BadgeStatus, background?: string) =>
+  SHOWN.includes(status) || (!!background && QUIET.includes(status));
 
 /** What VoiceOver says on a change: only work that finishes, and "Needs you". */
 export function announcement(from: BadgeStatus, to: BadgeStatus): string | undefined {
@@ -35,16 +38,19 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
  * Agent status pill, the last item of the thread list (below the newest message). Working shows the
  * icon and "Working". The pill is centered, fades and slides in and out, and takes no height when hidden.
  * `subagents`: running subagents; while working, the pill adds " · 2 subagents".
+ * `background`: background work of an idle agent ("1 shell running"); the pill shows "Idle · 1 shell running".
  */
 export const StatusRow = memo(function StatusRow({
   status,
   subagents = 0,
+  background,
 }: {
   status: BadgeStatus;
   subagents?: number;
+  background?: string;
 }) {
   const reduced = useReducedMotion();
-  const visible = SHOWN.includes(status);
+  const visible = isStatusShown(status, background);
   // Keep the last shown state, so the content stays while the row fades out.
   const [shown, setShown] = useState<BadgeStatus>(visible ? status : "working");
   const progress = useSharedValue(visible ? 1 : 0);
@@ -69,7 +75,8 @@ export const StatusRow = memo(function StatusRow({
 
   const working = status === "working";
   const { label, color } = STATUS_META[shown];
-  const subs = shown === "working" && subagents > 0 ? subagentCount(subagents) : undefined;
+  const bg = QUIET.includes(shown) ? background : undefined;
+  const subs = shown === "working" && subagents > 0 ? subagentCount(subagents) : bg;
   const spoken = statusSpoken(shown);
   const text = subs ? `${spoken}, ${subs}` : spoken;
 

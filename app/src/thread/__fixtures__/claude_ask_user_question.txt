@@ -1,0 +1,21 @@
+⏺ I found three ways to make the test run faster.
+
+────────────────────────────────────────────────────────────────────────────────
+ ☐ Test speed
+
+Which fix do you want for the slow test run?
+
+❯ 1. Run tests in parallel (Recommended)
+     Jest runs the test files on four workers, so the run takes about a
+     quarter of the time. I change the config and run the suite again.
+  2. Keep config, skip slow tests
+     Make no config change. I mark the three slowest tests as skipped, so the
+     run is faster, but those tests do not run.
+  3. Mock the network
+     Replace the real network calls with a mock server. This needs a new
+     test helper.
+  4. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

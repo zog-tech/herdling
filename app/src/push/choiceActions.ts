@@ -6,6 +6,7 @@ import type { RpcClient } from "@/rpc/RpcClient";
 import { showNotice } from "@/ui/notice";
 
 import { CHOICE_CATEGORY, CHOICE_NO, CHOICE_YES } from "./choiceIds";
+import { dismissPaneNotifications } from "./dismiss";
 
 /**
  * Yes and No buttons on a "needs you" push (Stage 1a). herdlingd sends `categoryId: "herdling_choice"`
@@ -68,6 +69,8 @@ export type AnswerDeps = {
   /** The host's rpc client once it is online, or undefined. `fresh` asks for a new connection. */
   connect: (hostId: string, fresh: boolean) => Promise<Rpc | undefined>;
   notice: (text: string, o?: { failed?: boolean }) => void;
+  /** Removes the delivered notifications of the pane after an answer. */
+  dismiss?: (hostId: string, paneId: string) => Promise<unknown>;
 };
 
 /** A live connection: the current one when it answers a ping, else a new one. */
@@ -77,12 +80,13 @@ async function connectLive(hostId: string, fresh: boolean): Promise<Rpc | undefi
   return attempt === undefined ? undefined : waitForRpc(hostId, CONNECT_MS, attempt);
 }
 
-const defaultDeps: AnswerDeps = { connect: connectLive, notice: showNotice };
+const defaultDeps: AnswerDeps = { connect: connectLive, notice: showNotice, dismiss: dismissPaneNotifications };
 
 /**
  * Answers the menu of `tap` with `pane.answer` and shows the result: "Answered Yes", "The question changed"
  * (error `stale`) or a failure. After the app was in the background the old connection can be dead,
  * so a ping checks it first and a failed ping connects again. `pane.answer` itself is sent once.
+ * After the answer, the notifications of the pane go away: the user handled them.
  */
 export async function answerChoiceTap(tap: ChoiceTap, deps: AnswerDeps = defaultDeps): Promise<AnswerResult> {
   let rpc = await deps.connect(tap.hostId, false);
@@ -101,6 +105,7 @@ export async function answerChoiceTap(tap: ChoiceTap, deps: AnswerDeps = default
   try {
     await rpc.call<PaneAnswer>("pane.answer", params, ANSWER_MS);
     deps.notice(`Answered ${tap.answer}`);
+    void deps.dismiss?.(tap.hostId, tap.paneId);
     return "answered";
   } catch (e) {
     if ((e as { code?: unknown })?.code === "stale") {

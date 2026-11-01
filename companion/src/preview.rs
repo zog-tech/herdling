@@ -3,6 +3,7 @@
 //! Panes of agents with a transcript adapter are read from the end of their session log
 //! (activity, last reply,
 //! pending permission). Other agents fall back to the last useful line of the screen.
+//! Claude Code panes also report the background shells and subagents that still run.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -14,9 +15,11 @@ use serde_json::{json, Value};
 use tokio::task::JoinSet;
 
 use crate::claude;
+use crate::claude::background::ClaudeFeed;
 use crate::herdr::{self, HerdrError};
 use crate::tail::read_offset_lines_before;
-use crate::types::{AgentPreview, ThreadItem};
+use crate::transcript::background::BackgroundLog;
+use crate::types::{AgentPreview, BackgroundInfo, ThreadItem};
 
 /// Bytes read from the end of a Claude log.
 pub const TAIL_BYTES: u64 = 256 * 1024;
@@ -35,6 +38,8 @@ const RESOLVE_TTL: Duration = Duration::from_secs(15);
 type StatusStart = (String, Option<i64>);
 /// A resolved Claude log (None: the pane has none) and when it was resolved.
 type ResolvedLog = (Option<PathBuf>, Instant);
+/// The start of a pane's agent process (Unix ms, None: unknown) and when it was looked up.
+type AgentStart = (Option<i64>, Instant);
 
 /// State kept by one rpc process between `agents.preview` calls.
 #[derive(Clone, Default)]
@@ -43,6 +48,10 @@ pub struct PreviewState {
     since: Arc<Mutex<HashMap<String, StatusStart>>>,
     /// Per pane: the resolved Claude log (None: not a Claude log) and when it was resolved.
     logs: Arc<Mutex<HashMap<String, ResolvedLog>>>,
+    /// Per pane: the background tasks of its Claude log, read step by step.
+    background: Arc<Mutex<HashMap<String, BackgroundLog<ClaudeFeed>>>>,
+    /// Per pane: the start of its agent process, looked up only while background tasks run.
+    starts: Arc<Mutex<HashMap<String, AgentStart>>>,
 }
 
 fn now_s() -> i64 {
@@ -56,6 +65,8 @@ impl PreviewState {
         if let Some(pane) = crate::events::closed_pane_id(ev) {
             self.since.lock().unwrap().remove(pane);
             self.logs.lock().unwrap().remove(pane);
+            self.background.lock().unwrap().remove(pane);
+            self.starts.lock().unwrap().remove(pane);
             return;
         }
         if crate::events::event_name(ev).as_deref() != Some("pane_agent_status_changed") {
@@ -98,6 +109,24 @@ impl PreviewState {
 
     fn cache_log(&self, pane: &str, log: Option<PathBuf>) {
         self.logs.lock().unwrap().insert(pane.to_string(), (log, Instant::now()));
+    }
+
+    fn cached_start(&self, pane: &str) -> Option<Option<i64>> {
+        let g = self.starts.lock().unwrap();
+        g.get(pane).filter(|(_, at)| at.elapsed() < RESOLVE_TTL).map(|(s, _)| *s)
+    }
+
+    fn cache_start(&self, pane: &str, start: Option<i64>) {
+        self.starts.lock().unwrap().insert(pane.to_string(), (start, Instant::now()));
+    }
+
+    /// Reads the new lines of the pane's log and returns its background state. A new log
+    /// path (a new session) starts with no tasks. Blocks.
+    fn update_background(&self, pane: &str, path: &Path) -> BackgroundLog<ClaudeFeed> {
+        let old = self.background.lock().unwrap().remove(pane);
+        let mut log = old.filter(|l| l.path() == path).unwrap_or_else(|| BackgroundLog::new(path));
+        let _ = log.update();
+        log
     }
 }
 
@@ -528,6 +557,7 @@ async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &Preview
         question: None,
         status_since: None,
         source: "screen".into(),
+        background: None,
     };
     if crate::transcript::Agent::from_kind(&a.kind).is_some() {
         let log = match state.cached_log(&a.pane_id) {
@@ -540,6 +570,9 @@ async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &Preview
             }
         };
         if let Some(path) = log {
+            if crate::transcript::Agent::of_log(&path.to_string_lossy()) == crate::transcript::Agent::Claude {
+                p.background = claude_background(socket, timeout, state, &a.pane_id, &path).await;
+            }
             if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_any_log(&path)).await {
                 p.source = "log".into();
                 p.last_reply = lp.last_reply;
@@ -563,6 +596,52 @@ async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &Preview
         _ => p.last_reply = Some(line),
     }
     Some(p)
+}
+
+/// The background shells and subagents of a Claude log that still run. When some are
+/// recorded, the start of the agent process is checked: tasks from before a restart have ended.
+async fn claude_background(socket: &Path, timeout: Duration, state: &PreviewState, pane: &str, path: &Path) -> Option<BackgroundInfo> {
+    let (st, pane_id, log_path) = (state.clone(), pane.to_string(), path.to_path_buf());
+    // The state goes back into the map in the blocking task, so a pane timeout does not lose it.
+    let tracker = tokio::task::spawn_blocking(move || {
+        let log = st.update_background(&pane_id, &log_path);
+        let tracker = log.tracker.clone();
+        st.background.lock().unwrap().insert(pane_id, log);
+        tracker
+    })
+    .await
+    .ok()?;
+    if tracker.is_empty() {
+        return None;
+    }
+    let start = match state.cached_start(pane) {
+        Some(s) => s,
+        None => {
+            let s = agent_start_ms(socket, timeout, pane).await;
+            state.cache_start(pane, s);
+            s
+        }
+    };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+    tracker.info(now, start)
+}
+
+/// Start of the Claude process in the pane, in Unix ms. None when herdr or the process list
+/// does not tell.
+async fn agent_start_ms(socket: &Path, timeout: Duration, pane: &str) -> Option<i64> {
+    let mut c = herdr::Client::connect(socket, timeout).await.ok()?;
+    let info = c.call("pane.process_info", json!({ "pane_id": pane })).await.ok()?;
+    let (fg, shell) = crate::transcript::procs::pane_pids(info.get("process_info").unwrap_or(&info));
+    if fg.is_empty() && shell.is_none() {
+        return None;
+    }
+    let bins = crate::transcript::Agent::Claude.bins();
+    let start = tokio::task::spawn_blocking(move || {
+        crate::transcript::procs::agent_start(&crate::transcript::host_procs(), &fg, shell, bins)
+    })
+    .await
+    .ok()??;
+    Some(start.duration_since(UNIX_EPOCH).ok()?.as_millis() as i64)
 }
 
 async fn read_screen_line(socket: &Path, timeout: Duration, pane: &str, blocked: bool) -> Option<String> {

@@ -32,6 +32,13 @@ test("press_scales_down_toward_the_hold_scale_and_release_springs_back", () => {
   expect(v.overlay.set).toHaveBeenLastCalledWith(0);
 });
 
+test("a_card_hold_stays_at_the_press_scale", () => {
+  const v = values();
+  makeCardPress(v, false, jest.fn(), jest.fn(), motion.press.scale).begin();
+  expect(v.scale.set).toHaveBeenLastCalledWith(motion.press.scale);
+  expect(motion.press.scale).toBeGreaterThanOrEqual(0.98);
+});
+
 test("reduce_motion_keeps_the_layer_but_never_scales", () => {
   const v = values();
   const p = makeCardPress(v, true, jest.fn(), jest.fn());

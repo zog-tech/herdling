@@ -40,13 +40,15 @@ fn only_a_capable_device_gets_the_buttons() {
     assert_eq!(
         v[0],
         json!({"to": "ExponentPushToken[new]", "title": "api needs you", "body": "claude\nYes · No", "sound": "default",
-               "categoryId": "herdling_choice",
+               "categoryId": "herdling_choice", "interruptionLevel": "time-sensitive",
+               "collapseId": "herdling:h_1:w1:p1", "tag": "herdling:h_1:w1:p1", "threadId": "herdling:h_1",
                "data": {"hostId": "h_1", "paneId": "w1:p1",
                         "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "2", "label": "No"}, "revision": 0}}})
     );
     assert_eq!(
         v[1],
-        json!({"to": "ExponentPushToken[old]", "title": "api needs you", "body": "claude", "sound": "default",
+        json!({"to": "ExponentPushToken[old]", "title": "api needs you", "body": "claude", "sound": "default", "interruptionLevel": "time-sensitive",
+               "collapseId": "herdling:h_1:w1:p1", "tag": "herdling:h_1:w1:p1", "threadId": "herdling:h_1",
                "data": {"hostId": "h_1", "paneId": "w1:p1"}})
     );
 }

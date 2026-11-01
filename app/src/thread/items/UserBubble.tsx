@@ -5,6 +5,7 @@ import { View } from "react-native";
 import { colors, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
+import { LinkedText } from "../LinkText";
 import { MenuPressable } from "../MenuPressable";
 
 /** Longer prompts (pasted logs, task notices) start collapsed to this many lines. */
@@ -13,8 +14,9 @@ const LONG_CHARS = 400;
 
 /**
  * The user's prompt: a right-aligned bubble. A long press opens the row menu (Copy, Select text,
- * Share, Quote in reply); a tap on a long prompt still shows or hides the rest. The text is not
- * `selectable`: on iOS that adds its own long press, which fights the menu.
+ * Share, Quote in reply); a tap on a long prompt still shows or hides the rest. URLs are links with
+ * their own tap and menu. The text is not `selectable`: on iOS that adds its own long press, which
+ * fights the menu.
  */
 export const UserBubble = memo(function UserBubble({ text, images }: { text: string; images?: number }) {
   const long = text.length > LONG_CHARS || text.split("\n").length > COLLAPSED_LINES;
@@ -22,7 +24,7 @@ export const UserBubble = memo(function UserBubble({ text, images }: { text: str
   return (
     <MenuPressable
       menu={text ? { kind: "user", text } : null}
-      feedback="scale"
+      feedback="dim"
       accessibilityRole={long ? "button" : undefined}
       accessibilityState={long ? { expanded: open } : undefined}
       accessibilityHint={long ? (open ? "Collapses the message" : "Shows the full message") : undefined}
@@ -39,7 +41,11 @@ export const UserBubble = memo(function UserBubble({ text, images }: { text: str
           gap: space.xs,
         }}
       >
-        {text ? <Text numberOfLines={long && !open ? COLLAPSED_LINES : undefined}>{text}</Text> : null}
+        {text ? (
+          <Text numberOfLines={long && !open ? COLLAPSED_LINES : undefined}>
+            <LinkedText text={text} />
+          </Text>
+        ) : null}
         {long ? (
           <Text variant="caption" bold muted>
             {open ? "Show less" : "Show more"}

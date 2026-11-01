@@ -23,6 +23,11 @@ export function usePreviewSupported(hostId: string): boolean {
   return previewSupported(hello, { webView: hasWebView(), nativeProxy: ssh.hasNativePreview(), demo: isDemoHost(hostId) });
 }
 
+/** The same check as `usePreviewSupported`, read once: for a tap outside a render. */
+export function previewSupportedNow(hostId: string): boolean {
+  return previewSupported(getHostConn(hostId).hello, { webView: hasWebView(), nativeProxy: ssh.hasNativePreview(), demo: isDemoHost(hostId) });
+}
+
 /** The listening ports of the host, the pane's ports first. Undefined until the first answer or while off. */
 export function usePorts(hostId: string, paneId: string, active: boolean): PortInfo[] | undefined {
   const { rpc } = useHostConn(hostId);

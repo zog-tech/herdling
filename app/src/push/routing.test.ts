@@ -15,7 +15,11 @@ let mockLast: unknown = null;
 let mockListener: ((r: unknown) => void) | undefined;
 const mockRemove = jest.fn();
 const mockClear = jest.fn();
+let mockPresented: unknown[] = [];
+const mockDismiss = jest.fn(async (_id: string) => {});
 jest.mock("expo-notifications", () => ({
+  getPresentedNotificationsAsync: async () => mockPresented,
+  dismissNotificationAsync: (id: string) => mockDismiss(id),
   getLastNotificationResponse: () => mockLast,
   clearLastNotificationResponse: () => mockClear(),
   addNotificationResponseReceivedListener: (cb: (r: unknown) => void) => {
@@ -62,6 +66,8 @@ beforeEach(() => {
   mockNavKey = "root";
   mockLayout = "compact";
   setColumnPane(null);
+  mockPresented = [];
+  mockDismiss.mockClear();
 });
 
 describe("notificationTarget", () => {
@@ -209,6 +215,17 @@ describe("choice buttons", () => {
     ]);
   });
 
+  it("an answer dismisses the delivered notifications of the pane", async () => {
+    mockPresented = [response("c4", data).notification, response("c5", { hostId: "h_1", paneId: "w1:p2" }).notification];
+    act(() => {
+      create(createElement(Probe));
+    });
+    act(() => mockListener?.(tap("c4", "choice_yes")));
+    await flush();
+    expect(mockNotice).toHaveBeenCalledWith("Answered Yes");
+    expect(mockDismiss.mock.calls.map((c) => c[0])).toEqual(["c4"]);
+  });
+
   it("a plain tap on a push with choices does not answer", async () => {
     act(() => {
       create(createElement(Probe));
@@ -244,5 +261,15 @@ describe("two-column layout", () => {
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p2" })).toBe(true);
     setColumnPane(null);
     expect(showBannerFor({ hostId: "h_1", paneId: "w1:p1" })).toBe(true);
+  });
+});
+
+describe("column pane", () => {
+  it("a newly shown pane dismisses its notifications once", async () => {
+    mockPresented = [response("k1", { hostId: "h_1", paneId: "w1:p1" }).notification];
+    setColumnPane({ hostId: "h_1", paneId: "w1:p1" });
+    setColumnPane({ hostId: "h_1", paneId: "w1:p1" });
+    await act(async () => {});
+    expect(mockDismiss.mock.calls.map((c) => c[0])).toEqual(["k1"]);
   });
 });

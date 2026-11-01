@@ -6,7 +6,7 @@ import * as ssh from "../../modules/ssh";
 import { isDemoHost } from "../demo/demoHost";
 import { DemoTransport } from "../demo/DemoTransport";
 import { showDemoNotice } from "../demo/notify";
-import { useNotifPrefs } from "../push/prefs";
+import { samePrefs, useNotifPrefs } from "../push/prefs";
 import { registerPush } from "../push/register";
 import { RpcClient } from "../rpc/RpcClient";
 import type { LineTransport } from "../rpc/transport";
@@ -455,7 +455,7 @@ export function startConnections(): void {
   // A changed notification pref goes to every online host.
   state.cleanup.push(
     useNotifPrefs.subscribe((p, prev) => {
-      if (p.finished === prev.finished && p.needs_you === prev.needs_you && p.quiet_at_desk === prev.quiet_at_desk) return;
+      if (samePrefs(p, prev)) return;
       for (const id of state.conns.keys()) {
         if (isDemoHost(id)) continue;
         const conn = getHostConn(id);

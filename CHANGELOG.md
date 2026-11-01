@@ -5,6 +5,15 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd Unreleased]
+
+- Tidy notifications: one notification per agent (`collapseId`, `tag`), grouped by computer
+  (`threadId`), "needs you" as time-sensitive and "finished" as passive with no sound. Three new
+  `push.register` prefs turn each part off: `replace`, `group` and `quiet_finished`. A device
+  without them gets them on.
+- Background work: `agents.preview` items of Claude Code panes have the optional field
+  `background` with the running background shells (count and commands) and background subagents.
+
 ## [herdlingd 0.1.2] - 2026-10-31
 
 - Answer from the notification: `pane.answer` checks the menu again and sends the key, or gives
@@ -43,6 +52,41 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Theme and accent.** Settings, Appearance, Theme: three dark themes (Night Watch, the default;
+  Midnight, true black for OLED; Graphite, cool greys) and five accents (Lantern gold, the default;
+  Ember, Sea glass, Iris, Ivory). The working lantern follows the accent. With Ember, "needs you"
+  turns rose. A change applies at once and the app stays on the same screen. No light theme yet.
+- **Dashboard top on the Board.** The Board opens with the Herdling name and a computers button
+  (one circle per computer with an online dot), then a row of large agent tiles: "Highlights"
+  (needs you, working, unread) or "Recent" (recent idle agents), each with the last lines of its
+  screen. A last tile starts a new session. Under the tiles: one summary line and "All agents"
+  with Group (Status, Computer, Workspace, None) and Sort (Status, Recent activity, Name, Running
+  longest) menus. Computer and workspace groups collapse with a tap on the header. The group, the
+  sort and the collapsed groups are saved. Settings, "Overview top", has "Summary" for the large
+  number of before.
+- **Links in the thread.** URLs with a scheme (`http`, `https`, `mailto`) are links in replies,
+  in your messages and in tool output, also inside inline code. `foo.com` and file names stay
+  text. A tap on a web link opens the in-app browser (Close, Back, Forward, Reload, Copy link,
+  "Open in Safari"). A tap on a `localhost`, `127.0.0.1`, `0.0.0.0` or `[::1]` link opens the
+  browser preview of that port and path on the session's computer. A long press opens a link
+  menu: Open, Open in Safari (not for local links), Copy link and Share. Builds without the web
+  view open web links in the system browser and show a notice for local links.
+- **Agent list style.** Settings, Appearance: the Board shows each agent as a card (the default),
+  as a row with an arrow, or as a plain row. A card has a footer with the time and a gold "Open".
+  An idle agent with no reply shows "Waiting for your next prompt". A one-time hint above the
+  first agent says "Tap an agent to see its chat and talk to it." It goes away when you open a
+  session from the Board or close it.
+- **Tidy notifications.** Each agent has one notification: a new event replaces the old one.
+  Notifications of one computer stay in one group on iOS. "Finished" arrives quietly, with no sound
+  and no banner. "Needs you" asks to be time-sensitive; this starts to work in a build with the
+  Time Sensitive entitlement. The notifications of an agent go away when you open its session or
+  answer from the buttons. Settings has three new switches: "One notification per agent", "Group
+  by computer" and "Deliver 'finished' quietly". Needs the new herdlingd; an older herdlingd sends
+  the pushes as before. Over-the-air update, no new build.
+- **Background state on the Board.** An idle Claude Code agent with a background shell or
+  subagent that still runs shows as "Background" (gold dot, no glow), after "Working" and before
+  "Idle". The row says "1 shell running: npm run dev", and the session screen says
+  "Idle · 1 shell running". Needs a herdlingd with the `background` preview field.
 - **Answer from the notification.** A "needs you" push for a Yes / No permission menu has Yes and
   No buttons. The body shows the two full labels ("Yes · No, and tell Claude…"). A button needs
   Face ID or the passcode on a locked phone, opens the app, opens the session and sends the
@@ -176,5 +220,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Changed
 
+- A long press on a message in the thread dims it. It no longer makes the message smaller.
 - The product name changed from the working name to Herdling. The companion is now `herdlingd`.
 - The app no longer asks for permissions it does not use (Face ID, storage, biometrics, overlay, boot).
+- **Clearer agent questions.** The menu above the composer shows the question from the screen
+  ("Claude asks …"). Each option shows a short title and a muted detail of 2 lines; a chevron
+  shows the full detail. A "Recommended" option gets a gold chip and a gold edge. "Type something."
+  and "Chat about this" are small buttons under the list. A long menu scrolls and takes at most
+  about half of the screen, so the thread stays visible. Yes / No permission menus keep compact rows.
+  After "Type an answer", the next send goes into the agent's text field as one line plus Enter.

@@ -3,6 +3,7 @@ import { usePathname, useRootNavigationState, useRouter, type Href } from "expo-
 import { useEffect, useRef } from "react";
 
 import { answerChoiceTap, choiceTap } from "./choiceActions";
+import { dismissPaneNotifications } from "./dismiss";
 import { useLayoutClass } from "@/ui/layout";
 
 /** The `{hostId, paneId}` of a push's data, or null when the data has another shape. */
@@ -49,9 +50,14 @@ let currentPath: string | undefined;
 /** The pane in the detail column while Overview has the focus (regular width), else null. */
 let columnPane: { hostId: string; paneId: string } | null = null;
 
-/** Overview calls this when the pane in its detail column changes. */
+/**
+ * Overview calls this when the pane in its detail column changes.
+ * A newly shown pane is an opened session: its delivered notifications go away.
+ */
 export function setColumnPane(p: { hostId: string; paneId: string } | null): void {
+  const changed = p && (p.hostId !== columnPane?.hostId || p.paneId !== columnPane?.paneId);
   columnPane = p;
+  if (changed) void dismissPaneNotifications(p.hostId, p.paneId);
 }
 
 /** True when the detail column shows the push's pane. */

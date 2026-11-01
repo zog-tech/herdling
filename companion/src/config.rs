@@ -86,11 +86,22 @@ pub struct Prefs {
     /// No pushes while the user is active at the computer. A file without the key gets true.
     #[serde(default = "default_true")]
     pub quiet_at_desk: bool,
+    /// One notification per agent: a new push replaces the old one of the same pane
+    /// (`collapseId`, `tag`). A file without the key gets true.
+    #[serde(default = "default_true")]
+    pub replace: bool,
+    /// Group the notifications of this computer (iOS `threadId`). A file without the key gets true.
+    #[serde(default = "default_true")]
+    pub group: bool,
+    /// A "finished" push has no sound and no banner (iOS `interruptionLevel: passive`).
+    /// A file without the key gets true.
+    #[serde(default = "default_true")]
+    pub quiet_finished: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { finished: true, needs_you: true, quiet_at_desk: true }
+        Prefs { finished: true, needs_you: true, quiet_at_desk: true, replace: true, group: true, quiet_finished: true }
     }
 }
 

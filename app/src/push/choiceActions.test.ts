@@ -75,6 +75,7 @@ describe("answerChoiceTap", () => {
     const deps: AnswerDeps = {
       connect: jest.fn(async (_h: string, isFresh: boolean) => (o.offline ? undefined : isFresh ? fresh : rpc)) as never,
       notice: (text, n) => notices.push({ text, failed: n?.failed }),
+      dismiss: jest.fn(async () => 0),
     };
     return { calls, deps, notices };
   }
@@ -93,6 +94,15 @@ describe("answerChoiceTap", () => {
     const s = setup({ answer: async () => Promise.reject(new RpcError("stale", "the menu changed")) });
     await expect(answerChoiceTap({ ...tap, key: "3", label: "No", answer: "No" }, s.deps)).resolves.toBe("stale");
     expect(s.notices).toEqual([{ text: "The question changed", failed: true }]);
+  });
+
+  it("dismisses the notifications of the pane only after an answer", async () => {
+    const ok = setup();
+    await answerChoiceTap(tap, ok.deps);
+    expect(ok.deps.dismiss).toHaveBeenCalledWith("h_1", "w1:p1");
+    const stale = setup({ answer: async () => Promise.reject(new RpcError("stale", "the menu changed")) });
+    await answerChoiceTap(tap, stale.deps);
+    expect(stale.deps.dismiss).not.toHaveBeenCalled();
   });
 
   it("connects again when the old connection does not answer a ping", async () => {

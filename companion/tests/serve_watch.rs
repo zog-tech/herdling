@@ -115,7 +115,8 @@ async fn pushes_finished_to_expo() {
     assert_eq!(
         body,
         // Title: the workspace label, as herdr shows it. Body: agent kind · terminal title.
-        json!([{"to": TOKEN, "title": "herdling finished", "body": "claude · api", "sound": "default",
+        json!([{"to": TOKEN, "title": "herdling finished", "body": "claude · api", "interruptionLevel": "passive",
+                "collapseId": "herdling:h_1:w1:p1", "tag": "herdling:h_1:w1:p1", "threadId": "herdling:h_1",
                 "data": {"hostId": "h_1", "paneId": "w1:p1"}}])
     );
     s.assert_no_body(Duration::from_millis(300)).await;
@@ -123,7 +124,7 @@ async fn pushes_finished_to_expo() {
 
 #[tokio::test]
 async fn respects_prefs() {
-    let mut s = start(Prefs { finished: true, needs_you: false, quiet_at_desk: true }, ok_reply()).await;
+    let mut s = start(Prefs { needs_you: false, ..Prefs::default() }, ok_reply()).await;
     s.push.send(Push::Event(status_ev("w1:p1", "blocked"))).unwrap();
     s.assert_no_body(Duration::from_millis(300)).await;
 }
@@ -198,7 +199,8 @@ async fn needs_you_push_has_choice_buttons_for_a_capable_device() {
         body,
         json!([{"to": TOKEN, "title": "herdling needs you",
                 "body": "claude · api\nYes · No, and tell Claude what to do differently (esc)",
-                "sound": "default", "categoryId": "herdling_choice",
+                "sound": "default", "categoryId": "herdling_choice", "interruptionLevel": "time-sensitive",
+                "collapseId": "herdling:h_1:w1:p1", "tag": "herdling:h_1:w1:p1", "threadId": "herdling:h_1",
                 "data": {"hostId": "h_1", "paneId": "w1:p1",
                          "choice": {"yes": {"key": "1", "label": "Yes"},
                                     "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
@@ -215,6 +217,8 @@ async fn needs_you_push_has_no_buttons_for_an_older_app() {
     assert_eq!(
         s.next_body().await,
         json!([{"to": TOKEN, "title": "herdling needs you", "body": "claude · api", "sound": "default",
+                "interruptionLevel": "time-sensitive",
+                "collapseId": "herdling:h_1:w1:p1", "tag": "herdling:h_1:w1:p1", "threadId": "herdling:h_1",
                 "data": {"hostId": "h_1", "paneId": "w1:p1"}}])
     );
 }

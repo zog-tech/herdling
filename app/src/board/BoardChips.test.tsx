@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { BoardChips } from "./BoardChips";
 
-const counts = { needs_you: 2, ready: 1, working: 3, idle: 0 };
+const counts = { needs_you: 2, ready: 1, working: 3, background: 0, idle: 0 };
 const chip = (t: ReactTestRenderer, label: string) =>
   t.root.find((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith(label) && !!n.props.onPress);
 

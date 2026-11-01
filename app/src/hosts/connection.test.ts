@@ -100,7 +100,7 @@ beforeEach(() => {
   });
   useHosts.setState({ hosts: [] });
   mockRegisterPush.mockClear();
-  useNotifPrefs.setState({ finished: true, needs_you: true, quiet_at_desk: true });
+  useNotifPrefs.setState({ finished: true, needs_you: true, quiet_at_desk: true, replace: true, group: true, quiet_finished: true });
 });
 
 afterEach(() => {
@@ -413,6 +413,15 @@ test("quiet_at_desk_change_reregisters_online_hosts", async () => {
   await flush();
   mockRegisterPush.mockClear();
   useNotifPrefs.getState().setPref("quiet_at_desk", false);
+  expect(mockRegisterPush).toHaveBeenCalledTimes(1);
+});
+
+test.each(["replace", "group", "quiet_finished"] as const)("%s_change_reregisters_online_hosts", async (pref) => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  mockRegisterPush.mockClear();
+  useNotifPrefs.getState().setPref(pref, false);
   expect(mockRegisterPush).toHaveBeenCalledTimes(1);
 });
 

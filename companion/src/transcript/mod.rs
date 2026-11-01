@@ -5,6 +5,7 @@
 //! follow: a Codex, Pi, omp or Gemini log path is a file under its sessions folder, an OpenCode
 //! log path starts with [`opencode::SCHEME`], and every other path is a Claude log.
 
+pub mod background;
 pub mod codex;
 pub mod gemini;
 pub mod jsonl;
@@ -55,7 +56,7 @@ impl Agent {
     }
 
     /// Program names of the agent process.
-    fn bins(self) -> &'static [&'static str] {
+    pub(crate) fn bins(self) -> &'static [&'static str] {
         match self {
             Agent::Claude => &["claude"],
             Agent::Codex => &["codex"],

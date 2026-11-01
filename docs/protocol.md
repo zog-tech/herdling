@@ -107,6 +107,29 @@ Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes an
   `choice_no` ("No", destructive). Both open the app and need Face ID or the passcode on a locked
   phone. The app then connects, opens the session and calls `pane.answer`.
 
+## How a push shows: `push.register` presentation prefs
+
+`push.register` `prefs` has three optional flags for the look of a push. Each one is per device.
+
+| Pref | Push field | On (the default) | Off |
+|---|---|---|---|
+| `replace` | `collapseId` and `tag` | A new push replaces the shown push of the same pane | Each event is a new notification |
+| `group` | `threadId` | iOS groups the notifications of one computer | No `threadId` |
+| `quiet_finished` | `interruptionLevel`, `sound` | A "finished" push is `passive` and has no `sound` | `sound: "default"`, no `interruptionLevel` |
+
+- The id is `herdling:<host_id>:<pane_id>` for `collapseId` and `tag`, and `herdling:<host_id>` for
+  `threadId`. `host_id` is the id that the app sent in `push.register`. An id longer than 64 bytes
+  (the APNs limit) becomes `herdling:` and 32 hex digits of its SHA-256.
+- `collapseId` replaces a shown notification on iOS. On Android it only joins pushes that wait for
+  delivery, so herdlingd also sends `tag`, which replaces a shown notification on Android.
+- A "needs you" push always has `interruptionLevel: "time-sensitive"` and `sound: "default"`. iOS
+  uses `time-sensitive` only when the app has the Time Sensitive entitlement. Without it, iOS uses `active`.
+- `threadId`, `interruptionLevel` and `sound` have an effect on iOS only.
+- An app that does not send a flag keeps the saved value, else `true`. An older herdlingd ignores
+  the flags and sends the push as before.
+- The app removes the shown notifications of a pane when the user opens its session, and after an
+  answer from the Yes and No buttons. It matches `data.hostId` and `data.paneId`.
+
 ## Updates: `update.check` and `update.apply`
 
 `herdlingd` updates itself from the GitHub releases of the project. The design and the trust
@@ -351,6 +374,33 @@ app puts it in the web view cookie store. A connection without it gets `403`. At
 channels run at once per host; more connections wait. When a channel does not open on the
 first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
 for the preview.
+
+## Background work: `agents.preview` `background`
+
+An `agents.preview` item has the optional field `background` (since this version, Claude Code
+panes only). It lists the background work that still runs after the agent's turn ended:
+
+```json
+{"pane_id": "p1", "source": "log", "status_since": 1767225600,
+ "background": {"count": 2, "commands": ["npm run dev", "sleep 30"], "agents": 1}}
+```
+
+- `count`: the running background shells. `commands`: their commands, newest first, one line each,
+  at most 3 of 40 chars. `agents`: the running background subagents (missing means 0).
+- The field is missing when nothing runs. An older herdlingd never sends it, and an older app
+  ignores it.
+- The app shows an agent that would be in "Idle" as "Background" while the field is present.
+  "Needs you", "Ready" and "Working" come first. No push goes out when background work starts or ends.
+
+herdlingd reads the Claude log (the last 8 MiB on the first read, then only new lines):
+
+- A shell starts when a `Bash` result has `toolUseResult.backgroundTaskId` ("Command running in
+  background with ID: <id>", or a command moved to the background). A subagent starts when an
+  `Agent` result has `toolUseResult.status` `async_launched` and an `agentId`.
+- A task ends with a `<task-notification>` that names its `<task-id>` (in a `queue-operation` line,
+  a `queued_command` attachment or a user line), or with a successful `TaskStop` (older: `KillShell`).
+- A task ends when it is older than 12 hours, or when it started before the Claude process of the
+  pane (the agent started again). A new log (for example after `/clear`) starts with no tasks.
 
 ## Compatibility rules
 

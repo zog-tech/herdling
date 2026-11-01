@@ -124,7 +124,7 @@ test("unknown_start_sorts_last_in_bucket", () => {
 
 test("chips_count_and_filter", () => {
   const items = mergeBoard([host("a", [agent("p1", "blocked"), agent("p2", "working"), agent("p3", "working")])], {}, {}, {});
-  expect(countBuckets(items)).toEqual({ needs_you: 1, ready: 0, working: 2, idle: 0 });
+  expect(countBuckets(items)).toEqual({ needs_you: 1, ready: 0, working: 2, background: 0, idle: 0 });
   expect(filterBoard(items, "working").map((i) => i.key)).toEqual(expect.arrayContaining(["a:p2", "a:p3"]));
   expect(filterBoard(items, "working")).toHaveLength(2);
   expect(filterBoard(items, null)).toHaveLength(3);

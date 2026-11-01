@@ -70,7 +70,7 @@ fn parse_error_does_not_leak_source() {
 }
 
 #[test]
-fn prefs_without_quiet_at_desk_default_true() {
+fn prefs_without_newer_keys_default_true() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
     std::fs::write(
@@ -79,5 +79,5 @@ fn prefs_without_quiet_at_desk_default_true() {
     )
     .unwrap();
     let prefs = &config::load(&p).unwrap().devices[0].prefs;
-    assert_eq!(prefs, &Prefs { finished: true, needs_you: false, quiet_at_desk: true });
+    assert_eq!(prefs, &Prefs { needs_you: false, ..Prefs::default() });
 }

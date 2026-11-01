@@ -28,7 +28,13 @@ function card(id: string, result?: { ok: boolean; text: string; truncated: boole
     </GestureHandlerRootView>
   );
 }
-const texts = (t: ReactTestRenderer) => t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children).flat();
+/** The strings of the Text nodes. A `LinkedText` child counts as its text. */
+const texts = (t: ReactTestRenderer) =>
+  t.root
+    .findAll((n) => (n.type as unknown) === "Text")
+    .map((n) => n.props.children)
+    .flat()
+    .map((c: unknown) => (c && typeof c === "object" && "props" in c && typeof (c as { props: { text?: unknown } }).props.text === "string" ? (c as { props: { text: string } }).props.text : c));
 const header = (t: ReactTestRenderer) => t.root.find((n) => n.props.accessibilityState?.expanded !== undefined && !!n.props.onPress);
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});

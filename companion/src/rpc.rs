@@ -1012,8 +1012,10 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let (Some(finished), Some(needs_you)) = (flag("finished"), flag("needs_you")) else {
         return Err(err("bad_request", "push.register requires prefs.finished and prefs.needs_you"));
     };
-    // An older app does not send `quiet_at_desk`: keep the saved value, else the default.
-    let quiet_at_desk = flag("quiet_at_desk");
+    // An older app does not send `quiet_at_desk`, `replace`, `group` or `quiet_finished`:
+    // keep the saved value, else the default (true).
+    let (quiet_at_desk, replace, group, quiet_finished) =
+        (flag("quiet_at_desk"), flag("replace"), flag("group"), flag("quiet_finished"));
     // An older app does not send `capabilities`: it has none, so the list is cleared.
     let capabilities = match params.get("capabilities") {
         None | Some(Value::Null) => vec![],
@@ -1029,11 +1031,16 @@ async fn push_register(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         config::update(&path, |c| {
             let old = c.devices.iter().find(|d| d.id == id);
             let public_key = old.and_then(|d| d.public_key.clone());
-            let quiet_at_desk = quiet_at_desk.unwrap_or_else(|| old.map_or(Prefs::default().quiet_at_desk, |d| d.prefs.quiet_at_desk));
-            config::upsert_device(
-                c,
-                Device { id, name, host_id, public_key, expo_token, capabilities, prefs: Prefs { finished, needs_you, quiet_at_desk } },
-            );
+            let saved = old.map_or_else(Prefs::default, |d| d.prefs.clone());
+            let prefs = Prefs {
+                finished,
+                needs_you,
+                quiet_at_desk: quiet_at_desk.unwrap_or(saved.quiet_at_desk),
+                replace: replace.unwrap_or(saved.replace),
+                group: group.unwrap_or(saved.group),
+                quiet_finished: quiet_finished.unwrap_or(saved.quiet_finished),
+            };
+            config::upsert_device(c, Device { id, name, host_id, public_key, expo_token, capabilities, prefs });
         })
     })
     .await

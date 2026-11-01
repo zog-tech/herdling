@@ -12,6 +12,7 @@ import { TopHighlight } from "@/ui/TopHighlight";
 import { SPOKEN_TICK_MS, TickingDuration } from "@/ui/TickingDuration";
 
 import { HScrollView } from "../HScrollView";
+import { LinkedText } from "../LinkText";
 import { LiveToolContext } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
 import { toolCopyText } from "../rowMenu";
@@ -47,7 +48,7 @@ function Block({ label, text, color }: { label: string; text: string; color?: st
             padding: space.sm,
           }}
         >
-          {text}
+          <LinkedText text={text} />
         </Text>
       </HScrollView>
     </View>

@@ -1,0 +1,74 @@
+{
+  "bg": "#0A0A0B",
+  "card": "#141416",
+  "raised": "#1C1C1F",
+  "raisedHigh": "#2C2B2F",
+  "sunken": "#070708",
+  "divider": "#2A2A2E",
+  "hairline": "rgba(255,255,255,0.06)",
+  "border": "#706B62",
+  "edge": "#64605A",
+  "text": "#F5F2EA",
+  "textMuted": "#A39E93",
+  "accent": "#D4A857",
+  "accentPressed": "#B8903F",
+  "accentTint": "rgba(212,168,87,0.12)",
+  "onAccent": "#0A0A0B",
+  "link": "#F5F2EA",
+  "danger": "#E5484D",
+  "scrim": "rgba(0,0,0,0.6)",
+  "glassFallback": "rgba(28,28,31,0.92)",
+  "blockedTint": "rgba(232,121,74,0.08)",
+  "hintFill": "rgba(212,168,87,0.10)",
+  "hintEdge": "rgba(212,168,87,0.35)",
+  "status": {
+    "working": "#D4A857",
+    "blocked": "#E8794A",
+    "idle": "#A39E93",
+    "done": "#8DB580",
+    "unknown": "#8A857B"
+  },
+  "diff": {
+    "addBg": "#171C16",
+    "delBg": "#220F10",
+    "add": "#8DB580",
+    "del": "#F07A7E"
+  },
+  "search": {
+    "matchBg": "#5A4721",
+    "matchFg": "#E8E3D8",
+    "currentBg": "#D4A857",
+    "currentFg": "#0A0A0B"
+  },
+  "agent": {
+    "claude": "#E3A98C",
+    "codex": "#F5F2EA",
+    "pi": "#B9A3E3",
+    "opencode": "#9FC7C0",
+    "omp": "#D7A3C9",
+    "gemini": "#7FA7F0",
+    "other": "#A39E93"
+  },
+  "terminal": {
+    "bg": "#070708",
+    "fg": "#E8E3D8"
+  },
+  "ansi": [
+    "#3D3935",
+    "#EF4444",
+    "#22C55E",
+    "#EAB308",
+    "#3B82F6",
+    "#A855F7",
+    "#06B6D4",
+    "#D6D0C4",
+    "#77726A",
+    "#F87171",
+    "#4ADE80",
+    "#FACC15",
+    "#60A5FA",
+    "#C084FC",
+    "#22D3EE",
+    "#F5F2EA"
+  ]
+}

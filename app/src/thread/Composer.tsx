@@ -12,6 +12,7 @@ import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated
 import { colors, denseScale, hitTarget, motion, space, state, type } from "@/theme/tokens";
 import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
+import { sendLine } from "@/terminal/keys";
 import { useKeyCommand } from "@/ui/keyCommands";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -38,12 +39,13 @@ import {
   type Attachment,
   type Photo,
 } from "./attachments";
-import { answerChoice, destructiveKey, useChoices, type Choice } from "./choices";
+import { ChoiceMenu } from "./ChoiceMenu";
+import { answerChoice, destructiveKey, useChoiceMenu, type Choice } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
+import { isFreeform } from "./parseChoices";
 import { sendWithPending } from "./pending";
-import { PermissionButtons } from "./PermissionButtons";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 import { useQuoteInto, withQuote } from "./quote";
 
@@ -55,12 +57,19 @@ const PAD_V = 10;
 const MENU_MAX = 50;
 
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
+/** Shown after "Type something." was picked: the next send goes into the agent's text field. */
+export const FREEFORM_MESSAGE = "Type your answer, then send it to the agent";
+
+/** A free-text answer is one terminal line: Enter in the agent's text field submits it. */
+export const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, " ").trim();
 
 /**
  * Prompt box: multiline, grows to 5 lines, plus voice input; send = herdr `agent.prompt`.
  * Voice input: the mic records, a record bar takes the place of the box (✕ discards, ✓ stops),
  * and the text lands in the box after its text, for editing. It is not sent.
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
+ * After "Type something." the agent shows a text field and stays blocked, so `agent.prompt` fails:
+ * the next send types the text into the pane and presses Enter ("free-text mode").
  * The "+" button attaches photos and files (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
@@ -149,13 +158,24 @@ export const Composer = memo(function Composer({
   const blocked = useSnapshots(
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
-  const choices = useChoices(hostId, paneId, blocked && online && visible);
+  const { choices, question } = useChoiceMenu(hostId, paneId, blocked && online && visible);
   /**
    * The menu (array from `useChoices`) that was answered or found stale. Its buttons stay hidden;
    * `useChoices` returns a new array only when the screen shows a different menu or the status changes.
    */
   const [answered, setAnswered] = useState<Choice[]>();
-  const showChoices = blocked && online && choices.length > 0 && choices !== answered;
+  /**
+   * Free-text mode: the pane ("host/pane") where "Type something." was picked last. On only for
+   * that pane and while its agent stays blocked; it ends after the next send.
+   */
+  const paneKey = `${hostId}/${paneId}`;
+  const [freeformPane, setFreeformPane] = useState<string>();
+  const freeform = freeformPane === paneKey && blocked && online;
+  useEffect(() => {
+    // The agent took the answer, or the menu is gone: the next send is a normal prompt again.
+    if (!blocked) setFreeformPane(undefined);
+  }, [blocked]);
+  const showChoices = blocked && online && !freeform && choices.length > 0 && choices !== answered;
   const [picking, setPicking] = useState(false);
   /** Lock against a double tap: two taps can land before `picking` re-renders. */
   const pickLock = useRef(false);
@@ -220,6 +240,8 @@ export const Composer = memo(function Composer({
       const r = await answerChoice(rpc, paneId, shown, c, stillBlocked);
       setAnswered(shown);
       if (r === "sent") (c.key === destructiveKey(shown) ? haptics.warn : haptics.commit)();
+      // "Type something." opens a text field in the agent: the next send types into it.
+      if (r === "sent" && isFreeform(c) && /^Type/i.test(c.label)) setFreeformPane(paneKey);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -271,6 +293,20 @@ export const Composer = memo(function Composer({
       setInputKey((k) => k + 1);
     }
     setSending(false);
+    const stillBlocked =
+      useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked";
+    if (freeform && stillBlocked) {
+      // No pending bubble: the answer lands in the agent's tool result, not as a user prompt, so the bubble never clears.
+      try {
+        await sendLine(rpc, paneId, oneLine(full));
+        setFreeformPane(undefined);
+      } catch (e) {
+        haptics.fail();
+        setError(`Not sent: ${e instanceof Error ? e.message : String(e)}`);
+        if (fromInput && !latest.current.trim()) setText(prompt);
+      }
+      return;
+    }
     try {
       // No success haptic here: the send already gave its one haptic on the tap.
       await sendWithPending(rpc, hostId, paneId, full);
@@ -349,7 +385,14 @@ export const Composer = memo(function Composer({
       }}
     >
       {showChoices ? (
-        <PermissionButtons choices={choices} onPick={(c) => void pick(c)} disabled={picking} />
+        <ChoiceMenu
+          choices={choices}
+          question={question}
+          agent={agentKind}
+          onPick={(c) => void pick(c)}
+          onType={() => inputRef.current?.focus()}
+          disabled={picking}
+        />
       ) : null}
       {error && !(showChoices && error === BLOCKED_MESSAGE) ? (
         <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
@@ -362,6 +405,10 @@ export const Composer = memo(function Composer({
       ) : dictation.caption ? (
         <Text variant="caption" muted accessibilityLiveRegion="polite">
           Transcribed with {dictation.caption}
+        </Text>
+      ) : freeform ? (
+        <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">
+          {FREEFORM_MESSAGE}
         </Text>
       ) : blocked && online && !showChoices ? (
         <Text variant="small" color={colors.status.blocked} accessibilityLiveRegion="polite">

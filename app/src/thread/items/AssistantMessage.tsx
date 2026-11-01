@@ -1,15 +1,14 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
-import { createContext, memo, useContext, type ReactNode } from "react";
-import { Linking, StyleSheet, Text, View, type StyleProp, type TextStyle } from "react-native";
+import { createContext, memo, useContext } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
-import { colors, radius, space, type } from "@/theme/tokens";
-import * as haptics from "@/ui/haptics";
-
+import { colors, radius, space, themed, type } from "@/theme/tokens";
 import { HScrollView } from "../HScrollView";
-import { ThreadPaneContext } from "../LiveToolContext";
+import { ThreadLink } from "../LinkText";
+import { findLinks, replyMarkdownIt } from "../links";
 import { MenuPressable } from "../MenuPressable";
-import { openRowMenu, type MenuTarget } from "../rowMenu";
+import type { MenuTarget } from "../rowMenu";
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
@@ -17,11 +16,16 @@ const CODE = type.size.small - 1;
 /** Width of one table column. */
 const TABLE_COL = 140;
 
-const openLink = (url: string) => {
-  if (/^(https?:|mailto:)/i.test(url)) Linking.openURL(url).catch(() => {});
-};
+/** The reply parser: it also links bare URLs that have a scheme (see `links.ts`). */
+const markdownit = replyMarkdownIt();
 
-/** The menu target of the reply being drawn: its code blocks and links open the same menu. */
+/** The URL when inline code is one URL and nothing more, as in `http://localhost:5173`. */
+function codeUrl(content: string): string | undefined {
+  const m = findLinks(content);
+  return m.length === 1 && m[0].start === 0 && m[0].end === content.length ? m[0].url : undefined;
+}
+
+/** The menu target of the reply being drawn: its code blocks open the same menu. Links have their own menu. */
 const ReplyMenu = createContext<MenuTarget | null>(null);
 
 /**
@@ -34,27 +38,10 @@ function CodeBlock({ content }: { content: string }) {
   const text = content.endsWith("\n") ? content.slice(0, -1) : content;
   return (
     <MenuPressable menu={reply ? { ...reply, code: text } : null} accessible={false}>
-      <HScrollView showsHorizontalScrollIndicator={false} style={styles.codeScroll} contentContainerStyle={{ padding: space.md }}>
-        <Text style={styles.codeText}>{text}</Text>
+      <HScrollView showsHorizontalScrollIndicator={false} style={styles().codeScroll} contentContainerStyle={{ padding: space.md }}>
+        <Text style={styles().codeText}>{text}</Text>
       </HScrollView>
     </MenuPressable>
-  );
-}
-
-/** A link: a tap opens it, a long press opens the reply menu (not the link). */
-function Link({ href, style, children }: { href: string; style: StyleProp<TextStyle>; children: ReactNode }) {
-  const reply = useContext(ReplyMenu);
-  const pane = useContext(ThreadPaneContext);
-  const menu = reply
-    ? () => {
-        haptics.press();
-        openRowMenu(reply, pane);
-      }
-    : undefined;
-  return (
-    <Text style={style} accessibilityRole="link" onPress={() => openLink(href)} onLongPress={menu}>
-      {children}
-    </Text>
   );
 }
 
@@ -67,15 +54,34 @@ const rules: RenderRules = {
       <View style={s.table}>{children}</View>
     </HScrollView>
   ),
-  // A Text link (not the default Pressable) so it wraps with the paragraph; opens the system browser.
+  // A Text link (not the default Pressable) so it wraps with the paragraph. A tap opens it, a long
+  // press opens the link menu (see `linkActions.ts`).
   link: (node, children, _parent, s) => (
-    <Link key={node.key} style={s.link} href={String(node.attributes.href ?? "")}>
+    <ThreadLink key={node.key} style={s.link} url={String(node.attributes.href ?? "")}>
       {children}
-    </Link>
+    </ThreadLink>
   ),
+  // Inline code that is one URL is a link too: agents often put a dev server URL in backticks.
+  code_inline: (node, _children, _parent, s, inherited = {}) => {
+    const url = codeUrl(node.content);
+    if (url === undefined) {
+      return (
+        <Text key={node.key} style={[inherited, s.code_inline]}>
+          {node.content}
+        </Text>
+      );
+    }
+    return (
+      <ThreadLink key={node.key} style={[inherited, s.code_inline, { color: colors.link }]} url={url}>
+        {node.content}
+      </ThreadLink>
+    );
+  },
 };
 
-const mdStyles = StyleSheet.create({
+/** Built again after a theme change: the colors are read when the styles are built. */
+const mdStyles = themed(() =>
+  StyleSheet.create({
   body: { color: colors.text, fontSize: BODY, lineHeight: LINE },
   paragraph: { marginTop: 0, marginBottom: space.sm, flexWrap: "wrap", flexDirection: "row", alignItems: "flex-start" },
   heading1: { fontSize: type.size.title + 2, lineHeight: 30, fontWeight: "700", marginTop: space.sm, marginBottom: space.sm },
@@ -116,12 +122,15 @@ const mdStyles = StyleSheet.create({
   // Fixed column width: the table scrolls sideways, and the columns of all rows line up.
   th: { width: TABLE_COL, padding: space.sm, fontWeight: "700" },
   td: { width: TABLE_COL, padding: space.sm },
-});
+  }),
+);
 
-const styles = StyleSheet.create({
-  codeScroll: { backgroundColor: colors.sunken, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
-  codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
-});
+const styles = themed(() =>
+  StyleSheet.create({
+    codeScroll: { backgroundColor: colors.sunken, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
+    codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
+  }),
+);
 
 /**
  * Assistant reply rendered as markdown, full width. A long press opens the reply menu; Copy copies
@@ -131,8 +140,8 @@ export const AssistantMessage = memo(function AssistantMessage({ markdown, id }:
   const menu: MenuTarget = { kind: "assistant", text: markdown, id };
   return (
     <ReplyMenu.Provider value={menu}>
-      <MenuPressable menu={menu} feedback="scale">
-        <Markdown style={mdStyles} rules={rules}>
+      <MenuPressable menu={menu} feedback="dim">
+        <Markdown style={mdStyles()} rules={rules} markdownit={markdownit}>
           {markdown}
         </Markdown>
       </MenuPressable>

@@ -13,10 +13,12 @@ import * as ImagePicker from "expo-image-picker";
 
 import { clearCommandsCache } from "./commands";
 import { pendingOf, usePending } from "./pending";
-import { Composer } from "./Composer";
+import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE } from "./Composer";
 
 const screen = readFileSync(join(__dirname, "__fixtures__", "claude_bash_permission.txt"), "utf8");
 
+/** A test can show another screen than the bash permission menu. */
+let mockScreen: string | undefined;
 const mockCalls: any[] = [];
 const mockRpcCalls: { method: string; params: any }[] = [];
 const mockCommands = [
@@ -53,7 +55,7 @@ const mockRpc = {
       return { path: `/up/${mockRpcCalls.filter((c) => c.method === "files.put").length}-${params.name}` };
     }
     mockCalls.push(params);
-    return params.method === "pane.read" ? { read: { text: screen } } : {};
+    return params.method === "pane.read" ? { read: { text: mockScreen ?? screen } } : {};
   },
 };
 let mockHello: any;
@@ -127,6 +129,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   usePending.setState({ byPane: {} });
+  mockScreen = undefined;
   mockCalls.length = 0;
   mockRpcCalls.length = 0;
   mockHello = undefined;
@@ -678,4 +681,71 @@ test("composer_and_pending_bubbles_are_memoized", () => {
   const { PendingBubbles } = jest.requireActual("./items/PendingBubble");
   expect((Composer as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
   expect((PendingBubbles as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
+});
+
+describe("free-text mode after Type something", () => {
+  const askScreen = () => readFileSync(join(__dirname, "__fixtures__", "claude_ask_user_question.txt"), "utf8");
+  const texts = (t: ReactTestRenderer) => t.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children);
+  const lineSends = () => mockCalls.filter((c) => c.method === "pane.send_input" || c.method === "pane.send_text");
+  const setStatus = (agent_status: string) =>
+    useSnapshots.setState({ byHost: { "host-1": { agents: [{ pane_id: "w1:p1", agent_status }] } as any }, errors: {} });
+
+  test("the send after Type something types the text and presses Enter", async () => {
+    mockScreen = askScreen();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+    await press(tree!, "4. Type an answer");
+    expect(sends()).toEqual([{ method: "pane.send_keys", params: { pane_id: "w1:p1", keys: ["4"] } }]);
+    // The agent is still blocked: a hint, not the blocked message, and no menu.
+    expect(texts(tree!)).toContain(FREEFORM_MESSAGE);
+    expect(texts(tree!)).not.toContain(BLOCKED_MESSAGE);
+    expect(choiceButtons(tree!)).toHaveLength(0);
+
+    await act(async () => prompt(tree!).props.onChangeText("Ship build 7\ninstead"));
+    await press(tree!, "Send");
+    expect(prompts()).toEqual([]);
+    expect(lineSends()).toEqual([
+      { method: "pane.send_input", params: { pane_id: "w1:p1", text: "Ship build 7 instead", keys: ["enter"] } },
+    ]);
+    expect(pendingOf("host-1", "w1:p1")).toEqual([]);
+    expect(texts(tree!)).not.toContain(FREEFORM_MESSAGE);
+
+    // The mode ends after one send: the next send is a normal prompt.
+    await act(async () => prompt(tree!).props.onChangeText("next"));
+    await press(tree!, "Send");
+    expect(prompts()).toEqual(["next"]);
+  });
+
+  test("an option row keeps the normal prompt send", async () => {
+    mockScreen = askScreen();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+    await act(async () => choiceButtons(tree!)[1].props.onPress());
+    await flush();
+    await act(async () => prompt(tree!).props.onChangeText("hello"));
+    await press(tree!, "Send");
+    expect(prompts()).toEqual(["hello"]);
+    expect(lineSends()).toEqual([]);
+  });
+
+  test("the mode ends when the agent is no longer blocked", async () => {
+    mockScreen = askScreen();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+    await press(tree!, "4. Type an answer");
+    expect(texts(tree!)).toContain(FREEFORM_MESSAGE);
+    await act(async () => setStatus("working"));
+    await flush();
+    expect(texts(tree!)).not.toContain(FREEFORM_MESSAGE);
+    // Blocked again on a later menu: the mode does not come back.
+    await act(async () => setStatus("blocked"));
+    await flush();
+    expect(texts(tree!)).not.toContain(FREEFORM_MESSAGE);
+  });
 });

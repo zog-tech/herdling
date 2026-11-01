@@ -39,7 +39,7 @@ export function tabHeader() {
 }
 
 /** The title of an Android header: the app's title role (20, semibold) in ivory. iOS keeps the system font. */
-const androidTitleStyle = { color: colors.text, fontSize: textRole.title.size, fontWeight: textRole.title.weight };
+const androidTitleStyle = () => ({ color: colors.text, fontSize: textRole.title.size, fontWeight: textRole.title.weight });
 
 /** A plain header on the page color, for screens whose content does not scroll under it. */
 export function solidHeader() {
@@ -50,7 +50,7 @@ export function solidHeader() {
     headerTintColor: colors.text,
     // Bar buttons on dark glass, whatever the system appearance.
     headerUserInterfaceStyle: "dark" as const,
-    headerTitleStyle: android ? androidTitleStyle : { color: colors.text },
+    headerTitleStyle: android ? androidTitleStyle() : { color: colors.text },
     headerBackButtonDisplayMode: "minimal" as const,
     contentStyle: { backgroundColor: colors.bg },
   };

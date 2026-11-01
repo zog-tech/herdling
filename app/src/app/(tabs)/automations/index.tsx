@@ -24,12 +24,9 @@ const RUN_LABEL: Record<AutomationRun["status"], string> = {
   failed: "Failed",
   pending_approval: "Needs approval",
 };
-const RUN_COLOR: Record<AutomationRun["status"], string> = {
-  running: colors.status.working,
-  ok: colors.status.done,
-  failed: colors.danger,
-  pending_approval: colors.status.blocked,
-};
+/** A function: the colors change with the theme. */
+const runColor = (s: AutomationRun["status"]): string =>
+  ({ running: colors.status.working, ok: colors.status.done, failed: colors.danger, pending_approval: colors.status.blocked })[s];
 
 function when(s: number): string {
   return new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -200,11 +197,11 @@ function HostAutomations({
               </Text>
               {state.runs.slice(0, 5).map((r) => (
                 <View key={r.id} style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                  <Clock size={14} color={RUN_COLOR[r.status]} />
+                  <Clock size={14} color={runColor(r.status)} />
                   <Text variant="small" style={{ flex: 1 }} numberOfLines={1}>
                     {names?.get(r.automation_id) ?? r.automation_id}
                   </Text>
-                  <Text variant="caption" color={RUN_COLOR[r.status]}>
+                  <Text variant="caption" color={runColor(r.status)}>
                     {RUN_LABEL[r.status]}
                   </Text>
                   <Text variant="caption" muted>

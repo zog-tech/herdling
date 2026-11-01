@@ -20,6 +20,7 @@ import { solidHeader } from "@/ui/headerOptions";
 import { LayoutSync } from "@/ui/LayoutSync";
 import { NativeSheetHost } from "@/ui/nativeSheet";
 import { NoticeHost } from "@/ui/notice";
+import { useThemeRemount } from "@/ui/useThemeRemount";
 import { refreshParakeet } from "@/voice/parakeet";
 
 SplashScreen.preventAutoHideAsync();
@@ -33,32 +34,30 @@ Notifications.setNotificationHandler({
 // The Yes and No buttons of a "needs you" push. Registered before the first push can show.
 void registerChoiceCategory();
 
-/** A native header on the page color. iOS 26 puts its back and bar buttons on Liquid Glass. */
-const hostHeader = solidHeader();
-
 /**
- * The navigation theme: dark, in the Night Watch colors. Native headers, glass bar buttons and
- * the tab bar read their appearance from it.
+ * The navigation theme: dark, in the colors of the current theme. Native headers, glass bar
+ * buttons and the tab bar read their appearance from it. A function: the colors change with the theme.
  */
-const NAV_THEME = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: colors.accent,
-    background: colors.bg,
-    card: colors.card,
-    text: colors.text,
-    border: colors.divider,
-    notification: colors.status.blocked,
-  },
-};
+function navTheme() {
+  return {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      primary: colors.accent,
+      background: colors.bg,
+      card: colors.card,
+      text: colors.text,
+      border: colors.divider,
+      notification: colors.status.blocked,
+    },
+  };
+}
 
 /** Close button of a modal screen's header, next to swipe-down. */
 function ModalClose() {
   const router = useRouter();
   return <CloseButton onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} />;
 }
-const modalHeader = { ...hostHeader, presentation: "modal", headerLeft: () => <ModalClose /> } as const;
 
 /** Rendered inside the root layout so the router exists; routing waits for the navigator itself. */
 function NotificationRouting() {
@@ -75,12 +74,32 @@ export default function RootLayout() {
   useEffect(() => {
     void refreshParakeet();
   }, []);
+  // A theme change mounts the themed part again, so every style reads the new colors.
+  const themeKey = useThemeRemount();
   if (!ready) return null;
+  return (
+    <>
+      <ThemedRoot key={themeKey} />
+      {/* These render no views, so a theme change does not need to mount them again. */}
+      <NotificationRouting />
+      {/* Two columns on wide windows (iPad, tablets): moves the session between the column and its route. */}
+      <LayoutSync />
+      <AppShortcuts />
+      <UpdateChecks />
+    </>
+  );
+}
+
+/** The navigator and the hosts that draw views: everything that reads `colors`. */
+function ThemedRoot() {
+  /** A native header on the page color. iOS 26 puts its back and bar buttons on Liquid Glass. */
+  const hostHeader = solidHeader();
+  const modalHeader = { ...hostHeader, presentation: "modal", headerLeft: () => <ModalClose /> } as const;
   // Gesture-handler gestures (the swipe between agents, horizontal scroll views) need this root view.
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar style="light" />
-      <ThemeProvider value={NAV_THEME}>
+      <ThemeProvider value={navTheme()}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="hosts/discover" options={{ ...hostHeader, title: "Add host" }} />
         <Stack.Screen name="hosts/pair" options={{ ...hostHeader, title: "Pair" }} />
@@ -93,6 +112,7 @@ export default function RootLayout() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
+        <Stack.Screen name="theme" options={{ ...hostHeader, title: "Theme" }} />
         <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />
         {/* The session screen sets its own title view and bar buttons. */}
         <Stack.Screen name="session/[hostId]/[paneId]" options={{ ...hostHeader, title: "" }} />
@@ -124,11 +144,6 @@ export default function RootLayout() {
         />
       </Stack>
       </ThemeProvider>
-      <NotificationRouting />
-      {/* Two columns on wide windows (iPad, tablets): moves the session between the column and its route. */}
-      <LayoutSync />
-      <AppShortcuts />
-      <UpdateChecks />
       <NativeSheetHost />
       <NoticeHost />
     </GestureHandlerRootView>

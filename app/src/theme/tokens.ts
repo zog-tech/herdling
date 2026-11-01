@@ -1,10 +1,13 @@
+import { buildColors } from "./palettes";
+import { savedChoice } from "./savedChoice";
+
 /**
  * "Night Watch" palette: warm blacks, graphite, ivory text and one lantern gold.
  * Gold is scarce: only the primary action, the "working" lantern, and focus or selected state.
  * Contrast (WCAG) measured on `bg` #0A0A0B / `card` #141416 / `raised` #1C1C1F:
  * text 17.7 / 16.5 / 15.2, textMuted 7.4 / 6.9 / 6.4, border 3.7 / 3.5 / 3.2, edge 3.2 on bg.
  */
-export const colors = {
+const nightWatch = {
   /** The night field: the page. */
   bg: "#0A0A0B",
   card: "#141416",
@@ -31,6 +34,8 @@ export const colors = {
   textMuted: "#A39E93",
   /** Lantern gold: the primary action and the selected state. 8.4:1 on card. */
   accent: "#D4A857",
+  /** Fill of a small gold chip ("Recommended"): gold at 12%. Gold text on it over `card`: 6.8:1. */
+  accentTint: "rgba(212,168,87,0.12)",
   /** A pressed gold control. `onAccent` on it is 6.7:1. */
   accentPressed: "#B8903F",
   /** Text and icons on gold and on other status fills: 9.0:1 on accent. */
@@ -54,6 +59,12 @@ export const colors = {
    * Measured on it: text 15.9:1, textMuted 6.7:1, ember 5.9:1.
    */
   blockedTint: "rgba(232,121,74,0.08)",
+  /**
+   * The first-run hint on the Board: gold at 10% over `bg` (about #1E1A13), with gold at 35% as its
+   * edge. Measured on the fill: text 15.5:1, textMuted 6.5:1, accent 7.9:1.
+   */
+  hintFill: "rgba(212,168,87,0.10)",
+  hintEdge: "rgba(212,168,87,0.35)",
   /** Every status also has its own icon and label; color is never the only cue. */
   status: {
     /** The lantern: lit while work happens. Same gold as `accent`. 8.4:1 on card. */
@@ -134,6 +145,24 @@ export const colors = {
     "#F5F2EA",
   ],
 } as const;
+
+/** The token shape with plain strings, so a theme can hold other values. */
+type Widen<T> = T extends string
+  ? string
+  : T extends readonly string[]
+    ? readonly string[]
+    : { readonly [K in keyof T]: Widen<T[K]> };
+export type Colors = Widen<typeof nightWatch>;
+
+/** The Night Watch values as designed. Every theme and accent builds on them (`palettes.ts`). */
+export const NIGHT_WATCH: Colors = nightWatch;
+
+/**
+ * The live colors. Read them at render time, never copy a value into a module constant: a theme
+ * change replaces the values in place (`applyColors`) and then mounts the screens again.
+ * The saved theme is applied below, before any screen module reads a value.
+ */
+export const colors: Colors = buildColors(nightWatch, savedChoice());
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
 
@@ -291,3 +320,50 @@ export const elevation = {
 
 /** Icon sizes (lucide) in points. `header` matches the icons of a screen header row. */
 export const icon = { sm: 16, md: 20, header: 22, lg: 24, strokeWidth: 2 } as const;
+
+type Mutable = { [k: string]: unknown };
+
+/** Goes up by one on each `applyColors`, so `themed` knows when to build again. */
+let colorsVersion = 0;
+
+/**
+ * A value built from the colors once per theme, for example a `StyleSheet.create` result.
+ * Call the returned function at render time; it builds again after a theme change.
+ */
+export function themed<T>(make: () => T): () => T {
+  let built: { version: number; value: T } | undefined;
+  return () => {
+    if (!built || built.version !== colorsVersion) built = { version: colorsVersion, value: make() };
+    return built.value;
+  };
+}
+
+/** Copies each value of `from` into `into`, object by object, so references to `into` stay valid. */
+function assignDeep(into: Mutable, from: Mutable): void {
+  for (const k of Object.keys(from)) {
+    const v = from[k];
+    const cur = into[k];
+    if (typeof v === "object" && v !== null && !Array.isArray(v) && typeof cur === "object" && cur !== null) {
+      assignDeep(cur as Mutable, v as Mutable);
+    } else {
+      into[k] = Array.isArray(v) ? [...v] : v;
+    }
+  }
+}
+
+/**
+ * Replaces the live colors with `next` in place, and the tokens above that copy a color
+ * (`state.focusRing`, `elevation`). Screens show the new values when they render again:
+ * the root layout mounts them again after a theme change (`ui/useThemeRemount`).
+ */
+export function applyColors(next: Colors): void {
+  colorsVersion += 1;
+  assignDeep(colors as unknown as Mutable, next as unknown as Mutable);
+  (state.focusRing as Mutable).color = colors.accent;
+  assignDeep(elevation as unknown as Mutable, {
+    0: { backgroundColor: colors.bg },
+    1: { backgroundColor: colors.card, borderColor: colors.divider },
+    2: { backgroundColor: colors.raised, borderColor: colors.border },
+    tappable: { backgroundColor: colors.card, borderColor: colors.edge },
+  });
+}

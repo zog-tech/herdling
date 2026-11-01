@@ -1,5 +1,6 @@
 //! Claude Code session logs (JSONL) as normalized thread items.
 
+pub mod background;
 mod follow;
 mod parse;
 mod resolve;

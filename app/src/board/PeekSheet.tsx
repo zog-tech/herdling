@@ -131,8 +131,14 @@ export function PeekSheet({
         </Text>
       ) : null}
 
-      {item?.bucket === "working" && item.line ? (
-        <Text variant="small" mono numberOfLines={2} style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+      {(item?.bucket === "working" || item?.bucket === "background") && item.line ? (
+        <Text
+          variant="small"
+          mono={item.bucket === "working"}
+          muted={item.bucket === "background"}
+          numberOfLines={2}
+          style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}
+        >
           {item.line}
         </Text>
       ) : null}

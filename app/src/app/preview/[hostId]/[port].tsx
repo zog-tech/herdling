@@ -1,8 +1,7 @@
-import { requireOptionalNativeModule } from "expo";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, ArrowRight, Copy, Globe, RotateCw, TriangleAlert, X } from "lucide-react-native";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Linking, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { demoPreviewHtml } from "@/demo/demoPreview";
@@ -10,52 +9,26 @@ import { isDemoHost } from "@/demo/demoHost";
 import { addressText, deskUrl, localUrl, staysInPreview, validPort } from "@/preview/preview";
 import { usePreviewSupported, useTunnel } from "@/preview/usePreview";
 import { loadWebView, type WebViewHandle } from "@/preview/webview";
-import { colors, hitTarget, icon, space, state } from "@/theme/tokens";
+import { previewPath } from "@/thread/links";
+import { colors, icon, space } from "@/theme/tokens";
+import { copyIfAvailable, hasClipboard } from "@/ui/clipboard";
 import * as haptics from "@/ui/haptics";
 import { DelayedSpinner } from "@/ui/Delayed";
 import { showNotice } from "@/ui/notice";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
-
-/** A 44 pt icon button of the toolbar. */
-function ToolButton({ label, Icon, onPress, disabled }: { label: string; Icon: typeof X; onPress: () => void; disabled?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      hitSlop={2}
-      style={({ pressed }) => ({
-        width: hitTarget,
-        height: hitTarget,
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <Icon size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
-    </Pressable>
-  );
-}
-
-/** Copies text when the build has the clipboard module. Older builds do not show the button. */
-function copyText(text: string): boolean {
-  if (requireOptionalNativeModule("ExpoClipboard") == null) return false;
-  const Clipboard = require("expo-clipboard") as typeof import("expo-clipboard");
-  void Clipboard.setStringAsync(text);
-  return true;
-}
+import { ToolButton } from "@/ui/ToolButton";
 
 /**
  * Screen: a dev server of the computer in a web view. The native ssh module serves the page on a
  * loopback port of the phone and sends each connection over its own SSH channel to the computer.
- * The demo host shows a static page.
+ * The demo host shows a static page. The optional `path` search param (a link in the thread) is
+ * the first page; it always stays on the preview origin.
  */
 export default function PreviewScreen() {
-  const { hostId, port: portParam } = useLocalSearchParams<{ hostId: string; port: string }>();
+  const { hostId, port: portParam, path: pathParam } = useLocalSearchParams<{ hostId: string; port: string; path?: string }>();
   const port = Number(portParam);
+  const path = previewPath(pathParam);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const supported = usePreviewSupported(hostId);
@@ -68,7 +41,7 @@ export default function PreviewScreen() {
   const [loadError, setLoadError] = useState<string>();
 
   const localPort = tunnel.phase === "ready" ? tunnel.localPort : undefined;
-  const shownUrl = nav.url || (localPort !== undefined ? localUrl(localPort) : `http://localhost:${port}/`);
+  const shownUrl = nav.url || (localPort !== undefined ? localUrl(localPort, path) : localUrl(port, path));
   const close = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
 
   let body: ReactNode;
@@ -103,7 +76,7 @@ export default function PreviewScreen() {
       </Centered>
     );
   } else {
-    const source = demo ? { html: demoPreviewHtml(port) } : { uri: localUrl(localPort ?? port) };
+    const source = demo ? { html: demoPreviewHtml(port) } : { uri: localUrl(localPort ?? port, path) };
     body = (
       <View style={{ flex: 1 }}>
         <WebView
@@ -159,12 +132,12 @@ export default function PreviewScreen() {
           </Text>
           {ready && nav.loading ? <DelayedSpinner color={colors.textMuted} /> : null}
         </View>
-        {requireOptionalNativeModule("ExpoClipboard") != null ? (
+        {hasClipboard() ? (
           <ToolButton
             label="Copy URL"
             Icon={Copy}
             onPress={() => {
-              if (copyText(desk)) {
+              if (copyIfAvailable(desk)) {
                 haptics.tap();
                 showNotice("URL copied");
               }

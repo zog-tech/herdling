@@ -3,6 +3,7 @@
 use anyhow::{bail, Context};
 use serde::Serialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::choices::PushChoice;
 use crate::config::{Config, CHOICE_ACTIONS};
@@ -11,13 +12,44 @@ use crate::serve::debounce::Notice;
 /// The notification category with the Yes and No actions. The app registers it.
 pub const CHOICE_CATEGORY: &str = "herdling_choice";
 
+/// The longest `collapseId` that APNs accepts (`apns-collapse-id`), in bytes.
+pub const MAX_COLLAPSE_ID: usize = 64;
+
+/// `herdling:<parts joined by ":">`, or `herdling:<32 hex digits of SHA-256>` when that is longer
+/// than [`MAX_COLLAPSE_ID`] bytes. The same parts always give the same id.
+pub fn stable_id(parts: &[&str]) -> String {
+    let joined = parts.join(":");
+    let id = format!("herdling:{joined}");
+    if id.len() <= MAX_COLLAPSE_ID {
+        return id;
+    }
+    let hex: String = Sha256::digest(joined.as_bytes()).iter().take(16).map(|b| format!("{b:02x}")).collect();
+    format!("herdling:{hex}")
+}
+
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PushMessage {
     pub to: String,
     pub title: String,
     pub body: String,
-    pub sound: &'static str,
+    /// `None` gives a push without a sound: Expo plays no sound when the field is missing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sound: Option<&'static str>,
+    /// iOS 15 and later: `time-sensitive` for "needs you", `passive` for a quiet "finished".
+    /// `time-sensitive` needs the Time Sensitive entitlement; without it iOS uses `active`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interruption_level: Option<&'static str>,
+    /// One notification per pane: a new push with the same id replaces the old one (APNs
+    /// `apns-collapse-id`, at most [`MAX_COLLAPSE_ID`] bytes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collapse_id: Option<String>,
+    /// Android: the same id as `collapse_id`. A new push replaces the shown one with this tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// iOS: groups the notifications of one computer (APNs `thread-id`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
     /// [`CHOICE_CATEGORY`] on a "needs you" push with Yes and No buttons.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_id: Option<String>,
@@ -38,6 +70,8 @@ pub struct PushData {
 /// `at_desk`, devices with `quiet_at_desk` get no message.
 /// `choice` adds the Yes and No buttons to a "needs you" push, only for devices that registered
 /// [`CHOICE_ACTIONS`]. Their body also shows the two labels, so the user knows what each button does.
+/// The device prefs set the presentation: `replace` gives a `collapseId` and `tag` per host and pane,
+/// `group` gives a `threadId` per host, and `quiet_finished` makes a "finished" push passive and silent.
 pub fn messages(
     cfg: &Config,
     notice: Notice,
@@ -66,11 +100,20 @@ pub fn messages(
                 Some(c) => format!("{body}\n{} · {}", c.yes.label, c.no.label),
                 None => body.to_string(),
             };
+            let quiet = notice == Notice::Finished && d.prefs.quiet_finished;
+            let collapse = d.prefs.replace.then(|| stable_id(&[&d.host_id, pane]));
             Some(PushMessage {
                 to,
                 title: title.clone(),
                 body,
-                sound: "default",
+                sound: (!quiet).then_some("default"),
+                interruption_level: match notice {
+                    Notice::NeedsYou => Some("time-sensitive"),
+                    Notice::Finished => quiet.then_some("passive"),
+                },
+                tag: collapse.clone(),
+                collapse_id: collapse,
+                thread_id: d.prefs.group.then(|| stable_id(&[&d.host_id])),
                 category_id: choice.map(|_| CHOICE_CATEGORY.to_string()),
                 data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string(), choice: choice.cloned() },
             })

@@ -4,9 +4,10 @@ import { StatusDot } from "@/ui/StatusDot";
 import type { HostConn } from "./connection";
 
 const CONN: Record<HostConn["status"], { label: string; color: string }> = {
-  online: { label: "Online", color: colors.status.done },
-  connecting: { label: "Connecting", color: colors.status.working },
-  offline: { label: "Offline", color: colors.textMuted },
+  // Getters: the colors change with the theme.
+  online: { label: "Online", get color() { return colors.status.done; } },
+  connecting: { label: "Connecting", get color() { return colors.status.working; } },
+  offline: { label: "Offline", get color() { return colors.textMuted; } },
 };
 
 /** Connection state of a host as a dot and a word: Online, Connecting or Offline. */

@@ -16,8 +16,11 @@ A shepherd keeps watch at night. The field is dark and quiet; the flock is the s
 Motif rules:
 - **Gold is scarce.** Gold marks only (a) the primary action (send, approve, pair, the primary button, the "+" new session button), (b) the "working" lantern, (c) the focus or selected state (tab bar, switches, a chosen option). Never decoration, never a large fill apart from the primary button.
 - **The lantern glow.** While an agent works, its status dot has a soft radial gold glow (`ui/LanternGlow`) that breathes: 2.4 s per breath, opacity 0.35 ↔ 0.7, on the UI thread. When work stops it fades out in 400 ms. Reduce Motion: static. Only on the Board row status and the session status row.
-- **Rows, not boxes.** Lists are flat rows split by spacing and an inset hairline (`ui/Group`, `ui/Row`, `board/AgentRow`). No bordered card around each item. Settings-style screens use full-width grouped bands (`Group` inside `Section`, `Screen flush`).
-- **One thing leads.** The Board opens with one large number (`board/summary`, `display` text role). "Needs you" is the only loud row: an ember marker at the left edge and an 8 % ember tint. Everything else is quiet.
+- **Rows, not boxes.** Lists are flat rows split by spacing and an inset hairline (`ui/Group`, `ui/Row`). No bordered card around each item. One exception: the Board shows each agent as a card by default (Settings, "Agent list style": cards, rows with arrows, or plain rows), because new users did not see that a plain row opens the session. Settings-style screens use full-width grouped bands (`Group` inside `Section`, `Screen flush`).
+- **One thing leads.** The Board top has two forms (Settings, "Overview top", `homeTop` in `board/boardPrefs`). "Needs you" is the only loud row: an ember marker at the left edge and an 8 % ember tint. Everything else is quiet.
+  - **Dashboard** (default, `board/Dashboard`, `board/BoardTop`): no native header. A brand header: the sheep mark and "Herdling" (`largeTitle`) at the left, the computers button at the right (up to 3 circles with a first letter and an online dot in sage or stone, then "+n"; a tap opens the host list in Settings). Then a `section` label ("Highlights", or "Recent" for the idle fallback) and a carousel of large tiles: 78 % of the board width (max 340 pt), 210 pt high, radius 24, gap 12, inset 16, snap per tile, no auto scroll. A tile is the agent's last screen lines in dim mono on `sunken`, faded to `sunken` at the bottom, with the title (`headline`), the status (dot + word) and "host · agent". Needs you: a 1.5 pt ember edge and `blockedTint`; working: a `hintEdge` gold edge; else `divider`. An elapsed chip (`glassFallback`) sits at the top right for working and needs you. The last tile is "New session" (dashed `border`, gold "+"). Tile press: the Board row press (scale 0.98, light layer). Only tiles on screen read the screen, every 5 s. Under the carousel: one summary line, then "All agents" + count with "Group" and "Sort" menus.
+  - **Summary** (`board/BoardTop` `Summary`): the native "Overview" header and one large number (`display`).
+  - Computer and workspace section headers show a count and collapse on tap (a chevron turns in 180 ms; Reduce Motion: no turn).
 - **Liquid Glass.** The tab bar is the system tab bar (`NativeTabs`, SF Symbols, gold selected). Headers are native stack headers, so iOS 26 puts back and bar buttons on glass. Floating controls (the "+" button, the composer box, the plus button) use `ui/Glass` (`GlassSurface`, `GlassButton`). Before iOS 26 they fall back to `glassFallback`, a translucent `raised` fill. A control on a glass sheet uses a solid fill (`onGlass`), because glass on glass does not read. The peek sheet is a system glass sheet on iOS 26.
 
 ## 1. Color
@@ -77,6 +80,37 @@ Rules:
 - Text on any surface: 4.5:1 or more. Large text and non-text UI (icons, control edges): 3:1 or more.
 - Dividers that only group content use `divider`. Edges that show "you can tap this" use `edge` or `border`.
 - The terminal uses `terminal.bg` (= `sunken`) and a warmed ANSI palette (black and white entries warmed).
+
+### Themes and accents
+
+The values above are Night Watch, the default. Settings, Appearance, Theme lets the user pick a
+theme and an accent (`app/src/theme/palettes.ts`). Each one changes only some tokens; the others keep
+their Night Watch values. `palettes.test.ts` checks the contrast rules above for every combination.
+
+| Theme | Change | text / textMuted on bg, card, raised | border |
+|---|---|---|---|
+| Night Watch | — | 17.7 / 16.4 / 15.2, 7.4 / 6.9 / 6.4 | 3.7 / 3.5 / 3.2 |
+| Midnight | `bg` and `sunken` `#000000`, `card` `#0E0E10`, `raised` `#18181B`; same text | 18.8 / 17.2 / 15.8, 7.9 / 7.2 / 6.6 | 4.0 / 3.6 / 3.4 |
+| Graphite | Cool greys (`bg` `#0A0B0D`, `card` `#141619`), cool text `#F1F3F6` / `#9BA1AB` | 17.7 / 16.3 / 14.9, 7.6 / 7.0 / 6.4 | 4.0 / 3.6 / 3.3 |
+
+| Accent | `accent` | on `card` (lowest theme) | `onAccent` on it | on `accentPressed` |
+|---|---|---|---|---|
+| Lantern | `#D4A857` | 8.2:1 | 9.0:1 | 6.7:1 |
+| Ember | `#F0884A` | 7.2:1 | 7.8:1 | 5.7:1 |
+| Sea glass | `#5EC2B0` | 8.5:1 | 9.3:1 | 6.3:1 |
+| Iris | `#A898F0` | 7.3:1 | 7.9:1 | 5.5:1 |
+| Ivory | `#E9E4D8` | 14.3:1 | 15.6:1 | 11.0:1 |
+
+Rules:
+- "Gold" in this file means the accent. The same scarcity rules apply to every accent.
+- The lantern follows the accent: `status.working` = `accent`. `onAccent` is `#0A0A0B` for every accent.
+- "Needs you" stays ember, except with the Ember accent: then it is rose `#EE7BB4` (7.0:1 on `card`),
+  so it never looks like the working lantern.
+- Only dark themes. A light theme needs light variants of every token, light native controls
+  (headers, glass, keyboard, status bar) and a check on a device.
+- Code reads `colors.*` at render time. Never copy a color into a module constant: a theme change
+  replaces the values in place and mounts the screens again. For a `StyleSheet.create` at module
+  level, use `themed(() => StyleSheet.create(...))`.
 
 ## 2. Elevation
 
@@ -212,7 +246,7 @@ Each one has an icon, one sentence that says what is true, and an action when on
 ## 12. Accessibility
 
 - Every control has an `accessibilityLabel` and a role; icon buttons announce their state (selected, expanded, busy, disabled).
-- Gestures have a visible or VoiceOver alternative: the Board card has a "⋯" button and custom actions for swipe and long press.
+- Gestures have a visible or VoiceOver alternative: the Board card has custom actions for swipe and long press, and the plain-row style also has a "⋯" button.
 - Status changes on the Board are announced ("api moved to Needs you") without moving focus, at most one per 2 s.
 - Hold-to-talk also works as tap-to-toggle, and has a VoiceOver action.
 - Test at the largest accessibility text size and with Reduce Motion on before you ship.

@@ -3,16 +3,19 @@ import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
+import { backgroundLine, hasBackground } from "./background";
+
 /** Where an agent sits on the Board. */
-export type Bucket = "needs_you" | "ready" | "working" | "idle";
+export type Bucket = "needs_you" | "ready" | "working" | "background" | "idle";
 
 /** Board order: what needs the user first, quiet agents last. */
-export const BUCKETS: readonly Bucket[] = ["needs_you", "ready", "working", "idle"];
+export const BUCKETS: readonly Bucket[] = ["needs_you", "ready", "working", "background", "idle"];
 
 export const BUCKET_LABEL: Record<Bucket, string> = {
   needs_you: "Needs you",
   ready: "Ready",
   working: "Working",
+  background: "Background",
   idle: "Idle",
 };
 
@@ -35,6 +38,14 @@ export function bucketOf(agent: Pick<AgentInfo, "agent_status" | "state_change_s
   }
 }
 
+/**
+ * An idle agent whose preview reports background work (shells, subagents) moves to "background".
+ * Every other bucket wins over it.
+ */
+export function withBackground(bucket: Bucket, p: AgentPreview | undefined): Bucket {
+  return bucket === "idle" && hasBackground(p?.background) ? "background" : bucket;
+}
+
 /** A preview from the companion and the herdr status the agent had when it was fetched. */
 export type PreviewEntry = AgentPreview & { status: AgentStatus };
 
@@ -54,11 +65,16 @@ export type BoardItem = {
   bucket: Bucket;
   /** Epoch ms when the current status began, if known. */
   since?: number;
+  /** True when `since` comes from the host. False: it is the app's own first sighting of the status. */
+  sinceKnown?: boolean;
   /** The line under the title: activity, question or last reply. */
   line?: string;
 };
 
-/** The preview field that fits the bucket: activity while working, the question when blocked, else the last reply. */
+/**
+ * The preview field that fits the bucket: activity while working, the question when blocked, the
+ * background work in "background", else the last reply.
+ */
 export function previewLine(bucket: Bucket, p: AgentPreview | undefined): string | undefined {
   if (!p) return undefined;
   switch (bucket) {
@@ -66,6 +82,8 @@ export function previewLine(bucket: Bucket, p: AgentPreview | undefined): string
       return p.activity ?? p.last_reply;
     case "needs_you":
       return p.question ?? p.last_reply;
+    case "background":
+      return backgroundLine(p.background) ?? p.last_reply;
     default:
       return p.last_reply;
   }
@@ -96,9 +114,9 @@ export function mergeBoard(
   for (const h of hosts) {
     for (const agent of h.agents) {
       const key = `${h.hostId}:${agent.pane_id}`;
-      const bucket = bucketOf(agent, seen ? seen[key] : Number.POSITIVE_INFINITY);
       const raw = previews[key];
       const p = raw && raw.status === agent.agent_status ? raw : undefined;
+      const bucket = withBackground(bucketOf(agent, seen ? seen[key] : Number.POSITIVE_INFINITY), p);
       const local = firstSeen[key]?.status === agent.agent_status ? firstSeen[key].at : undefined;
       const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
       out.push({
@@ -112,6 +130,7 @@ export function mergeBoard(
         agent,
         bucket,
         since: p?.status_since != null ? p.status_since * 1000 : local,
+        sinceKnown: p?.status_since != null,
         line: previewLine(bucket, p),
       });
     }
@@ -134,7 +153,7 @@ export function sortBoard(items: BoardItem[]): BoardItem[] {
 export type Counts = Record<Bucket, number>;
 
 export function countBuckets(items: BoardItem[]): Counts {
-  const c: Counts = { needs_you: 0, ready: 0, working: 0, idle: 0 };
+  const c: Counts = { needs_you: 0, ready: 0, working: 0, background: 0, idle: 0 };
   for (const i of items) c[i.bucket]++;
   return c;
 }

@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { answerChoice, destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
-import { labelMatches, shortLabel, yesNo } from "./parseChoices";
+import { choiceView, isFreeform, labelMatches, menuQuestion, parseMenu, shortLabel, yesNo } from "./parseChoices";
 
 const mockCalls: { method: string; params: any }[] = [];
 let mockScreen = "";
@@ -102,6 +102,96 @@ describe("parseChoices", () => {
 
   it("handles CRLF line ends", () => {
     expect(parseChoices("❯ 1. Yes\r\n  2. No\r\n")).toHaveLength(2);
+  });
+});
+
+describe("ask_user_question (display data, app only)", () => {
+  const screen = fixture("claude_ask_user_question");
+
+  it("keeps the joined labels of the Rust port", () => {
+    expect(parseChoices(screen)).toEqual([
+      {
+        key: "1",
+        label:
+          "Run tests in parallel (Recommended) Jest runs the test files on four workers, so the run takes about a quarter of the time. I change the config and run the suite again.",
+        selected: true,
+      },
+      {
+        key: "2",
+        label:
+          "Keep config, skip slow tests Make no config change. I mark the three slowest tests as skipped, so the run is faster, but those tests do not run.",
+        selected: false,
+      },
+      {
+        key: "3",
+        label: "Mock the network Replace the real network calls with a mock server. This needs a new test helper.",
+        selected: false,
+      },
+      { key: "4", label: "Type something.", selected: false },
+      { key: "5", label: "Chat about this", selected: false },
+    ]);
+  });
+
+  it("parseMenu adds the parts and the question, with the same labels", () => {
+    const menu = parseMenu(screen);
+    expect(menu.question).toBe("Which fix do you want for the slow test run?");
+    expect(menu.choices.map((c) => c.label)).toEqual(parseChoices(screen).map((c) => c.label));
+    expect(menu.choices[0].parts).toEqual([
+      "Run tests in parallel (Recommended)",
+      "Jest runs the test files on four workers, so the run takes about a",
+      "quarter of the time. I change the config and run the suite again.",
+    ]);
+    expect(menu.choices[3].parts).toEqual(["Type something."]);
+  });
+
+  it("choiceView splits title and detail and flags Recommended", () => {
+    const [first, second, , typeIt] = parseMenu(screen).choices;
+    expect(choiceView(first)).toEqual({
+      title: "Run tests in parallel",
+      detail: "Jest runs the test files on four workers, so the run takes about a quarter of the time. I change the config and run the suite again.",
+      recommended: true,
+    });
+    expect(choiceView(second).recommended).toBe(false);
+    expect(choiceView(second).title).toBe("Keep config, skip slow tests");
+    expect(choiceView(typeIt)).toEqual({ title: "Type something.", detail: undefined, recommended: false });
+  });
+
+  it("isFreeform finds the built-in options only", () => {
+    expect(parseMenu(screen).choices.map(isFreeform)).toEqual([false, false, false, true, true]);
+    const c = (label: string): Choice => ({ key: "1", label, selected: false });
+    expect(isFreeform(c("Type something"))).toBe(true);
+    expect(isFreeform(c("chat about this"))).toBe(true);
+    expect(isFreeform(c("Type something else here"))).toBe(false);
+  });
+
+  it("choiceView without parts uses the label", () => {
+    expect(choiceView({ key: "1", label: "Yes (Recommended)", selected: true })).toEqual({ title: "Yes", detail: undefined, recommended: true });
+  });
+});
+
+describe("menuQuestion", () => {
+  it("is the line above a permission menu", () => {
+    expect(menuQuestion(fixture("claude_bash_permission"))).toBe("Do you want to proceed?");
+    expect(menuQuestion(fixture("claude_edit_permission"))).toBe("Do you want to make this edit to main.rs?");
+  });
+
+  it("is undefined with no menu, or with only a rule or a mark above it", () => {
+    expect(menuQuestion(fixture("claude_idle_prompt"))).toBeUndefined();
+    expect(menuQuestion("────────\n❯ 1. Yes\n  2. No")).toBeUndefined();
+    expect(menuQuestion("╭────╮\n│ ❯ 1. Yes │\n│   2. No  │")).toBeUndefined();
+    expect(menuQuestion("❯ 1. Yes\n  2. No")).toBeUndefined();
+  });
+
+  it("joins up to 3 lines of a paragraph and marks a longer one", () => {
+    expect(menuQuestion("Which file\nshould I open?\n\n❯ 1. a\n  2. b")).toBe("Which file should I open?");
+    expect(menuQuestion("one\ntwo\nthree\nfour?\n❯ 1. a\n  2. b")).toBe("…two three four?");
+  });
+
+  it("parseMenu of the permission fixtures keeps the labels", () => {
+    for (const name of ["claude_bash_permission", "claude_bash_permission_wrapped", "claude_edit_permission"]) {
+      const s = fixture(name);
+      expect(parseMenu(s).choices.map(({ key, label, selected }) => ({ key, label, selected }))).toEqual(parseChoices(s));
+    }
   });
 });
 

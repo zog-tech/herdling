@@ -1,6 +1,6 @@
-import { Ellipsis, MailOpen, Reply, RotateCcw } from "lucide-react-native";
+import { ChevronRight, Ellipsis, MailOpen, Reply, RotateCcw } from "lucide-react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { GestureDetector, useExclusiveGestures, useLongPressGesture, useTapGesture } from "react-native-gesture-handler";
 import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, {
@@ -17,16 +17,20 @@ import Animated, {
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, denseScale, hitTarget, icon, motion, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
+import { useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
+import { TopHighlight } from "@/ui/TopHighlight";
 
+import type { RowStyle } from "./boardPrefs";
 import type { BoardItem } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
 import { BucketStatus } from "./BucketStatus";
 import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
 import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
+import { footerMeta, placeholderLine } from "./rowText";
 
 const ACTION_W = 84;
 /** Row title: room it keeps beside the status, and its Dynamic Type cap (a dense row). */
@@ -41,6 +45,11 @@ const EMBER_PEAK = 0.45;
 const MARKER_W = 3;
 const EASE_OUT = Easing.bezier(...motion.ease.out);
 const EASE_IN_OUT = Easing.bezier(...motion.ease.inOut);
+/** Card style: corner radius, and the space to the screen edges. */
+const CARD_RADIUS = radius.lg + 2;
+const CARD_MARGIN = space.md;
+/** The card footer time shows whole minutes, so a slow clock is enough. */
+const META_TICK_MS = 30_000;
 export type CardActions = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
@@ -110,7 +119,7 @@ function SwipeAction({
  * Tap and long press of a card, with press feedback on the UI thread. Long press wins over tap
  * (exclusive); moving the finger (a swipe or a scroll) fails both and the card springs back.
  */
-function useCardPress(onTap: () => void, onLong: () => void) {
+export function useCardPress(onTap: () => void, onLong: () => void, holdScale: number) {
   const reduced = useReducedMotion();
   const scale = useSharedValue(1);
   const overlay = useSharedValue(0);
@@ -120,7 +129,10 @@ function useCardPress(onTap: () => void, onLong: () => void) {
   handlers.current = { onTap, onLong };
   const tapNow = useCallback(() => handlers.current.onTap(), []);
   const longNow = useCallback(() => handlers.current.onLong(), []);
-  const p = useMemo(() => makeCardPress({ scale, overlay }, reduced, tapNow, longNow), [scale, overlay, reduced, tapNow, longNow]);
+  const p = useMemo(
+    () => makeCardPress({ scale, overlay }, reduced, tapNow, longNow, holdScale),
+    [scale, overlay, reduced, tapNow, longNow, holdScale],
+  );
   const long = useLongPressGesture({
     minDuration: motion.press.longPressMs,
     maxDistance: PRESS_SLOP,
@@ -176,37 +188,96 @@ function useEmberPulse(needsYou: boolean) {
   return useAnimatedStyle(() => ({ opacity: glow.get() }));
 }
 
+/** The box of a card: one step above the page, with a quiet edge. It clips the marker and the tint. */
+const cardBox = () =>
+  ({
+    backgroundColor: colors.card,
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    overflow: "hidden",
+  }) as const;
+
 /**
- * One agent on the Board: a flat row with no box. Title, then "host · agent", then the latest line.
- * Status is a dot and a word. A row that needs you has an ember marker and a faint ember tint.
+ * The footer of a card, under a hairline from edge to edge: the time at the left (when known), a
+ * gold "Open" and a chevron at the right. With large text the "Open" moves under the time.
+ */
+function CardFooter({ meta }: { meta: string | undefined }) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        columnGap: space.md,
+        rowGap: space.xs,
+        marginTop: space.sm + 2,
+        marginHorizontal: -space.lg,
+        paddingHorizontal: space.lg,
+        paddingTop: space.md,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.divider,
+      }}
+    >
+      {meta ? (
+        <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
+          {meta}
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 2, marginLeft: "auto" }}>
+        <Text variant="small" bold color={colors.accent} maxFontSizeMultiplier={denseScale.row}>
+          Open
+        </Text>
+        <ChevronRight size={icon.sm} color={colors.accent} strokeWidth={icon.strokeWidth} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * One agent on the Board. Title, then "host · agent", then the latest line. Status is a dot and a
+ * word. A row that needs you has an ember marker and a faint ember tint.
+ * `rowStyle` (Settings, "Agent list style"):
+ * - `flat`: a row with no box and a "⋯" button.
+ * - `divided`: a row with a chevron at the right edge. The Board puts a divider between rows.
+ * - `cards`: a card with a footer: the time at the left, a gold "Open" at the right.
+ * `divided` and `cards` have no "⋯" button: its actions stay in the peek, the swipes and VoiceOver.
  * Tap opens the session, long-press peeks. Swipe right marks it read; swipe left reveals Reply and
  * Restart. VoiceOver gets the same actions as custom actions.
  */
 export const AgentRow = memo(function AgentRow({
   item,
   selected = false,
+  rowStyle = "flat",
   ...actions
 }: {
   item: BoardItem;
   /** The row's session shows in the detail column (two-column layout only). */
   selected?: boolean;
+  rowStyle?: RowStyle;
 } & CardActions) {
   const swipe = useRef<SwipeableMethods>(null);
   const [hovered, setHovered] = useState(false);
   const { onOpen, onPeek } = actions;
   const { open, peek } = useMemo(() => cardActions(item, onOpen, onPeek), [item, onOpen, onPeek]);
-  const press = useCardPress(open, peek);
+  const cards = rowStyle === "cards";
+  const divided = rowStyle === "divided";
+  // A card is wide: the hold stays at the first press scale, so the card does not shrink much.
+  const press = useCardPress(open, peek, cards ? motion.press.scale : motion.press.holdScale);
   const enterStyle = useEnter();
   const needsYou = item.bucket === "needs_you";
   const emberStyle = useEmberPulse(needsYou);
   const { bucket } = item;
   const { color } = BUCKET_META[bucket];
   const line = item.line ?? item.terminalTitle;
+  const placeholder = placeholderLine(item, rowStyle);
+  const elapsed = useElapsed(item.since, cards, META_TICK_MS);
+  const meta = cards ? footerMeta(bucket, elapsed, item.sinceKnown === true) : undefined;
   const close = () => swipe.current?.close();
   const label = cardLabel(item);
 
   return (
-    <Animated.View style={enterStyle}>
+    <Animated.View style={[enterStyle, cards ? { marginHorizontal: CARD_MARGIN } : null]}>
       <ReanimatedSwipeable
         ref={swipe}
         friction={1.5}
@@ -214,7 +285,8 @@ export const AgentRow = memo(function AgentRow({
         rightThreshold={ACTION_W * 0.6}
         overshootLeft={false}
         overshootRight={false}
-        containerStyle={{ backgroundColor: colors.bg }}
+        // A card clips the swipe to its corners. At rest the panels are hidden (SwipePanels).
+        containerStyle={cards ? { backgroundColor: colors.bg, borderRadius: CARD_RADIUS, overflow: "hidden" } : { backgroundColor: colors.bg }}
         onSwipeableOpen={(dir) => {
           // Swiping right opens the left panel: that is "mark read", done on release.
           if (dir === SwipeDirection.RIGHT) {
@@ -252,7 +324,8 @@ export const AgentRow = memo(function AgentRow({
           </SwipePanels>
         )}
       >
-        <Animated.View style={[{ backgroundColor: colors.bg }, press.cardStyle]}>
+        <Animated.View style={[cards ? cardBox() : { backgroundColor: colors.bg }, press.cardStyle]}>
+          {cards ? <TopHighlight inset={CARD_RADIUS} /> : null}
           <GestureDetector gesture={press.gesture}>
             <Animated.View
               accessible
@@ -266,10 +339,11 @@ export const AgentRow = memo(function AgentRow({
               onPointerLeave={() => setHovered(false)}
               style={{
                 gap: 3,
-                paddingVertical: space.md + 2,
+                paddingTop: space.md + 2,
+                paddingBottom: cards ? space.md : space.md + 2,
                 paddingLeft: space.lg,
-                // Room for the "⋯" button on the right.
-                paddingRight: hitTarget + space.xs,
+                // Room for the "⋯" button or the chevron on the right.
+                paddingRight: cards ? space.lg : divided ? icon.md + space.md + space.sm : hitTarget + space.xs,
                 minHeight: hitTarget + space.lg,
                 backgroundColor: needsYou ? colors.blockedTint : undefined,
                 overflow: "hidden",
@@ -333,28 +407,46 @@ export const AgentRow = memo(function AgentRow({
                 >
                   {line}
                 </Text>
+              ) : placeholder ? (
+                <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={TITLE_SCALE} style={{ marginTop: 3 }}>
+                  {placeholder}
+                </Text>
+              ) : null}
+              {cards ? <CardFooter meta={meta} /> : null}
+              {/* Decorative: the row is already a button for VoiceOver. */}
+              {divided ? (
+                <View
+                  pointerEvents="none"
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={{ position: "absolute", right: space.md, top: 0, bottom: 0, justifyContent: "center" }}
+                >
+                  <ChevronRight size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+                </View>
               ) : null}
             </Animated.View>
           </GestureDetector>
           {/* A sibling, not a child, of the row: its touches never reach the row's tap and long press. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`More actions for ${item.title}`}
-            onPress={() => actions.onMenu(item)}
-            hitSlop={4}
-            style={({ pressed }) => ({
-              position: "absolute",
-              right: space.xs,
-              top: space.xs,
-              width: hitTarget,
-              height: hitTarget,
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: pressed ? state.pressedOpacity : 1,
-            })}
-          >
-            <Ellipsis size={icon.md} color={colors.textMuted} />
-          </Pressable>
+          {rowStyle === "flat" ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`More actions for ${item.title}`}
+              onPress={() => actions.onMenu(item)}
+              hitSlop={4}
+              style={({ pressed }) => ({
+                position: "absolute",
+                right: space.xs,
+                top: space.xs,
+                width: hitTarget,
+                height: hitTarget,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? state.pressedOpacity : 1,
+              })}
+            >
+              <Ellipsis size={icon.md} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
         </Animated.View>
       </ReanimatedSwipeable>
     </Animated.View>

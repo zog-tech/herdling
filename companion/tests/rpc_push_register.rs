@@ -42,6 +42,27 @@ async fn register_then_update_prefs() {
 }
 
 #[tokio::test]
+async fn presentation_prefs_default_true_and_are_kept_when_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    // A new device from an older app gets true for each.
+    call(&p, params(Value::Null, true)).await;
+    let prefs = config::load(&p).unwrap().devices[0].prefs.clone();
+    assert!(prefs.replace && prefs.group && prefs.quiet_finished);
+    let mut off = params(Value::Null, true);
+    off["prefs"]["replace"] = json!(false);
+    off["prefs"]["group"] = json!(false);
+    off["prefs"]["quiet_finished"] = json!(false);
+    call(&p, off).await;
+    let prefs = config::load(&p).unwrap().devices[0].prefs.clone();
+    assert!(!prefs.replace && !prefs.group && !prefs.quiet_finished);
+    // An older app does not send the keys: the saved values stay.
+    call(&p, params(Value::Null, true)).await;
+    let prefs = config::load(&p).unwrap().devices[0].prefs.clone();
+    assert!(!prefs.replace && !prefs.group && !prefs.quiet_finished);
+}
+
+#[tokio::test]
 async fn quiet_at_desk_is_saved_and_kept_when_missing() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");

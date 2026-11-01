@@ -7,16 +7,20 @@ import { BUCKET_LABEL, type Bucket, type BoardItem } from "./buckets";
 
 export type BucketChange = { key: string; title: string; from: Bucket; to: Bucket };
 
+/** Changes that are not news: the user's own "seen", and background work that starts or ends. */
+const QUIET_CHANGES: readonly string[] = ["ready>idle", "ready>background", "idle>background", "background>idle"];
+
 /**
  * Cards whose bucket changed since `prev` (key → bucket). New and gone cards are not changes.
- * Ready → idle is the user's own "seen", not news, so it is left out.
+ * Ready → idle is the user's own "seen", not news, so it is left out. A shell or subagent that
+ * starts or ends in the background is not news either.
  */
 export function bucketChanges(prev: Record<string, Bucket>, items: BoardItem[]): BucketChange[] {
   const out: BucketChange[] = [];
   for (const i of items) {
     const from = prev[i.key];
     if (from === undefined || from === i.bucket) continue;
-    if (from === "ready" && i.bucket === "idle") continue;
+    if (QUIET_CHANGES.includes(`${from}>${i.bucket}`)) continue;
     out.push({ key: i.key, title: i.title, from, to: i.bucket });
   }
   return out;

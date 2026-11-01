@@ -11,6 +11,8 @@ import { scheduleOnRN } from "react-native-worklets";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, space, state } from "@/theme/tokens";
 import { fullInputText, lastLines, toolTime, useToolView } from "@/thread/toolView";
+import { LinkedText } from "@/thread/LinkText";
+import { ThreadPaneContext } from "@/thread/LiveToolContext";
 import { useTerminalText } from "@/thread/useTerminalText";
 import { LIVE_REFRESH_MS } from "@/thread/items/ToolCard";
 import * as haptics from "@/ui/haptics";
@@ -105,6 +107,8 @@ export default function ToolScreen() {
   };
 
   return (
+    // Links in the output open a preview of this tool's host.
+    <ThreadPaneContext.Provider value={{ hostId: view.hostId, paneId: view.paneId }}>
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingBottom: insets.bottom }}>
       <View
         style={{
@@ -157,18 +161,19 @@ export default function ToolScreen() {
                 Input
               </Text>
               <Text selectable style={mono}>
-                {input}
+                <LinkedText text={input} />
               </Text>
               <Text variant="caption" muted>
                 {outLabel}
               </Text>
               <Text selectable style={[mono, view.result && !view.result.ok ? { color: colors.danger } : null]}>
-                {output}
+                <LinkedText text={output} />
               </Text>
             </Animated.View>
           </ScrollView>
         </ScrollView>
       </GestureDetector>
     </View>
+    </ThreadPaneContext.Provider>
   );
 }

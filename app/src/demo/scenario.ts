@@ -1,4 +1,5 @@
 import type {
+  AgentBackground,
   AgentPreview,
   AgentStatus,
   FsDirs,
@@ -42,6 +43,8 @@ type Agent = {
   activity?: string;
   /** While blocked: the permission menu. */
   question?: Question;
+  /** Background work that still runs after the turn ended. */
+  background?: AgentBackground;
   /** Wall time (ms) when the current status began. */
   since: number;
   /** Text typed in the terminal view, sent on Enter. */
@@ -244,6 +247,7 @@ export class DemoScenario {
       if (a.info.agent_status === "working") p.activity = a.activity ?? "Thinking";
       if (a.question) p.question = a.question.prompt;
       if (last && last.kind === "assistant") p.last_reply = short(plain(last.markdown), 140);
+      if (a.background) p.background = a.background;
       return p;
     });
   }
@@ -859,6 +863,8 @@ export class DemoScenario {
       ],
     });
     p5.since = now - 66 * min;
+    // The dev server still runs in the background: the Board shows this agent as "Background".
+    p5.background = { count: 1, commands: ["pnpm dev"] };
   }
 
   /** The scripts that run without user input: the working agent advances, the blocked one asks. */

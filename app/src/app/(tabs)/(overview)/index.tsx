@@ -1,19 +1,25 @@
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { CircleSlash, Ellipsis, ListFilter, Loader, PanelRight, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { ChevronDown, CircleSlash, Ellipsis, ListFilter, Loader, PanelRight, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { Alert, Platform, Pressable, SectionList, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Alert, Platform, Pressable, SectionList, useWindowDimensions, View } from "react-native";
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AgentRow } from "@/board/AgentRow";
+import { BoardHint } from "@/board/BoardHint";
+import { showHint, useBoardPrefs, useBoardPrefsHydrated } from "@/board/boardPrefs";
 import { DemoTag } from "@/demo/DemoTag";
 import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
-import { setFilter, setGroupBy, updateFirstSeen, useBoard } from "@/board/boardStore";
-import { BUCKET_META } from "@/board/bucketMeta";
-import { countBuckets, filterBoard, groupBoard, mergeBoard, type BoardItem, type GroupBy } from "@/board/buckets";
-import { boardSummary, type BoardSummary } from "@/board/summary";
+import { setFilter, updateFirstSeen, useBoard } from "@/board/boardStore";
+import { BOARD_GROUPS, collapseSections, collapsible, groupItems, groupLabel, sortItems, sortLabel, SORTS } from "@/board/arrange";
+import { BoardTop } from "@/board/BoardTop";
+import { countBuckets, filterBoard, mergeBoard, type BoardItem } from "@/board/buckets";
+import { BrandHeader, HostsButton } from "@/board/Dashboard";
+import { spotlight } from "@/board/spotlight";
+import { boardSummary } from "@/board/summary";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
@@ -26,7 +32,7 @@ import { UpdateNotice } from "@/hosts/UpdateNotice";
 import { getHostConn, retryNow, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { useHosts, type Host } from "@/hosts/store";
 import { setColumnPane } from "@/push/useNotificationRouting";
-import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, space, state } from "@/theme/tokens";
 import { SessionDetail } from "@/thread/SessionDetail";
 import { Button } from "@/ui/Button";
 import { GlassButton } from "@/ui/GlassButton";
@@ -37,10 +43,17 @@ import { showActionSheet } from "@/ui/nativeSheet";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
-const GROUP_LABEL: Record<GroupBy, string> = { status: "Status", host: "Host", workspace: "Workspace" };
-const GROUPS: GroupBy[] = ["status", "host", "workspace"];
 /** The floating "+" button: its size, and the room the list keeps under the last row. */
 const FAB = 56;
+
+/** Cards style: the space between two cards. */
+function CardGap() {
+  return <View style={{ height: space.sm + 2 }} />;
+}
+/** Cards style: a little space at the top and the bottom of each section. */
+function CardSectionGap() {
+  return <View style={{ height: space.xs }} />;
+}
 
 /** Keeps one host's snapshot live and mirrors it into the shared store; polls previews while the Board is focused. */
 function HostWatcher({ hostId, focused }: { hostId: string; focused: boolean }) {
@@ -141,41 +154,52 @@ function useOnlineHostIds(hosts: Host[]): Set<string> {
   return useMemo(() => new Set(key.split(",").filter(Boolean)), [key]);
 }
 
-const TONE_COLOR: Record<BoardSummary["tone"], string> = {
-  needs_you: BUCKET_META.needs_you.color,
-  working: BUCKET_META.working.color,
-  ready: BUCKET_META.ready.color,
-  quiet: colors.textMuted,
-};
-
-/**
- * The headline of the Board: one large number in ivory and the words after it in the bucket color,
- * then the other buckets in one muted line. No box.
- */
-function Summary({ summary }: { summary: BoardSummary }) {
+/** The chevron of a section that can collapse: it points down when open, right when collapsed. Reduce Motion: no turn. */
+function CollapseChevron({ collapsed }: { collapsed: boolean }) {
+  const reduced = useReducedMotion();
+  const deg = collapsed ? -90 : 0;
+  const turn = useSharedValue(deg);
+  useEffect(() => {
+    turn.set(reduced ? deg : withTiming(deg, { duration: motion.stateMs, easing: Easing.bezier(...motion.ease.out) }));
+  }, [deg, reduced, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.get()}deg` }] }));
   return (
-    <View
-      accessible
-      accessibilityRole="summary"
-      accessibilityLabel={summary.spoken}
-      style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.md, gap: 2 }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", columnGap: space.sm }}>
-        <Text variant="display">{summary.value}</Text>
-        <Text variant="title" color={TONE_COLOR[summary.tone]}>
-          {summary.label}
-        </Text>
-      </View>
-      {summary.detail ? (
-        <Text variant="small" muted>
-          {summary.detail}
-        </Text>
-      ) : null}
-    </View>
+    <Animated.View style={style}>
+      <ChevronDown size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+    </Animated.View>
   );
 }
 
-function SectionHeader({ title, onMenu }: { title: string; onMenu?: () => void }) {
+/**
+ * A section header: the title in small caps. A computer or workspace section also shows its count,
+ * and a tap collapses or expands it (VoiceOver: a button with the expanded state).
+ */
+function SectionHeader({
+  title,
+  count,
+  collapsed,
+  onToggle,
+  onMenu,
+}: {
+  title: string;
+  count?: number;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  onMenu?: () => void;
+}) {
+  const label = (
+    <>
+      {onToggle ? <CollapseChevron collapsed={!!collapsed} /> : null}
+      <Text variant="section" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
+        {title}
+      </Text>
+      {count !== undefined ? (
+        <Text variant="section" maxFontSizeMultiplier={denseScale.row} style={{ fontVariant: ["tabular-nums"] }}>
+          {count}
+        </Text>
+      ) : null}
+    </>
+  );
   return (
     <View
       style={{
@@ -188,9 +212,30 @@ function SectionHeader({ title, onMenu }: { title: string; onMenu?: () => void }
         backgroundColor: colors.bg,
       }}
     >
-      <Text accessibilityRole="header" variant="section" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flex: 1 }}>
-        {title}
-      </Text>
+      {onToggle ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${title}, ${count ?? 0} ${count === 1 ? "agent" : "agents"}`}
+          accessibilityHint={collapsed ? "Shows the agents of this group" : "Hides the agents of this group"}
+          accessibilityState={{ expanded: !collapsed }}
+          onPress={onToggle}
+          style={({ pressed }) => ({
+            flex: 1,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.sm,
+            minHeight: hitTarget,
+            marginVertical: -space.md,
+            opacity: pressed ? state.pressedOpacity : 1,
+          })}
+        >
+          {label}
+        </Pressable>
+      ) : (
+        <View accessible accessibilityRole="header" style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          {label}
+        </View>
+      )}
       {onMenu ? (
         <Pressable
           accessibilityRole="button"
@@ -231,16 +276,19 @@ type OverviewParams = { host?: string; pane?: string; from?: string; prompt?: st
 function DetailColumn({
   selection,
   params,
+  headerShown,
   onSelect,
   onClear,
 }: {
   selection: PaneRef | null;
   params: OverviewParams;
+  /** False in the Dashboard top: the screen already keeps clear of the status bar. */
+  headerShown: boolean;
   onSelect: (pane: PaneRef) => void;
   onClear: () => void;
 }) {
   const headerHeight = useHeaderHeight();
-  const top = Platform.OS === "ios" ? headerHeight : 0;
+  const top = headerShown && Platform.OS === "ios" ? headerHeight : 0;
   if (!selection) {
     return (
       <View style={{ flex: 1, paddingTop: top, alignItems: "center", justifyContent: "center", gap: space.md, padding: space.xl }}>
@@ -302,7 +350,22 @@ export default function BoardScreen() {
   const hydrated = useSeenHydrated();
   const online = useOnlineHostIds(hosts);
   const problemHosts = useProblemHosts(hosts, online);
-  const { previews, firstSeen, filter, groupBy } = useBoard();
+  const { previews, firstSeen, filter } = useBoard();
+  const rowStyle = useBoardPrefs((s) => s.rowStyle);
+  const homeTop = useBoardPrefs((s) => s.homeTop);
+  const groupBy = useBoardPrefs((s) => s.groupBy);
+  const sortBy = useBoardPrefs((s) => s.sortBy);
+  const collapsedKeys = useBoardPrefs((s) => s.collapsed[s.groupBy]);
+  const setGroupBy = useBoardPrefs((s) => s.setGroupBy);
+  const setSortBy = useBoardPrefs((s) => s.setSortBy);
+  const toggleCollapsed = useBoardPrefs((s) => s.toggleCollapsed);
+  const dashboard = homeTop === "dashboard";
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const hintDismissed = useBoardPrefs((s) => s.hintDismissed);
+  const dismissHint = useBoardPrefs((s) => s.dismissHint);
+  const prefsHydrated = useBoardPrefsHydrated();
+  const cards = rowStyle === "cards";
 
   const boardHosts = useMemo(
     () =>
@@ -338,24 +401,40 @@ export default function BoardScreen() {
   const counts = useMemo(() => countBuckets(items), [items]);
   const summary = useMemo(() => boardSummary(counts), [counts]);
   useBucketAnnouncements(items, focused);
-  const sections = useMemo(() => groupBoard(filterBoard(items, filter), groupBy), [items, filter, groupBy]);
+  // Filter, then sort, then group: each group keeps the sorted order.
+  const grouped = useMemo(() => groupItems(sortItems(filterBoard(items, filter), sortBy), groupBy), [items, filter, sortBy, groupBy]);
+  const sections = useMemo(() => collapseSections(grouped, groupBy, collapsedKeys ?? []), [grouped, groupBy, collapsedKeys]);
+  const spot = useMemo(() => spotlight(items), [items]);
 
   const pickGroup = useCallback(() => {
     showActionSheet(
-      { title: "Group by", options: [...GROUPS.map((g) => GROUP_LABEL[g]), "Cancel"], cancelButtonIndex: GROUPS.length },
+      { title: "Group by", options: [...BOARD_GROUPS.map((g) => g.label), "Cancel"], cancelButtonIndex: BOARD_GROUPS.length },
       (i) => {
-        if (GROUPS[i]) setGroupBy(GROUPS[i]);
+        const g = BOARD_GROUPS[i];
+        if (g) setGroupBy(g.id);
       },
     );
-  }, []);
+  }, [setGroupBy]);
+  const pickSort = useCallback(() => {
+    showActionSheet({ title: "Sort by", options: [...SORTS.map((o) => o.label), "Cancel"], cancelButtonIndex: SORTS.length }, (i) => {
+      const o = SORTS[i];
+      if (o) setSortBy(o.id);
+    });
+  }, [setSortBy]);
 
   useLayoutEffect(() => {
+    // The Dashboard top draws its own brand header with the group and sort menus under the carousel.
+    if (dashboard) {
+      navigation.setOptions({ headerShown: false, headerRight: undefined });
+      return;
+    }
     navigation.setOptions({
+      headerShown: true,
       // A plain icon: iOS 26 puts it on Liquid Glass in the header.
       headerRight: () => (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Group by ${GROUP_LABEL[groupBy]}`}
+          accessibilityLabel={`Group by ${groupLabel(groupBy)}`}
           accessibilityHint="Changes how the agents are grouped"
           onPress={pickGroup}
           style={({ pressed }) => ({
@@ -370,14 +449,21 @@ export default function BoardScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, groupBy, pickGroup]);
+  }, [navigation, groupBy, pickGroup, dashboard]);
 
   // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
   const openPane = useCallback(
     (hostId: string, paneId: string) => (regular ? select({ hostId, paneId }) : router.push(`/session/${hostId}/${paneId}` as never)),
     [regular, select, router],
   );
-  const onOpen = useCallback((i: BoardItem) => openPane(i.hostId, i.agent.pane_id), [openPane]);
+  // The user found out that a row opens the session: the first-run hint goes away for good.
+  const onOpen = useCallback(
+    (i: BoardItem) => {
+      dismissHint();
+      openPane(i.hostId, i.agent.pane_id);
+    },
+    [openPane, dismissHint],
+  );
 
   // ⌘[ and ⌘] move the selection on the board, in the order the board shows.
   const order = useMemo(
@@ -448,10 +534,17 @@ export default function BoardScreen() {
     });
   }, []);
 
+  const hint = showHint({ hydrated: prefsHydrated, dismissed: hintDismissed, agents: items.length });
+  const firstKey = sections[0]?.data[0]?.key;
+
   const quiet = items.length > 0 && counts.needs_you + counts.ready + counts.working === 0;
+  const newSession = useCallback(() => router.push("/new" as never), [router]);
 
   const board = (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {dashboard ? (
+        <BrandHeader right={<HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />} />
+      ) : null}
       {hosts.length === 0 ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.lg, padding: space.xl }}>
           <Server size={32} color={colors.textMuted} />
@@ -471,31 +564,57 @@ export default function BoardScreen() {
           stickySectionHeadersEnabled
           contentInsetAdjustmentBehavior="automatic"
           renderSectionHeader={({ section }) => {
+            // "None": one flat list with no header.
+            if (groupBy === "none") return null;
             const ws = section.workspace;
+            const folds = collapsible(groupBy);
             return (
               <SectionHeader
                 title={section.title}
+                count={folds ? section.count : undefined}
+                collapsed={section.collapsed}
+                onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}
                 onMenu={ws && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
               />
             );
           }}
-          ItemSeparatorComponent={Divider}
-          extraData={selectedKey}
+          ItemSeparatorComponent={cards ? CardGap : Divider}
+          SectionSeparatorComponent={cards ? CardSectionGap : undefined}
+          extraData={`${selectedKey}|${rowStyle}|${hint}`}
           renderItem={({ item }) => (
-            <AgentRow
-              item={item}
-              selected={selectedKey === `${item.hostId}:${item.agent.pane_id}`}
-              onOpen={onOpen}
-              onPeek={onPeek}
-              onMarkRead={onMarkRead}
-              onReply={onReply}
-              onRestart={onRestart}
-              onMenu={onMenu}
-            />
+            <>
+              {/* The first-run hint sits above the first agent, under the first section header. */}
+              {hint && item.key === firstKey ? <BoardHint onClose={dismissHint} /> : null}
+              <AgentRow
+                item={item}
+                selected={selectedKey === `${item.hostId}:${item.agent.pane_id}`}
+                rowStyle={rowStyle}
+                onOpen={onOpen}
+                onPeek={onPeek}
+                onMarkRead={onMarkRead}
+                onReply={onReply}
+                onRestart={onRestart}
+                onMenu={onMenu}
+              />
+            </>
           )}
           ListHeaderComponent={
             <View>
-              {items.length > 0 ? <Summary summary={summary} /> : null}
+              <BoardTop
+                mode={homeTop}
+                items={items}
+                summary={summary}
+                spot={spot}
+                room={regular ? BOARD_COLUMN_WIDTH : windowWidth}
+                focused={focused}
+                group={groupLabel(groupBy)}
+                sort={sortLabel(sortBy)}
+                onGroup={pickGroup}
+                onSort={pickSort}
+                onOpen={onOpen}
+                onPeek={onPeek}
+                onNew={newSession}
+              />
               <HostStrip hosts={problemHosts} />
               {items.length > 0 ? <BoardChips counts={counts} filter={filter} onChange={setFilter} /> : null}
               {quiet && filter === null ? <Calm text="All quiet. Nothing needs you." /> : null}
@@ -528,7 +647,7 @@ export default function BoardScreen() {
           Icon={Plus}
           primary
           size={FAB}
-          onPress={() => router.push("/new" as never)}
+          onPress={newSession}
           style={{ margin: space.lg }}
         />
       </SafeAreaView>
@@ -536,7 +655,8 @@ export default function BoardScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    // With no native header (the Dashboard top), the screen keeps clear of the status bar itself.
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: dashboard ? insets.top : 0 }}>
       {hosts.map((h) => (
         <HostWatcher key={h.id} hostId={h.id} focused={focused} />
       ))}
@@ -546,7 +666,7 @@ export default function BoardScreen() {
         <SafeAreaView edges={["left", "right"]} style={{ flex: 1, flexDirection: "row" }}>
           <View style={{ width: BOARD_COLUMN_WIDTH }}>{board}</View>
           <View style={{ width: 1, backgroundColor: colors.divider }} />
-          <DetailColumn selection={selection} params={params} onSelect={select} onClear={clearSelection} />
+          <DetailColumn selection={selection} params={params} headerShown={!dashboard} onSelect={select} onClear={clearSelection} />
         </SafeAreaView>
       ) : (
         board

@@ -1,7 +1,7 @@
 import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 import { create } from "zustand";
 
-import type { Bucket, GroupBy, PreviewEntry } from "./buckets";
+import type { Bucket, PreviewEntry } from "./buckets";
 import { trackFirstSeen } from "./buckets";
 
 type State = {
@@ -11,11 +11,10 @@ type State = {
   firstSeen: Record<string, { status: AgentStatus; at: number }>;
   /** Chip filter. Kept while the app runs, not across launches. */
   filter: Bucket | null;
-  groupBy: GroupBy;
 };
 
-/** Board state that lives in memory only. */
-export const useBoard = create<State>(() => ({ previews: {}, firstSeen: {}, filter: null, groupBy: "status" }));
+/** Board state that lives in memory only. The grouping and the sort are saved in `boardPrefs`. */
+export const useBoard = create<State>(() => ({ previews: {}, firstSeen: {}, filter: null }));
 
 /**
  * Replaces the previews of `hostId`. `statusOf` gives each pane's herdr status now, so a
@@ -42,4 +41,3 @@ export function updateFirstSeen(current: { key: string; status: AgentStatus }[],
 }
 
 export const setFilter = (filter: Bucket | null) => useBoard.setState({ filter });
-export const setGroupBy = (groupBy: GroupBy) => useBoard.setState({ groupBy });

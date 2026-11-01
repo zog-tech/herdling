@@ -18,12 +18,13 @@ import { formatDuration, spokenDuration } from "./format";
 export type BadgeStatus = AgentStatus | "offline";
 
 export const STATUS_META: Record<BadgeStatus, { label: string; color: string; Icon: LucideIcon }> = {
-  working: { label: "Working", color: colors.status.working, Icon: LoaderCircle },
-  blocked: { label: "Needs you", color: colors.status.blocked, Icon: Hand },
-  idle: { label: "Idle", color: colors.status.idle, Icon: Check },
-  done: { label: "Done", color: colors.status.done, Icon: Check },
-  unknown: { label: "Unknown", color: colors.status.unknown, Icon: CircleHelp },
-  offline: { label: "Offline", color: colors.textMuted, Icon: CircleSlash },
+  // Getters: the colors change with the theme.
+  working: { label: "Working", get color() { return colors.status.working; }, Icon: LoaderCircle },
+  blocked: { label: "Needs you", get color() { return colors.status.blocked; }, Icon: Hand },
+  idle: { label: "Idle", get color() { return colors.status.idle; }, Icon: Check },
+  done: { label: "Done", get color() { return colors.status.done; }, Icon: Check },
+  unknown: { label: "Unknown", get color() { return colors.status.unknown; }, Icon: CircleHelp },
+  offline: { label: "Offline", get color() { return colors.textMuted; }, Icon: CircleSlash },
 };
 
 /** One linear turn, looped: a CSS animation, so it runs on the UI thread with no JS per frame. */

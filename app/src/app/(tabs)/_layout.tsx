@@ -1,18 +1,20 @@
 import { NativeTabs } from "expo-router/native-tabs";
 import { Platform } from "react-native";
 
+import { withAlpha } from "@/theme/contrast";
 import { colors } from "@/theme/tokens";
 
 /**
- * Android: a Material bottom bar on `card`, a faint gold pill behind the selected icon, and the
+ * Android: a Material bottom bar on `card`, a faint accent pill behind the selected icon, and the
  * labels always visible. iOS ignores these props, but they stay out of the iOS bar on purpose.
+ * A function: the colors change with the theme.
  */
-const androidBar =
+const androidBar = () =>
   Platform.OS === "android"
     ? ({
         backgroundColor: colors.card,
-        indicatorColor: "rgba(212,168,87,0.16)",
-        rippleColor: "rgba(212,168,87,0.12)",
+        indicatorColor: withAlpha(colors.accent, 0.16),
+        rippleColor: withAlpha(colors.accent, 0.12),
         labelVisibilityMode: "labeled",
       } as const)
     : {};
@@ -32,7 +34,7 @@ export default function TabsLayout() {
       iconColor={{ default: colors.textMuted, selected: colors.accent }}
       labelStyle={{ default: { color: colors.textMuted }, selected: { color: colors.accent } }}
       blurEffect="systemChromeMaterialDark"
-      {...androidBar}
+      {...androidBar()}
     >
       <NativeTabs.Trigger name="(overview)">
         <NativeTabs.Trigger.Icon

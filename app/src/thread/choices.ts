@@ -3,16 +3,25 @@ import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
 
-import { NONE, parseChoices, sameChoices, type Choice } from "./parseChoices";
+import { NONE, parseChoices, parseMenu, sameChoices, type Choice, type Menu } from "./parseChoices";
 
-export { destructiveKey, parseChoices, sameChoices, type Choice } from "./parseChoices";
+export { destructiveKey, parseChoices, sameChoices, type Choice, type Menu } from "./parseChoices";
 
 const REFRESH_MS = 1_000;
+const NO_MENU: Menu = { choices: NONE };
 
 /** Choices on a pane's visible screen (`pane.read`), read every 1 s while `blocked` and the app is in the foreground. */
 export function useChoices(hostId: string, paneId: string, blocked: boolean): Choice[] {
+  return useChoiceMenu(hostId, paneId, blocked).choices;
+}
+
+/**
+ * `useChoices` plus the question above the menu. `choices` keeps the same array while the menu on
+ * screen stays the same, also when only the question text changes.
+ */
+export function useChoiceMenu(hostId: string, paneId: string, blocked: boolean): Menu {
   const { rpc } = useHostConn(hostId);
-  const [choices, setChoices] = useState<Choice[]>(NONE);
+  const [menu, setMenu] = useState<Menu>(NO_MENU);
   const [active, setActive] = useState(AppState.currentState !== "background" && AppState.currentState !== "inactive");
 
   useEffect(() => {
@@ -21,7 +30,7 @@ export function useChoices(hostId: string, paneId: string, blocked: boolean): Ch
   }, []);
 
   useEffect(() => {
-    setChoices(NONE);
+    setMenu(NO_MENU);
     if (!rpc || !blocked || !active) return;
     let dead = false;
     let busy = false;
@@ -34,12 +43,16 @@ export function useChoices(hostId: string, paneId: string, blocked: boolean): Ch
           params: { pane_id: paneId, source: "visible", format: "text" },
         });
         if (dead) return;
-        const next = parseChoices(r.read?.text ?? "");
-        // Same menu as before: keep the old array so the composer does not re-render every second.
-        setChoices((prev) => (sameChoices(prev, next) ? prev : next));
+        const next = parseMenu(r.read?.text ?? "");
+        // Same menu as before: keep the old objects so the composer does not re-render every second.
+        setMenu((prev) => {
+          const same = sameChoices(prev.choices, next.choices);
+          if (same && prev.question === next.question) return prev;
+          return { choices: same ? prev.choices : next.choices, question: next.question };
+        });
       } catch {
         // The screen is unknown now: show no buttons (the composer shows the blocked message); the next tick retries.
-        if (!dead) setChoices(NONE);
+        if (!dead) setMenu(NO_MENU);
       } finally {
         busy = false;
       }
@@ -52,7 +65,7 @@ export function useChoices(hostId: string, paneId: string, blocked: boolean): Ch
     };
   }, [rpc, hostId, paneId, blocked, active]);
 
-  return choices;
+  return menu;
 }
 
 type Rpc = { call<T>(method: string, params: unknown): Promise<T> };

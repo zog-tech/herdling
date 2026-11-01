@@ -152,7 +152,20 @@ export type FsDirs = {
  */
 export type AgentsInstalled = { installed: string[]; missing: string[] };
 
-export type PushPrefs = { finished: boolean; needs_you: boolean; quiet_at_desk: boolean };
+export type PushPrefs = {
+  finished: boolean;
+  needs_you: boolean;
+  quiet_at_desk: boolean;
+  /**
+   * One notification per agent: a new push replaces the old one of the same pane (`collapseId`, `tag`).
+   * Missing: herdlingd keeps the saved value, else true. An older herdlingd ignores it.
+   */
+  replace?: boolean;
+  /** Group the notifications of one computer (iOS `threadId`). Missing: as `replace`. */
+  group?: boolean;
+  /** A "finished" push has no sound and no banner (iOS `interruptionLevel: passive`). Missing: as `replace`. */
+  quiet_finished?: boolean;
+};
 export type PushRegister = {
   device_id: string;
   host_id: string;
@@ -271,6 +284,21 @@ export type AgentPreview = {
   /** Unix seconds when the current herdr status began; null when unknown. */
   status_since?: number | null;
   source: "log" | "screen";
+  /**
+   * Background work that still runs (a herdlingd newer than 0.1.2, Claude Code only). Missing when
+   * nothing runs, or on an older herdlingd. The app shows an idle agent with it as "Background".
+   */
+  background?: AgentBackground;
+};
+
+/** Shells and subagents that keep running after the agent's turn ended. */
+export type AgentBackground = {
+  /** Running background shells. */
+  count: number;
+  /** Commands of the running shells, newest first, one line each (at most 3, 40 chars each). */
+  commands?: string[];
+  /** Running background subagents. Missing means 0. */
+  agents?: number;
 };
 
 /** `commands.list` item: one command or skill that Claude Code, Codex, Pi or OpenCode offers in the pane's folder. */

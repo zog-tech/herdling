@@ -16,12 +16,15 @@ const { press } = motion;
  * - `release` (finger up, swipe start, long press fired): springs back to rest, the layer fades out.
  * - `tap` / `long`: run the actions on the JS thread.
  * Reduce Motion: no scale; the layer stays.
+ * `holdScale` replaces the hold target. A wide card passes `press.scale`, so it never shrinks below
+ * 0.98: a larger card moves more points at the same scale.
  */
 export function makeCardPress(
   v: { scale: Settable; overlay: Settable },
   reduced: boolean,
   onTap: () => void,
   onLong: () => void,
+  holdScale: number = press.holdScale,
 ) {
   const { scale, overlay } = v;
   return {
@@ -32,7 +35,7 @@ export function makeCardPress(
       scale.set(
         withSequence(
           withTiming(press.scale, { duration: press.inMs, easing: EASE_OUT }),
-          withTiming(press.holdScale, { duration: press.longPressMs - press.inMs, easing: Easing.linear }),
+          withTiming(holdScale, { duration: press.longPressMs - press.inMs, easing: Easing.linear }),
         ),
       );
     },

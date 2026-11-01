@@ -1,6 +1,6 @@
 import { boardSummary } from "./summary";
 
-const c = (needs_you: number, ready: number, working: number, idle: number) => ({ needs_you, ready, working, idle });
+const c = (needs_you: number, ready: number, working: number, idle: number) => ({ needs_you, ready, working, background: 0, idle });
 
 test("summary_leads_with_needs_you", () => {
   const s = boardSummary(c(2, 1, 3, 4));

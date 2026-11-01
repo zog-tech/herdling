@@ -200,6 +200,12 @@ pub struct PushPrefs {
     pub needs_you: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet_at_desk: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replace: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiet_finished: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,6 +383,27 @@ pub struct AgentPreview {
     pub status_since: Option<i64>,
     /// "log" (agent session log) or "screen" (last line of the pane).
     pub source: String,
+    /// Background work that still runs, from the session log. Missing when nothing runs or
+    /// the agent has no background tracking (only Claude Code has it now).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<BackgroundInfo>,
+}
+
+/// Background work of an agent: shells and subagents that run after the turn ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackgroundInfo {
+    /// Running background shells.
+    pub count: u32,
+    /// Commands of the running shells, newest first, one line each, at most 3 of 40 chars.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<String>,
+    /// Running background subagents.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub agents: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// `update.check` result: the running version and the newest release for this computer.

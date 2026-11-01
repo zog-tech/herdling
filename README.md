@@ -43,7 +43,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 ## Features
 
 - **One board for every agent.** The agents of all your computers in one list, grouped by status:
-  Needs you, Ready, Working and Idle. The agents that need an answer come first. A long press
+  Needs you, Ready, Working, Background (a shell or subagent still runs) and Idle. The agents that
+  need an answer come first. A long press
   shows the last reply.
 - **A chat view.** Read a session as a clean chat, with formatted replies, tool calls, subagents
   and permission buttons. It works with Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI,
