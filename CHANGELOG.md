@@ -5,12 +5,6 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [Unreleased]
-
-- Long pastes in the thread composer: a paste of more than 10 lines or 800 characters becomes a
-  "Pasted text #1" chip. Tap it to view the text or put it back in the prompt. On send, the
-  text goes to the agent as a `.txt` file, like an attached file.
-
 ## [herdlingd 0.1.3] - 2026-11-01
 
 - Tidy notifications: one notification per agent (`collapseId`, `tag`), grouped by computer
@@ -58,6 +52,9 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- Long pastes in the thread composer: a paste of more than 10 lines or 800 characters becomes a
+  "Pasted text #1" chip. Tap it to view the text or put it back in the prompt. On send, the
+  text goes to the agent as a `.txt` file, like an attached file.
 - **Folder group and shared workspaces.** The Board Group menu has "Folder": agents with the same
   folder form one section across all computers, titled by the last part of the path (more parts
   when two folders share a name; the home folder shows as `~`), and agents with no folder go in
