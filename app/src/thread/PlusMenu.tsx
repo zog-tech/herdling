@@ -96,7 +96,7 @@ export function PlusMenu({
 }
 
 /** Width of a file tile: room for a short name. */
-const FILE_TILE = THUMB * 2.4;
+export const FILE_TILE = THUMB * 2.4;
 
 /** A picked file: an icon, the name and the size, in a tile as high as a photo. */
 function FileTile({ name, size, label }: { name: string; size?: number; label: string }) {
@@ -130,8 +130,21 @@ function FileTile({ name, size, label }: { name: string; size?: number; label: s
   );
 }
 
-/** Thumbnails of the picked photos and tiles of the picked files, each with a remove button. */
-export function PhotoStrip({ photos, onRemove, disabled }: { photos: Attachment[]; onRemove: (p: Attachment) => void; disabled?: boolean }) {
+/**
+ * Thumbnails of the picked photos and tiles of the picked files, each with a remove button.
+ * `children` (the pasted text chips) come after the attachments in the same row.
+ */
+export function PhotoStrip({
+  photos,
+  onRemove,
+  disabled,
+  children,
+}: {
+  photos: Attachment[];
+  onRemove: (p: Attachment) => void;
+  disabled?: boolean;
+  children?: ReactNode;
+}) {
   return (
     <ScrollView horizontal keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: space.sm, paddingTop: space.xs }}>
       {photos.map((p, i) => (
@@ -145,30 +158,42 @@ export function PhotoStrip({ photos, onRemove, disabled }: { photos: Attachment[
               style={{ width: THUMB, height: THUMB, borderRadius: radius.sm, backgroundColor: colors.raised }}
             />
           )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={isFile(p) ? `Remove ${p.name}` : `Remove photo ${i + 1}`}
+          <RemoveButton
+            label={isFile(p) ? `Remove ${p.name}` : `Remove photo ${i + 1}`}
             disabled={disabled}
             onPress={() => onRemove(p)}
-            hitSlop={12}
-            style={{
-              position: "absolute",
-              top: -space.xs,
-              right: -space.xs,
-              width: 22,
-              height: 22,
-              borderRadius: 11,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: colors.bg,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <X size={14} color={colors.text} />
-          </Pressable>
+          />
         </View>
       ))}
+      {children}
     </ScrollView>
+  );
+}
+
+/** The small "x" at the top right corner of an attachment tile. */
+export function RemoveButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={onPress}
+      hitSlop={12}
+      style={{
+        position: "absolute",
+        top: -space.xs,
+        right: -space.xs,
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: colors.bg,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <X size={14} color={colors.text} />
+    </Pressable>
   );
 }
