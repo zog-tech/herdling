@@ -3,7 +3,7 @@ import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { Eye, EyeOff, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Pressable, RefreshControl, TextInput, View } from "react-native";
+import { Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { branchError, defaultBranch, worktreeSlug } from "@/changes/worktree";
@@ -25,6 +25,7 @@ import { PathField } from "@/newSession/PathField";
 import { completeInput, displayPath, resolveInput } from "@/newSession/paths";
 import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
 import { loadRecentSessions, recentFolders } from "@/newSession/recents";
+import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
 import { RpcError } from "@/rpc/RpcClient";
 import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
@@ -32,6 +33,7 @@ import { Card } from "@/ui/Card";
 import { GlassSurface } from "@/ui/Glass";
 import { GoldSwitch } from "@/ui/GoldSwitch";
 import * as haptics from "@/ui/haptics";
+import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { confirmDiscard, useDraftGuard } from "@/ui/draftGuard";
@@ -119,6 +121,7 @@ function HiddenToggle({ value, onChange }: { value: boolean; onChange: (v: boole
 export default function NewSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const keyboardShown = useKeyboardShown();
   const hosts = useHosts((s) => s.hosts);
   const onlineKey = useOnlineHostKey(hosts.map((h) => h.id));
   const online = useMemo(() => hosts.filter((h) => onlineKey.split(",").includes(h.id)), [hosts, onlineKey]);
@@ -416,7 +419,9 @@ export default function NewSessionScreen() {
   const where = !cwd || !home ? undefined : inWorktree ? `In a new worktree of ${displayPath(cwd, home)}` : `In ${displayPath(cwd, home)}`;
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.bg }}>
+    // Not KeyboardAvoidingView: in the modal sheet, below the native header, it pads too little and
+    // the keyboard covers the start bar.
+    <KeyboardAvoider atScreenBottom={startBarAtScreenBottom(Platform.OS, Platform.OS === "ios" && Platform.isPad)} style={{ backgroundColor: colors.bg }}>
       <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={colors.textMuted} />}>
         {online.length > 1 ? (
           <Section title="Host">
@@ -525,7 +530,7 @@ export default function NewSessionScreen() {
       <GlassSurface
         style={{
           marginHorizontal: space.sm,
-          marginBottom: Math.max(insets.bottom, space.sm),
+          marginBottom: startBarBottomMargin(insets.bottom, keyboardShown, space.sm),
           padding: space.md,
           gap: space.sm,
           borderRadius: radius.lg,
@@ -584,6 +589,6 @@ export default function NewSessionScreen() {
           </Text>
         ) : null}
       </GlassSurface>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }
