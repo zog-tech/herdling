@@ -4,8 +4,8 @@ Version 1.0.0. Bundle ID `com.zogtech.herdling`. Paste each field as written. Ru
 
 ## App information
 
-- **Name** (max 30): `Herdling`
-- **Subtitle** (max 30): `AI coding agents on your phone`
+- **Name** (max 30): `Herdling: Mobile Agent Client`
+- **Subtitle** (max 30): `Watch and steer your AI agents`
 - **Primary category:** Developer Tools
 - **Secondary category:** Productivity
 - **Content rights:** The app does not contain, show or access third-party content. (Agent output comes from the user's own computers.)
@@ -21,7 +21,7 @@ Version 1.0.0. Bundle ID `com.zogtech.herdling`. Paste each field as written. Ru
 ## Promotional text (max 170)
 
 ```
-Follow the AI coding agents on your own computers. See who is busy, who is done and who needs you, then reply from your phone. No account and no tracking.
+Follow the AI coding agents on your own computers. See who is busy, done or waiting. Reply from your phone, or open a shell to run a command. No account, no tracking.
 ```
 
 ## Description (max 4000)
@@ -30,10 +30,13 @@ Follow the AI coding agents on your own computers. See who is busy, who is done 
 Herdling is a phone app for herdr, the terminal workspace for AI coding agents. Your agents keep working when you leave your desk. Herdling lets you follow them and answer them from anywhere your phone can reach your computers.
 
 SEE EVERY AGENT
-One board shows the agents on all of your computers. Each agent shows if it is working, done or waiting for you. The ones that need an answer come first. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
+One board shows the agents on all of your computers. Each tile shows the agent's logo, its status, what it is doing now and its last reply. The ones that need an answer come first. Group the board by folder, by computer or by herdr workspace. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
 
 READ AND REPLY
-Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt.
+Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt. Long pasted text goes in as an attachment, so your prompt stays readable. One status line shows when the agent and its subagents are working; tap it to open a subagent.
+
+RUN COMMANDS
+Open a plain shell in any folder on your computer and type commands in a live terminal, with a key row for Esc, Tab, Ctrl and the arrows. When an agent suggests a shell command, tap the play button on it to run it in a new shell or in an open terminal. Nothing runs until you check the command and tap Run.
 
 START NEW WORK
 Start a new agent session in any folder on any computer. Resume an earlier session. Run saved automations.
@@ -63,7 +66,7 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 ## Keywords (max 100, comma separated, no spaces after commas)
 
 ```
-herdr,ssh,terminal,remote,developer,prompt,cli,llm,devops,code,multiplexer,monitor,notify,assistant
+herdr,ssh,terminal,shell,remote,developer,prompt,cli,llm,devops,code,coding,monitor,notify,assistant
 ```
 
 No third-party trademarks (no "Claude", "Codex", "OpenAI", "Anthropic", "tmux"). The words in the name and subtitle are not repeated, because Apple indexes them already.
@@ -137,6 +140,7 @@ How to review the whole app:
 3. Tap that agent. It asks a question. Tap an answer to reply, and watch the agent continue.
 4. Type a message in the box at the bottom and tap send. A reply appears in the chat. Tap "Terminal" at the top to see the same session as a live terminal.
 5. Go back and tap the new-session button to start a session in a folder on the demo computer. Then open the Usage tab to see the plan meters.
+5a. Shell: in the new-session screen, pick "Shell" to open a plain terminal on the demo computer. Try pwd or ls. In a reply, a shell code block has a play button that opens a sheet to run that command in a shell. Nothing runs without that sheet.
 6. Open the Settings tab: hosts, notification switches, voice settings. The demo computer is listed under Hosts.
 
 Permission prompts. Each prompt appears only when the matching feature is used:
