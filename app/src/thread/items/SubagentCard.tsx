@@ -5,19 +5,21 @@ import { View } from "react-native";
 
 import { colors, radius, space } from "@/theme/tokens";
 import { formatDuration, spokenDuration } from "@/ui/format";
-import { LanternGlow } from "@/ui/LanternGlow";
+import { StatusGlyph } from "@/ui/StatusGlyph";
 import { Text } from "@/ui/Text";
 import { TickingDuration } from "@/ui/TickingDuration";
 import { TopHighlight } from "@/ui/TopHighlight";
 import { MenuPressable } from "../MenuPressable";
 import { subagentCopyText } from "../rowMenu";
 import { useThreadLog } from "../ThreadLogContext";
-import { shownSummary } from "../subagentState";
+import { shownSummary, subagentHref } from "../subagentState";
 
 const ICON = 16;
+/** The status icon in front of "Running" or "Completed". */
+const STATUS_ICON = 12;
 
 /** Status words from the log mapped to icon + color (never color alone). */
-function statusMeta(status: string): { color: string; Icon: LucideIcon } {
+export function statusMeta(status: string): { color: string; Icon: LucideIcon } {
   const s = status.toLowerCase();
   if (/(running|working|pending|launched|started)/.test(s)) return { color: colors.status.working, Icon: Loader };
   if (/(completed|done|ok|success)/.test(s)) return { color: colors.status.done, Icon: Check };
@@ -26,16 +28,16 @@ function statusMeta(status: string): { color: string; Icon: LucideIcon } {
 }
 
 /** `async_launched` → `Async launched`. */
-function statusLabel(status: string): string {
+export function statusLabel(status: string): string {
   const s = status.replace(/_/g, " ").trim();
   return s ? s[0].toUpperCase() + s.slice(1) : "Unknown";
 }
 
-const tools = (n: number) => `${n} tool${n === 1 ? "" : "s"}`;
+export const tools = (n: number) => `${n} tool${n === 1 ? "" : "s"}`;
 
 /**
- * A subagent run. While it runs: the lantern glow, "Running", a ticking clock, its tool count and
- * its latest step. When it stops: the status, how long it took and its summary. Tapping opens its
+ * A subagent run. While it runs: the working indicator of the Working pill (`StatusGlyph`),
+ * "Running", a ticking clock, its tool count and its latest step. When it stops: the status, how long it took and its summary. Tapping opens its
  * own thread once `agentId` is known, also while it runs. VoiceOver hears the description, the
  * status and the tool count, not each new step. A long press opens the row menu: Copy (the
  * description and the summary) and Select text. It works also before the thread can open.
@@ -61,7 +63,8 @@ export const SubagentCard = memo(function SubagentCard({
 }) {
   const router = useRouter();
   const threadLog = useThreadLog();
-  const canOpen = Boolean(agentId && threadLog);
+  const href = subagentHref(threadLog, { agentId, description, startedAt });
+  const canOpen = Boolean(href);
   const running = status === "running";
   const { color, Icon } = statusMeta(status);
   const label = statusLabel(status);
@@ -78,20 +81,7 @@ export const SubagentCard = memo(function SubagentCard({
       accessibilityLabel={`Subagent: ${description}. ${spoken}`}
       accessibilityHint={canOpen ? "Opens the subagent thread" : undefined}
       // Not `disabled` when it cannot open: a disabled Pressable has no long press either.
-      onPress={() =>
-        threadLog &&
-        agentId &&
-        router.push({
-          pathname: "/subagent/[hostId]/[agentId]",
-          params: {
-            hostId: threadLog.hostId,
-            agentId,
-            log: threadLog.logPath,
-            title: description,
-            ...(startedAt ? { since: String(startedAt) } : {}),
-          },
-        } as never)
-      }
+      onPress={() => href && router.push(href as never)}
       style={({ pressed }) => ({
         borderWidth: 1,
         borderColor: colors.edge,
@@ -104,17 +94,15 @@ export const SubagentCard = memo(function SubagentCard({
       <TopHighlight inset={radius.md} />
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.sm }}>
         <View style={{ paddingTop: 2 }}>
-          <View style={{ width: ICON, height: ICON }}>
-            <LanternGlow active={running} size={ICON} />
-            <Bot size={ICON} color={running ? colors.status.working : colors.textMuted} />
-          </View>
+          <Bot size={ICON} color={running ? colors.status.working : colors.textMuted} />
         </View>
         <View style={{ flex: 1, gap: space.xs }}>
           <Text variant="small" bold numberOfLines={2}>
             {description || "Subagent"}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
-            <Icon size={12} color={color} />
+            {/* The same animated indicator as the Working pill; a stopped subagent has a static icon. */}
+            {running ? <StatusGlyph status="working" size={STATUS_ICON} /> : <Icon size={STATUS_ICON} color={color} />}
             <Text variant="caption" bold color={color}>
               {label}
             </Text>
