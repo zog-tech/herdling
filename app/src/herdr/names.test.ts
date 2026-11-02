@@ -1,4 +1,4 @@
-import { agentSubtitle, agentTitle, secondaryTitle } from "./names";
+import { agentKind, agentSubtitle, agentTitle, secondaryTitle } from "./names";
 import type { Snapshot } from "./snapshot";
 
 const agent = {
@@ -61,4 +61,14 @@ test("terminal_title_is_secondary_only_when_it_adds_something", () => {
   expect(secondaryTitle(snap(1), agent)).toBe("Fix the login flow");
   const empty = { workspaces: [], tabs: [], panes: [] };
   expect(secondaryTitle(empty, agent)).toBeUndefined();
+});
+
+test("an_agent_that_herdr_has_not_detected_yet_has_an_empty_kind_and_a_fallback_title", () => {
+  // herdr sends these nulls in the first seconds after `agent.start`.
+  const fresh = { ...agent, agent: null, terminal_title_stripped: null, name: null, display_agent: null, state_change_seq: 0 };
+  const empty: Snapshot = { agents: [], workspaces: [], tabs: [], panes: [] };
+  expect(agentKind(fresh)).toBe("");
+  expect(agentSubtitle("studio.local", fresh)).toBe("studio.local");
+  expect(agentTitle(empty, fresh)).toBe("w1:p1");
+  expect(secondaryTitle(empty, fresh)).toBeUndefined();
 });

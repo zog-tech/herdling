@@ -85,6 +85,7 @@ The path alias `@/` points to `app/src/`.
 | `usage/`, `automations/` | Plan usage meters and the automations tab |
 | `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts. `ui/layout.ts`: compact or regular width (two columns from 700 pt); `ui/shortcuts.ts` and `ui/keyCommands.ts`: keyboard shortcuts |
 | `demo/` | The demo host and its scripted scenario |
+| `crash/` | The global error handler, the crash log (keychain, last 5 errors) and the error screen that routes export as `ErrorBoundary` |
 
 ### Companion (`companion/src/`)
 

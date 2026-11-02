@@ -99,7 +99,7 @@ const PAST_SESSIONS: Record<string, [string, number][]> = {
 export const CHAT_KINDS = ["claude", "codex", "pi", "opencode"];
 
 const KIND_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", pi: "Pi", opencode: "OpenCode" };
-const kindLabel = (kind: string) => KIND_LABEL[kind] ?? kind;
+const kindLabel = (kind: string | null) => (kind ? (KIND_LABEL[kind] ?? kind) : "Agent");
 
 const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 /** One line of plain text from markdown, for previews and the terminal. */
@@ -201,8 +201,9 @@ export class DemoScenario {
       throw new DemoError("not_found", `pane ${paneId} not found`);
     }
     // As herdlingd: only the kinds with chat support have a thread log; the app shows the terminal for the rest.
-    if (!CHAT_KINDS.includes(a.info.agent)) return { kind: a.info.agent, session: null, log_path: null, cwd: a.info.cwd ?? null };
-    return { kind: a.info.agent, session: a.session, log_path: a.log, cwd: a.info.cwd ?? null };
+    const kind = a.info.agent ?? "unknown";
+    if (!CHAT_KINDS.includes(kind)) return { kind, session: null, log_path: null, cwd: a.info.cwd ?? null };
+    return { kind, session: a.session, log_path: a.log, cwd: a.info.cwd ?? null };
   }
 
   /** `thread.get`: the cursor is an item index; `end` is the item count. */

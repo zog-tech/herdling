@@ -98,6 +98,21 @@ test("every_row_style_shows_the_agent_mark_before_the_title", () => {
   expect(texts(t)).toContain("Am");
 });
 
+// herdr sends `agent: null` until it detects the agent of a new session (`launch_pending`). The row
+// rendered the mark with a null kind and threw, which closed the app (TestFlight crash on a new session).
+test("a_new_agent_with_no_kind_or_folder_yet_renders_in_every_row_style", () => {
+  const fresh = item({
+    title: "p9",
+    subtitle: "studio.local",
+    agent: { pane_id: "p9", tab_id: "t9", workspace_id: "w9", agent: null, agent_status: "unknown", state_change_seq: 0, name: null, cwd: null },
+    bucket: "idle",
+  });
+  for (const style of ["flat", "divided", "cards"] as const) {
+    const t = render(<AgentRow item={fresh} rowStyle={style} {...actions()} />);
+    expect(texts(t)).toContain("p9");
+  }
+});
+
 test("the_hint_close_button_dismisses_it", () => {
   const onClose = jest.fn();
   const t = render(<BoardHint onClose={onClose} />);

@@ -202,7 +202,7 @@ export const Composer = memo(function Composer({
   const [picking, setPicking] = useState(false);
   /** Lock against a double tap: two taps can land before `picking` re-renders. */
   const pickLock = useRef(false);
-  const agentKind = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent);
+  const agentKind = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent) ?? undefined;
   const typed = commandQuery(text, commandTriggers(agentKind));
   const slash = useCommands(hostId, paneId, visible && online && (typed !== undefined || sheetOpen));
   const matches =

@@ -127,7 +127,7 @@ function useSessionMenu(
         },
       },
     ];
-    if (canResume(hello, agent.agent)) {
+    if (agent.agent && canResume(hello, agent.agent)) {
       items.push({
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${agent.pane_id}` as never),

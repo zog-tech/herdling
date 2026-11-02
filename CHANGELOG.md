@@ -52,6 +52,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Error screens and a crash log.** A render error on a screen now shows "Something went wrong"
+  with the message, Retry and Back, and the app stays open. Overview, the session, the peek sheet,
+  the subagent thread, New session and the root layout each have this screen. A fatal JavaScript
+  error writes its message, stack, route and update id to the keychain before the app closes.
+  Settings, "Crash log" shows the last 5 errors, with Copy and Clear. Nothing goes to a server.
+  Over-the-air update, no new build.
 - Long pastes in the thread composer: a paste of more than 10 lines or 800 characters becomes a
   "Pasted text #1" chip. Tap it to view the text or put it back in the prompt. On send, the
   text goes to the agent as a `.txt` file, like an attached file.
@@ -234,6 +240,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Fixed
 
+- The app closed when the user started a new session. herdr sends `agent: null` until it detects
+  the new agent, and the agent mark on Overview read letters from that null kind. The mark now
+  shows an empty tile for an agent with no kind yet. The app types now allow null for the kind,
+  the folder and the terminal title, as the herdr API schema says.
 - The installer unpacks herdlingd in `~/.cache/herdling`, not in `/tmp`. On systems that mount
   `/tmp` with `noexec` (for example TrueNAS), the install failed with "Permission denied".
 - Thread: the gap between the newest row and the "Working" pill is 12 pt, the same as the gap between

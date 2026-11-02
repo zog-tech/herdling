@@ -5,11 +5,15 @@ export type AgentInfo = {
   pane_id: string;
   tab_id: string;
   workspace_id: string;
-  agent: string;
+  /**
+   * The agent kind. herdr sends null while it has not detected the agent yet, for example in the
+   * first seconds after `agent.start` (`launch_pending`).
+   */
+  agent: string | null;
   agent_status: AgentStatus;
-  cwd?: string;
+  cwd?: string | null;
   state_change_seq: number;
-  terminal_title_stripped?: string;
+  terminal_title_stripped?: string | null;
   /** The agent's own name (`agent.rename`); null or missing when it has none. */
   name?: string | null;
   /** Agent kind as herdr shows it, when it differs from `agent`. */

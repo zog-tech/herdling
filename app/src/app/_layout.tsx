@@ -1,5 +1,8 @@
+// First: the crash handler must be in place before any other module can throw.
+import "@/crash/install";
+
 import * as Notifications from "expo-notifications";
-import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -7,6 +10,7 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { PEEK_DETENT_ANDROID } from "@/board/peekDetent";
+import { setCrashRoute } from "@/crash/globalHandler";
 import { startConnections } from "@/hosts/connection";
 import { UpdateChecks } from "@/hosts/UpdateChecks";
 import { registerChoiceCategory } from "@/push/choiceActions";
@@ -59,6 +63,16 @@ function ModalClose() {
   return <CloseButton onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} />;
 }
 
+/** Keeps the current route for the crash log. Renders nothing. */
+function CrashRoute() {
+  const path = usePathname();
+  useEffect(() => setCrashRoute(path), [path]);
+  return null;
+}
+
+// A render error that no screen catches shows the error screen, not a closed app.
+export { LayoutErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 /** Rendered inside the root layout so the router exists; routing waits for the navigator itself. */
 function NotificationRouting() {
   useNotificationRouting();
@@ -82,6 +96,7 @@ export default function RootLayout() {
       <ThemedRoot key={themeKey} />
       {/* These render no views, so a theme change does not need to mount them again. */}
       <NotificationRouting />
+      <CrashRoute />
       {/* Two columns on wide windows (iPad, tablets): moves the session between the column and its route. */}
       <LayoutSync />
       <AppShortcuts />
@@ -112,6 +127,7 @@ function ThemedRoot() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
+        <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />
         <Stack.Screen name="theme" options={{ ...hostHeader, title: "Theme" }} />
         <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />
         {/* The session screen sets its own title view and bar buttons. */}

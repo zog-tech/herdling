@@ -81,6 +81,8 @@ test("the_title_is_the_own_name_then_the_terminal_title_then_the_board_title", (
 
 test("the_folder_is_the_last_part_of_the_path", () => {
   expect(folderName("/home/sam/proj")).toBe("proj");
+  // herdr sends `cwd: null` for a new agent.
+  expect(folderName(null)).toBeUndefined();
   expect(folderName("/home/sam/proj/")).toBe("proj");
   expect(folderName("/")).toBe("/");
   expect(folderName(undefined)).toBeUndefined();

@@ -43,6 +43,9 @@ import { showActionSheet } from "@/ui/nativeSheet";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
+// A render error on the board shows the error screen in the tab. A session on top stays open.
+export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 /** The floating "+" button: its size, and the room the list keeps under the last row. */
 const FAB = 56;
 

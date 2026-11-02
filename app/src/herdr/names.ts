@@ -37,9 +37,9 @@ export function agentTitle(snapshot: Names, agent: Agent): string {
   );
 }
 
-/** Agent kind as herdr shows it. */
+/** Agent kind as herdr shows it. Empty while herdr has not detected the agent yet (`agent` is null). */
 export function agentKind(agent: Pick<AgentInfo, "agent" | "display_agent">): string {
-  return nonEmpty(agent.display_agent) ?? agent.agent;
+  return nonEmpty(agent.display_agent) ?? agent.agent ?? "";
 }
 
 /** "<host> · <agent kind>". */
