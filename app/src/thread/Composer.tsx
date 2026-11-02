@@ -45,6 +45,8 @@ import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
 import { isFreeform } from "./parseChoices";
+import { openPasteMenu, PasteChip, PasteViewer } from "./PasteChip";
+import { detectPaste, insertAt, makePaste, type PastedText } from "./pastedText";
 import { sendWithPending } from "./pending";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 import { useQuoteInto, withQuote } from "./quote";
@@ -72,6 +74,7 @@ export const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, " ").tri
  * the next send types the text into the pane and presses Enter ("free-text mode").
  * The "+" button attaches photos and files (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
+ * A long text paste becomes a "Pasted text #n" chip (see `pastedText.ts`) and goes as a `.txt` file on send.
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
  */
 export const Composer = memo(function Composer({
@@ -110,6 +113,26 @@ export const Composer = memo(function Composer({
   const [partial, setPartial] = useState("");
   const latest = useRef(text);
   latest.current = text;
+  /**
+   * Sets the box text from code (dictation, a quote, a command, a reset). `latest` changes at once,
+   * so the paste check in `onChangeText` compares with this text and never makes it a chip.
+   */
+  const putText = (next: string | ((cur: string) => string)) => {
+    const t = typeof next === "function" ? next(latest.current) : next;
+    latest.current = t;
+    setText(t);
+  };
+  /** Long pastes, shown as chips. They go as `.txt` files with the next prompt. */
+  const [pastes, setPastes] = useState<PastedText[]>([]);
+  /** The number of the last paste chip in this draft. */
+  const pasteTextCount = useRef(0);
+  const pastesNow = useRef(pastes);
+  pastesNow.current = pastes;
+  /** The paste in the viewer sheet. It stays set while the sheet closes. */
+  const [viewing, setViewing] = useState<PastedText>();
+  const [viewerOpen, setViewerOpen] = useState(false);
+  /** The cursor in the box, for "Insert as text". */
+  const cursor = useRef<number | undefined>(undefined);
   const online = status === "online" && !!rpc;
   /** Photos and files to attach to the next prompt. */
   const [photos, setPhotos] = useState<Attachment[]>([]);
@@ -129,7 +152,7 @@ export const Composer = memo(function Composer({
       : undefined;
   const dictation = useDictation({
     onText: (t) => {
-      setText((cur) => appendDictation(cur, t));
+      putText((cur) => appendDictation(cur, t));
       if (error) setError(undefined);
       inputRef.current?.focus();
     },
@@ -138,7 +161,7 @@ export const Composer = memo(function Composer({
   });
   // "Quote in reply" from a thread row: the quote goes at the end of the draft.
   useQuoteInto(hostId, paneId, (q) => {
-    setText((cur) => withQuote(cur, q));
+    putText((cur) => withQuote(cur, q));
     inputRef.current?.focus();
   });
   const voicePhase = dictation.state.phase;
@@ -150,8 +173,8 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!visible) voiceDispatch({ type: "cancel", force: true });
   }, [visible, voiceDispatch]);
-  const canSend = online && !sending && !voiceActive && (text.trim().length > 0 || photos.length > 0);
-  const hasDraft = text.trim().length > 0 || photos.length > 0;
+  const canSend = online && !sending && !voiceActive && (text.trim().length > 0 || photos.length > 0 || pastes.length > 0);
+  const hasDraft = text.trim().length > 0 || photos.length > 0 || pastes.length > 0;
   useEffect(() => {
     onDraftChange?.(hasDraft);
   }, [hasDraft, onDraftChange]);
@@ -193,6 +216,8 @@ export const Composer = memo(function Composer({
   const canPasteRow = !hasNativePaste && canAttach && clipboardAvailable() && photoRoom(photos) > 0;
   /** Builds without the document picker (older binaries that got this code over the air) hide "Files". */
   const canAttachFiles = hasMethod(hello, "files.put") && documentsAvailable();
+  /** A host without `files.put` cannot take a pasted text file: the paste stays in the box. */
+  const canPasteText = hasMethod(hello, "files.put");
   const showPlus = canAttach || canAttachFiles || slash.supported;
   /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
   const [focused, setFocused] = useState(false);
@@ -260,11 +285,12 @@ export const Composer = memo(function Composer({
     setError(undefined);
     setPlusOpen(false);
     const sent = photos;
+    const sentPastes = pastes;
     let paths: string[] = [];
-    if (sent.length > 0) {
+    if (sent.length + sentPastes.length > 0) {
       setUploaded(0);
       try {
-        paths = await uploadPhotos(rpc, sent, setUploaded);
+        paths = await uploadPhotos(rpc, [...sent, ...sentPastes], setUploaded);
       } catch (e) {
         haptics.fail();
         const code = (e as { code?: unknown })?.code;
@@ -275,7 +301,7 @@ export const Composer = memo(function Composer({
               ? e.message
               : String(e);
         setError(`Upload failed, nothing sent: ${why}`);
-        if (!fromInput && !latest.current.trim()) setText(prompt);
+        if (!fromInput && !latest.current.trim()) putText(prompt);
         setUploaded(undefined);
         setSending(false);
         return;
@@ -284,10 +310,15 @@ export const Composer = memo(function Composer({
     }
     const full = withPaths(prompt, paths);
     if (sent.length > 0) setPhotos((cur) => cur.filter((p) => !sent.includes(p)));
+    if (sentPastes.length > 0) {
+      setPastes((cur) => cur.filter((p) => !sentPastes.includes(p)));
+      // A new draft numbers its pastes from 1 again, unless a paste came in during the upload.
+      if (pastesNow.current.length === sentPastes.length) pasteTextCount.current = 0;
+    }
     // The prompt now shows as a pending bubble in the thread, so the box empties at once.
     // Keep anything typed after the tap.
     if (fromInput && latest.current === prompt) {
-      setText("");
+      putText("");
       // The new box gets no blur event from the old one. autoFocus focuses it again.
       setFocused(false);
       setInputKey((k) => k + 1);
@@ -303,7 +334,7 @@ export const Composer = memo(function Composer({
       } catch (e) {
         haptics.fail();
         setError(`Not sent: ${e instanceof Error ? e.message : String(e)}`);
-        if (fromInput && !latest.current.trim()) setText(prompt);
+        if (fromInput && !latest.current.trim()) putText(prompt);
       }
       return;
     }
@@ -370,8 +401,14 @@ export const Composer = memo(function Composer({
   };
   /** Puts `/name ` (or `$name` for a Codex skill, `@name` for an OpenCode skill) in the prompt box. */
   const insertCommand = (c: CommandInfo) => {
-    setText(`${c.trigger ?? "/"}${c.name} `);
+    putText(`${c.trigger ?? "/"}${c.name} `);
     if (error) setError(undefined);
+  };
+  /** Puts a paste back in the box at the cursor (or at the end) and removes its chip. */
+  const insertPaste = (p: PastedText) => {
+    putText((cur) => insertAt(cur, p.text, cursor.current));
+    setPastes((cur) => cur.filter((x) => x !== p));
+    inputRef.current?.focus();
   };
 
   return (
@@ -430,11 +467,30 @@ export const Composer = memo(function Composer({
       ) : null}
       {uploaded !== undefined ? (
         <Text variant="small" muted accessibilityLiveRegion="polite">
-          Uploading {Math.min(uploaded + 1, photos.length)} of {photos.length}…
+          Uploading {Math.min(uploaded + 1, photos.length + pastes.length)} of {photos.length + pastes.length}…
         </Text>
       ) : null}
-      {photos.length > 0 ? (
-        <PhotoStrip photos={photos} disabled={sending} onRemove={(p) => setPhotos((cur) => cur.filter((x) => x !== p))} />
+      {photos.length > 0 || pastes.length > 0 ? (
+        <PhotoStrip photos={photos} disabled={sending} onRemove={(p) => setPhotos((cur) => cur.filter((x) => x !== p))}>
+          {pastes.map((p) => (
+            <PasteChip
+              key={p.n}
+              paste={p}
+              disabled={sending}
+              onPress={() =>
+                openPasteMenu(
+                  p,
+                  () => {
+                    setViewing(p);
+                    setViewerOpen(true);
+                  },
+                  () => insertPaste(p),
+                )
+              }
+              onRemove={() => setPastes((cur) => cur.filter((x) => x !== p))}
+            />
+          ))}
+        </PhotoStrip>
       ) : null}
       {partial ? (
         <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>
@@ -476,12 +532,22 @@ export const Composer = memo(function Composer({
               key={inputKey}
               value={text}
               onChangeText={(t) => {
-                setText(t);
+                // No paste event in React Native: a change that inserts a long block is a paste.
+                const cut = canPasteText ? detectPaste(latest.current, t) : undefined;
+                if (cut) {
+                  const p = makePaste(++pasteTextCount.current, cut.pasted);
+                  setPastes((cur) => [...cur, p]);
+                  cursor.current = cut.at;
+                  putText(cut.text);
+                } else putText(t);
                 if (plusOpen) setPlusOpen(false);
                 if (error) setError(undefined);
               }}
               editable={online}
               autoFocus={autoFocus}
+              onSelectionChange={(e) => {
+                cursor.current = e.nativeEvent.selection.start;
+              }}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               multiline
@@ -554,6 +620,7 @@ export const Composer = memo(function Composer({
         </Pressable>
         )}
       </View>
+      <PasteViewer paste={viewing} visible={viewerOpen} onClose={() => setViewerOpen(false)} />
       {slash.supported ? (
         <CommandSheet
           key={sheetKey}

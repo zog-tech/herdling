@@ -3,6 +3,8 @@ import { requireOptionalNativeModule } from "expo";
 
 import type { RpcClient } from "@/rpc/RpcClient";
 
+import { utf8Base64, type PastedText } from "./pastedText";
+
 /** Most photos on one prompt. */
 export const MAX_PHOTOS = 4;
 /** Most attachments (photos and files together) on one prompt. */
@@ -147,19 +149,20 @@ export function jpegName(fileName: string | null | undefined, index: number): st
 }
 
 /**
- * Uploads each attachment with `files.put`, in order. `progress(done)` runs after each one. Throws on
- * the first failure. `read` gives the base64 data of a file (a test passes its own).
+ * Uploads each attachment with `files.put`, in order. A pasted text goes as a UTF-8 `.txt` file.
+ * `progress(done)` runs after each one. Throws on the first failure. `read` gives the base64 data
+ * of a file (a test passes its own).
  */
 export async function uploadPhotos(
   rpc: RpcClient,
-  items: Attachment[],
+  items: (Attachment | PastedText)[],
   progress?: (done: number) => void,
   read: (uri: string) => Promise<string> = readBase64,
 ): Promise<string[]> {
   const paths: string[] = [];
   for (const a of items) {
-    const data = isFile(a) ? await read(a.uri) : a.base64;
-    const r = await rpc.call<FilePut>("files.put", { name: a.name, data_b64: data }, isFile(a) ? FILE_UPLOAD_TIMEOUT_MS : UPLOAD_TIMEOUT_MS);
+    const data = a.kind === "text" ? utf8Base64(a.text) : isFile(a) ? await read(a.uri) : a.base64;
+    const r = await rpc.call<FilePut>("files.put", { name: a.name, data_b64: data }, a.kind === "file" || a.kind === "text" ? FILE_UPLOAD_TIMEOUT_MS : UPLOAD_TIMEOUT_MS);
     paths.push(r.path);
     progress?.(paths.length);
   }

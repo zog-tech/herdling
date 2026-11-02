@@ -116,6 +116,7 @@ jest.mock("../../modules/paste", () => ({
   },
 }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
+jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -747,5 +748,83 @@ describe("free-text mode after Type something", () => {
     await act(async () => setStatus("blocked"));
     await flush();
     expect(texts(tree!)).not.toContain(FREEFORM_MESSAGE);
+  });
+});
+
+describe("long pastes", () => {
+  const block = Array.from({ length: 30 }, (_, i) => `log line ${i + 1}`).join("\n");
+  const sheet = () => jest.requireMock("@/ui/nativeSheet").showActionSheet as jest.Mock;
+
+  test("a long paste becomes a chip and goes as a txt file", async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText("Why does this fail? "));
+    await act(async () => prompt(tree!).props.onChangeText(`Why does this fail? ${block}`));
+    expect(prompt(tree!).props.value).toBe("Why does this fail? ");
+    expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(1);
+    // Typing after the paste stays in the box.
+    await act(async () => prompt(tree!).props.onChangeText("Why does this fail? x"));
+    expect(byLabel(tree!, "Pasted text #2 · 30 lines")).toHaveLength(0);
+
+    await press(tree!, "Send");
+    const put = mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params);
+    expect(put).toEqual([{ name: "pasted-text-1.txt", data_b64: Buffer.from(block, "utf8").toString("base64") }]);
+    expect(prompts()).toEqual(["Why does this fail? x\n/up/1-pasted-text-1.txt"]);
+    expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(0);
+  });
+
+  test("a chip alone can be sent, and the remove button drops it", async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText(block));
+    await act(async () => prompt(tree!).props.onChangeText(block));
+    expect(prompt(tree!).props.value).toBe("");
+    expect(byLabel(tree!, "Pasted text #2 · 30 lines")).toHaveLength(1);
+    await press(tree!, "Remove pasted text 1");
+    expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(0);
+    await press(tree!, "Send");
+    expect(prompts()).toEqual(["/up/1-pasted-text-2.txt"]);
+  });
+
+  test("insert as text puts the paste back and it stays text", async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText("See: "));
+    await act(async () => prompt(tree!).props.onChangeText(`See: ${block}`));
+    sheet().mockClear();
+    await press(tree!, "Pasted text #1 · 30 lines");
+    const [, pick] = sheet().mock.calls[0];
+    await act(async () => pick(1));
+    expect(prompt(tree!).props.value).toBe(`See: ${block}`);
+    expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(0);
+    // The next keystroke compares with the inserted text: no new chip.
+    await act(async () => prompt(tree!).props.onChangeText(`See: ${block}!`));
+    expect(prompt(tree!).props.value).toBe(`See: ${block}!`);
+  });
+
+  test("dictation and a host without files.put never make a chip", async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    act(() => mockOnText!(block));
+    expect(prompt(tree!).props.value).toBe(block);
+    await act(async () => prompt(tree!).props.onChangeText(`${block} ok`));
+    expect(prompt(tree!).props.value).toBe(`${block} ok`);
+    act(() => tree!.unmount());
+
+    mockHello = helloWith(["commands.list"]);
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText(block));
+    expect(prompt(tree!).props.value).toBe(block);
+    expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(0);
   });
 });
