@@ -24,9 +24,13 @@ type Props = {
   hasOlder: boolean;
   /** Shown after the newest item (the pending prompts). */
   tail?: ReactElement | null;
-  /** Shown after the tail: the agent status pill. `footerShown`: it takes room now, so keep it in view. */
+  /** Shown after the tail: the agent status pill and the subagent pill. */
   footer?: ReactElement | null;
-  footerShown?: boolean;
+  /**
+   * The number of footer pills that take room now. When it grows, the list keeps the new pill in
+   * view. A boolean counts as 0 or 1.
+   */
+  footerShown?: boolean | number;
   /** The pane the thread belongs to, for live tool output. `active`: the screen is focused. */
   live?: { hostId: string; paneId: string; active: boolean };
   /** Search: scroll this item into the middle of the view when it changes. */
@@ -97,18 +101,25 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, foo
     if (prev !== undefined && newestId !== prev && !atBottom.current) setUnseen(true);
   }, [newestId]);
 
-  // The pill grows the header. When it shows while the user is at the bottom, keep offset 0 until it is
-  // fully open, so the newest message and the pill are both in view. A drag cancels this.
+  // A pill grows the header. When one shows while the user is at the bottom, keep offset 0 until it is
+  // fully open, so the newest message and the pills are all in view. A drag cancels this.
   const pinned = useRef(false);
+  const footerCount = Number(footerShown ?? 0);
+  const lastFooterCount = useRef(0);
   useEffect(() => {
-    if (!footerShown || !atBottom.current) return;
+    const grew = footerCount > lastFooterCount.current;
+    lastFooterCount.current = footerCount;
+    if (!grew || !atBottom.current) {
+      pinned.current = false;
+      return;
+    }
     pinned.current = true;
     list.current?.scrollToOffset({ offset: 0, animated: false });
     const id = setTimeout(() => {
       pinned.current = false;
     }, STATUS_ANIM_MS + 120);
     return () => clearTimeout(id);
-  }, [footerShown]);
+  }, [footerCount]);
   const onContentSizeChange = useCallback(() => {
     if (pinned.current) list.current?.scrollToOffset({ offset: 0, animated: false });
   }, []);

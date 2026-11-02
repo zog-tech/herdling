@@ -4,16 +4,18 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 
 import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
 import { subagentCount } from "@/thread/subagentState";
-import { LanternGlow } from "./LanternGlow";
-import { STATUS_META, StatusIcon, statusSpoken, type BadgeStatus } from "./StatusIcon";
+import { StatusGlyph } from "./StatusGlyph";
+import { STATUS_META, statusSpoken, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
 
 /** Only these states show a row. Idle, done and unknown hide it, unless background work runs. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
 /** These states show the row while background work runs: "Idle · 1 shell running". */
 const QUIET: readonly BadgeStatus[] = ["idle", "done"];
-const PILL_HEIGHT = 40;
-const ROW_ICON = 20;
+/** Height of a thread pill. The subagent pill uses the same height. */
+export const PILL_HEIGHT = 40;
+/** Icon size in a thread pill. */
+export const ROW_ICON = 20;
 /** Space between the newest message and the pill. Same as the gap between two thread rows. */
 export const PILL_GAP = threadGap;
 const ROW_HEIGHT = PILL_HEIGHT + PILL_GAP;
@@ -111,10 +113,7 @@ export const StatusRow = memo(function StatusRow({
           backgroundColor: colors.raised,
         }}
       >
-        <View style={{ width: ROW_ICON, height: ROW_ICON }}>
-          <LanternGlow active={working} size={ROW_ICON} />
-          <StatusIcon status={shown} size={ROW_ICON} />
-        </View>
+        <StatusGlyph status={shown} glow={working} size={ROW_ICON} />
         <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {label}
         </Text>

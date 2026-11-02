@@ -37,7 +37,8 @@ import { usePendingList } from "@/thread/pending";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
-import { runningSubagents } from "@/thread/subagentState";
+import { subagentList } from "@/thread/subagentState";
+import { isSubagentPillShown, SubagentPill } from "@/thread/SubagentPill";
 import { useThread, type Thread } from "@/thread/useThread";
 import { countLabel, SEARCH_DEBOUNCE_MS, step } from "@/thread/search";
 import { SearchBar } from "@/thread/SearchBar";
@@ -257,7 +258,7 @@ function ThreadBody({
 }) {
   const { status, items } = thread;
   const pending = usePendingList(hostId, paneId);
-  const subagents = useMemo(() => runningSubagents(items), [items]);
+  const subagents = useMemo(() => subagentList(items), [items]);
   if (status === "no_session") {
     return (
       <View style={{ flex: 1 }}>
@@ -313,8 +314,14 @@ function ThreadBody({
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
-          footer={<StatusRow status={badge} subagents={subagents} background={background} />}
-          footerShown={isStatusShown(badge, background)}
+          // The subagent pill below the Working pill says how many subagents run, so the Working pill does not.
+          footer={
+            <>
+              <StatusRow status={badge} background={background} />
+              <SubagentPill list={subagents} />
+            </>
+          }
+          footerShown={Number(isStatusShown(badge, background)) + Number(isSubagentPillShown(subagents))}
           live={{ hostId, paneId, active: focused }}
           focusId={focusId}
         />

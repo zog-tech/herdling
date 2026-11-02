@@ -78,3 +78,16 @@ test("old_host_launch_summary_is_hidden_and_card_waits_for_agent_id", () => {
   act(() => pressable(t).props.onPress());
   expect(mockPush).not.toHaveBeenCalled();
 });
+
+const glyphs = (t: ReactTestRenderer, status: string) =>
+  t.root.findAll((n) => typeof n.type === "string" && n.props.testID === `status-glyph-${status}`);
+
+test("running_card_uses_the_working_indicator_of_the_working_pill", () => {
+  const t = render(<SubagentCard description="Fix the parser" status="running" agentId="a1" startedAt={T0} />);
+  expect(glyphs(t, "working")).toHaveLength(1);
+});
+
+test.each(["completed", "error", "stopped"])("%s_card_keeps_a_static_status_icon", (status) => {
+  const t = render(<SubagentCard description="Fix the parser" status={status} agentId="a1" startedAt={T0} finishedAt={T0 + 5_000} />);
+  expect(glyphs(t, "working")).toHaveLength(0);
+});
