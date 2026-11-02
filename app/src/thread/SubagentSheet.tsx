@@ -1,105 +1,26 @@
 /**
- * The subagent pill at the bottom of the thread, below the Working pill: "2 subagents running".
- * A tap opens a sheet with the running subagents and the subagents that finished in the current
- * turn. A pick in the sheet opens the subagent thread, as a tap on its card does.
+ * The subagent sheet. The status pill at the bottom of the thread opens it. It lists the running
+ * subagents and the subagents that finished in the current turn. A pick opens the subagent
+ * thread, as a tap on its card does.
  */
 import { useRouter } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
-import { memo, useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Modal, Platform, Pressable, ScrollView, View } from "react-native";
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, motion, radius, space } from "@/theme/tokens";
+import { colors, radius, space } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
 import { formatDuration, spokenDuration } from "@/ui/format";
 import { StatusGlyph } from "@/ui/StatusGlyph";
-import { PILL_GAP, PILL_HEIGHT, ROW_ICON } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { TickingDuration } from "@/ui/TickingDuration";
 import { statusLabel, statusMeta, tools } from "./items/SubagentCard";
-import { subagentHref, subagentPillText, type SubagentItem, type SubagentList } from "./subagentState";
+import { subagentHref, type SubagentItem, type SubagentList } from "./subagentState";
 import { useThreadLog } from "./ThreadLogContext";
 
-/** Same rhythm as the Working pill: the `threadGap` above the pill, then the pill. */
-const ROW_HEIGHT = PILL_HEIGHT + PILL_GAP;
-const SLIDE = 6;
-const EASE_OUT = Easing.bezier(...motion.ease.out);
 const SHEET_ICON = 16;
-
-/** Whether the list shows the pill. */
-export const isSubagentPillShown = (list: SubagentList) => subagentPillText(list) !== undefined;
-
-/**
- * The pill row. It fades and slides in and out like the Working pill, and takes no height when
- * hidden. While a subagent runs, it shows the working indicator of the Working pill.
- */
-export const SubagentPill = memo(function SubagentPill({ list }: { list: SubagentList }) {
-  const reduced = useReducedMotion();
-  const text = subagentPillText(list);
-  const visible = text !== undefined;
-  const running = list.running.length > 0;
-  // Keep the last text, so the content stays while the row fades out.
-  const [shown, setShown] = useState({ text: text ?? "", running });
-  const [open, setOpen] = useState(false);
-  const progress = useSharedValue(visible ? 1 : 0);
-
-  useEffect(() => {
-    if (text !== undefined) setShown({ text, running });
-    const to = text !== undefined ? 1 : 0;
-    if (reduced) {
-      progress.set(to);
-      return;
-    }
-    const ms = to ? motion.stateMs : motion.stateMs * motion.exitRatio;
-    progress.set(withTiming(to, { duration: ms, easing: EASE_OUT }));
-  }, [text, running, reduced, progress]);
-
-  const style = useAnimatedStyle(() => ({
-    height: progress.get() * ROW_HEIGHT,
-    opacity: progress.get(),
-    transform: [{ translateY: reduced ? 0 : (1 - progress.get()) * SLIDE }],
-  }));
-
-  return (
-    <>
-      <Animated.View
-        style={[{ overflow: "hidden" }, style]}
-        pointerEvents={visible ? "box-none" : "none"}
-        accessibilityElementsHidden={!visible}
-        importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
-      >
-        <Pressable
-          accessible={visible}
-          accessibilityRole="button"
-          accessibilityLabel={shown.text}
-          accessibilityHint="Shows the subagents"
-          onPress={() => setOpen(true)}
-          style={({ pressed }) => ({
-            alignSelf: "center",
-            marginTop: PILL_GAP,
-            height: PILL_HEIGHT,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: space.xs,
-            paddingHorizontal: space.lg,
-            borderRadius: radius.pill,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: pressed ? colors.card : colors.raised,
-          })}
-        >
-          <StatusGlyph status={shown.running ? "working" : "done"} size={ROW_ICON} />
-          <Text variant="small" bold color={shown.running ? colors.status.working : undefined} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {shown.text}
-          </Text>
-          <ChevronRight size={16} color={colors.textMuted} />
-        </Pressable>
-      </Animated.View>
-      <SubagentSheet visible={open} list={list} onClose={() => setOpen(false)} />
-    </>
-  );
-});
 
 /**
  * The list of subagents: the running ones, then the ones that finished in the current turn.

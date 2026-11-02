@@ -55,13 +55,14 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 - Long pastes in the thread composer: a paste of more than 10 lines or 800 characters becomes a
   "Pasted text #1" chip. Tap it to view the text or put it back in the prompt. On send, the
   text goes to the agent as a `.txt` file, like an attached file.
-- **Subagent pill.** Below the "Working" pill, the thread shows "2 subagents running" while
-  subagents run, also when the agent is idle and they run in the background. When all stopped, it
-  shows "2 subagents finished" until the next prompt. A tap opens a sheet with the running
+- **One status pill for the agent and its subagents.** While subagents run, the "Working" pill adds
+  the count ("Working · 2 subagents") and shows a chevron. When the agent is idle and subagents run in
+  the background, the pill shows "2 subagents running". A tap opens a sheet with the running
   subagents, then the subagents that finished in the current turn: type and model, time and the
-  latest step. A pick opens the subagent thread. The pill uses the same 12 pt gap as the rows.
+  latest step. A pick opens the subagent thread. When nothing runs, the pill is gone; the finished
+  subagents stay as cards in the thread.
 - A running subagent card shows the same animated working indicator as the "Working" pill. A
-  stopped subagent keeps a static icon. The "Working" pill no longer adds "· 2 subagents".
+  stopped subagent keeps a static icon.
 - **Folder group and shared workspaces.** The Board Group menu has "Folder": agents with the same
   folder form one section across all computers, titled by the last part of the path (more parts
   when two folders share a name; the home folder shows as `~`), and agents with no folder go in

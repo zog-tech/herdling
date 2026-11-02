@@ -1,6 +1,6 @@
 import type { ThreadItem } from "@herdling/protocol";
 
-import { runningSubagents, shownSummary, subagentCount, subagentHref, subagentList, subagentPillText } from "./subagentState";
+import { runningSubagents, shownSummary, subagentCount, subagentHref, subagentList } from "./subagentState";
 
 /** The exact tool result Claude Code writes when it launches a background subagent. */
 const LAUNCH =
@@ -42,7 +42,6 @@ test("subagent_list_puts_running_first_and_newest_first", () => {
   const list = subagentList(items);
   expect(ids(list.running)).toEqual(["c", "a"]);
   expect(ids(list.finished)).toEqual(["d", "b"]);
-  expect(subagentPillText(list)).toBe("2 subagents running");
 });
 
 test("subagent_list_keeps_only_finished_subagents_of_the_current_turn", () => {
@@ -60,7 +59,6 @@ test("subagent_list_keeps_only_finished_subagents_of_the_current_turn", () => {
 test("subagent_list_with_no_user_message_counts_every_item_as_the_current_turn", () => {
   const list = subagentList([live("a", "done", 10), live("b", "completed", 20)]);
   expect(ids(list.finished)).toEqual(["b", "a"]);
-  expect(subagentPillText(list)).toBe("2 subagents finished");
 });
 
 test("subagent_list_skips_old_host_launch_status_and_sorts_by_item_time_without_start", () => {
@@ -68,12 +66,6 @@ test("subagent_list_skips_old_host_launch_status_and_sorts_by_item_time_without_
   const list = subagentList(items);
   expect(list.running).toEqual([]);
   expect(ids(list.finished)).toEqual(["y", "x"]);
-});
-
-test("subagent_pill_text_is_empty_with_no_subagents", () => {
-  expect(subagentPillText(subagentList([]))).toBeUndefined();
-  expect(subagentPillText(subagentList([user("u1", 1), { kind: "assistant", id: "m", ts: 2, markdown: "Hi" }]))).toBeUndefined();
-  expect(subagentPillText({ running: [], finished: [live("a", "done", 1)] })).toBe("1 subagent finished");
 });
 
 test("subagent_href_needs_the_log_and_the_agent_id", () => {

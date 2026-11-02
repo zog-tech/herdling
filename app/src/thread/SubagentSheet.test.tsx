@@ -2,10 +2,8 @@ import type { ThreadItem } from "@herdling/protocol";
 import { Modal } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { PILL_GAP } from "@/ui/StatusRow";
-import { threadGap } from "@/theme/tokens";
+import { StatusRow } from "@/ui/StatusRow";
 import { subagentList } from "./subagentState";
-import { SubagentPill } from "./SubagentPill";
 import { ThreadLogContext } from "./ThreadLogContext";
 
 const mockPush = jest.fn();
@@ -53,7 +51,7 @@ afterEach(() => {
 function render(items: ThreadItem[]) {
   const el = (list: ThreadItem[]) => (
     <ThreadLogContext.Provider value={LOG}>
-      <SubagentPill list={subagentList(list)} />
+      <StatusRow status="working" subagents={subagentList(list)} />
     </ThreadLogContext.Provider>
   );
   act(() => {
@@ -61,31 +59,6 @@ function render(items: ThreadItem[]) {
   });
   return { t: tree!, update: (list: ThreadItem[]) => act(() => tree!.update(el(list))) };
 }
-
-test("pill_is_hidden_with_no_subagents_in_the_turn", () => {
-  const { t } = render([user, { kind: "assistant", id: "m", ts: T0, markdown: "Done." }]);
-  expect(pill(t).props.accessible).toBe(false);
-  expect(glyphs(t, "working")).toHaveLength(0);
-});
-
-test("pill_shows_running_subagents_with_the_working_indicator", () => {
-  const { t, update } = render([user, sub("a", "running", T0), sub("b", "running", T0 + 1), sub("c", "completed", T0 + 2)]);
-  expect(pill(t).props.accessible).toBe(true);
-  expect(pill(t).props.accessibilityLabel).toBe("2 subagents running");
-  expect(glyphs(t, "working")).toHaveLength(1);
-  // All stopped: a static icon and "finished".
-  update([user, sub("a", "completed", T0), sub("b", "error", T0 + 1)]);
-  expect(pill(t).props.accessibilityLabel).toBe("2 subagents finished");
-  expect(glyphs(t, "working")).toHaveLength(0);
-  expect(glyphs(t, "done")).toHaveLength(1);
-});
-
-test("pill_uses_the_thread_gap", () => {
-  const { t } = render([user, sub("a", "running", T0)]);
-  expect(PILL_GAP).toBe(threadGap);
-  const style = pill(t).props.style({ pressed: false });
-  expect(style.marginTop).toBe(threadGap);
-});
 
 test("sheet_lists_running_then_finished_and_opens_the_subagent_thread", () => {
   const { t } = render([

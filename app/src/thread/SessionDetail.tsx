@@ -38,7 +38,6 @@ import { ThreadList } from "@/thread/ThreadList";
 import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
 import { subagentList } from "@/thread/subagentState";
-import { isSubagentPillShown, SubagentPill } from "@/thread/SubagentPill";
 import { useThread, type Thread } from "@/thread/useThread";
 import { countLabel, SEARCH_DEBOUNCE_MS, step } from "@/thread/search";
 import { SearchBar } from "@/thread/SearchBar";
@@ -314,14 +313,9 @@ function ThreadBody({
           loadingOlder={thread.loadingOlder}
           hasOlder={thread.hasOlder}
           tail={<PendingBubbles hostId={hostId} paneId={paneId} />}
-          // The subagent pill below the Working pill says how many subagents run, so the Working pill does not.
-          footer={
-            <>
-              <StatusRow status={badge} background={background} />
-              <SubagentPill list={subagents} />
-            </>
-          }
-          footerShown={Number(isStatusShown(badge, background)) + Number(isSubagentPillShown(subagents))}
+          // One pill for the agent and its running subagents.
+          footer={<StatusRow status={badge} background={background} subagents={subagents} />}
+          footerShown={isStatusShown(badge, background, subagents.running.length)}
           live={{ hostId, paneId, active: focused }}
           focusId={focusId}
         />

@@ -1,8 +1,16 @@
-import { AccessibilityInfo } from "react-native";
+import type { ThreadItem } from "@herdling/protocol";
+import { AccessibilityInfo, Modal } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { space, threadGap } from "@/theme/tokens";
-import { announcement, isStatusShown, PILL_GAP, StatusRow } from "./StatusRow";
+import { subagentList } from "@/thread/subagentState";
+import { announcement, isStatusShown, pillContent, PILL_GAP, StatusRow } from "./StatusRow";
+
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
+jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+
+const sub = (id: string, status: string): ThreadItem => ({ kind: "subagent", id, ts: 1, agent_id: `agent-${id}`, description: `Task ${id}`, status, started_at: 1 });
+const listOf = (...statuses: string[]) => subagentList(statuses.map((st, i) => sub(String(i), st)));
 
 const label = (t: ReactTestRenderer) => t.root.findByProps({ accessibilityRole: "text" }).props.accessibilityLabel;
 
@@ -62,20 +70,79 @@ test("status_pill_shows_only_for_working_blocked_and_offline", () => {
   expect(["idle", "done", "unknown"].some((s) => isStatusShown(s as never))).toBe(false);
 });
 
-test("status_row_adds_running_subagents_while_working", () => {
+test("pill_content_covers_the_four_states", () => {
+  // Working, no subagents.
+  expect(pillContent("working")).toMatchObject({ status: "working", label: "Working", detail: undefined, tappable: false, spoken: "Working" });
+  // Working with running subagents.
+  expect(pillContent("working", undefined, 2)).toMatchObject({ label: "Working", detail: "2 subagents", tappable: true, spoken: "Working, 2 subagents" });
+  expect(pillContent("working", undefined, 1).spoken).toBe("Working, 1 subagent");
+  // Quiet agent with running subagents: the working indicator and the count.
+  expect(pillContent("idle", undefined, 2)).toMatchObject({ status: "working", label: "2 subagents running", tappable: true });
+  expect(pillContent("done", "1 shell running", 1)).toMatchObject({ status: "working", label: "1 subagent running" });
+  // Nothing running: no subagent text.
+  expect(pillContent("idle", "1 shell running")).toMatchObject({ label: "Idle", detail: "1 shell running", tappable: false });
+  // Needs you and Offline keep their text and are not tappable.
+  expect(pillContent("blocked", undefined, 2)).toMatchObject({ label: "Needs you", tappable: false, spoken: "Needs you" });
+  expect(isStatusShown("idle")).toBe(false);
+  expect(isStatusShown("idle", undefined, 1)).toBe(true);
+  expect(isStatusShown("unknown", undefined, 1)).toBe(true);
+});
+
+const isButton = (n: { props: Record<string, unknown> }) => n.props.accessibilityHint === "Shows the subagents" && !!n.props.onPress;
+
+test("status_row_working_with_subagents_is_one_tappable_pill", () => {
   let t!: ReactTestRenderer;
   act(() => {
-    t = create(<StatusRow status="working" subagents={2} />);
+    t = create(<StatusRow status="working" subagents={listOf("running", "running", "completed")} />);
   });
   const texts = () => t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
   expect(texts()).toContain("· 2 subagents");
-  expect(label(t)).toBe("Working, 2 subagents");
-  act(() => t.update(<StatusRow status="working" subagents={1} />));
-  expect(label(t)).toBe("Working, 1 subagent");
-  act(() => t.update(<StatusRow status="working" subagents={0} />));
-  expect(texts().some((c) => typeof c === "string" && c.includes("subagent"))).toBe(false);
-  act(() => t.update(<StatusRow status="blocked" subagents={2} />));
-  expect(label(t)).toBe("Needs you");
+  const button = t.root.find(isButton);
+  expect(button.props.accessibilityRole).toBe("button");
+  expect(button.props.accessibilityLabel).toBe("Working, 2 subagents");
+  expect(t.root.findAllByProps({ accessibilityRole: "text" })).toHaveLength(0);
+  // One working indicator only.
+  expect(t.root.findAll((n) => typeof n.type === "string" && n.props.testID === "status-glyph-working")).toHaveLength(1);
+  // The running ones stop: a plain pill with no button.
+  act(() => t.update(<StatusRow status="working" subagents={listOf("completed")} />));
+  expect(label(t)).toBe("Working");
+  expect(t.root.findAll(isButton)).toHaveLength(0);
+  act(() => t.unmount());
+});
+
+test("status_row_shows_background_subagents_of_a_quiet_agent", () => {
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="idle" subagents={listOf("running", "running")} />);
+  });
+  const button = t.root.find(isButton);
+  expect(button.props.accessible).toBe(true);
+  expect(button.props.accessibilityLabel).toBe("2 subagents running");
+  expect(t.root.findAll((n) => typeof n.type === "string" && n.props.testID === "status-glyph-working")).toHaveLength(1);
+  act(() => t.unmount());
+});
+
+test("status_row_hides_when_nothing_runs_and_does_not_show_finished_subagents", () => {
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="idle" subagents={listOf("completed", "error")} />);
+  });
+  expect(t.root.findByProps({ accessibilityRole: "text" }).props.accessible).toBe(false);
+  expect(t.root.findAll(isButton).every((n) => n.props.accessible === false)).toBe(true);
+  act(() => t.unmount());
+});
+
+test("status_row_tap_opens_the_subagent_sheet", () => {
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="working" subagents={listOf("running", "completed")} />);
+  });
+  expect(t.root.findByType(Modal).props.visible).toBe(false);
+  act(() => t.root.find(isButton).props.onPress());
+  expect(t.root.findByType(Modal).props.visible).toBe(true);
+  const shown = t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
+  expect(shown).toContain("Task 0");
+  expect(shown).toContain("Task 1");
   act(() => t.unmount());
 });
 

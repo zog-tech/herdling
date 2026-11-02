@@ -29,11 +29,11 @@ export const subagentCount = (n: number) => `${n} subagent${n === 1 ? "" : "s"}`
 /** Statuses of a subagent that did not stop yet, but that an older host never changes to "running". */
 const UNSETTLED = /(launched|pending|started)/i;
 
-/** The subagents of the bottom pill. Both lists are newest first. */
+/** The subagents of the status pill sheet. Both lists are newest first. */
 export type SubagentList = { running: SubagentItem[]; finished: SubagentItem[] };
 
 /**
- * The subagents for the bottom pill and its sheet, from the loaded thread items.
+ * The subagents for the status pill and its sheet, from the loaded thread items.
  * `running`: every subagent with the status "running", also one from an earlier turn that runs in
  * the background. `finished`: the subagents of the current turn (after the last user message)
  * that stopped. Newest first: by start time, else by the time of the item.
@@ -56,13 +56,6 @@ export function subagentList(items: readonly ThreadItem[]): SubagentList {
   });
   const newest = (a: { at: number; index: number }, b: { at: number; index: number }) => b.at - a.at || b.index - a.index;
   return { running: running.sort(newest).map((e) => e.item), finished: finished.sort(newest).map((e) => e.item) };
-}
-
-/** The pill text: "2 subagents running" while one runs, else "1 subagent finished". */
-export function subagentPillText(list: SubagentList): string | undefined {
-  if (list.running.length > 0) return `${subagentCount(list.running.length)} running`;
-  if (list.finished.length > 0) return `${subagentCount(list.finished.length)} finished`;
-  return undefined;
 }
 
 /**

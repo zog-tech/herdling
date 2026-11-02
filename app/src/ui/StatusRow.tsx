@@ -1,9 +1,11 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
+import { AccessibilityInfo, Pressable, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
-import { subagentCount } from "@/thread/subagentState";
+import { subagentCount, type SubagentList } from "@/thread/subagentState";
+import { SubagentSheet } from "@/thread/SubagentSheet";
 import { StatusGlyph } from "./StatusGlyph";
 import { STATUS_META, statusSpoken, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
@@ -12,7 +14,7 @@ import { Text } from "./Text";
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
 /** These states show the row while background work runs: "Idle · 1 shell running". */
 const QUIET: readonly BadgeStatus[] = ["idle", "done"];
-/** Height of a thread pill. The subagent pill uses the same height. */
+/** Height of the thread pill. */
 export const PILL_HEIGHT = 40;
 /** Icon size in a thread pill. */
 export const ROW_ICON = 20;
@@ -25,9 +27,36 @@ const EASE_OUT = Easing.bezier(...motion.ease.out);
 /** Hide-and-show time of the pill, so the list can keep it in view while it grows. */
 export const STATUS_ANIM_MS = motion.stateMs;
 
-/** Whether this state shows the pill. `background`: the text of the background work, if any. */
-export const isStatusShown = (status: BadgeStatus, background?: string) =>
-  SHOWN.includes(status) || (!!background && QUIET.includes(status));
+/**
+ * Whether this state shows the pill. `background`: the text of the background work, if any.
+ * `running`: the number of running subagents. They show the pill also when the agent is quiet.
+ */
+export const isStatusShown = (status: BadgeStatus, background?: string, running = 0) =>
+  SHOWN.includes(status) || running > 0 || (!!background && QUIET.includes(status));
+
+/** What the pill shows. `status`: the icon and the color. `detail`: the muted text after the label. */
+export type PillContent = { status: BadgeStatus; label: string; detail?: string; tappable: boolean; spoken: string };
+
+/**
+ * The text and the state of the one pill. Working: "Working", and "· 2 subagents" while subagents run.
+ * Quiet agent with running subagents: "2 subagents running" with the working indicator. Quiet agent with
+ * background work only: "Idle · 1 shell running". A pill with running subagents opens the subagent sheet.
+ */
+export function pillContent(status: BadgeStatus, background?: string, running = 0): PillContent {
+  const tappable = running > 0;
+  if (status === "working") {
+    const detail = tappable ? subagentCount(running) : undefined;
+    const spoken = statusSpoken(status);
+    return { status, label: STATUS_META[status].label, detail, tappable, spoken: detail ? `${spoken}, ${detail}` : spoken };
+  }
+  if (!SHOWN.includes(status) && tappable) {
+    const label = `${subagentCount(running)} running`;
+    return { status: "working", label, tappable, spoken: label };
+  }
+  const detail = QUIET.includes(status) ? background : undefined;
+  const spoken = statusSpoken(status);
+  return { status, label: STATUS_META[status].label, detail, tappable: false, spoken: detail ? `${spoken}, ${detail}` : spoken };
+}
 
 /** What VoiceOver says on a change: only work that finishes, and "Needs you". */
 export function announcement(from: BadgeStatus, to: BadgeStatus): string | undefined {
@@ -37,29 +66,35 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
 }
 
 /**
- * Agent status pill, the last item of the thread list (below the newest message). Working shows the
- * icon and "Working". The pill is centered, fades and slides in and out, and takes no height when hidden.
- * `subagents`: running subagents; while working, the pill adds " · 2 subagents".
+ * Agent status pill, the last item of the thread list (below the newest message). It is the one pill
+ * for the agent and its subagents. Working shows the icon and "Working". The pill is centered, fades and
+ * slides in and out, and takes no height when hidden.
+ * `subagents`: the subagents of the turn. While some run, the pill adds the count, shows a chevron and
+ * a tap opens the subagent sheet. A quiet agent with running subagents shows "2 subagents running".
  * `background`: background work of an idle agent ("1 shell running"); the pill shows "Idle · 1 shell running".
  */
 export const StatusRow = memo(function StatusRow({
   status,
-  subagents = 0,
+  subagents,
   background,
 }: {
   status: BadgeStatus;
-  subagents?: number;
+  subagents?: SubagentList;
   background?: string;
 }) {
   const reduced = useReducedMotion();
-  const visible = isStatusShown(status, background);
-  // Keep the last shown state, so the content stays while the row fades out.
-  const [shown, setShown] = useState<BadgeStatus>(visible ? status : "working");
+  const running = subagents?.running.length ?? 0;
+  const visible = isStatusShown(status, background, running);
+  const content = pillContent(status, background, running);
+  // Keep the last shown content, so the pill stays the same while the row fades out.
+  const [last, setLast] = useState<PillContent>(content);
+  const [open, setOpen] = useState(false);
   const progress = useSharedValue(visible ? 1 : 0);
   const prev = useRef(status);
 
   useEffect(() => {
-    if (visible) setShown(status);
+    if (visible) setLast(pillContent(status, background, running));
+    else setOpen(false);
     const to = visible ? 1 : 0;
     if (reduced) {
       progress.set(to);
@@ -67,7 +102,7 @@ export const StatusRow = memo(function StatusRow({
     }
     const ms = visible ? motion.stateMs : motion.stateMs * motion.exitRatio;
     progress.set(withTiming(to, { duration: ms, easing: EASE_OUT }));
-  }, [status, visible, reduced, progress]);
+  }, [status, background, running, visible, reduced, progress]);
 
   useEffect(() => {
     const said = announcement(prev.current, status);
@@ -75,12 +110,8 @@ export const StatusRow = memo(function StatusRow({
     if (said) AccessibilityInfo.announceForAccessibility(said);
   }, [status]);
 
-  const working = status === "working";
-  const { label, color } = STATUS_META[shown];
-  const bg = QUIET.includes(shown) ? background : undefined;
-  const subs = shown === "working" && subagents > 0 ? subagentCount(subagents) : bg;
-  const spoken = statusSpoken(shown);
-  const text = subs ? `${spoken}, ${subs}` : spoken;
+  const view = visible ? content : last;
+  const { color } = STATUS_META[view.status];
 
   const style = useAnimatedStyle(() => ({
     height: progress.get() * ROW_HEIGHT,
@@ -88,41 +119,59 @@ export const StatusRow = memo(function StatusRow({
     transform: [{ translateY: reduced ? 0 : (1 - progress.get()) * SLIDE }],
   }));
 
-  return (
-    <Animated.View
-      style={[{ overflow: "hidden" }, style]}
-      pointerEvents="none"
-      accessibilityElementsHidden={!visible}
-      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
-    >
-      <View
-        accessible={visible}
-        accessibilityRole="text"
-        accessibilityLabel={text}
-        style={{
-          alignSelf: "center",
-          marginTop: PILL_GAP,
-          height: PILL_HEIGHT,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: space.xs,
-          paddingHorizontal: space.lg,
-          borderRadius: radius.pill,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.raised,
-        }}
-      >
-        <StatusGlyph status={shown} glow={working} size={ROW_ICON} />
-        <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-          {label}
+  const body = (
+    <>
+      <StatusGlyph status={view.status} glow={view.status === "working"} size={ROW_ICON} />
+      <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+        {view.label}
+      </Text>
+      {view.detail ? (
+        <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
+          {`· ${view.detail}`}
         </Text>
-        {subs ? (
-          <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {`· ${subs}`}
-          </Text>
-        ) : null}
-      </View>
-    </Animated.View>
+      ) : null}
+      {view.tappable ? <ChevronRight size={16} color={colors.textMuted} /> : null}
+    </>
+  );
+  const pill = {
+    alignSelf: "center",
+    marginTop: PILL_GAP,
+    height: PILL_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.xs,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  } as const;
+
+  return (
+    <>
+      <Animated.View
+        style={[{ overflow: "hidden" }, style]}
+        pointerEvents={visible && view.tappable ? "box-none" : "none"}
+        accessibilityElementsHidden={!visible}
+        importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+      >
+        {view.tappable ? (
+          <Pressable
+            accessible={visible}
+            accessibilityRole="button"
+            accessibilityLabel={view.spoken}
+            accessibilityHint="Shows the subagents"
+            onPress={() => setOpen(true)}
+            style={({ pressed }) => ({ ...pill, backgroundColor: pressed ? colors.card : colors.raised })}
+          >
+            {body}
+          </Pressable>
+        ) : (
+          <View accessible={visible} accessibilityRole="text" accessibilityLabel={view.spoken} style={{ ...pill, backgroundColor: colors.raised }}>
+            {body}
+          </View>
+        )}
+      </Animated.View>
+      {subagents ? <SubagentSheet visible={open} list={subagents} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 });
