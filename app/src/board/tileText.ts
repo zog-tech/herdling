@@ -54,7 +54,7 @@ export function tileTitle(item: Pick<BoardItem, "agent" | "title">): string {
 }
 
 /** The last part of a folder path: `/home/sam/proj/` gives `proj`. The root folder gives `/`. */
-export function folderName(cwd: string | undefined): string | undefined {
+export function folderName(cwd: string | null | undefined): string | undefined {
   const path = nonEmpty(cwd);
   if (!path) return undefined;
   const parts = path.split("/").filter((s) => s.length > 0);

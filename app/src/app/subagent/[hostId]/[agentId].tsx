@@ -11,6 +11,8 @@ import { useSubagentThread } from "@/thread/useSubagentThread";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
+export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 export default function SubagentScreen() {
   const { hostId, agentId, log, title } = useLocalSearchParams<{
     hostId: string;

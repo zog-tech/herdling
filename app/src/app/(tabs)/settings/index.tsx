@@ -252,6 +252,13 @@ function VoiceSection() {
           detail="The last 20 speech and voice input events. Use it when a reply stays silent."
           chevron
         />
+        <Row
+          accessibilityLabel="Crash log"
+          onPress={() => router.push("/crash-log" as never)}
+          title="Crash log"
+          detail="The last 5 errors that closed the app or showed an error screen. It stays on this phone."
+          chevron
+        />
       </Group>
     </Section>
   );

@@ -4,6 +4,9 @@ import { useCallback, useEffect } from "react";
 import { dismissPaneNotifications } from "@/push/dismiss";
 import { SessionDetail } from "@/thread/SessionDetail";
 
+// A render error in the session shows the error screen, not a closed app.
+export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 /**
  * The session as a pushed screen: compact width (phones), and the route of pushes and deep links.
  * In regular width `LayoutSync` moves it into the detail column of Overview.

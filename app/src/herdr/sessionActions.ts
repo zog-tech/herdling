@@ -18,12 +18,18 @@ function cwdOf(a: AgentInfo): string {
   return a.cwd;
 }
 
+/** The agent kind. herdr sends null while it has not detected the agent yet. */
+function kindOf(a: AgentInfo): string {
+  if (!a.agent) throw new RpcError("no_kind", "herdr has not detected this agent yet");
+  return a.agent;
+}
+
 /**
  * herdr has no agent stop: start the same kind in a new tab of the same workspace, then close
  * the old pane. A failed start leaves the old pane as it was.
  */
 export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: string; closeError?: string }> {
-  const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: a.agent, workspaceId: a.workspace_id });
+  const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: kindOf(a), workspaceId: a.workspace_id });
   // The new agent runs, so do not throw: the caller opens it and offers to close the old one.
   try {
     await herdr(rpc, "pane.close", { pane_id: a.pane_id });
@@ -62,7 +68,7 @@ export function canResume(hello: Hello | undefined, kind: string): boolean {
 
 /** Opens an earlier session of the same agent in a new tab. The current pane stays. */
 export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Promise<{ paneId: string }> {
-  return resumeInFolder(rpc, { cwd: cwdOf(a), kind: a.agent, session, workspaceId: a.workspace_id });
+  return resumeInFolder(rpc, { cwd: cwdOf(a), kind: kindOf(a), session, workspaceId: a.workspace_id });
 }
 
 /**

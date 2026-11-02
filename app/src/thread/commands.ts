@@ -94,8 +94,8 @@ export function useCommands(
 ): { supported: boolean; triggers: readonly Trigger[]; commands: CommandInfo[] | undefined } {
   const { rpc, hello, status } = useHostConn(hostId);
   const agent = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId));
-  const kind = agent?.agent;
-  const cwd = agent?.cwd;
+  const kind = agent?.agent ?? undefined;
+  const cwd = agent?.cwd ?? undefined;
   const supported = hasMethod(hello, "commands.list") && commandsApply(kind, hello?.command_kinds);
   const key = `${hostId}\n${listKind(kind)}\n${cwd ?? `pane:${paneId}`}`;
   const [got, setGot] = useState<{ key: string; commands: CommandInfo[] }>();

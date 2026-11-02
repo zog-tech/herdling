@@ -42,6 +42,8 @@ import { MicButton } from "@/voice/MicButton";
 import { appendDictation, hostTranscriber } from "@/voice/transcribe";
 import { useDictation } from "@/voice/useDictation";
 
+export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 /** Wait this long on a folder before `git.status` runs: browsing passes many folders quickly. */
 const GIT_STATUS_DELAY_MS = 300;
 

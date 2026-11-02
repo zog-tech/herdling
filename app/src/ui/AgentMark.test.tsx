@@ -41,3 +41,21 @@ test("every_logo_has_a_path_and_a_view_box", () => {
     expect(logo.viewBox).toBe("0 0 24 24");
   }
 });
+
+test("a_missing_or_empty_kind_draws_a_plain_tile_and_does_not_throw", () => {
+  // herdr sends `agent: null` while a new agent starts.
+  for (const kind of [null, undefined, "", "  "]) {
+    const t = render(<AgentMark kind={kind} />);
+    expect(t.root.findAllByType(Svg)).toHaveLength(0);
+  }
+  expect(agentLetters(null)).toBe("");
+  expect(agentTint(undefined)).toBe(agentTint("other-kind"));
+});
+
+test("a_kind_named_like_an_object_property_uses_the_letter_badge", () => {
+  for (const kind of ["constructor", "toString", "__proto__"]) {
+    const t = render(<AgentMark kind={kind} />);
+    expect(t.root.findAllByType(Svg)).toHaveLength(0);
+    expect(agentTint(kind)).toBe(agentTint("other-kind"));
+  }
+});

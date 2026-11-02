@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import { PeekSheet } from "@/board/PeekSheet";
 import { useDraftGuard } from "@/ui/draftGuard";
 
+export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
+
 /** The Board's peek sheet (a native form sheet). `reply=1` focuses the composer. A draft asks before the sheet closes. */
 export default function PeekScreen() {
   const { hostId, paneId, reply } = useLocalSearchParams<{ hostId: string; paneId: string; reply?: string }>();
