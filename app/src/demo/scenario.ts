@@ -563,6 +563,12 @@ export class DemoScenario {
       case "clear":
         this.shell(paneId).lines = [];
         return [];
+      case "pnpm":
+        if (args[0] === "test") {
+          const file = args[1] ?? "tests";
+          return [` ✓ ${file} (12 tests) 412ms`, "", " Test Files  1 passed (1)", "      Tests  12 passed (12)"];
+        }
+        return [`${name}: commands do not run in the demo`];
       default:
         return [`${name}: commands do not run in the demo`];
     }
@@ -894,7 +900,7 @@ export class DemoScenario {
           id: this.id(),
           ts: now - 7 * min,
           markdown:
-            "Added **12 tests** for the signup flow in `tests/signup.test.ts`:\n\n- valid and invalid emails\n- a password that is too short\n- the error message when the email is already in use\n\nAll tests pass.",
+            "Added **12 tests** for the signup flow in `tests/signup.test.ts`:\n\n- valid and invalid emails\n- a password that is too short\n- the error message when the email is already in use\n\nAll tests pass. Run them yourself with:\n\n```bash\npnpm test tests/signup.test.ts\n```",
         },
       ],
     });
