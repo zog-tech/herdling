@@ -52,6 +52,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Run a command from a reply.** A shell code block in a reply (`bash`, `sh`, `zsh`, `shell`,
+  `console`, `terminal`, `fish`, `shellsession`) has a Run button, and its long-press menu has
+  "Run in shell…". The run sheet shows the command for an edit. It runs the command in a new shell
+  in the agent's folder or in an existing terminal on the same host, then opens that terminal.
+  A busy terminal shows the name of its process. Over-the-air update, no new build and no new
+  `herdlingd`.
 - **Shell sessions.** New session has a "Shell" choice before the agents. It opens a plain terminal
   in the folder, with no agent. A command in the "Command (optional)" box runs when the shell is
   ready. The session screen shows a pane with no agent in Terminal mode only, with Changes,

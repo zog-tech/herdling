@@ -1,20 +1,28 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
+import { Play } from "lucide-react-native";
 import { createContext, memo, useContext } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useHostConn } from "@/hosts/connection";
 import { fontFamily } from "@/theme/fonts";
-import { colors, radius, space, themed, type } from "@/theme/tokens";
+import { colors, hitTarget, icon, radius, space, state, themed, type } from "@/theme/tokens";
+import * as haptics from "@/ui/haptics";
 import { HScrollView } from "../HScrollView";
 import { ThreadLink } from "../LinkText";
 import { findLinks, replyMarkdownIt } from "../links";
+import { ThreadPaneContext } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
 import type { MenuTarget } from "../rowMenu";
+import { openRunSheet, runnableCommand } from "../runCommand";
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
 const CODE = type.size.small - 1;
 /** Width of one table column. */
 const TABLE_COL = 140;
+/** The visible box of the Run button; `hitSlop` makes the touch area `hitTarget`. */
+const RUN_BOX = 28;
+const RUN_SLOP = (hitTarget - RUN_BOX) / 2;
 
 /** The reply parser: it also links bare URLs that have a scheme (see `links.ts`). */
 const markdownit = replyMarkdownIt();
@@ -32,21 +40,50 @@ const ReplyMenu = createContext<MenuTarget | null>(null);
  * Code block: JetBrains Mono, scrolls sideways instead of wrapping. A long press opens the reply
  * menu with "Copy code" (this block only) on top. The text is not `selectable`: on iOS that adds
  * its own long press, which fights the menu. "Select text" in the menu is the way to copy a part.
+ * A shell block in a live session thread also gets a Run button (top right) and "Run in shell…".
  */
-function CodeBlock({ content }: { content: string }) {
+function CodeBlock({ content, lang }: { content: string; lang?: string }) {
   const reply = useContext(ReplyMenu);
+  const pane = useContext(ThreadPaneContext);
+  const online = useHostConn(pane?.hostId ?? "").status === "online";
   const text = content.endsWith("\n") ? content.slice(0, -1) : content;
+  const command = pane ? runnableCommand(lang, text) : null;
+  const run = command !== null && online ? command : undefined;
   return (
-    <MenuPressable menu={reply ? { ...reply, code: text } : null} accessible={false}>
-      <HScrollView showsHorizontalScrollIndicator={false} style={styles().codeScroll} contentContainerStyle={{ padding: space.md }}>
-        <Text style={styles().codeText}>{text}</Text>
-      </HScrollView>
+    <MenuPressable menu={reply ? { ...reply, code: text, run } : null} accessible={false}>
+      <View>
+        <HScrollView
+          showsHorizontalScrollIndicator={false}
+          style={styles().codeScroll}
+          // Room on the right so the end of a long first line can scroll out from under the button.
+          contentContainerStyle={{ padding: space.md, paddingRight: command !== null ? space.md + RUN_BOX : space.md }}
+        >
+          <Text style={styles().codeText}>{text}</Text>
+        </HScrollView>
+        {pane && command !== null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Run command"
+            accessibilityHint="Opens the run sheet"
+            accessibilityState={{ disabled: !online }}
+            disabled={!online}
+            hitSlop={RUN_SLOP}
+            onPress={() => {
+              haptics.tap();
+              openRunSheet({ hostId: pane.hostId, paneId: pane.paneId, command });
+            }}
+            style={({ pressed }) => [styles().runButton, { opacity: !online ? state.offlineOpacity : pressed ? state.pressedOpacity : 1 }]}
+          >
+            <Play size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+          </Pressable>
+        ) : null}
+      </View>
     </MenuPressable>
   );
 }
 
 const rules: RenderRules = {
-  fence: (node) => <CodeBlock key={node.key} content={node.content} />,
+  fence: (node) => <CodeBlock key={node.key} content={node.content} lang={node.sourceInfo} />,
   code_block: (node) => <CodeBlock key={node.key} content={node.content} />,
   // A table scrolls sideways inside its own box; it never draws outside the message.
   table: (node, children, _parent, s) => (
@@ -129,6 +166,17 @@ const styles = themed(() =>
   StyleSheet.create({
     codeScroll: { backgroundColor: colors.sunken, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
     codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
+    runButton: {
+      position: "absolute",
+      top: space.xs,
+      right: space.xs,
+      width: RUN_BOX,
+      height: RUN_BOX,
+      borderRadius: radius.sm,
+      backgroundColor: colors.raised,
+      alignItems: "center",
+      justifyContent: "center",
+    },
   }),
 );
 

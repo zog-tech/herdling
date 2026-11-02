@@ -93,6 +93,7 @@ describe("rowActions", () => {
     expect(rowActions(t("user"), PANE)).toEqual(["copy", "select", "share", "quote"]);
     expect(rowActions(t("assistant", { id: "a1" }), PANE)).toEqual(["copy", "select", "share", "read", "quote"]);
     expect(rowActions(t("assistant", { id: "a1", code: "ls" }), PANE)).toEqual(["copyCode", "copy", "select", "share", "read", "quote"]);
+    expect(rowActions(t("assistant", { id: "a1", code: "ls", run: "ls" }), PANE)).toEqual(["copyCode", "run", "copy", "select", "share", "read", "quote"]);
     expect(rowActions(t("thinking"), PANE)).toEqual(["copy", "select"]);
     expect(rowActions(t("tool"), PANE)).toEqual(["copy", "select"]);
     expect(rowActions(t("subagent"), PANE)).toEqual(["copy", "select"]);
@@ -103,6 +104,7 @@ describe("rowActions", () => {
     // The peek sheet and a subagent thread have no live pane.
     expect(rowActions(t("assistant", { id: "a1" }), null)).toEqual(["copy", "select", "share"]);
     expect(rowActions(t("user"), null)).toEqual(["copy", "select", "share"]);
+    expect(rowActions(t("assistant", { code: "ls", run: "ls" }), null)).toEqual(["copyCode", "copy", "select", "share"]);
   });
 });
 

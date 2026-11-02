@@ -8,6 +8,7 @@ import { showNotice } from "@/ui/notice";
 import type { ThreadPane } from "./LiveToolContext";
 import { plainText } from "./plainText";
 import { requestQuote } from "./quote";
+import { openRunSheet } from "./runCommand";
 import { openSelectText } from "./selectText";
 import { fullInputText, type ToolResult } from "./toolView";
 
@@ -30,9 +31,11 @@ export type MenuTarget = {
   id?: string;
   /** The code of the code block under the finger, inside a reply. */
   code?: string;
+  /** The command of that code block when it is a shell block that can run (host online). */
+  run?: string;
 };
 
-export type RowAction = "copyCode" | "copy" | "copyMarkdown" | "select" | "share" | "read" | "quote";
+export type RowAction = "copyCode" | "run" | "copy" | "copyMarkdown" | "select" | "share" | "read" | "quote";
 
 /** What a reader sees: a reply without its markdown marks. Other rows are plain already. */
 export function readableText(t: MenuTarget): string {
@@ -46,6 +49,8 @@ export function readableText(t: MenuTarget): string {
 export function rowActions(t: MenuTarget, pane: ThreadPane | null): RowAction[] {
   const out: RowAction[] = [];
   if (t.code !== undefined) out.push("copyCode");
+  // Run needs the pane of the reply: the run sheet offers the terminals of its host.
+  if (t.run !== undefined && pane) out.push("run");
   out.push("copy");
   // Only offered when the reply has markdown marks; otherwise both copies are the same.
   if (t.kind === "assistant" && plainText(t.text) !== t.text.trim()) out.push("copyMarkdown");
@@ -62,6 +67,8 @@ export function actionLabel(a: RowAction, t: MenuTarget): string {
   switch (a) {
     case "copyCode":
       return "Copy code";
+    case "run":
+      return "Run in shell…";
     case "copy":
       return "Copy";
     case "copyMarkdown":
@@ -114,6 +121,9 @@ export function runRowAction(a: RowAction, t: MenuTarget, pane: ThreadPane | nul
   switch (a) {
     case "copyCode":
       void copyText(t.code ?? "", "Code copied");
+      return;
+    case "run":
+      if (pane && t.run !== undefined) openRunSheet({ hostId: pane.hostId, paneId: pane.paneId, command: t.run });
       return;
     case "copy":
       void copyText(readableText(t));
