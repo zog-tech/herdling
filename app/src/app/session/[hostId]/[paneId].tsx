@@ -12,7 +12,7 @@ export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
  * In regular width `LayoutSync` moves it into the detail column of Overview.
  */
 export default function SessionScreen() {
-  const { hostId, paneId, prompt, promptError, from } = useLocalSearchParams<{
+  const { hostId, paneId, prompt, promptError, from, shell } = useLocalSearchParams<{
     hostId: string;
     paneId: string;
     /** Set by New session when the first prompt failed after the agent started. */
@@ -20,6 +20,8 @@ export default function SessionScreen() {
     promptError?: string;
     /** "push" when a notification opened the session. */
     from?: string;
+    /** "1" when New session opened a plain shell: a terminal before the snapshot shows the pane. */
+    shell?: string;
   }>();
   const router = useRouter();
   const openPane = useCallback((target: string) => router.replace(`/session/${hostId}/${target}` as never), [router, hostId]);
@@ -35,6 +37,7 @@ export default function SessionScreen() {
       prompt={prompt}
       promptError={promptError}
       from={from}
+      shell={shell === "1"}
       active
       header="native"
       onOpenPane={openPane}

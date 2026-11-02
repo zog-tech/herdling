@@ -65,6 +65,26 @@ describe("DemoScenario seed", () => {
     s.stop();
   });
 
+  it("has one plain shell with no agent that answers typed commands", () => {
+    const s = make();
+    const snap = s.snapshot();
+    const shells = snap.panes.filter((p) => !snap.agents.some((a) => a.pane_id === p.pane_id));
+    expect(shells.map((p) => p.pane_id)).toEqual(["p6"]);
+    expect(shells[0].cwd).toBe("/home/demo/projects/webapp");
+    expect(s.resolve("p6").log_path).toBeNull();
+    s.sendText("p6", "pwd");
+    s.sendKeys("p6", ["enter"]);
+    expect(s.screen("p6").split("\n").slice(-3)).toEqual(["demo@demo:~/projects/webapp$ pwd", "/home/demo/projects/webapp", "demo@demo:~/projects/webapp$ "]);
+    s.stop();
+  });
+
+  it("keeps the folder of a new tab, so a new shell has its folder", () => {
+    const s = make();
+    const { root_pane } = s.createWorkspace("/home/demo/projects/api-server");
+    expect(s.snapshot().panes.find((p) => p.pane_id === root_pane.pane_id)?.cwd).toBe("/home/demo/projects/api-server");
+    s.stop();
+  });
+
   it("the working Claude agent has a running subagent with its own log", () => {
     const s = make();
     const sub = s.items("p1").find((i) => i.kind === "subagent");

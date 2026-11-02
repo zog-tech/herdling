@@ -1,4 +1,4 @@
-import { agentName, startSession } from "./startSession";
+import { agentName, startSession, startShell } from "./startSession";
 
 function fakeRpc() {
   const calls: { method: string; params: any; timeoutMs?: number }[] = [];
@@ -137,6 +137,73 @@ describe("startSession", () => {
     await startSession(rpc, { cwd: "/b/proj", kind: "claude", prompt: "two", workspaceId: "w1" });
     expect(starts[0].name).not.toBe(starts[1].name);
     expect(prompts.map((p) => p.target)).toEqual(["w1:p1", "w1:p2"]);
+  });
+});
+
+describe("startShell", () => {
+  /** A herdr whose fresh shell takes `busy` polls of `pane.process_info` to reach the foreground. */
+  function shellRpc(busy = 0, opts: { noProcessInfo?: boolean; sendFails?: boolean } = {}) {
+    const calls: { method: string; params: any }[] = [];
+    let polls = 0;
+    return {
+      calls,
+      call: async (_m: string, p: any) => {
+        calls.push(p);
+        if (p.method === "workspace.create" || p.method === "tab.create") return { root_pane: { pane_id: "w1:p1" } };
+        if (p.method === "pane.process_info") {
+          if (opts.noProcessInfo) throw Object.assign(new Error("unknown variant"), { code: "invalid_request" });
+          return polls++ < busy
+            ? { process_info: { shell_pid: null } }
+            : { process_info: { shell_pid: 41, foreground_process_group_id: 41 } };
+        }
+        if (p.method === "pane.send_input" && opts.sendFails) throw Object.assign(new Error("pane_not_found"), { code: "pane_not_found" });
+        return { type: "ok" };
+      },
+    } as any;
+  }
+
+  it("creates_a_workspace_and_starts_no_agent", async () => {
+    const rpc = shellRpc();
+    const progress: string[] = [];
+    await expect(startShell(rpc, { cwd: "/home/sam/proj", onProgress: (l) => progress.push(l) })).resolves.toEqual({ paneId: "w1:p1" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create"]);
+    expect(rpc.calls[0].params).toEqual({ cwd: "/home/sam/proj", label: "proj", focus: false });
+    expect(progress).toEqual(["Creating workspace…"]);
+  });
+
+  it("adds_a_tab_to_an_existing_workspace", async () => {
+    const rpc = shellRpc();
+    await startShell(rpc, { cwd: "/home/sam/proj", workspaceId: "w9", command: "  " });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create"]);
+    expect(rpc.calls[0].params).toEqual({ workspace_id: "w9", cwd: "/home/sam/proj", focus: false });
+  });
+
+  it("waits_for_the_shell_then_types_the_command_and_enter", async () => {
+    jest.useFakeTimers();
+    const rpc = shellRpc(2);
+    const done = startShell(rpc, { cwd: "/home/sam/proj", command: " npm test \n" });
+    await jest.advanceTimersByTimeAsync(2000);
+    await expect(done).resolves.toEqual({ paneId: "w1:p1" });
+    const methods = rpc.calls.map((c: any) => c.method);
+    expect(methods).toEqual(["workspace.create", "pane.process_info", "pane.process_info", "pane.process_info", "pane.send_input"]);
+    expect(rpc.calls.at(-1).params).toEqual({ pane_id: "w1:p1", text: "npm test", keys: ["enter"] });
+    jest.useRealTimers();
+  });
+
+  it("sends_the_command_when_herdr_has_no_process_info", async () => {
+    const rpc = shellRpc(0, { noProcessInfo: true });
+    await expect(startShell(rpc, { cwd: "/a/b", command: "ls" })).resolves.toEqual({ paneId: "w1:p1" });
+    expect(rpc.calls.at(-1)).toEqual({ method: "pane.send_input", params: { pane_id: "w1:p1", text: "ls", keys: ["enter"] } });
+  });
+
+  it("returns_command_error_and_keeps_the_pane", async () => {
+    const rpc = shellRpc(0, { sendFails: true });
+    await expect(startShell(rpc, { cwd: "/a/b", command: "ls" })).resolves.toEqual({ paneId: "w1:p1", commandError: "pane_not_found" });
+    expect(rpc.calls.map((c: any) => c.method)).not.toContain("workspace.close");
+  });
+
+  it("fails_when_no_pane_returned", async () => {
+    await expect(startShell({ call: async () => ({}) } as any, { cwd: "/a" })).rejects.toThrow("pane");
   });
 });
 

@@ -52,6 +52,12 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Shell sessions.** New session has a "Shell" choice before the agents. It opens a plain terminal
+  in the folder, with no agent. A command in the "Command (optional)" box runs when the shell is
+  ready. The session screen shows a pane with no agent in Terminal mode only, with Changes,
+  Preview and Close in its menu. The board lists these panes under "Terminals", after the agents.
+  The demo has one shell. Shell is not remembered as the agent of the host. Over-the-air update,
+  no new build and no new `herdlingd`.
 - **Error screens and a crash log.** A render error on a screen now shows "Something went wrong"
   with the message, Retry and Back, and the app stays open. Overview, the session, the peek sheet,
   the subagent thread, New session and the root layout each have this screen. A fatal JavaScript

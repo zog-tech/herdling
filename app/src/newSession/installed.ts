@@ -31,3 +31,11 @@ export function pickerOrder(info: AgentsInstalled | undefined): string[] {
   const missing = (k: string) => availability(k, info) === "missing";
   return [...PICKER_KINDS.filter((k) => !missing(k)), ...PICKER_KINDS.filter(missing)];
 }
+
+/** The picker choice that starts a plain shell with no agent. It is not an agent kind and is never remembered. */
+export const SHELL_CHOICE = "shell";
+
+/** Every choice of the picker: Shell first (it needs nothing installed), then the agents in `pickerOrder`. */
+export function pickerChoices(info: AgentsInstalled | undefined): string[] {
+  return [SHELL_CHOICE, ...pickerOrder(info)];
+}

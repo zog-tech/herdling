@@ -3,7 +3,7 @@ import type { Hello } from "@herdling/protocol";
 import { DEFAULT_KIND, FEATURED_KINDS, PICKER_KINDS } from "@/herdr/agentKinds";
 
 import { agentFor, rememberAgent, useAgentMemory } from "./agentMemory";
-import { availability, fetchInstalled, pickerOrder } from "./installed";
+import { availability, fetchInstalled, pickerChoices, pickerOrder, SHELL_CHOICE } from "./installed";
 
 const hello = (methods?: string[]): Hello => ({ host: "studio.local", os: "macos", herdlingd: "0.1.1", herdr_ok: true, methods });
 
@@ -56,6 +56,15 @@ describe("installed agents", () => {
     expect(order.slice(0, 2)).toEqual(["claude", "pi"]);
     expect(order.slice(-2)).toEqual(["codex", "cursor"]);
     expect(order).toHaveLength(PICKER_KINDS.length);
+  });
+
+  it("puts Shell first, always available, before the agents", () => {
+    const info = { installed: ["claude"], missing: ["codex"] };
+    expect(pickerChoices(info)).toEqual([SHELL_CHOICE, ...pickerOrder(info)]);
+    expect(pickerChoices(undefined)[0]).toBe(SHELL_CHOICE);
+    expect(availability(SHELL_CHOICE, info)).toBe("unknown");
+    // Shell is not an agent kind: a remembered "shell" falls back to the default agent.
+    expect(agentFor({ h1: SHELL_CHOICE }, "h1")).toBe(DEFAULT_KIND);
   });
 
   it("starts the picker with the agents that have a chat view", () => {

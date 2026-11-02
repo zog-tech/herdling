@@ -39,6 +39,13 @@ export type PaneInfo = {
   workspace_id: string;
   /** The pane's own label (`pane.rename`); null or missing when it has none. */
   label?: string | null;
+  /** The agent kind in the pane; missing or null for a pane with no agent (a plain shell). */
+  agent?: string | null;
+  /** The folder of the pane, and the folder of its foreground process. */
+  cwd?: string | null;
+  foreground_cwd?: string | null;
+  /** The terminal title with the status marks removed. */
+  terminal_title_stripped?: string | null;
 };
 
 export type Snapshot = {

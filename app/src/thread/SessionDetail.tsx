@@ -1,5 +1,6 @@
 /**
  * One session: the chat (Thread) or the terminal, the composer, search and the session actions.
+ * A pane with no agent (a terminal, such as a plain shell) shows only the terminal.
  * The session route shows it full screen, with `SessionHeader` in the native header. The detail
  * column of Overview (regular width) shows it with `SessionHeader` as a plain row on top.
  */
@@ -25,6 +26,7 @@ import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
 import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
@@ -51,6 +53,7 @@ import { Segmented } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { AgentMark } from "@/ui/AgentMark";
+import { TerminalMark } from "@/ui/TerminalMark";
 import { Text } from "@/ui/Text";
 import { sessionKey, useSessionSpeak, useSpeakEnabled } from "@/voice/settings";
 import { stopSpeaking, useSpeakReplies, useSpeaking } from "@/voice/useSpeakReplies";
@@ -86,12 +89,15 @@ function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: 
 
 /**
  * Restart, Resume (agents with a resume flag), Changes, Preview, the three renames and Close for
- * the session's agent. `openPane` shows another pane in place of this one (after a restart).
- * `closed` runs after Close. `ports` is undefined when the preview does not show for this host.
+ * the session's agent. A terminal (`terminal` true, no agent) gets Changes, Preview and Close only.
+ * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
+ * `ports` is undefined when the preview does not show for this host.
  */
 function useSessionMenu(
   hostId: string,
+  paneId: string,
   agent: AgentInfo | undefined,
+  terminal: boolean,
   openPane: (paneId: string) => void,
   closed: () => void,
   ports?: PortInfo[],
@@ -115,49 +121,51 @@ function useSessionMenu(
   );
 
   const open = useCallback(() => {
-    if (!rpc || !agent || busy) return;
-    const items: { label: string; destructive?: boolean; onPick: () => void }[] = [
-      {
+    if (!rpc || !(agent || terminal) || busy) return;
+    const items: { label: string; destructive?: boolean; onPick: () => void }[] = [];
+    if (agent) {
+      items.push({
         label: "Restart",
         destructive: true,
         onPick: async () => {
           const ok = await confirmRestart();
           if (ok) run("Restarting…", "Can't restart", () => restartConfirmed(rpc, agent, openPane));
         },
-      },
-    ];
-    if (agent.agent && canResume(hello, agent.agent)) {
+      });
+    }
+    if (agent?.agent && canResume(hello, agent.agent)) {
       items.push({
         label: "Resume older session",
-        onPick: () => router.push(`/resume/${hostId}/${agent.pane_id}` as never),
+        onPick: () => router.push(`/resume/${hostId}/${paneId}` as never),
       });
     }
     if (listsMethod(hello, "git.status")) {
-      items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${agent.pane_id}` as never) });
+      items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${paneId}` as never) });
     }
     if (ports) {
       items.push({
         label: ports.length > 0 ? `Preview (${ports.length})` : "Preview",
         // After the menu closes, so the two sheets do not overlap.
         onPick: () =>
-          setTimeout(() => showPortSheet(hostId, agent.pane_id, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
+          setTimeout(() => showPortSheet(hostId, paneId, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
       });
     }
-    items.push(
-      ...renameItems(rpc, hostId, agent),
-      {
-        label: "Close",
-        destructive: true,
-        onPick: async () => {
-          const ok = await confirmDestructive("Close this agent?", "The agent stops and its pane closes.", "Close");
-          if (ok)
-            run("Closing…", "Can't close", async () => {
-              await closeAgent(rpc, agent.pane_id);
-              closed();
-            });
-        },
+    if (agent) items.push(...renameItems(rpc, hostId, agent));
+    const [what, detail] = agent
+      ? ["Close this agent?", "The agent stops and its pane closes."]
+      : ["Close this terminal?", "The shell and the programs in it stop, and the pane closes."];
+    items.push({
+      label: "Close",
+      destructive: true,
+      onPick: async () => {
+        const ok = await confirmDestructive(what, detail, "Close");
+        if (ok)
+          run("Closing…", "Can't close", async () => {
+            await closeAgent(rpc, paneId);
+            closed();
+          });
       },
-    );
+    });
     const options = [...items.map((i) => i.label), "Cancel"];
     showActionSheet(
       {
@@ -167,9 +175,9 @@ function useSessionMenu(
       },
       (i) => items[i]?.onPick(),
     );
-  }, [rpc, hello, agent, busy, run, router, hostId, openPane, closed, ports]);
+  }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports]);
 
-  return { open, busy, enabled: !!rpc && !!agent && !busy, ports };
+  return { open, busy, enabled: !!rpc && (!!agent || terminal) && !busy, ports };
 }
 
 const SWIPE_DISTANCE = 80;
@@ -326,15 +334,17 @@ function ThreadBody({
 
 type Menu = ReturnType<typeof useSessionMenu>;
 
-/** The agent mark, then the title (long press for the menu) and "host · agent" or the busy text of the menu. */
+/** The agent (or terminal) mark, then the title (long press for the menu) and "host · agent" or the busy text of the menu. */
 function SessionTitle({
   kind,
+  terminal,
   title,
   subtitle,
   menu,
   inline,
 }: {
   kind: string | undefined;
+  terminal: boolean;
   title: string;
   subtitle: string;
   menu: Menu;
@@ -354,7 +364,7 @@ function SessionTitle({
         ...(inline ? { flex: 1 } : { maxWidth: 240 }),
       }}
     >
-      {kind ? <AgentMark kind={kind} size={28} /> : null}
+      {terminal ? <TerminalMark size={28} /> : kind ? <AgentMark kind={kind} size={28} /> : null}
       <View style={{ flexShrink: 1, justifyContent: "center", alignItems: inline ? "flex-start" : "center" }}>
         <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
           {title}
@@ -367,15 +377,15 @@ function SessionTitle({
   );
 }
 
-/** The speaker switch (or "Stop reading" while speech plays) and the session actions button. */
-function SessionActions({ hostId, paneId, menu }: { hostId: string; paneId: string; menu: Menu }) {
+/** The speaker switch (or "Stop reading" while speech plays) and the session actions button. A terminal has no replies to speak. */
+function SessionActions({ hostId, paneId, menu, terminal }: { hostId: string; paneId: string; menu: Menu; terminal: boolean }) {
   const speakOn = useSpeakEnabled(hostId, paneId);
   const setSpeak = useSessionSpeak((s) => s.setSpeak);
   const speaking = useSpeaking((s) => s.speaking);
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       {/* While speech plays, the speaker button stops it. The speaker setting stays as it is. */}
-      {speaking ? (
+      {terminal ? null : speaking ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Stop reading"
@@ -431,6 +441,7 @@ export function SessionHeader({
   hostId,
   paneId,
   kind,
+  terminal = false,
   title,
   subtitle,
   menu,
@@ -440,6 +451,8 @@ export function SessionHeader({
   paneId: string;
   /** The agent kind, for the mark before the title. Unknown: no mark. */
   kind: string | undefined;
+  /** A pane with no agent: the terminal mark, and no speaker switch. */
+  terminal?: boolean;
   title: string;
   subtitle: string;
   menu: Menu;
@@ -448,16 +461,16 @@ export function SessionHeader({
     return (
       <Stack.Screen
         options={{
-          headerTitle: () => <SessionTitle kind={kind} title={title} subtitle={subtitle} menu={menu} inline={false} />,
-          headerRight: () => <SessionActions hostId={hostId} paneId={paneId} menu={menu} />,
+          headerTitle: () => <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline={false} />,
+          headerRight: () => <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />,
         }}
       />
     );
   }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingLeft: space.lg, paddingRight: space.xs }}>
-      <SessionTitle kind={kind} title={title} subtitle={subtitle} menu={menu} inline />
-      <SessionActions hostId={hostId} paneId={paneId} menu={menu} />
+      <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline />
+      <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />
     </View>
   );
 }
@@ -471,6 +484,11 @@ export type SessionDetailProps = {
   /** "push" when a notification opened the session. */
   from?: string;
   /**
+   * New session opened a plain shell here. Until the snapshot shows the pane, the screen treats it
+   * as a terminal. Afterwards the snapshot decides: an agent in the pane gets the Thread again.
+   */
+  shell?: boolean;
+  /**
    * False when this session must not poll, speak or take shortcuts, although its screen has the
    * focus. The route passes true. The detail column passes true for the selected pane only.
    */
@@ -479,7 +497,7 @@ export type SessionDetailProps = {
   header: "native" | "inline";
   /** Shows another pane of the same host in place of this one (swipe, ⌘[ ⌘], restart). */
   onOpenPane: (paneId: string) => void;
-  /** Runs after Close stopped the agent. */
+  /** Runs after Close stopped the agent or closed the terminal. */
   onClosed: () => void;
   /** ⌘[ and ⌘] go to the previous or next agent of the workspace. The detail column moves on the board instead. */
   neighborShortcuts?: boolean;
@@ -491,6 +509,7 @@ export function SessionDetail({
   prompt,
   promptError,
   from,
+  shell = false,
   active,
   header,
   onOpenPane,
@@ -518,21 +537,32 @@ export function SessionDetail({
   }, [hostId, paneId, seq]);
 
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
-  const title = agent && snapshot ? agentTitle(snapshot, agent) : thread.ref?.kind || paneId;
-  const kind = agent ? agentKind(agent) : thread.ref?.kind;
+  // A terminal: a pane with no agent, or the new shell that the snapshot does not show yet.
+  const termPane = agent ? undefined : terminalPane(snapshot, paneId);
+  const terminal = !agent && (!!termPane || (shell && !snapshot?.panes.some((p) => p.pane_id === paneId)));
+  const view: Mode = terminal ? "terminal" : mode;
+  const folder = termPane ? terminalFolder(termPane) : undefined;
+  const title = terminal
+    ? termPane
+      ? terminalTitle(termPane)
+      : "Terminal"
+    : agent && snapshot
+      ? agentTitle(snapshot, agent)
+      : thread.ref?.kind || paneId;
+  const kind = terminal ? undefined : agent ? agentKind(agent) : thread.ref?.kind;
   const badge: BadgeStatus = conn.status !== "online" ? "offline" : (agent?.agent_status ?? "unknown");
   const background = useSessionBackground(hostId, paneId, agent?.agent_status, focused && conn.status === "online");
   // Browser preview: only on a build and a herdlingd that have it. The port list loads while the session is in view.
   const previewOn = usePreviewSupported(hostId);
   const livePorts = usePorts(hostId, paneId, previewOn && focused);
   const ports = previewOn ? (livePorts ?? []) : undefined;
-  const menu = useSessionMenu(hostId, agent, onOpenPane, onClosed, ports);
+  const menu = useSessionMenu(hostId, paneId, agent, terminal, onOpenPane, onClosed, ports);
 
   // Search: in the thread items (Thread) or in the visible terminal text (Terminal).
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const threadSearch = useThreadSearch(thread, searchOpen && mode === "thread", query);
-  const termQuery = useDebounced(searchOpen && mode === "terminal" ? query : "", SEARCH_DEBOUNCE_MS);
+  const threadSearch = useThreadSearch(thread, searchOpen && view === "thread", query);
+  const termQuery = useDebounced(searchOpen && view === "terminal" ? query : "", SEARCH_DEBOUNCE_MS);
   const [termCount, setTermCount] = useState(0);
   /** -1: the last (newest) match. */
   const [termIndex, setTermIndex] = useState(-1);
@@ -553,8 +583,8 @@ export function SessionDetail({
     sendKey(rpc, paneId, key).catch((e) => Alert.alert("Can't send the key", message(e)));
   };
   useKeyCommand("interrupt", () => pressKey("ctrl+c"), { enabled: focused });
-  useKeyCommand("escape", () => pressKey("esc"), { enabled: focused && mode === "terminal" });
-  useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused });
+  useKeyCommand("escape", () => pressKey("esc"), { enabled: focused && view === "terminal" });
+  useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused && !terminal });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
   useKeyCommand("prevAgent", () => neighbors.prev && onOpenPane(neighbors.prev), { enabled: focused && neighborShortcuts });
   useKeyCommand("nextAgent", () => neighbors.next && onOpenPane(neighbors.next), { enabled: focused && neighborShortcuts });
@@ -567,16 +597,24 @@ export function SessionDetail({
         hostId={hostId}
         paneId={paneId}
         kind={kind}
+        terminal={terminal}
         title={title}
-        subtitle={kind ? `${hostName} · ${kind}` : hostName}
+        subtitle={terminal ? `${hostName} · Terminal` : kind ? `${hostName} · ${kind}` : hostName}
         menu={menu}
       />
       <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingLeft: space.lg, paddingRight: space.xs }}>
-          <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ flex: 1 }} />
+          {terminal ? (
+            // A terminal has no Thread: its folder takes the place of the switch.
+            <Text variant="caption" muted mono numberOfLines={1} ellipsizeMode="head" style={{ flex: 1 }}>
+              {folder ?? ""}
+            </Text>
+          ) : (
+            <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ flex: 1 }} />
+          )}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={mode === "thread" ? "Search the thread" : "Search the terminal"}
+            accessibilityLabel={view === "thread" ? "Search the thread" : "Search the terminal"}
             accessibilityState={{ expanded: searchOpen }}
             onPress={() => {
               haptics.tap();
@@ -589,7 +627,7 @@ export function SessionDetail({
           </Pressable>
         </View>
         {searchOpen ? (
-          mode === "thread" ? (
+          view === "thread" ? (
             <SearchBar
               query={query}
               onQuery={setQuery}
@@ -627,7 +665,7 @@ export function SessionDetail({
           </Text>
         ) : null}
       </View>
-      {mode === "thread" ? (
+      {view === "thread" ? (
         <SwipeBetweenAgents hostId={hostId} paneId={paneId} openPane={onOpenPane}>
           <SearchMarksContext.Provider value={threadSearch.marks}>
             <ThreadBody thread={thread} hostId={hostId} paneId={paneId} focused={focused} badge={badge} background={background} focusId={threadSearch.currentId} />
@@ -644,17 +682,19 @@ export function SessionDetail({
           search={termSearch}
         />
       )}
-      {/* Hidden, not unmounted, in Terminal mode and while searching: a half-typed prompt survives. Hidden, it polls nothing. */}
-      <View style={{ display: mode === "thread" && !searchOpen ? "flex" : "none" }}>
-        <Composer
-          hostId={hostId}
-          paneId={paneId}
-          bottomInset={keyboard ? 0 : insets.bottom}
-          initialText={promptError ? prompt : undefined}
-          initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
-          visible={mode === "thread" && focused && !searchOpen}
-        />
-      </View>
+      {/* Hidden, not unmounted, in Terminal mode and while searching: a half-typed prompt survives. Hidden, it polls nothing. A terminal has no composer. */}
+      {terminal ? null : (
+        <View style={{ display: mode === "thread" && !searchOpen ? "flex" : "none" }}>
+          <Composer
+            hostId={hostId}
+            paneId={paneId}
+            bottomInset={keyboard ? 0 : insets.bottom}
+            initialText={promptError ? prompt : undefined}
+            initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
+            visible={mode === "thread" && focused && !searchOpen}
+          />
+        </View>
+      )}
     </KeyboardAvoider>
   );
 }

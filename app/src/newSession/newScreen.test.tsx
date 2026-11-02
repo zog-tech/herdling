@@ -124,6 +124,34 @@ test("starts the agent in the open folder", async () => {
   expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\//));
 });
 
+test("opens a shell with no agent, runs the typed command and does not remember Shell", async () => {
+  const t = await render();
+  await act(async () => byLabel(t, "Codex").props.onPress());
+  await act(async () => byLabel(t, "Shell").props.onPress());
+  // The agent memory keeps the agent, so the next session starts with it.
+  expect(useAgentMemory.getState().byHost.h1).toBe("codex");
+  expect(has(t, "Open shell here")).toBe(true);
+  // No recent agent sessions for a shell; the prompt box asks for a command.
+  expect(t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Resume: "))).toHaveLength(0);
+  const box = t.root.findAllByType(TextInput).find((n) => n.props.accessibilityLabel === "Command (optional)")!;
+  act(() => box.props.onChangeText("pwd"));
+  await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
+  await settle();
+  await act(async () => byLabel(t, "Open shell here").props.onPress());
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  expect(mockReplace).toHaveBeenCalledWith({ pathname: "/session/[hostId]/[paneId]", params: expect.objectContaining({ hostId: "h1", shell: "1" }) });
+  const { paneId } = mockReplace.mock.calls[0][0].params;
+  // The demo host: the pane has no agent, and the command ran in it.
+  // The demo answers after a short delay.
+  const snap = mockConn.rpc!.call<{ snapshot: { agents: { pane_id: string }[] } }>("herdr.call", { method: "session.snapshot", params: {} });
+  const read = mockConn.rpc!.call<{ read: { text: string } }>("herdr.call", { method: "pane.read", params: { pane_id: paneId } });
+  await jest.advanceTimersByTimeAsync(500);
+  expect((await snap).snapshot.agents.some((a) => a.pane_id === paneId)).toBe(false);
+  expect((await read).read.text).toContain("$ pwd\n/home/demo/projects/api-server");
+});
+
 test("offers the new git worktree option in a repo", async () => {
   const t = await render();
   expect(has(t, "In a new git worktree")).toBe(false);

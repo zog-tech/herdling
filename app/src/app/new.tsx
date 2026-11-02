@@ -3,13 +3,13 @@ import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { Eye, EyeOff, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { branchError, defaultBranch, worktreeSlug } from "@/changes/worktree";
 import { agentLabel } from "@/herdr/agentKinds";
 import { canResume, resumeInFolder } from "@/herdr/sessionActions";
-import { startSession, workspaceExists } from "@/herdr/startSession";
+import { startSession, startShell, workspaceExists } from "@/herdr/startSession";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
@@ -20,7 +20,7 @@ import { agentFor, rememberAgent, useAgentMemory } from "@/newSession/agentMemor
 import { Autocomplete, type Suggestion } from "@/newSession/autocomplete";
 import { DirCache } from "@/newSession/dirCache";
 import { FolderBrowser } from "@/newSession/FolderBrowser";
-import { fetchInstalled } from "@/newSession/installed";
+import { fetchInstalled, SHELL_CHOICE } from "@/newSession/installed";
 import { PathField } from "@/newSession/PathField";
 import { completeInput, displayPath, resolveInput } from "@/newSession/paths";
 import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
@@ -131,6 +131,8 @@ export default function NewSessionScreen() {
   const [hostId, setHostId] = useState<string>();
   const remembered = useAgentMemory((s) => s.byHost);
   const kind = agentFor(remembered, hostId);
+  // Shell is chosen for this screen only: it is not remembered, so the next session starts with the agent again.
+  const [shell, setShell] = useState(false);
   const [prompt, setPrompt] = useState("");
   /** Live transcript while the mic is held. */
   const [heard, setHeard] = useState("");
@@ -277,11 +279,14 @@ export default function NewSessionScreen() {
     void loadInstalled();
   }, [loadInstalled]);
 
-  const pickAgent = (k: string) => hostId && rememberAgent(hostId, k);
+  const pickAgent = (k: string) => {
+    setShell(k === SHELL_CHOICE);
+    if (k !== SHELL_CHOICE && hostId) rememberAgent(hostId, k);
+  };
 
   // ---------- recent sessions ----------
 
-  const resumable = canResume(hello, kind);
+  const resumable = !shell && canResume(hello, kind);
   // Keyed by host and agent: the cards of the last agent go at once, and a refresh keeps the
   // cards until the new answer is in. A refresh reads `recent_cwds` again, which loads them again.
   const sessionsKey = `${hostId}:${kind}`;
@@ -364,11 +369,20 @@ export default function NewSessionScreen() {
       // The snapshot can lag: fall back to a new workspace when the old one is gone.
       // A new worktree is a new folder: it always gets a new workspace.
       const reuse = !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
+      const workspaceId = reuse && existing ? existing.workspace_id : undefined;
+      if (shell) {
+        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, onProgress: setProgress });
+        allowLeave();
+        router.replace({ pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, shell: "1" } } as never);
+        // The shell runs even when the command did not go through: say so over the open terminal.
+        if (commandError) Alert.alert("Command not sent", commandError);
+        return;
+      }
       const { paneId, promptError } = await startSession(rpc, {
         cwd: folder,
         kind,
         prompt,
-        workspaceId: reuse && existing ? existing.workspace_id : undefined,
+        workspaceId,
         onProgress: setProgress,
       });
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
@@ -383,7 +397,7 @@ export default function NewSessionScreen() {
       setError(message(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, prompt, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
+  }, [rpc, hostId, cwd, kind, shell, prompt, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
 
   const resume = useCallback(
     async (s: RecentSession) => {
@@ -416,7 +430,7 @@ export default function NewSessionScreen() {
     );
 
   const folders = home ? recentFolders(recentCwds, home) : [];
-  const label = agentLabel(kind);
+  const label = shell ? "Shell" : agentLabel(kind);
   const inWorktree = worktree && repo?.is_repo;
   const where = !cwd || !home ? undefined : inWorktree ? `In a new worktree of ${displayPath(cwd, home)}` : `In ${displayPath(cwd, home)}`;
 
@@ -436,7 +450,7 @@ export default function NewSessionScreen() {
         ) : null}
 
         <Section title="Agent">
-          <AgentPicker key={hostId} value={kind} onChange={pickAgent} installed={installed} disabled={busy} />
+          <AgentPicker key={hostId} value={shell ? SHELL_CHOICE : kind} onChange={pickAgent} installed={installed} disabled={busy} />
         </Section>
 
         {sessions.length > 0 ? (
@@ -548,12 +562,16 @@ export default function NewSessionScreen() {
         ) : null}
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
           <TextInput
-            accessibilityLabel="First prompt (optional)"
+            accessibilityLabel={shell ? "Command (optional)" : "First prompt (optional)"}
             value={prompt}
             onChangeText={setPrompt}
             editable={!busy}
-            multiline
-            placeholder={heard || `First prompt for ${label} (optional)`}
+            // A command is one line: no spell check or capitals in the way.
+            multiline={!shell}
+            autoCapitalize={shell ? "none" : undefined}
+            autoCorrect={!shell}
+            spellCheck={!shell}
+            placeholder={heard || (shell ? "Command (optional)" : `First prompt for ${label} (optional)`)}
             placeholderTextColor={colors.textMuted}
             selectionColor={colors.accent}
             style={{
@@ -580,7 +598,7 @@ export default function NewSessionScreen() {
           </Text>
         ) : null}
         <Button
-          label={progress ?? (resuming ? "Resuming…" : `Start ${label} here`)}
+          label={progress ?? (resuming ? "Resuming…" : shell ? "Open shell here" : `Start ${label} here`)}
           loading={busy}
           disabled={!cwd || !!branchProblem}
           onPress={() => void start()}

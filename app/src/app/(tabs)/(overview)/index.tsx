@@ -19,12 +19,14 @@ import { BoardTop } from "@/board/BoardTop";
 import { countBuckets, filterBoard, mergeBoard, type BoardItem } from "@/board/buckets";
 import { BrandHeader, HostsButton } from "@/board/Dashboard";
 import { spotlight } from "@/board/spotlight";
+import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
+import { boardTerminals, type BoardTerminal } from "@/herdr/terminals";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnStatus, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
@@ -415,6 +417,8 @@ export default function BoardScreen() {
   const grouped = useMemo(() => groupItems(sortItems(filterBoard(items, filter), sortBy), groupBy), [items, filter, sortBy, groupBy]);
   const sections = useMemo(() => collapseSections(grouped, groupBy, collapsedKeys ?? []), [grouped, groupBy, collapsedKeys]);
   const spot = useMemo(() => spotlight(items), [items]);
+  // Panes with no agent: a "Terminals" list after the agent groups, whatever the grouping.
+  const terminals = useMemo(() => boardTerminals(boardHosts), [boardHosts]);
 
   const pickGroup = useCallback(() => {
     showActionSheet(
@@ -491,6 +495,7 @@ export default function BoardScreen() {
   useKeyCommand("prevAgent", () => stepSelection(-1), { enabled: focused && regular });
   useKeyCommand("nextAgent", () => stepSelection(1), { enabled: focused && regular });
   useKeyCommand("refresh", () => problemHosts.forEach((h) => retryNow(h.id)), { enabled: focused });
+  const onOpenTerminal = useCallback((t: BoardTerminal) => openPane(t.hostId, t.paneId), [openPane]);
   const onPeek = useCallback((i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}` as never), [router]);
   const onReply = useCallback(
     (i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}?reply=1` as never),
@@ -591,7 +596,7 @@ export default function BoardScreen() {
           }}
           ItemSeparatorComponent={cards ? CardGap : Divider}
           SectionSeparatorComponent={cards ? CardSectionGap : undefined}
-          extraData={`${selectedKey}|${rowStyle}|${hint}`}
+          extraData={`${selectedKey}|${rowStyle}|${hint}|${terminals.length}`}
           renderItem={({ item }) => (
             <>
               {/* The first-run hint sits above the first agent, under the first section header. */}
@@ -638,8 +643,12 @@ export default function BoardScreen() {
           }
           ListFooterComponent={
             // Room so the floating button never covers the last host.
-            <View style={{ paddingTop: space.xl, paddingBottom: FAB + space.xl }}>
-              <Text variant="section" accessibilityRole="header" style={{ paddingHorizontal: space.lg, paddingBottom: space.xs }}>
+            <View style={{ paddingBottom: FAB + space.xl }}>
+              {/* A status filter shows agents only. */}
+              {filter === null ? (
+                <TerminalRows terminals={terminals} multiHost={online.size > 1} selectedKey={selectedKey} onOpen={onOpenTerminal} />
+              ) : null}
+              <Text variant="section" accessibilityRole="header" style={{ paddingHorizontal: space.lg, paddingTop: space.xl, paddingBottom: space.xs }}>
                 Hosts
               </Text>
               {hosts.map((h, i) => (

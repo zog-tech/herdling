@@ -105,7 +105,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-const open = async (extra: { prompt?: string; promptError?: string } = {}) => {
+const open = async (extra: { prompt?: string; promptError?: string; shell?: boolean } = {}) => {
   act(() => {
     tree = create(
       <GestureHandlerRootView>
@@ -122,11 +122,67 @@ test("a_new_session_with_no_snapshot_and_no_thread_ref_renders", async () => {
   expect(texts(t)).toContain("p9");
 });
 
-test("a_new_pane_before_its_agent_with_no_thread_log_renders", async () => {
-  setHostSnapshot("h", fresh([]));
-  mockRef = { kind: "shell", session: null, log_path: null, cwd: null };
+test("an_agent_with_no_thread_log_shows_its_terminal_under_thread", async () => {
+  setHostSnapshot("h", fresh([{ ...noKind, agent: "amp", agent_status: "idle" }]));
+  mockRef = { kind: "amp", session: null, log_path: null, cwd: null };
   const t = await open();
   expect(texts(t)).toContain("No conversation log for this agent. Showing its terminal.");
+  expect(texts(t)).toContain("Thread");
+});
+
+const segments = (t: ReactTestRenderer) => texts(t).filter((x) => x === "Thread" || x === "Terminal");
+const hasLabel = (t: ReactTestRenderer, label: string) => t.root.findAll((n) => n.props.accessibilityLabel === label).length > 0;
+
+test("a_pane_with_no_agent_opens_as_a_terminal_only", async () => {
+  const snap = fresh([]);
+  snap.panes = [{ ...snap.panes[0], cwd: "/home/sam/proj", terminal_title_stripped: "npm run dev" }];
+  setHostSnapshot("h", snap);
+  mockRef = { kind: "shell", session: null, log_path: null, cwd: null };
+  const t = await open();
+  const all = texts(t);
+  // The terminal title and the folder; no Thread or Terminal switch and no composer.
+  expect(all).toContain("npm run dev");
+  expect(all).toContain("/home/sam/proj");
+  expect(all).toContain("h · Terminal");
+  expect(segments(t)).toEqual([]);
+  expect(all).not.toContain("No conversation log for this agent. Showing its terminal.");
+  expect(hasLabel(t, "Speak replies")).toBe(false);
+  expect(hasLabel(t, "Search the terminal")).toBe(true);
+  expect(hasLabel(t, "Session actions")).toBe(true);
+});
+
+test("a_new_shell_before_the_snapshot_shows_it_opens_as_a_terminal", async () => {
+  const t = await open({ shell: true });
+  expect(texts(t)).toContain("Terminal");
+  expect(texts(t)).not.toContain("Thread");
+  expect(hasLabel(t, "Search the terminal")).toBe(true);
+});
+
+test("closing_a_terminal_asks_then_closes_its_pane", async () => {
+  const { showActionSheet } = jest.requireMock<{ showActionSheet: jest.Mock }>("@/ui/nativeSheet");
+  showActionSheet.mockReset();
+  const call = jest.spyOn(mockRpc, "call");
+  const snap = fresh([]);
+  setHostSnapshot("h", snap);
+  const t = await open();
+  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
+  const [menu, pick] = showActionSheet.mock.calls[0];
+  // No agent actions: no Restart and no renames.
+  expect(menu.options).not.toContain("Restart");
+  expect(menu.options.at(-2)).toBe("Close");
+  // The confirm sheet waits for its answer: do not wait for the pick itself.
+  act(() => {
+    pick(menu.options.indexOf("Close"));
+  });
+  await flush();
+  const [confirm, yes] = showActionSheet.mock.calls[1];
+  expect(confirm.title).toBe("Close this terminal?");
+  act(() => {
+    yes(0);
+  });
+  await flush();
+  expect(call).toHaveBeenCalledWith("herdr.call", { method: "pane.close", params: { pane_id: "p9" } });
+  call.mockRestore();
 });
 
 test("an_agent_that_herdr_has_not_detected_yet_renders", async () => {

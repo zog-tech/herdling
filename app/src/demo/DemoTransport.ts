@@ -390,6 +390,12 @@ export class DemoTransport implements LineTransport {
       case "pane.send_text":
         s.sendText(need(p, "pane_id", m), need(p, "text", m));
         return {};
+      case "pane.process_info": {
+        // The shell of every demo pane is ready at once: its process group is in the foreground.
+        const pane = need(p, "pane_id", m);
+        s.screen(pane);
+        return { type: "pane_process_info", process_info: { pane_id: pane, shell_pid: 4242, foreground_process_group_id: 4242 } };
+      }
       case "agent.prompt":
         s.prompt(need(p, "target", m), need(p, "text", m));
         return {};

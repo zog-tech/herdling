@@ -56,6 +56,9 @@ type Agent = {
 
 type Subagent = { log: string; parentPane: string; agentId: string; items: ThreadItem[]; running: boolean };
 
+/** A pane with no agent: a plain shell. `lines` is its scrollback; `input` is the typed line. */
+type Shell = { lines: string[]; input: string };
+
 const HOME = "/home/demo";
 const WEBAPP = `${HOME}/projects/webapp`;
 const API = `${HOME}/projects/api-server`;
@@ -122,12 +125,13 @@ export class DemoScenario {
   private tabs: TabInfo[] = [];
   private panes: PaneInfo[] = [];
   private subagents = new Map<string, Subagent>();
+  private shells = new Map<string, Shell>();
   private herdrListeners = new Set<(e: HerdrEvent) => void>();
   private followers = new Map<string, Set<(d: FollowData) => void>>();
   private nextId = 1;
   private nextWs = 3;
-  private nextTab = 6;
-  private nextPane = 6;
+  private nextTab = 7;
+  private nextPane = 7;
   /** `state_change_seq` grows from the launch time, so an agent that finished is "Ready" again after a relaunch. */
   private seq: number;
   private stopped = false;
@@ -294,8 +298,11 @@ export class DemoScenario {
     const a = this.agents.get(paneId);
     const c = (code: string, s: string) => (format === "ansi" ? `\x1b[${code}m${s}\x1b[0m` : s);
     if (!a) {
-      if (!this.panes.some((p) => p.pane_id === paneId)) throw new DemoError("not_found", `pane ${paneId} not found`);
-      return `${c("32", "demo@demo")}:${c("34", "~")}$ `;
+      const pane = this.panes.find((p) => p.pane_id === paneId);
+      if (!pane) throw new DemoError("not_found", `pane ${paneId} not found`);
+      const sh = this.shell(paneId);
+      const prompt = `${c("32", "demo@demo")}:${c("34", (pane.cwd ?? HOME).replace(HOME, "~"))}$ `;
+      return [...sh.lines.slice(-30).map((l) => (l.startsWith("$ ") ? prompt + l.slice(2) : l)), prompt + sh.input].join("\n");
     }
     const lines: string[] = [];
     const cwd = (a.info.cwd ?? HOME).replace(HOME, "~");
@@ -353,11 +360,11 @@ export class DemoScenario {
     return { workspace: ws, tab, root_pane };
   }
 
-  createTab(workspaceId: string, _cwd?: string): { tab: TabInfo; root_pane: PaneInfo } {
+  createTab(workspaceId: string, cwd?: string): { tab: TabInfo; root_pane: PaneInfo } {
     this.workspaceExists(workspaceId);
     const number = this.tabs.filter((t) => t.workspace_id === workspaceId).length + 1;
     const tab: TabInfo = { tab_id: `t${this.nextTab++}`, workspace_id: workspaceId, label: `tab ${number}`, number, agent_status: "unknown" };
-    const pane: PaneInfo = { pane_id: `p${this.nextPane++}`, tab_id: tab.tab_id, workspace_id: workspaceId, label: null };
+    const pane: PaneInfo = { pane_id: `p${this.nextPane++}`, tab_id: tab.tab_id, workspace_id: workspaceId, label: null, ...(cwd ? { cwd } : {}) };
     this.tabs.push(tab);
     this.panes.push(pane);
     this.emit({ event: "tab_created", data: { tab } });
@@ -402,6 +409,7 @@ export class DemoScenario {
     const a = this.agents.get(paneId);
     if (!a) {
       if (!this.panes.some((p) => p.pane_id === paneId)) throw new DemoError("not_found", `pane ${paneId} not found`);
+      this.shellKeys(paneId, keys);
       return;
     }
     for (const k of keys) {
@@ -425,6 +433,8 @@ export class DemoScenario {
     const a = this.agents.get(paneId);
     if (!a) {
       if (!this.panes.some((p) => p.pane_id === paneId)) throw new DemoError("not_found", `pane ${paneId} not found`);
+      this.shell(paneId).input += text.replace(/[\r\n]+$/, "");
+      if (/[\r\n]$/.test(text)) this.shellKeys(paneId, ["Enter"]);
       return;
     }
     a.input += text.replace(/[\r\n]+$/, "");
@@ -511,8 +521,56 @@ export class DemoScenario {
     throw new DemoError("not_found", `no such log: ${log}`);
   }
 
+  /** The shell state of a pane with no agent, made on first use. */
+  private shell(paneId: string): Shell {
+    let sh = this.shells.get(paneId);
+    if (!sh) {
+      sh = { lines: [], input: "" };
+      this.shells.set(paneId, sh);
+    }
+    return sh;
+  }
+
+  /** Keys in a shell: Enter runs the typed line, Backspace deletes, Ctrl-C drops the line. */
+  private shellKeys(paneId: string, keys: string[]): void {
+    const sh = this.shell(paneId);
+    for (const k of keys) {
+      const key = k.toLowerCase();
+      if (key === "enter") {
+        const cmd = sh.input.trim();
+        sh.input = "";
+        sh.lines.push(`$ ${cmd}`, ...(cmd ? this.runCommand(paneId, cmd) : []));
+      } else if (key === "bspace" || key === "backspace") {
+        sh.input = sh.input.slice(0, -1);
+      } else if (key === "c-c" || key === "ctrl+c") {
+        sh.lines.push(`$ ${sh.input}^C`);
+        sh.input = "";
+      }
+    }
+  }
+
+  /** The demo runs no programs: a few commands get a plausible answer, the rest a short note. */
+  private runCommand(paneId: string, cmd: string): string[] {
+    const cwd = this.panes.find((p) => p.pane_id === paneId)?.cwd ?? HOME;
+    const [name, ...args] = cmd.split(/\s+/);
+    switch (name) {
+      case "pwd":
+        return [cwd];
+      case "ls":
+        return [(DIRS[cwd] ?? []).filter((d) => !d.startsWith(".")).join("  ")];
+      case "echo":
+        return [args.join(" ")];
+      case "clear":
+        this.shell(paneId).lines = [];
+        return [];
+      default:
+        return [`${name}: commands do not run in the demo`];
+    }
+  }
+
   private dropPanes(drop: (p: PaneInfo) => boolean): void {
     for (const p of this.panes.filter(drop)) {
+      this.shells.delete(p.pane_id);
       const a = this.agents.get(p.pane_id);
       if (a) {
         a.queue = [];
@@ -694,7 +752,7 @@ export class DemoScenario {
     return a;
   }
 
-  /** The starting state: 2 workspaces, 5 tabs, 5 agents. */
+  /** The starting state: 2 workspaces, 6 tabs, 5 agents and 1 shell. */
   private seed(): void {
     const now = Date.now();
     const min = 60_000;
@@ -715,9 +773,16 @@ export class DemoScenario {
       tab("t3", "w1", "readme", 3),
       tab("t4", "w2", "validation", 1),
       tab("t5", "w2", "docs", 2),
+      tab("t6", "w1", "shell", 4),
     ];
     const pane = (n: number, tabId: string, ws: string): PaneInfo => ({ pane_id: `p${n}`, tab_id: tabId, workspace_id: ws, label: null });
     this.panes = [pane(1, "t1", "w1"), pane(2, "t4", "w2"), pane(3, "t2", "w1"), pane(4, "t5", "w2"), pane(5, "t3", "w1")];
+    // 6. A plain shell with no agent in the web app (the board lists it under Terminals).
+    this.panes.push({ ...pane(6, "t6", "w1"), cwd: WEBAPP });
+    this.shells.set("p6", {
+      lines: ["$ git status", "On branch main", "Your branch is up to date with 'origin/main'.", "", "nothing to commit, working tree clean"],
+      input: "",
+    });
 
     // 1. Claude, working: fixes the login form, with a running subagent.
     const p1 = this.addAgent({

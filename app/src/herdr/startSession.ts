@@ -1,4 +1,5 @@
 import type { RpcClient } from "@/rpc/RpcClient";
+import { sendLine } from "@/terminal/keys";
 
 export type StartOptions = {
   cwd: string;
@@ -99,6 +100,59 @@ export async function startSession(
       await retrying(PROMPT_RETRIES, notReadyYet, () => herdr(rpc, "agent.prompt", { target: paneId, text }));
     } catch (e) {
       return { paneId, promptError: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return { paneId };
+}
+
+type ProcessInfo = { process_info?: { shell_pid?: number | null; foreground_process_group_id?: number | null } };
+
+/** True when the shell of the pane runs and is in the foreground, so it reads what is typed. */
+const shellReady = (r: ProcessInfo | undefined) => {
+  const info = r?.process_info;
+  return !!info?.shell_pid && info.foreground_process_group_id === info.shell_pid;
+};
+
+/**
+ * Waits until the shell of a fresh pane is in the foreground (`pane.process_info`). It does not
+ * throw: a herdr without the method, or a shell that stays busy, gets the command anyway. The
+ * terminal keeps typed text until the shell reads it.
+ */
+async function waitForShell(rpc: Pick<RpcClient, "call">, paneId: string): Promise<void> {
+  for (let attempt = 0; attempt < SHELL_RETRIES; attempt++) {
+    try {
+      if (shellReady(await herdr<ProcessInfo>(rpc, "pane.process_info", { pane_id: paneId }))) return;
+    } catch {
+      return;
+    }
+    await sleep(SHELL_RETRY_MS);
+  }
+}
+
+/**
+ * Creates a workspace (or a tab) and leaves its shell as it is: no agent. With a `command`, it
+ * types the command and presses Enter once the shell is ready. Once the pane exists, a failed
+ * command does not throw: it comes back as `commandError`, so the caller still opens the pane.
+ */
+export async function startShell(
+  rpc: Pick<RpcClient, "call">,
+  { cwd, command, workspaceId, onProgress }: { cwd: string; command?: string; workspaceId?: string; onProgress?: (label: string) => void },
+): Promise<{ paneId: string; commandError?: string }> {
+  onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
+  const created = workspaceId
+    ? await herdr<Created>(rpc, "tab.create", { workspace_id: workspaceId, cwd, focus: false })
+    : await herdr<Created>(rpc, "workspace.create", { cwd, label: basename(cwd), focus: false });
+  const paneId = created.root_pane?.pane_id;
+  if (!paneId) throw new Error("herdr did not return a pane");
+
+  const text = command?.trim();
+  if (text) {
+    onProgress?.("Running command…");
+    try {
+      await waitForShell(rpc, paneId);
+      await sendLine(rpc, paneId, text);
+    } catch (e) {
+      return { paneId, commandError: e instanceof Error ? e.message : String(e) };
     }
   }
   return { paneId };

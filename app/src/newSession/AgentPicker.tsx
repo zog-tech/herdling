@@ -6,14 +6,16 @@ import { agentLabel } from "@/herdr/agentKinds";
 import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
 import { AgentMark } from "@/ui/AgentMark";
 import * as haptics from "@/ui/haptics";
+import { TerminalMark } from "@/ui/TerminalMark";
 import { Text } from "@/ui/Text";
 
-import { availability, pickerOrder } from "./installed";
+import { availability, pickerChoices, SHELL_CHOICE } from "./installed";
 
 /**
  * The agent row at the top of New session: one chip per agent kind, in a row that scrolls
  * sideways. The chosen agent is gold. An agent that the host reports as not installed steps back
  * and says "Not installed"; it can still be chosen, because the check can miss a custom PATH.
+ * The first chip, Shell, starts a plain terminal with no agent.
  */
 export function AgentPicker({
   value,
@@ -26,7 +28,7 @@ export function AgentPicker({
   installed: AgentsInstalled | undefined;
   disabled?: boolean;
 }) {
-  const kinds = pickerOrder(installed);
+  const kinds = pickerChoices(installed);
   const scroll = useRef<ScrollViewInstance>(null);
   const xs = useRef(new Map<string, number>());
   const shown = useRef(false);
@@ -52,8 +54,9 @@ export function AgentPicker({
     >
       {kinds.map((k) => {
         const selected = k === value;
-        const missing = availability(k, installed) === "missing";
-        const label = agentLabel(k);
+        const shell = k === SHELL_CHOICE;
+        const missing = !shell && availability(k, installed) === "missing";
+        const label = shell ? "Shell" : agentLabel(k);
         return (
           <Pressable
             key={k}
@@ -85,7 +88,7 @@ export function AgentPicker({
               opacity: missing && !selected ? state.offlineOpacity : 1,
             })}
           >
-            <AgentMark kind={k} />
+            {shell ? <TerminalMark /> : <AgentMark kind={k} />}
             <View>
               <Text bold color={selected ? colors.onAccent : colors.text} maxFontSizeMultiplier={denseScale.row} numberOfLines={1}>
                 {label}
