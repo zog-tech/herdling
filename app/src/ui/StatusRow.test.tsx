@@ -1,7 +1,8 @@
 import { AccessibilityInfo } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { announcement, isStatusShown, StatusRow } from "./StatusRow";
+import { space, threadGap } from "@/theme/tokens";
+import { announcement, isStatusShown, PILL_GAP, StatusRow } from "./StatusRow";
 
 const label = (t: ReactTestRenderer) => t.root.findByProps({ accessibilityRole: "text" }).props.accessibilityLabel;
 
@@ -95,4 +96,11 @@ test("status_row_shows_background_work_of_an_idle_agent", () => {
   act(() => t.update(<StatusRow status="working" background="1 shell running" />));
   expect(label(t)).toBe("Working");
   act(() => t.unmount());
+});
+
+test("status_pill_gap_equals_the_thread_row_gap", () => {
+  // The pill sits below the newest row at the same rhythm as two rows: 12 pt.
+  expect(PILL_GAP).toBe(threadGap);
+  expect(PILL_GAP).toBe(space.md);
+  expect(PILL_GAP).toBe(12);
 });

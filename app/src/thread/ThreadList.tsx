@@ -5,7 +5,7 @@ import { FlatList, Pressable, View, type NativeScrollEvent, type NativeSynthetic
 
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
-import { colors, hitTarget, motion, radius, space } from "@/theme/tokens";
+import { colors, hitTarget, motion, radius, space, threadGap } from "@/theme/tokens";
 import { STATUS_ANIM_MS } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
@@ -71,7 +71,7 @@ const renderItem = ({ item, index }: { item: ThreadItem; index: number }) => (
     </SearchMark>
   </Arrive>
 );
-const Gap = () => <View style={{ height: space.md }} />;
+const Gap = () => <View style={{ height: threadGap }} />;
 
 /**
  * Inverted list, newest at the bottom. Stays pinned to the bottom only while the user is there;

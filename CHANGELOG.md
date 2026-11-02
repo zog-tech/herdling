@@ -226,6 +226,8 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 - The installer unpacks herdlingd in `~/.cache/herdling`, not in `/tmp`. On systems that mount
   `/tmp` with `noexec` (for example TrueNAS), the install failed with "Permission denied".
+- Thread: the gap between the newest row and the "Working" pill is 12 pt, the same as the gap between
+  two rows. It was 8 pt.
 
 ### Changed
 

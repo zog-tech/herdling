@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
-import { colors, motion, radius, space } from "@/theme/tokens";
+import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
 import { subagentCount } from "@/thread/subagentState";
 import { LanternGlow } from "./LanternGlow";
 import { STATUS_META, StatusIcon, statusSpoken, type BadgeStatus } from "./StatusIcon";
@@ -14,8 +14,8 @@ const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
 const QUIET: readonly BadgeStatus[] = ["idle", "done"];
 const PILL_HEIGHT = 40;
 const ROW_ICON = 20;
-/** Space between the newest message and the pill. */
-const PILL_GAP = space.sm;
+/** Space between the newest message and the pill. Same as the gap between two thread rows. */
+export const PILL_GAP = threadGap;
 const ROW_HEIGHT = PILL_HEIGHT + PILL_GAP;
 const SLIDE = 6;
 const EASE_OUT = Easing.bezier(...motion.ease.out);
