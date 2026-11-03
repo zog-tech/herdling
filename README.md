@@ -53,7 +53,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   arrow keys and Enter. It works with every agent that herdr runs. The computer pushes each new
   screen, a sent line shows at once, and a badge shows the latency. "Type directly" sends each key
   at once, for a hardware keyboard. In a shell, chips show your last 20 commands: a tap puts one
-  in the box, and a long press runs or removes it.
+  in the box, and a long press runs or removes it. A full-screen app with no scrollback (Claude
+  Code in fullscreen mode, `less`, `vim`) gets Page Up and Page Down buttons.
 - **A notification when it matters.** `herdlingd` sends a push when an agent finishes or waits
   for you. A tap opens that session. In a shell, "Notify me when it finishes" sends one push when
   a long command ends.

@@ -307,6 +307,19 @@ describe("DemoTransport", () => {
     });
   });
 
+  it("accepts page keys and acts as a full-screen app on an agent pane", async () => {
+    const before = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p1", format: "text" });
+    await herdr("pane.send_input", { pane_id: "p1", text: "\x1b[5~" });
+    await herdr("pane.send_text", { pane_id: "p1", text: "\x1b[6~" });
+    const after = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p1", format: "text" });
+    // The keys type nothing into the agent's input box.
+    expect(after.read.text).toBe(before.read.text);
+    const rows = after.read.text.split("\n").length;
+    expect(await herdr("pane.get", { pane_id: "p1" })).toMatchObject({
+      pane: { pane_id: "p1", scroll: { max_offset_from_bottom: 0, viewport_rows: rows } },
+    });
+  });
+
   it("unknown methods return an error and never hang", async () => {
     expect(await callError("nope.nothing")).toMatchObject({ code: "unknown_method" });
     expect(await callError("herdr.call", { method: "nope.nothing", params: {} })).toMatchObject({ code: "unknown_method" });

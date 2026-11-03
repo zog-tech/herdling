@@ -65,6 +65,8 @@ type Shell = { lines: string[]; input: string; running?: { pid: number; name: st
 /** The pid of the shell of every demo pane. */
 const SHELL_PID = 4242;
 
+/** A CSI escape sequence (cursor and page keys) in typed text. */
+const ESCAPE_SEQUENCE = /\x1b\[[0-9;<]*[~A-Za-z]/g;
 const HOME = "/home/demo";
 const WEBAPP = `${HOME}/projects/webapp`;
 const API = `${HOME}/projects/api-server`;
@@ -411,6 +413,16 @@ export class DemoScenario {
     this.enqueue(a, this.replySteps(a, t));
   }
 
+  /**
+   * The `scroll` field of herdr `pane.get`. An agent screen acts as a full-screen app (no
+   * scrollback, every row filled), so the terminal view shows its page buttons. A shell has 40 rows.
+   */
+  paneScroll(paneId: string): { max_offset_from_bottom: number; offset_from_bottom: number; viewport_rows: number } {
+    const rows = this.screen(paneId).split("\n").length;
+    if (this.agents.has(paneId)) return { max_offset_from_bottom: 0, offset_from_bottom: 0, viewport_rows: rows };
+    return { max_offset_from_bottom: Math.max(0, rows - 40), offset_from_bottom: 0, viewport_rows: 40 };
+  }
+
   /** `pane.send_keys`. A digit answers a permission menu; Enter sends the typed text; Escape stops the menu. */
   sendKeys(paneId: string, keys: string[]): void {
     const a = this.agents.get(paneId);
@@ -435,8 +447,12 @@ export class DemoScenario {
     }
   }
 
-  /** `pane.send_text`: typed text. A trailing newline sends it. */
-  sendText(paneId: string, text: string): void {
+  /**
+   * `pane.send_text`: typed text. A trailing newline sends it. Escape sequences (for example
+   * Page Up, `ESC [ 5 ~`) do nothing: the demo screens have no scrollback.
+   */
+  sendText(paneId: string, raw: string): void {
+    const text = raw.replace(ESCAPE_SEQUENCE, "");
     const a = this.agents.get(paneId);
     if (!a) {
       if (!this.panes.some((p) => p.pane_id === paneId)) throw new DemoError("not_found", `pane ${paneId} not found`);
