@@ -22,9 +22,16 @@ export type Recorded = {
   text?: string;
 };
 
+/**
+ * Microphone choice for a run. `bluetoothMic`: record with a Bluetooth headset or car (HFP, call
+ * mode). Absent or false: the phone's microphone, so the car does not switch to call mode.
+ * Binaries before this field ignore it and use HFP as before.
+ */
+export type MicOptions = { bluetoothMic?: boolean };
+
 declare class VoiceNativeModule extends NativeModule<VoiceEvents> {
   requestPermission(): Promise<"granted" | "denied">;
-  startDictation(o?: { locale?: string }): Promise<void>;
+  startDictation(o?: { locale?: string } & MicOptions): Promise<void>;
   stopDictation(): Promise<string>;
   cancelDictation(): Promise<void>;
   setSpeechAudio(): Promise<void>;
@@ -32,7 +39,7 @@ declare class VoiceNativeModule extends NativeModule<VoiceEvents> {
   localSummaryAvailable(): Promise<boolean>;
   // Added after build 5. Older binaries do not have these: check `recordingAvailable()` first.
   requestMicPermission?(): Promise<"granted" | "denied">;
-  startRecording?(o: { live: boolean; locale?: string }): Promise<void>;
+  startRecording?(o: { live: boolean; locale?: string } & MicOptions): Promise<void>;
   stopRecording?(): Promise<Recorded>;
   cancelRecording?(): Promise<void>;
   summarizeLocal(text: string, instructions: string): Promise<string>;
@@ -49,7 +56,7 @@ export function requestPermission(): Promise<"granted" | "denied"> {
  * Turns the microphone on and starts recognition (on-device when the locale supports it).
  * Rejects with code "busy", "denied" or "unavailable".
  */
-export function startDictation(o?: { locale?: string }): Promise<void> {
+export function startDictation(o?: { locale?: string } & MicOptions): Promise<void> {
   return Voice.startDictation(o ?? {});
 }
 
@@ -106,7 +113,7 @@ export function requestMicPermission(): Promise<"granted" | "denied"> {
  * Starts a recording to a WAV file. `live`: also run live recognition (the Apple engine).
  * Rejects with code "busy", "denied" or "unavailable".
  */
-export function startRecording(o: { live: boolean; locale?: string }): Promise<void> {
+export function startRecording(o: { live: boolean; locale?: string } & MicOptions): Promise<void> {
   return Voice.startRecording ? Voice.startRecording(o) : missing();
 }
 

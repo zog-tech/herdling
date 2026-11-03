@@ -1,6 +1,6 @@
 import { Check, Download, Trash2, X, type LucideIcon } from "lucide-react-native";
 import { useEffect } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
@@ -26,6 +26,10 @@ import { inputEngine, useVoiceSettings, type InputEngine } from "./settings";
 import { ENGINE_NAME } from "./transcribe";
 
 const MODELS: ParakeetModel[] = ["v2", "v3"];
+
+/** The footnote under the Bluetooth microphone switch. */
+export const BLUETOOTH_MIC_NOTE =
+  "Off: Herdling records with the phone's microphone, so a car or headset does not switch to call mode and cut off your first words.";
 
 const DETAIL: Record<InputEngine, string> = {
   parakeet: "Parakeet on this iPhone. Private, works offline. Falls back to Host.",
@@ -149,10 +153,11 @@ function ModelRow({ model }: { model: ParakeetModel }) {
 
 /**
  * Settings > Voice input: the engine (Parakeet, Host, Apple), the Parakeet models with
- * download, progress and delete, and the cellular switch. Builds without FluidAudio hide Parakeet.
+ * download, progress and delete, the cellular switch and the Bluetooth microphone switch (iOS).
+ * Builds without FluidAudio hide Parakeet.
  */
 export function VoiceInputSection() {
-  const { input, parakeetModel, allowCellular, set } = useVoiceSettings();
+  const { input, parakeetModel, allowCellular, bluetoothMic, set } = useVoiceSettings();
   const available = useParakeet((s) => s.available);
   const ready = useParakeet((s) => parakeetReady(s, parakeetModel));
   const error = useParakeet((s) => s.error);
@@ -187,6 +192,14 @@ export function VoiceInputSection() {
             title="Download over cellular"
             detail="Off: models download on Wi-Fi only."
             trailing={<GoldSwitch label="Download over cellular" value={allowCellular} onValueChange={(v) => set({ allowCellular: v })} />}
+          />
+        ) : null}
+        {/* Android always records with the phone's microphone: it never starts a Bluetooth SCO link. */}
+        {Platform.OS === "ios" ? (
+          <Row
+            title="Use Bluetooth microphone"
+            detail={BLUETOOTH_MIC_NOTE}
+            trailing={<GoldSwitch label="Use Bluetooth microphone" value={bluetoothMic} onValueChange={(v) => set({ bluetoothMic: v })} />}
           />
         ) : null}
       </Group>

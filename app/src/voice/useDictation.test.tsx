@@ -11,6 +11,8 @@ const listeners: Record<string, ((e: any) => void)[]> = {};
 let mockRecording = false;
 let mockStopResult: any = { uri: "file:///cache/rec.wav", durationMs: 4200 };
 const mockDeleted: string[] = [];
+/** The `bluetoothMic` option of each native start, in order. */
+const mockMic: (boolean | undefined)[] = [];
 
 jest.mock("expo-file-system", () => ({
   File: class {
@@ -37,7 +39,8 @@ jest.mock("../../modules/voice", () => ({
     calls.push("requestMicPermission");
     return "granted";
   },
-  startRecording: async (o: { live: boolean }) => {
+  startRecording: async (o: { live: boolean; bluetoothMic?: boolean }) => {
+    mockMic.push(o.bluetoothMic);
     calls.push(o.live ? "startRecording:live" : "startRecording");
   },
   stopRecording: async () => {
@@ -53,7 +56,8 @@ jest.mock("../../modules/voice", () => ({
       releasePermission = resolve;
     });
   },
-  startDictation: async () => {
+  startDictation: async (o?: { bluetoothMic?: boolean }) => {
+    mockMic.push(o?.bluetoothMic);
     calls.push("start");
   },
   stopDictation: async () => {
@@ -108,8 +112,9 @@ beforeEach(() => {
   mockRecording = false;
   mockStopResult = { uri: "file:///cache/rec.wav", durationMs: 4200 };
   mockDeleted.length = 0;
-  require("./settings").useVoiceSettings.setState({ input: undefined });
+  require("./settings").useVoiceSettings.setState({ input: undefined, bluetoothMic: false });
   calls.length = 0;
+  mockMic.length = 0;
   for (const k of Object.keys(listeners)) delete listeners[k];
 });
 
@@ -262,4 +267,31 @@ test("halted_recording_is_transcribed_with_a_notice", async () => {
   expect(calls).toContain("stopRecording");
   expect(onText).toHaveBeenCalledWith("long talk");
   expect(api.current!.error).toBe("Recording stopped: it reached 10 minutes.");
+});
+
+test("bluetooth_mic_is_off_by_default_and_reaches_the_recording_start", async () => {
+  mockRecording = true;
+  const settings = require("./settings") as typeof import("./settings");
+  settings.useVoiceSettings.setState({ input: "host" });
+  const { api } = mount(jest.fn(), async () => "text");
+  act(() => api.current!.dispatch({ type: "toggle" }));
+  await flush();
+  expect(mockMic).toEqual([false]);
+  act(() => api.current!.dispatch({ type: "toggle" }));
+  await flush();
+  settings.useVoiceSettings.setState({ bluetoothMic: true });
+  act(() => api.current!.dispatch({ type: "toggle" }));
+  await flush();
+  expect(mockMic).toEqual([false, true]);
+});
+
+test("bluetooth_mic_reaches_live_dictation_on_an_older_build", async () => {
+  require("./settings").useVoiceSettings.setState({ bluetoothMic: true });
+  const { api } = mount();
+  act(() => api.current!.dispatch({ type: "press" }));
+  await flush();
+  releasePermission("granted");
+  await flush();
+  expect(calls).toEqual(["requestPermission", "start"]);
+  expect(mockMic).toEqual([true]);
 });

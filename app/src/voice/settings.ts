@@ -25,6 +25,8 @@ export type VoiceSettings = {
   parakeetModel: ParakeetModel;
   /** Let the model download use cellular data. Off: Wi-Fi only. */
   allowCellular: boolean;
+  /** Record with a Bluetooth headset or car (call mode). Off: the phone's microphone. */
+  bluetoothMic: boolean;
 };
 
 type VoiceStore = VoiceSettings & { set: (patch: Partial<VoiceSettings>) => void };
@@ -43,6 +45,7 @@ export const useVoiceSettings = create<VoiceStore>()(
       input: undefined,
       parakeetModel: "v2",
       allowCellular: false,
+      bluetoothMic: false,
       set: (patch) => set(patch),
     }),
     {
@@ -57,6 +60,7 @@ export const useVoiceSettings = create<VoiceStore>()(
         input: s.input,
         parakeetModel: s.parakeetModel,
         allowCellular: s.allowCellular,
+        bluetoothMic: s.bluetoothMic,
       }),
     },
   ),
