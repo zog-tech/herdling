@@ -253,6 +253,13 @@ function VoiceSection() {
           chevron
         />
         <Row
+          accessibilityLabel="Display log"
+          onPress={() => router.push("/display-log" as never)}
+          title="Display log"
+          detail="The last 30 keyboard events and picker errors. Use it when the keyboard covers the prompt box."
+          chevron
+        />
+        <Row
           accessibilityLabel="Crash log"
           onPress={() => router.push("/crash-log" as never)}
           title="Crash log"

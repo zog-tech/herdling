@@ -11,6 +11,8 @@ import {
   type ViewStyle,
 } from "react-native";
 
+import { keyboardLine, logDisplay } from "./displayLog";
+
 /**
  * The part of a view that the keyboard covers, in points. `viewY` and `viewHeight` give the view
  * frame in the window. `keyboardTop` is the top edge of the keyboard on the screen. A keyboard top
@@ -22,15 +24,50 @@ export function keyboardOverlap(viewY: number, viewHeight: number, keyboardTop: 
   return Math.max(0, Math.round(viewY + viewHeight - keyboardTop));
 }
 
+/** Points of rounding that a keyboard frame can have past the window bottom. */
+const EDGE_SLACK = 2;
+
 /**
- * The top edge of the keyboard on the screen. Some keyboard events (cross-fade transitions, some
- * keyboard changes) give `screenY` 0 with a real height. Then the top is the window height minus
- * the keyboard height. Gives 0 when neither value is real.
+ * The top edge of the keyboard on the screen. Normally this is `screenY`, and the keyboard ends at
+ * the window bottom. When the frame does not fit the window, the top is the window height minus
+ * the keyboard height. This occurs when `screenY` is 0 (cross-fade transitions, some keyboard
+ * changes), or when the frame is in a different coordinate space (seen while the screen is shared
+ * with AirPlay). A keyboard at the window bottom with its top at the window bottom is hidden: the
+ * result is the window height. A keyboard higher than the window gives a top of 1, so the overlap
+ * stays real. Gives 0 when neither value is real.
  */
 export function keyboardTopOf(screenY: number, height: number, windowHeight: number): number {
-  if (screenY > 0) return screenY;
-  return height > 0 ? Math.max(0, windowHeight - height) : 0;
+  const h = height > 0 ? Math.min(height, windowHeight) : 0;
+  const fromHeight = h > 0 ? Math.max(1, Math.round(windowHeight - h)) : 0;
+  if (!(screenY > 0)) return fromHeight;
+  // A hidden keyboard: its top is at the window bottom.
+  if (Math.abs(screenY - windowHeight) <= EDGE_SLACK) return screenY;
+  // The frame does not fit in the window: use the height only.
+  if (screenY > windowHeight || screenY + h > windowHeight + EDGE_SLACK) return fromHeight || screenY;
+  return screenY;
 }
+
+/**
+ * The keyboard height to use when a show event has no frame at all (`screenY` and `height` both 0).
+ * React Native converts the keyboard frame with the key window. With no key window (seen while the
+ * screen is shared with AirPlay) the frame is all zeros. Then the last real height is the best
+ * value. With no real height yet, it is 42 % of the window height: a phone keyboard with its
+ * suggestion bar is about that high. More padding is better than a hidden composer.
+ */
+export function fallbackKeyboardHeight(lastHeight: number | undefined, windowHeight: number): number {
+  if (lastHeight != null && lastHeight > 0) return Math.min(lastHeight, windowHeight);
+  return Math.round(windowHeight * 0.42);
+}
+
+/** The last real keyboard height in this app session, for frames with no values. */
+let lastKeyboardHeight: number | undefined;
+
+/** Tests only: forgets the last real keyboard height. */
+export function resetKeyboardMemory(): void {
+  lastKeyboardHeight = undefined;
+}
+
+const SHOW_EVENTS = new Set(["keyboardWillShow", "keyboardDidShow"]);
 
 /**
  * A `flex: 1` view that adds bottom padding equal to the part of it that the keyboard covers.
@@ -74,23 +111,53 @@ export function KeyboardAvoider({
       }
       setPad(next);
     };
-    const measure = (e: KeyboardEvent) => {
-      const top = keyboardTopOf(e.endCoordinates.screenY, e.endCoordinates.height, Dimensions.get("window").height);
+    /**
+     * Measures the view and sets the padding. `name` is the event name. `retry` is true for the
+     * second measure after `keyboardDidShow` (see below).
+     */
+    const measure = (name: string, e: KeyboardEvent, retry = false) => {
+      const win = Dimensions.get("window");
+      const screen = Dimensions.get("screen");
+      const { screenY } = e.endCoordinates;
+      let { height } = e.endCoordinates;
+      let note: string | undefined = retry ? "metrics" : undefined;
+      if (height > 0) lastKeyboardHeight = height;
+      if (!(screenY > 0) && !(height > 0)) {
+        // No frame at all. A show event still means the keyboard is up; other events tell nothing.
+        if (!SHOW_EVENTS.has(name)) {
+          logDisplay(keyboardLine({ event: name, screenY, height, window: win, screen, top: 0, note: "empty frame, ignored" }));
+          return;
+        }
+        height = fallbackKeyboardHeight(lastKeyboardHeight, win.height);
+        note = "empty frame, estimated height";
+      }
+      const top = keyboardTopOf(screenY, height, win.height);
       const view = ref.current;
       if (!view) return;
       view.measureInWindow((_x, y, _w, h) => {
-        const viewY = atScreenBottom ? Dimensions.get("window").height - h : y;
-        apply(keyboardOverlap(viewY, h, top), e);
+        const viewY = atScreenBottom ? win.height - h : y;
+        const next = keyboardOverlap(viewY, h, top);
+        logDisplay(keyboardLine({ event: name, screenY, height: e.endCoordinates.height, window: win, screen, viewY, viewHeight: h, top, pad: next, note }));
+        apply(next, e);
+        // The keyboard is up but the padding is 0: measure again with the keyboard metrics, in
+        // case this event had a frame that the metrics correct.
+        if (name === "keyboardDidShow" && !retry && next === 0 && Keyboard.isVisible()) {
+          const m = Keyboard.metrics();
+          if (m && m.height > 0) measure(name, { ...e, endCoordinates: m }, true);
+        }
       });
     };
+    const on = (name: "keyboardWillShow" | "keyboardWillChangeFrame" | "keyboardDidShow") =>
+      Keyboard.addListener(name, (e) => measure(name, e));
+    const hide = (name: "keyboardWillHide" | "keyboardDidHide") =>
+      Keyboard.addListener(name, (e) => {
+        logDisplay(`kb ${name}`);
+        apply(0, Platform.OS === "ios" ? e : undefined);
+      });
     const subs =
       Platform.OS === "ios"
-        ? [
-            Keyboard.addListener("keyboardWillChangeFrame", measure),
-            Keyboard.addListener("keyboardDidShow", measure),
-            Keyboard.addListener("keyboardWillHide", (e) => apply(0, e)),
-          ]
-        : [Keyboard.addListener("keyboardDidShow", measure), Keyboard.addListener("keyboardDidHide", () => apply(0))];
+        ? [on("keyboardWillShow"), on("keyboardWillChangeFrame"), on("keyboardDidShow"), hide("keyboardWillHide")]
+        : [on("keyboardDidShow"), hide("keyboardDidHide")];
     return () => {
       alive = false;
       subs.forEach((s) => s.remove());
