@@ -271,3 +271,19 @@ async fn resolve_works_when_herdr_closes_each_connection_after_one_reply() {
     let r = claude::resolve_with(&sock, std::time::Duration::from_secs(5), &home, "w1:p1", || None).await.unwrap();
     assert_eq!(r.session.as_deref(), Some("oneshot-sess"));
 }
+
+/// After `/restart` from a folder reached through a symlink, Claude Code reports the real folder
+/// but keeps writing the log in the project dir of the old path.
+#[tokio::test]
+async fn resolve_finds_the_log_in_another_project_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    write(&home.join(".claude/sessions/4343.json"), r#"{"pid":4343,"sessionId":"moved-sess","cwd":"/home/sam/proj"}"#);
+    let log = home.join(".claude/projects/-home-sam-link/moved-sess.jsonl");
+    write(&log, "{}\n");
+    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4343);
+    let mut s = Session::start(sock, home.clone());
+    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    assert_eq!(r["result"]["session"], "moved-sess");
+    assert_eq!(r["result"]["log_path"], log.to_string_lossy().as_ref());
+}
