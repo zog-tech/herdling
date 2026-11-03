@@ -5,6 +5,18 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd 0.1.4] - 2026-11-03
+
+- Command finished: `shell.watch`, `shell.unwatch` and `shell.watches`. herdlingd sends one push
+  when a watched shell command finishes. A tap opens the terminal.
+- The thread finds the Claude Code log after `/restart` from a folder reached through a symlink.
+  The resolver looks for the log in every Claude project folder and takes the newest match.
+- The thread follows a Claude Code conversation that continues in a new session id
+  (a `continued-in` record at the end of the old log).
+- herdlingd reads very large session logs in bounded chunks. A very long line (for example a
+  base64 image) is clipped and no longer loads in full.
+- An image placeholder between two words keeps a space ("Fix it Okay", not "Fix itOkay").
+
 ## [herdlingd 0.1.3] - 2026-11-01
 
 - Tidy notifications: one notification per agent (`collapseId`, `tag`), grouped by computer
@@ -52,6 +64,20 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Notify me when a command finishes.** A terminal's menu and the Run sheet have "Notify me when
+  it finishes". The computer sends one push when the command finishes. Needs `herdlingd` 0.1.4.
+- **Recent commands in a shell.** A shell shows chips with your last 20 commands on that computer.
+  A tap puts a command in the box. A long press runs or removes it.
+- **Terminal status.** The board's Terminals list and the shell session header show if a terminal
+  is idle or runs a command, for example "Running: pnpm dev".
+- **Page Up and Page Down.** A full-screen app with no scrollback (Claude Code in fullscreen mode,
+  `less`, `vim`) gets Page Up and Page Down buttons in the terminal. Over-the-air update.
+- **Paste chips in New Session.** A long paste in the first prompt becomes a "Pasted text" chip.
+  On Start, the text uploads as a `.txt` file, and the agent gets its path with the first prompt.
+- **Copy on every code block.** Every code block in a reply has a Copy button. The Run button on
+  shell code blocks also works in the peek sheet and in subagent threads.
+- **Native crashes in the crash log.** The crash log also shows native crashes (an uncaught
+  exception on iOS or Android). Needs a new native build. Older builds do nothing.
 - **Run a command from a reply.** A shell code block in a reply (`bash`, `sh`, `zsh`, `shell`,
   `console`, `terminal`, `fish`, `shellsession`) has a Run button, and its long-press menu has
   "Run in shell…". The run sheet shows the command for an edit. It runs the command in a new shell
@@ -253,6 +279,14 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Fixed
 
+- A prompt sent while the agent works no longer stays "Queued" after Claude Code joins it with
+  another prompt.
+- The thread stopped after `/restart` from a symlinked folder, or after Claude Code continued the
+  conversation in a new session. Needs `herdlingd` 0.1.4.
+- The session screen no longer shows the terminal for a moment after New Session, restart or
+  resume starts an agent. A new shell shows the terminal at once in the two-column layout.
+- A status that the app does not know (from a newer herdr) shows as "Unknown" and no longer stops
+  the app. An emoji host name shows a whole emoji on the computers button.
 - The app closed when the user started a new session. herdr sends `agent: null` until it detects
   the new agent, and the agent mark on Overview read letters from that null kind. The mark now
   shows an empty tile for an agent with no kind yet. The app types now allow null for the kind,
