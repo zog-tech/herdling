@@ -54,7 +54,7 @@ export function sortItems(items: BoardItem[], by: SortBy): BoardItem[] {
         if (a.since !== undefined && b.since !== undefined) return b.since - a.since;
         if (a.since !== undefined) return -1;
         if (b.since !== undefined) return 1;
-        return b.agent.state_change_seq - a.agent.state_change_seq;
+        return (b.agent.state_change_seq ?? 0) - (a.agent.state_change_seq ?? 0);
       });
     case "name":
       return [...items].sort((a, b) => NAME.compare(a.title, b.title));

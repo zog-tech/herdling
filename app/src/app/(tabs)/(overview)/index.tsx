@@ -503,7 +503,7 @@ export default function BoardScreen() {
   );
   const onMarkRead = useCallback((i: BoardItem) => {
     // No haptic here: the swipe gave one when it passed the action point.
-    markSeen(i.hostId, i.agent.pane_id, i.agent.state_change_seq);
+    markSeen(i.hostId, i.agent.pane_id, i.agent.state_change_seq ?? 0);
   }, []);
   const onRestart = useCallback(
     async (i: BoardItem) => {

@@ -7,7 +7,7 @@ import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
 import { subagentCount, type SubagentList } from "@/thread/subagentState";
 import { SubagentSheet } from "@/thread/SubagentSheet";
 import { StatusGlyph } from "./StatusGlyph";
-import { STATUS_META, statusSpoken, type BadgeStatus } from "./StatusIcon";
+import { STATUS_META, statusMeta, statusSpoken, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
 
 /** Only these states show a row. Idle, done and unknown hide it, unless background work runs. */
@@ -47,7 +47,7 @@ export function pillContent(status: BadgeStatus, background?: string, running = 
   if (status === "working") {
     const detail = tappable ? subagentCount(running) : undefined;
     const spoken = statusSpoken(status);
-    return { status, label: STATUS_META[status].label, detail, tappable, spoken: detail ? `${spoken}, ${detail}` : spoken };
+    return { status, label: statusMeta(status).label, detail, tappable, spoken: detail ? `${spoken}, ${detail}` : spoken };
   }
   if (!SHOWN.includes(status) && tappable) {
     const label = `${subagentCount(running)} running`;
@@ -55,7 +55,7 @@ export function pillContent(status: BadgeStatus, background?: string, running = 
   }
   const detail = QUIET.includes(status) ? background : undefined;
   const spoken = statusSpoken(status);
-  return { status, label: STATUS_META[status].label, detail, tappable: false, spoken: detail ? `${spoken}, ${detail}` : spoken };
+  return { status, label: statusMeta(status).label, detail, tappable: false, spoken: detail ? `${spoken}, ${detail}` : spoken };
 }
 
 /** What VoiceOver says on a change: only work that finishes, and "Needs you". */
@@ -111,7 +111,7 @@ export const StatusRow = memo(function StatusRow({
   }, [status]);
 
   const view = visible ? content : last;
-  const { color } = STATUS_META[view.status];
+  const { color } = statusMeta(view.status);
 
   const style = useAnimatedStyle(() => ({
     height: progress.get() * ROW_HEIGHT,

@@ -68,3 +68,16 @@ test("host_badges_show_3_online_first_and_count_the_rest", () => {
   expect(hostBadges(hosts.slice(0, 2), new Set()).more).toBe(0);
   expect(hostBadges([], new Set()).label).toBe("Computers, none added");
 });
+
+test("host_badges_keep_a_whole_emoji_and_read_rtl_names", () => {
+  // `name[0]` gave half of a surrogate pair, which draws as a broken glyph.
+  const r = hostBadges(
+    [
+      { id: "1", name: "  🐑 studio" },
+      { id: "2", name: "مرحبا" },
+      { id: "3", name: "   " },
+    ],
+    new Set(),
+  );
+  expect(r.badges.map((b) => b.letter)).toEqual(["🐑", "م", "?"]);
+});

@@ -32,7 +32,7 @@ export function bucketOf(agent: Pick<AgentInfo, "agent_status" | "state_change_s
       return "working";
     case "idle":
     case "done":
-      return agent.state_change_seq > (seenSeq ?? 0) ? "ready" : "idle";
+      return (agent.state_change_seq ?? 0) > (seenSeq ?? 0) ? "ready" : "idle";
     default:
       return "idle";
   }
@@ -145,7 +145,7 @@ export function sortBoard(items: BoardItem[]): BoardItem[] {
     (a, b) =>
       rank(a.bucket) - rank(b.bucket) ||
       (b.since ?? -1) - (a.since ?? -1) ||
-      b.agent.state_change_seq - a.agent.state_change_seq ||
+      (b.agent.state_change_seq ?? 0) - (a.agent.state_change_seq ?? 0) ||
       a.key.localeCompare(b.key),
   );
 }

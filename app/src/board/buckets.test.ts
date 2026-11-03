@@ -221,3 +221,30 @@ test("cards_use_herdr_names", () => {
   expect([p1.title, p1.subtitle, p1.terminalTitle]).toEqual(["api · main", "studio · claude", "Fix login"]);
   expect(items.find((i) => i.agent.pane_id === "p2")!.title).toBe("reviewer");
 });
+
+// herdr data can have nulls and missing fields: the herdr schema does not require `agent` or
+// `state_change_seq`, and `cwd` and the terminal title can be null. The board must not throw.
+test("worst_case_agents_merge_group_and_sort_without_a_throw", () => {
+  const long = "x".repeat(300);
+  const odd: AgentInfo[] = [
+    { pane_id: "p1", tab_id: "t1", workspace_id: "w1", agent: null, agent_status: "unknown", cwd: null, terminal_title_stripped: "" },
+    { pane_id: "p2", tab_id: "t1", workspace_id: "w1", agent_status: "done", name: long },
+    { pane_id: "p3", tab_id: "t1", workspace_id: "w9", agent: "claude", agent_status: "idle", name: "🐑 مرحبا", cwd: "" },
+    { pane_id: "p4", tab_id: "t1", workspace_id: "w1", agent: "codex", agent_status: "working", state_change_seq: 3 },
+  ];
+  const items = mergeBoard([host("h1", odd)], {}, {}, {});
+  expect(items[0].key).toBe("h1:p4");
+  expect(items.find((i) => i.key === "h1:p2")?.title).toBe(long);
+  expect(items.find((i) => i.key === "h1:p3")?.title).toBe("🐑 مرحبا");
+  // An agent with no seq is never unread.
+  expect(items.find((i) => i.key === "h1:p2")?.bucket).toBe("idle");
+  for (const by of ["status", "host", "workspace", "folder"] as const) expect(() => groupBoard(items, by)).not.toThrow();
+  expect(groupBoard(items, "folder").at(-1)?.title).toBe("No folder");
+  expect(mergeBoard([host("h1", [])], {}, null, {})).toEqual([]);
+});
+
+test("sort_board_puts_an_agent_with_no_seq_after_one_with_a_seq", () => {
+  const { state_change_seq: _, ...noSeq } = agent("a", "idle");
+  const items = mergeBoard([host("h1", [noSeq, agent("b", "idle", 5)])], {}, null, {});
+  expect(sortBoard(items).map((i) => i.key)).toEqual(["h1:b", "h1:a"]);
+});

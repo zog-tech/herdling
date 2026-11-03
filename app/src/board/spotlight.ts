@@ -31,7 +31,7 @@ export function spotlight(items: BoardItem[]): Spotlight {
   if (hot.length > 0) return { kind: "highlights", items: hot.slice(0, SPOTLIGHT_MAX) };
   const idle = items
     .filter((i) => i.bucket === "idle")
-    .sort((a, b) => (b.since ?? -1) - (a.since ?? -1) || b.agent.state_change_seq - a.agent.state_change_seq);
+    .sort((a, b) => (b.since ?? -1) - (a.since ?? -1) || (b.agent.state_change_seq ?? 0) - (a.agent.state_change_seq ?? 0));
   return { kind: "recent", items: idle.slice(0, RECENT_MAX) };
 }
 
@@ -57,7 +57,7 @@ export function hostBadges(
   hosts: readonly { id: string; name: string }[],
   online: ReadonlySet<string>,
 ): { badges: HostBadge[]; more: number; online: number; label: string } {
-  const all = hosts.map((h) => ({ id: h.id, letter: (h.name.trim()[0] ?? "?").toUpperCase(), online: online.has(h.id) }));
+  const all = hosts.map((h) => ({ id: h.id, letter: ([...h.name.trim()][0] ?? "?").toUpperCase(), online: online.has(h.id) }));
   const sorted = [...all.filter((b) => b.online), ...all.filter((b) => !b.online)];
   const on = sorted.filter((b) => b.online).length;
   const label =

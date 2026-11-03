@@ -102,7 +102,7 @@ const PAST_SESSIONS: Record<string, [string, number][]> = {
 export const CHAT_KINDS = ["claude", "codex", "pi", "opencode"];
 
 const KIND_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", pi: "Pi", opencode: "OpenCode" };
-const kindLabel = (kind: string | null) => (kind ? (KIND_LABEL[kind] ?? kind) : "Agent");
+const kindLabel = (kind: string | null | undefined) => (kind ? (KIND_LABEL[kind] ?? kind) : "Agent");
 
 const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 /** One line of plain text from markdown, for previews and the terminal. */

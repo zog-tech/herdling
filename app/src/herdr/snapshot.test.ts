@@ -113,3 +113,18 @@ test("needs_you_hides_seen", () => {
   const seen = { "a:p1": 50, "a:p2": 60, "a:p3": 5 };
   expect(needsYou(hosts, seen).map((n) => n.agent.pane_id)).toEqual(["p3", "p2"]);
 });
+
+test("needs_you_reads_an_agent_with_no_seq_or_kind_as_seq_0", () => {
+  // The herdr schema does not require `agent` or `state_change_seq`.
+  const { state_change_seq: _s, agent: _k, ...bare } = agent({ pane_id: "p1", agent_status: "blocked" });
+  const { state_change_seq: _s2, ...done } = agent({ pane_id: "p2", agent_status: "done" });
+  const hosts = [
+    {
+      hostId: "a",
+      snapshot: snap([bare, agent({ pane_id: "p3", agent_status: "blocked", state_change_seq: 4 }), done]),
+    },
+  ];
+  // The blocked agent with a seq comes first; a done agent with no seq is never unread.
+  expect(needsYou(hosts, {}).map((n) => n.agent.pane_id)).toEqual(["p3", "p1"]);
+  expect(needsYou([{ hostId: "a", snapshot: snap([]) }], {})).toEqual([]);
+});
