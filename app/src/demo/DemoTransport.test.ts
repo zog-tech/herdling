@@ -32,6 +32,7 @@ import type {
 
 import { parseDiff } from "@/changes/diff";
 import { parseSnapshot, type HerdrEvent } from "@/herdr/snapshot";
+import { terminalStatus, type ProcessInfo } from "@/herdr/terminalStatus";
 import { APP_METHODS } from "@/hosts/methods";
 import { RpcClient } from "@/rpc/RpcClient";
 import type { FollowData } from "@/thread/followShared";
@@ -271,6 +272,12 @@ describe("DemoTransport", () => {
     await jest.advanceTimersByTimeAsync(5000);
     expect(events).toHaveLength(n);
     expect(await callError("pane.watch", { pane_id: "nope" })).toMatchObject({ code: "not_found" });
+  });
+
+  it("answers pane.process_info: one demo terminal runs pnpm dev", async () => {
+    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "p6" }))).toEqual({ kind: "idle" });
+    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "p7" }))).toEqual({ kind: "running", command: "pnpm dev" });
+    expect(await callError("herdr.call", { method: "pane.process_info", params: { pane_id: "nope" } })).toMatchObject({ code: "not_found" });
   });
 
   it("answers herdr methods used by the app", async () => {

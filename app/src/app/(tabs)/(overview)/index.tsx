@@ -26,7 +26,8 @@ import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
-import { boardTerminals, type BoardTerminal } from "@/herdr/terminals";
+import { boardTerminals, terminalPanes, type BoardTerminal } from "@/herdr/terminals";
+import { useTerminalStatusPolling } from "@/herdr/useTerminalStatusPolling";
 import { useHostSnapshot } from "@/herdr/useHostSnapshot";
 import { ConnStatus, timeAgo } from "@/hosts/ConnBadge";
 import { HostMeters } from "@/hosts/HostMeters";
@@ -60,10 +61,15 @@ function CardSectionGap() {
   return <View style={{ height: space.xs }} />;
 }
 
-/** Keeps one host's snapshot live and mirrors it into the shared store; polls previews while the Board is focused. */
-function HostWatcher({ hostId, focused }: { hostId: string; focused: boolean }) {
+/**
+ * Keeps one host's snapshot live and mirrors it into the shared store; polls previews while the Board is focused.
+ * It polls the terminal statuses only while the Terminals section shows (`terminalsShown`).
+ */
+function HostWatcher({ hostId, focused, terminalsShown }: { hostId: string; focused: boolean; terminalsShown: boolean }) {
   const { snapshot, error } = useHostSnapshot(hostId);
   usePreviewPolling(hostId, focused);
+  const terminalIds = useMemo(() => (snapshot ? terminalPanes(snapshot).map((p) => p.pane_id) : []), [snapshot]);
+  useTerminalStatusPolling(hostId, terminalIds, focused && terminalsShown);
   useEffect(() => {
     setHostSnapshot(hostId, snapshot, error);
   }, [hostId, snapshot, error]);
@@ -679,7 +685,7 @@ export default function BoardScreen() {
     // With no native header (the Dashboard top), the screen keeps clear of the status bar itself.
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: dashboard ? insets.top : 0 }}>
       {hosts.map((h) => (
-        <HostWatcher key={h.id} hostId={h.id} focused={focused} />
+        <HostWatcher key={h.id} hostId={h.id} focused={focused} terminalsShown={filter === null} />
       ))}
       {regular ? (
         // Two columns: the board at a fixed width, the selected session in the rest.

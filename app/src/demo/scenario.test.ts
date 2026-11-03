@@ -51,6 +51,21 @@ describe("PausableClock", () => {
 });
 
 describe("DemoScenario seed", () => {
+  it("has a shell that runs pnpm dev until Ctrl-C", () => {
+    const s = make();
+    expect(s.processInfo("p6")).toMatchObject({ shell_pid: 4242, foreground_process_group_id: 4242 });
+    expect(s.processInfo("p1")).toMatchObject({ shell_pid: 4242, foreground_process_group_id: 4242 });
+    const run = s.processInfo("p7");
+    expect(run.foreground_process_group_id).not.toBe(run.shell_pid);
+    expect(run.foreground_processes[0]).toMatchObject({ pid: run.foreground_process_group_id, cmdline: "pnpm dev" });
+    expect(s.screen("p7").split("\n").at(-1)).toBe("");
+    s.sendKeys("p7", ["c-c"]);
+    expect(s.processInfo("p7").foreground_process_group_id).toBe(4242);
+    expect(s.screen("p7").split("\n").at(-1)).toBe("demo@demo:~/projects/api-server$ ");
+    expect(() => s.processInfo("nope")).toThrow();
+    s.stop();
+  });
+
   it("has 5 agents in 2 workspaces with mixed kinds and states", () => {
     const s = make();
     const snap = s.snapshot();
@@ -65,11 +80,11 @@ describe("DemoScenario seed", () => {
     s.stop();
   });
 
-  it("has one plain shell with no agent that answers typed commands", () => {
+  it("has a plain shell with no agent that answers typed commands", () => {
     const s = make();
     const snap = s.snapshot();
     const shells = snap.panes.filter((p) => !snap.agents.some((a) => a.pane_id === p.pane_id));
-    expect(shells.map((p) => p.pane_id)).toEqual(["p6"]);
+    expect(shells.map((p) => p.pane_id)).toEqual(["p6", "p7"]);
     expect(shells[0].cwd).toBe("/home/demo/projects/webapp");
     expect(s.resolve("p6").log_path).toBeNull();
     s.sendText("p6", "pwd");

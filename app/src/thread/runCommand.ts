@@ -7,12 +7,15 @@ import { create } from "zustand";
 
 import type { Snapshot } from "@/herdr/snapshot";
 import { startShell, workspaceExists } from "@/herdr/startSession";
+import { foregroundProcess, type ProcessInfo } from "@/herdr/terminalStatus";
 import { terminalFolder } from "@/herdr/terminals";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { sendLine } from "@/terminal/keys";
 
 type Rpc = Pick<RpcClient, "call">;
+
+export type { ProcessInfo };
 
 /** Fence languages that hold shell commands. */
 const SHELL_LANGS = new Set(["bash", "sh", "zsh", "shell", "console", "terminal", "fish", "shellsession"]);
@@ -45,26 +48,13 @@ export function runnableCommand(lang: string | undefined, content: string): stri
   return text.trim() ? text : null;
 }
 
-/** The answer of herdr `pane.process_info`, as far as the app reads it. */
-export type ProcessInfo = {
-  process_info?: {
-    shell_pid?: number | null;
-    foreground_process_group_id?: number | null;
-    foreground_processes?: { pid?: number; name?: string }[] | null;
-  };
-};
-
 /**
  * The name of the process that keeps the shell of a terminal busy, or undefined when the shell is
  * in the foreground or herdr does not say.
  */
 export function busyProcess(r: ProcessInfo | undefined): string | undefined {
-  const info = r?.process_info;
-  const fg = info?.foreground_process_group_id;
-  if (!info?.shell_pid || !fg || fg === info.shell_pid) return undefined;
-  const procs = info.foreground_processes ?? [];
-  const leader = procs.find((p) => p.pid === fg) ?? procs[0];
-  return leader?.name?.trim() || "a process";
+  const p = foregroundProcess(r);
+  return p ? p.name?.trim() || "a process" : undefined;
 }
 
 /** The folder of a pane: the agent's folder, else the folder herdr reports for the pane. */
