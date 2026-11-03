@@ -6,9 +6,10 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::tail::{next_line_start, read_lines_from};
 use crate::types::BackgroundInfo;
 
 /// A task with no end signal after this time counts as ended (milliseconds).
@@ -21,6 +22,8 @@ pub const COMMANDS_SENT: usize = 3;
 pub const COMMAND_CAP: usize = 40;
 /// Bytes read from the end of a log on the first read. Older starts are not seen.
 pub const SCAN_BYTES: u64 = 8 * 1024 * 1024;
+/// Bytes of lines read in one step of an update.
+const STEP_BYTES: u64 = 1024 * 1024;
 
 /// The kind of a background task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,37 +153,28 @@ impl<F: LineFeed> BackgroundLog<F> {
         if len < self.offset {
             self.reset();
         }
-        let mut skip_partial = false;
         if !self.started {
             self.started = true;
             self.offset = len.saturating_sub(SCAN_BYTES);
-            skip_partial = self.offset > 0;
-        }
-        if len == self.offset {
-            return Ok(());
-        }
-        f.seek(SeekFrom::Start(self.offset))?;
-        let mut buf = Vec::with_capacity((len - self.offset) as usize);
-        f.take(len - self.offset).read_to_end(&mut buf)?;
-        let mut from = 0;
-        if skip_partial {
-            // The window starts inside a line. Drop it.
-            match buf.iter().position(|c| *c == b'\n') {
-                Some(i) => from = i + 1,
-                None => return Ok(()),
+            if self.offset > 0 {
+                // The window starts inside a line. Drop it.
+                match next_line_start(&mut f, self.offset)? {
+                    Some(start) if start <= len => self.offset = start,
+                    _ => return Ok(()),
+                }
             }
         }
-        // A line still being written stays for the next call.
-        let Some(end) = buf.iter().rposition(|c| *c == b'\n') else { return Ok(()) };
-        if end < from {
-            return Ok(());
-        }
-        for line in String::from_utf8_lossy(&buf[from..=end]).lines() {
-            if !line.trim().is_empty() {
+        // Read in bounded steps. A line still being written stays for the next call.
+        while self.offset < len {
+            let (lines, next) = read_lines_from(&mut f, self.offset, STEP_BYTES)?;
+            if next == self.offset {
+                break;
+            }
+            for (_, line) in &lines {
                 self.feed.feed(&mut self.tracker, line);
             }
+            self.offset = next;
         }
-        self.offset += end as u64 + 1;
         Ok(())
     }
 

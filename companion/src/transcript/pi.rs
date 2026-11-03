@@ -10,11 +10,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde_json::Value;
 
 use super::jsonl::{self, LineParser, Parsed};
-use super::{short, text_result, tool_summary, PROMPT_SCAN_LINES};
+use super::{short, text_result, tool_summary, PROMPT_SCAN_BYTES, PROMPT_SCAN_LINES};
 use crate::claude::{cap, parse_ts};
 use crate::types::{ThreadItem, ThreadPage};
 
@@ -234,28 +235,99 @@ fn message(m: &Value, id: &str, ts: i64, out: &mut Parsed) {
     }
 }
 
+/// The tree of one log as read so far: each entry's parent, the leaf, and the read offset.
+#[derive(Debug, Clone, Default)]
+struct Tree {
+    offset: u64,
+    parent: HashMap<String, Option<String>>,
+    leaf: Option<String>,
+}
+
+impl Tree {
+    /// Read the complete lines past the offset, in bounded steps.
+    fn update(&mut self, path: &Path) -> io::Result<()> {
+        let mut f = File::open(path)?;
+        let len = f.metadata()?.len();
+        if len < self.offset {
+            // The file was replaced by a shorter one. Read it again.
+            *self = Tree::default();
+        }
+        while self.offset < len {
+            let (lines, next) = crate::tail::read_lines_from(&mut f, self.offset, TREE_STEP)?;
+            if next == self.offset {
+                break;
+            }
+            for (_, line) in &lines {
+                self.line(line);
+            }
+            self.offset = next;
+        }
+        Ok(())
+    }
+
+    fn line(&mut self, line: &str) {
+        if let Some((id, parent, leaf)) = tree_entry(line) {
+            self.parent.insert(id, parent);
+            self.leaf = Some(leaf);
+        }
+    }
+}
+
+/// The id, parent id and leaf id of one entry line. The header and invalid lines give `None`.
+fn tree_entry(line: &str) -> Option<(String, Option<String>, String)> {
+    let v = serde_json::from_str::<Value>(line).ok()?;
+    if v.get("type").and_then(Value::as_str) == Some("session") {
+        return None;
+    }
+    let id = v.get("id").and_then(Value::as_str)?;
+    let parent = v.get("parentId").and_then(Value::as_str).map(String::from);
+    Some((id.to_string(), parent, v.get("activeLeafId").and_then(Value::as_str).unwrap_or(id).to_string()))
+}
+
+/// The last line when it has no newline yet. A page shows it when it is complete JSON.
+fn open_tail(path: &Path, from: u64) -> Option<(String, Option<String>, String)> {
+    let mut f = File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    if from >= len || len - from > crate::tail::LINE_CAP as u64 {
+        return None;
+    }
+    let bytes = crate::tail::read_span(&mut f, from, len).ok()?;
+    tree_entry(String::from_utf8_lossy(&bytes).trim())
+}
+
+/// Bytes of lines read in one step of a tree update.
+const TREE_STEP: u64 = 1024 * 1024;
+/// Most trees kept between pages. The cache is cleared when it is full.
+const TREE_CACHE_CAP: usize = 16;
+/// Trees kept by one process. A page reads only the lines added since the last page.
+static TREES: Mutex<Option<HashMap<PathBuf, Tree>>> = Mutex::new(None);
+
 /// The ids of the current branch (the chain from the last entry to the root), and the leaf id.
 /// An omp entry with `activeLeafId` names the leaf when the entry itself is off the active branch.
 pub fn branch(path: &Path) -> io::Result<(HashSet<String>, Option<String>)> {
-    let mut parent: HashMap<String, Option<String>> = HashMap::new();
-    let mut leaf = None;
-    for line in BufReader::new(File::open(path)?).lines() {
-        let line = line?;
-        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-        if v.get("type").and_then(Value::as_str) == Some("session") {
-            continue;
-        }
-        let Some(id) = v.get("id").and_then(Value::as_str) else { continue };
-        parent.insert(id.to_string(), v.get("parentId").and_then(Value::as_str).map(String::from));
-        leaf = Some(v.get("activeLeafId").and_then(Value::as_str).unwrap_or(id).to_string());
-    }
+    let old = TREES.lock().ok().and_then(|mut g| g.as_mut()?.remove(path));
+    let mut tree = old.unwrap_or_default();
+    tree.update(path)?;
+    let tail = open_tail(path, tree.offset);
+    let leaf = tail.as_ref().map(|t| t.2.clone()).or_else(|| tree.leaf.clone());
+    let parent_of = |id: &str| match &tail {
+        Some((tid, p, _)) if tid == id => p.clone(),
+        _ => tree.parent.get(id).cloned().flatten(),
+    };
     let mut set = HashSet::new();
     let mut cur = leaf.clone();
     while let Some(id) = cur {
         if !set.insert(id.clone()) {
             break; // A loop. The file is damaged.
         }
-        cur = parent.get(&id).cloned().flatten();
+        cur = parent_of(&id);
+    }
+    if let Ok(mut g) = TREES.lock() {
+        let map = g.get_or_insert_with(HashMap::new);
+        if map.len() >= TREE_CACHE_CAP {
+            map.clear();
+        }
+        map.insert(path.to_path_buf(), tree);
     }
     Ok((set, leaf))
 }
@@ -284,11 +356,11 @@ pub fn read_meta(path: &Path) -> Option<(String, String)> {
 
 /// The session name (`session_info`), else the first user prompt.
 pub fn first_prompt(path: &Path) -> String {
-    let Ok(f) = File::open(path) else { return String::new() };
+    let Ok(mut f) = File::open(path) else { return String::new() };
+    let Ok(lines) = crate::tail::head_lines(&mut f, PROMPT_SCAN_LINES, PROMPT_SCAN_BYTES) else { return String::new() };
     let mut prompt = None;
     let mut name = None;
-    for line in BufReader::new(f).lines().take(PROMPT_SCAN_LINES) {
-        let Ok(line) = line else { break };
+    for (_, line) in lines {
         let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
         match v.get("type").and_then(Value::as_str) {
             Some("session_info") => name = v.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(String::from),

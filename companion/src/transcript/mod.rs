@@ -101,6 +101,8 @@ pub struct CandidateSession {
 pub const DEFAULT_LIMIT: usize = claude::DEFAULT_LIMIT;
 /// Lines read to find the first prompt of a log.
 pub(crate) const PROMPT_SCAN_LINES: usize = 200;
+/// First-prompt scan limit in bytes. A large image or paste must not make the scan long.
+pub(crate) const PROMPT_SCAN_BYTES: u64 = 4 * 1024 * 1024;
 const PROMPT_CHARS: usize = 120;
 const SUMMARY_CAP: usize = 80;
 /// Without a known process start, a session counts as the pane's only with activity in this window.

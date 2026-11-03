@@ -10,6 +10,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use super::subagents::{is_live, Tracked, AGENT_POLL};
 use super::{assemble, merge_result, parse_line, parse_results, ResultInfo, ResultKind};
+use crate::tail::read_lines_from;
 use crate::types::ThreadItem;
 
 /// Time between file size checks.
@@ -18,7 +19,7 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const PENDING_CAP: usize = 256;
 /// Bytes before the start offset scanned for calls that still wait for a result.
 pub const SEED_WINDOW: u64 = 256 * 1024;
-/// Bytes read per step. A longer line grows the read.
+/// Bytes read per step. The line that crosses this limit is still read whole.
 const CHUNK: u64 = 1024 * 1024;
 
 pub struct Follower {
@@ -44,7 +45,7 @@ impl Follower {
         // Calls before `from` may get their result later. Remember the unresolved ones.
         if let Some(text) = f.window_before(from) {
             // process() remembers the unresolved items. The output is not emitted.
-            f.process(&text);
+            f.process(text.lines());
         }
         f
     }
@@ -112,33 +113,23 @@ impl Follower {
             // The file was replaced by a shorter one. Start at its end.
             self.offset = len;
         }
-        let mut want = CHUNK;
-        let buf = loop {
-            let n = want.min(len - self.offset);
-            if n == 0 {
-                return Ok(None);
-            }
-            f.seek(SeekFrom::Start(self.offset))?;
-            let mut buf = vec![0u8; n as usize];
-            f.read_exact(&mut buf)?;
-            if let Some(i) = buf.iter().rposition(|c| *c == b'\n') {
-                buf.truncate(i + 1);
-                break buf;
-            }
-            if n == len - self.offset {
-                return Ok(None); // Only a partial line so far.
-            }
-            want *= 2;
-        };
-        self.offset += buf.len() as u64;
-        let items = self.process(&String::from_utf8_lossy(&buf));
+        if len == self.offset {
+            return Ok(None);
+        }
+        // A line still being written stays for the next poll. A very long line is clipped.
+        let (lines, next) = read_lines_from(&mut f, self.offset, CHUNK)?;
+        if next == self.offset {
+            return Ok(None); // Only a partial line so far.
+        }
+        self.offset = next;
+        let items = self.process(lines.iter().map(|(_, l)| l.as_str()));
         Ok(Some(items))
     }
 
-    fn process(&mut self, text: &str) -> Vec<ThreadItem> {
+    fn process<'a>(&mut self, lines: impl Iterator<Item = &'a str>) -> Vec<ThreadItem> {
         let mut items = Vec::new();
         let mut results: HashMap<String, ResultInfo> = HashMap::new();
-        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        for line in lines.filter(|l| !l.trim().is_empty()) {
             items.extend(parse_line(line));
             for (id, info) in parse_results(line) {
                 merge_result(&mut results, id, info);

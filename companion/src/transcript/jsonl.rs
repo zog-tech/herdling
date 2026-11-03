@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::tail::read_offset_lines_before;
+use crate::tail::{read_lines_from, read_offset_lines_before, OffsetLine};
 use crate::types::{ThreadItem, ThreadPage, ToolResult};
 
 /// Items and tool results of one log line. A result is keyed by the id of its tool item.
@@ -33,7 +33,7 @@ pub const FORWARD_WINDOW: u64 = 256 * 1024;
 pub const SEED_WINDOW: u64 = 256 * 1024;
 /// Pending tool items kept by a follower. The oldest are dropped first.
 pub const PENDING_CAP: usize = 256;
-/// Bytes read per follow step. A longer line grows the read.
+/// Bytes read per follow step. The line that crosses this limit is still read whole.
 const CHUNK: u64 = 1024 * 1024;
 
 /// Put each result into the tool item with the same id.
@@ -182,7 +182,7 @@ impl<P: LineParser> Follower<P> {
         let mut f = Follower { path: path.to_path_buf(), offset: from, parser, pending: HashMap::new(), order: VecDeque::new() };
         // Calls before `from` can get their result later. Remember the open ones; emit nothing.
         if let Some((start, text)) = f.window_before(from) {
-            f.process(start, &text);
+            f.process(split_lines(start, &text));
         }
         f.parser.seeded();
         f
@@ -221,42 +221,27 @@ impl<P: LineParser> Follower<P> {
         if len < self.offset {
             self.offset = len;
         }
-        let mut want = CHUNK;
-        let buf = loop {
-            let n = want.min(len - self.offset);
-            if n == 0 {
-                return Ok(None);
-            }
-            f.seek(SeekFrom::Start(self.offset))?;
-            let mut buf = vec![0u8; n as usize];
-            f.read_exact(&mut buf)?;
-            if let Some(i) = buf.iter().rposition(|c| *c == b'\n') {
-                buf.truncate(i + 1);
-                break buf;
-            }
-            if n == len - self.offset {
-                return Ok(None);
-            }
-            want *= 2;
-        };
-        let start = self.offset;
-        self.offset += buf.len() as u64;
-        let items = self.process(start, &String::from_utf8_lossy(&buf));
+        if len == self.offset {
+            return Ok(None);
+        }
+        // A line still being written stays for the next poll. A very long line is clipped.
+        let (lines, next) = read_lines_from(&mut f, self.offset, CHUNK)?;
+        if next == self.offset {
+            return Ok(None);
+        }
+        self.offset = next;
+        let items = self.process(lines);
         Ok(Some((items, self.offset)))
     }
 
-    fn process(&mut self, start: u64, text: &str) -> Vec<ThreadItem> {
+    fn process(&mut self, lines: Vec<OffsetLine>) -> Vec<ThreadItem> {
         let mut items = Vec::new();
         let mut results: HashMap<String, ToolResult> = HashMap::new();
-        let mut off = start;
-        for line in text.split_inclusive('\n') {
-            let line_off = off;
-            off += line.len() as u64;
-            let line = line.trim_end_matches(['\n', '\r']);
+        for (line_off, line) in &lines {
             if line.trim().is_empty() {
                 continue;
             }
-            let p = self.parser.parse(line_off, line);
+            let p = self.parser.parse(*line_off, line);
             items.extend(p.items);
             results.extend(p.results);
             if self.parser.ended().is_some() {
@@ -281,4 +266,15 @@ impl<P: LineParser> Follower<P> {
         out.extend(assemble(updates, &results));
         out
     }
+}
+
+/// The lines of `text` with their offsets, where `text` starts at byte `start`.
+fn split_lines(start: u64, text: &str) -> Vec<OffsetLine> {
+    let mut off = start;
+    let mut out = Vec::new();
+    for line in text.split_inclusive('\n') {
+        out.push((off, line.trim_end_matches(['\n', '\r']).to_string()));
+        off += line.len() as u64;
+    }
+    out
 }
