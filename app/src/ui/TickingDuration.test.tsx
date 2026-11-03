@@ -13,6 +13,14 @@ test("worklet_text_equals_format_duration", () => {
   }
 });
 
+test("worklet_text_takes_the_seconds_limit", () => {
+  const since = 1_700_000_000_000;
+  for (const s of SECONDS) {
+    expect(durationText(since, since + s * 1000, 10)).toBe(formatDuration(s, 10));
+  }
+  expect(tick(since, since + 725_000, 724, 10)).toEqual({ sec: 725, text: "12m" });
+});
+
 test("tick_writes_only_when_the_second_changes", () => {
   const since = 1_000_000;
   const first = tick(since, since + 4_200, -1);

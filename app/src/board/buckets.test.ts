@@ -8,6 +8,7 @@ import {
   groupBoard,
   mergeBoard,
   previewLine,
+  previewSince,
   sortBoard,
   toggleFilter,
   trackFirstSeen,
@@ -220,4 +221,13 @@ test("cards_use_herdr_names", () => {
   const p1 = items.find((i) => i.agent.pane_id === "p1")!;
   expect([p1.title, p1.subtitle, p1.terminalTitle]).toEqual(["api · main", "studio · claude", "Fix login"]);
   expect(items.find((i) => i.agent.pane_id === "p2")!.title).toBe("reviewer");
+});
+
+test("preview_since_needs_the_same_status_and_a_known_start", () => {
+  const entry = (status: PreviewEntry["status"], status_since?: number | null): PreviewEntry => ({ pane_id: "p1", source: "log", status, status_since });
+  expect(previewSince(entry("working", 1_700_000_000), "working")).toBe(1_700_000_000_000);
+  expect(previewSince(entry("working", 1_700_000_000), "idle")).toBeUndefined();
+  expect(previewSince(entry("working", null), "working")).toBeUndefined();
+  expect(previewSince(entry("working"), "working")).toBeUndefined();
+  expect(previewSince(undefined, "working")).toBeUndefined();
 });

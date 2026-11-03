@@ -171,3 +171,79 @@ test("status_pill_gap_equals_the_thread_row_gap", () => {
   expect(PILL_GAP).toBe(space.md);
   expect(PILL_GAP).toBe(12);
 });
+
+test("pill_content_adds_the_working_time", () => {
+  const since = 1_700_000_000_000;
+  expect(pillContent("working", undefined, 0, since, 72)).toMatchObject({ label: "Working", since, spoken: "Working, 1 minute" });
+  expect(pillContent("working", undefined, 2, since, 240)).toMatchObject({ detail: "2 subagents", since, spoken: "Working, 2 subagents, 4 minutes" });
+  // No start time: no clock.
+  expect(pillContent("working", undefined, 0, undefined, undefined)).toMatchObject({ since: undefined, spoken: "Working" });
+  // Only a working agent shows the time.
+  expect(pillContent("blocked", undefined, 0, since, 72).since).toBeUndefined();
+  expect(pillContent("idle", "1 shell running", 0, since, 72).since).toBeUndefined();
+  expect(pillContent("idle", undefined, 2, since, 72).since).toBeUndefined();
+});
+
+const clockText = (t: ReactTestRenderer) => clock(t)[0]?.props.defaultValue;
+
+test("status_row_shows_the_working_time_with_tabular_digits", () => {
+  const cases: [number, string][] = [
+    [42, "42s"],
+    [72, "1m 12s"],
+    [599, "9m 59s"],
+    [725, "12m"],
+    [3840, "1h 4m"],
+  ];
+  for (const [s, text] of cases) {
+    let t!: ReactTestRenderer;
+    act(() => {
+      t = create(<StatusRow status="working" since={Date.now() - s * 1000} />);
+    });
+    expect(clockText(t)).toBe(text);
+    const flat = Object.assign({}, ...[clock(t)[0].props.style].flat(3).filter(Boolean));
+    expect(flat.fontVariant).toEqual(["tabular-nums"]);
+    act(() => t.unmount());
+  }
+});
+
+test("status_row_time_follows_the_subagent_count", () => {
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="working" since={Date.now() - 725_000} subagents={listOf("running", "running")} />);
+  });
+  const texts = t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
+  expect(texts).toEqual(expect.arrayContaining(["Working", "· 2 subagents", "· "]));
+  expect(clockText(t)).toBe("12m");
+  expect(t.root.find(isButton).props.accessibilityLabel).toBe("Working, 2 subagents, 12 minutes");
+  act(() => t.unmount());
+});
+
+test("status_row_shows_no_time_when_not_working", () => {
+  let t!: ReactTestRenderer;
+  const since = Date.now() - 72_000;
+  act(() => {
+    t = create(<StatusRow status="blocked" since={since} />);
+  });
+  expect(clock(t)).toHaveLength(0);
+  act(() => t.update(<StatusRow status="idle" background="1 shell running" since={since} />));
+  expect(clock(t)).toHaveLength(0);
+  act(() => t.unmount());
+});
+
+test("status_row_clock_runs_only_while_shown_and_focused", () => {
+  jest.useFakeTimers();
+  const spy = jest.spyOn(global, "setInterval");
+  const since = Date.now() - 72_000;
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(<StatusRow status="working" since={since} active={false} />);
+  });
+  // The pill shows its time, but no clock runs while the screen is not focused.
+  expect(clockText(t)).toBe("1m 12s");
+  expect(spy).not.toHaveBeenCalled();
+  act(() => t.update(<StatusRow status="working" since={since} active />));
+  expect(spy).toHaveBeenCalled();
+  act(() => t.unmount());
+  spy.mockRestore();
+  jest.useRealTimers();
+});

@@ -49,6 +49,14 @@ export function withBackground(bucket: Bucket, p: AgentPreview | undefined): Buc
 /** A preview from the companion and the herdr status the agent had when it was fetched. */
 export type PreviewEntry = AgentPreview & { status: AgentStatus };
 
+/**
+ * Epoch ms when the agent's current status began, from the companion's `status_since`. Undefined
+ * when the preview is missing, was fetched under another status, or the companion does not know.
+ */
+export function previewSince(entry: PreviewEntry | undefined, status: AgentStatus | undefined): number | undefined {
+  return entry && entry.status === status && entry.status_since != null ? entry.status_since * 1000 : undefined;
+}
+
 /** One card of the Board. */
 export type BoardItem = {
   key: string;
@@ -129,7 +137,7 @@ export function mergeBoard(
         terminalTitle: secondaryTitle(names, agent),
         agent,
         bucket,
-        since: p?.status_since != null ? p.status_since * 1000 : local,
+        since: previewSince(p, agent.agent_status) ?? local,
         sinceKnown: p?.status_since != null,
         line: previewLine(bucket, p),
       });
