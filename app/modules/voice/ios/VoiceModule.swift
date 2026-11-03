@@ -6,12 +6,16 @@ import FoundationModels
 
 struct DictationOptions: Record {
   @Field var locale: String?
+  /// Record with a Bluetooth headset or car (HFP). Absent or false: the built-in microphone.
+  @Field var bluetoothMic: Bool = false
 }
 
 struct RecordingOptions: Record {
   /// Also run live recognition (the Apple engine).
   @Field var live: Bool = false
   @Field var locale: String?
+  /// Record with a Bluetooth headset or car (HFP). Absent or false: the built-in microphone.
+  @Field var bluetoothMic: Bool = false
 }
 
 private func exception(_ e: Error) -> Exception {
@@ -38,7 +42,7 @@ public class VoiceModule: Module {
 
     AsyncFunction("startDictation") { (opts: DictationOptions?) async throws in
       do {
-        try await self.recognizer.start(localeId: opts?.locale)
+        try await self.recognizer.start(localeId: opts?.locale, bluetoothMic: opts?.bluetoothMic ?? false)
       } catch let e as DictationError {
         throw Exception(name: "DictationError", description: e.message, code: e.code)
       }
@@ -74,7 +78,9 @@ public class VoiceModule: Module {
 
     AsyncFunction("startRecording") { (opts: RecordingOptions?) async throws in
       do {
-        try await self.recognizer.startRecording(live: opts?.live ?? false, localeId: opts?.locale)
+        try await self.recognizer.startRecording(
+          live: opts?.live ?? false, localeId: opts?.locale, bluetoothMic: opts?.bluetoothMic ?? false
+        )
       } catch {
         throw exception(error)
       }

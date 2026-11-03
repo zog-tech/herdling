@@ -107,17 +107,18 @@ actor Recognizer {
     AudioSession.deactivate()
   }
 
-  /// Starts live dictation.
-  func start(localeId: String?) async throws {
-    try await begin(live: true, record: false, localeId: localeId)
+  /// Starts live dictation. `bluetoothMic`: see `AudioSession.activate`.
+  func start(localeId: String?, bluetoothMic: Bool) async throws {
+    try await begin(live: true, record: false, localeId: localeId, bluetoothMic: bluetoothMic)
   }
 
   /// Starts a recording to a WAV file. `live`: also run live recognition (the Apple engine).
-  func startRecording(live: Bool, localeId: String?) async throws {
-    try await begin(live: live, record: true, localeId: localeId)
+  /// `bluetoothMic`: see `AudioSession.activate`.
+  func startRecording(live: Bool, localeId: String?, bluetoothMic: Bool) async throws {
+    try await begin(live: live, record: true, localeId: localeId, bluetoothMic: bluetoothMic)
   }
 
-  private func begin(live: Bool, record: Bool, localeId: String?) async throws {
+  private func begin(live: Bool, record: Bool, localeId: String?, bluetoothMic: Bool) async throws {
     guard run == nil, !starting, !finishing else { throw DictationError.busy }
     guard AVAudioApplication.shared.recordPermission == .granted else {
       throw DictationError.denied("Microphone access is off. Turn it on in Settings.")
@@ -132,7 +133,7 @@ actor Recognizer {
     let engine = AVAudioEngine()
     var writer: WavWriter?
     do {
-      try AudioSession.activate()
+      try AudioSession.activate(bluetoothMic: bluetoothMic)
       let input = engine.inputNode
       let format = input.outputFormat(forBus: 0)
       guard format.sampleRate > 0, format.channelCount > 0 else {
@@ -321,10 +322,25 @@ private final class Once<T>: @unchecked Sendable {
 }
 
 enum AudioSession {
-  static func activate() throws {
+  /// Record and play. `bluetoothMic` false (the default): the built-in microphone records and
+  /// output stays on a Bluetooth device over A2DP. A car or headset does not switch to call mode
+  /// (HFP): that switch takes about a second and cuts off the first words.
+  /// `bluetoothMic` true: a connected headset or car records over HFP.
+  static func activate(bluetoothMic: Bool) throws {
     let session = AVAudioSession.sharedInstance()
-    try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .allowBluetoothHFP, .defaultToSpeaker])
+    let bluetooth: AVAudioSession.CategoryOptions = bluetoothMic ? .allowBluetoothHFP : .allowBluetoothA2DP
+    try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, bluetooth, .defaultToSpeaker])
     try session.setActive(true)
+    guard !bluetoothMic else {
+      // Drop a built-in preference from an earlier run, so iOS picks the headset or car again.
+      if session.preferredInput?.portType == .builtInMic { try? session.setPreferredInput(nil) }
+      return
+    }
+    // An HFP route can stay from an earlier session or another app: ask for the built-in microphone.
+    let onHFP = session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
+    if onHFP, let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+      try? session.setPreferredInput(builtIn)
+    }
   }
 
   /// Playback for text-to-speech: ducks other audio. The playback category routes to AirPods

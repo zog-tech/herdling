@@ -65,6 +65,13 @@ the app tries the next one: Parakeet, then Host. A caption shows the engine that
 for 2 seconds. When every engine fails, the app keeps the recording and shows Retry and Discard.
 The app deletes the recording when the text lands or when you discard it.
 
+Settings > Voice input > Use Bluetooth microphone (off by default). Off: the app records with the
+phone's microphone. On iOS, the audio session allows Bluetooth output over A2DP only, so a car or
+headset keeps playing audio and does not switch to call mode (HFP). That switch takes about a
+second and cuts off the first words. On: a connected headset or car records over HFP. Builds
+before this setting always use HFP on iOS. On Android, the app records with the phone's microphone
+in both cases: it never starts a Bluetooth SCO link.
+
 Native code: recording, levels and live recognition are in `app/modules/voice`. Parakeet is the
 native module `ParakeetModule` in `app/modules/ssh` (FluidAudio 0.17.7, exact version): React
 Native can build only one static pod with a Swift package, and the ssh pod already has Citadel.

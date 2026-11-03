@@ -267,6 +267,10 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Changed
 
+- **Voice input records with the phone's microphone.** A car or Bluetooth headset no longer
+  switches to call mode when you tap the mic, so the first second of speech is not cut off.
+  Audio output stays on the car or headset. Settings > Voice input > "Use Bluetooth microphone"
+  turns the old behavior back on. iOS only; needs a native build (older builds ignore the setting).
 - **Dashboard tiles show the facts, not the screen.** Each tile shows the agent mark, the name and
   the status with its time ("Working · 4m"), then the folder (and the computer when more than one
   is connected). The main text is the question when the agent needs you, else the activity, else

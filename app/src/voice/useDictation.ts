@@ -163,11 +163,12 @@ export function useDictation({
         engine.current = mode.current === "record" ? chosen : "apple";
         // Live recognition (and its permission) only for the Apple engine.
         const live = engine.current === "apple";
+        const { bluetoothMic } = useVoiceSettings.getState();
         enqueue(async () => {
           const allowed = live ? await Voice.requestPermission() : await Voice.requestMicPermission();
           if (allowed !== "granted") throw Object.assign(new Error("denied"), { code: "denied" });
-          if (mode.current === "record") await Voice.startRecording({ live });
-          else await Voice.startDictation();
+          if (mode.current === "record") await Voice.startRecording({ live, bluetoothMic });
+          else await Voice.startDictation({ bluetoothMic });
         }).catch(fail);
         return;
       }
