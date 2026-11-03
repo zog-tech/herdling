@@ -1,6 +1,8 @@
 import { useIsFocused } from "expo-router";
 import {
   ArrowUp,
+  ChevronsDown,
+  ChevronsUp,
   Keyboard as KeyboardIcon,
   Maximize2,
   WrapText,
@@ -45,6 +47,7 @@ import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { useTerminalWidth } from "@/terminal/widthMode";
 import { sendInput, sendInputWorks } from "@/terminal/keys";
+import { fullScreenApp, overflows, PAGE_TEXT, paneScroll, type PageDirection } from "@/terminal/pageScroll";
 import { LatencyBadge, useSrtt } from "@/terminal/latency";
 import {
   endEpoch,
@@ -98,6 +101,8 @@ const resetBuf = (prev: string) => (prev === SENTINEL ? SENTINEL_2 : SENTINEL);
  * mounted and the app is active. `controls`: a key row and a text box that type into the pane,
  * a sent line shown at once (local echo), typing prediction in "Type directly" mode, and the latency.
  * `shell`: the pane runs a plain shell (no agent). Then the controls keep and show recent commands.
+ * With `controls`, a full-screen app that the phone cannot scroll (no host scrollback) gets
+ * Page Up and Page Down buttons that send the page keys to the app.
  */
 export function TerminalView({
   hostId,
@@ -134,7 +139,8 @@ export function TerminalView({
         : parseAnsi(text, colors.ansi).slice(-MAX_LINES),
     [text],
   );
-  const { rpc } = useHostConn(hostId);
+  const { rpc, status, hello } = useHostConn(hostId);
+  const online = status === "online" && !!rpc;
   const srtt = useSrtt(rpc, focused && !!controls);
   const [echoes, setEchoes] = useState<Echo[]>([]);
   const [predict, setPredict] = useState<Prediction>(initialPrediction);
@@ -175,6 +181,22 @@ export function TerminalView({
     [screen],
   );
   const dropEcho = useCallback((id: number) => setEchoes((e) => e.filter((x) => x.id !== id)), []);
+  // The send queue lives here, so the key row, the text box and the page buttons share one order.
+  const [sendError, setSendError] = useState<string>();
+  // herdlingd with `pane.watch` keeps the order of typing calls, so the queue need not wait.
+  const ordered = listsMethod(hello, "pane.watch");
+  const queue = useMemo(
+    () =>
+      rpc
+        ? new SendQueue((op) => sendInput(rpc, paneId, op), {
+            pipeline: () => ordered && sendInputWorks(rpc),
+            onError: (e) => setSendError(message(e)),
+          })
+        : undefined,
+    [rpc, paneId, ordered],
+  );
+  useEffect(() => () => queue?.dispose(), [queue]);
+  const typist = useMemo(() => (queue ? new Typist(queue) : undefined), [queue]);
   const scroll = useRef<ScrollViewInstance>(null);
   const atEnd = useRef(true);
   const viewHeight = useRef(0);
@@ -239,12 +261,46 @@ export function TerminalView({
     });
     return () => sub.remove();
   }, [controls, toEnd]);
+  // Overflow: the phone can scroll the screen itself. Undefined until both heights are known.
+  const contentHeight = useRef<number | undefined>(undefined);
+  const [overflow, setOverflow] = useState<boolean>();
+  const measure = useCallback(() => setOverflow(overflows(contentHeight.current, viewHeight.current || undefined)), []);
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setViewWidth(e.nativeEvent.layout.width);
     viewHeight.current = e.nativeEvent.layout.height;
+    measure();
     // The view got shorter (keyboard): stay at the end.
     if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
-  }, []);
+  }, [measure]);
+  // Nothing to scroll on the phone: ask herdr if the pane shows a full-screen app (no host
+  // scrollback, every row filled). Again when the line count changes, for example the app quits.
+  const lineCount = parsed?.length ?? 0;
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => {
+    if (!controls || !rpc || !focused || overflow !== false || lineCount === 0) {
+      setFullScreen(false);
+      return;
+    }
+    let dead = false;
+    rpc
+      .call("herdr.call", { method: "pane.get", params: { pane_id: paneId } })
+      .then(
+        (r) => !dead && setFullScreen(fullScreenApp(paneScroll(r), lineCount)),
+        () => !dead && setFullScreen(false),
+      );
+    return () => {
+      dead = true;
+    };
+  }, [controls, rpc, focused, overflow, lineCount, paneId]);
+  /** Sends Page Up or Page Down to the full-screen app, after the text that waits, then reads the screen. */
+  const page = (dir: PageDirection) => {
+    if (!queue || !online) return;
+    haptics.tap();
+    setSendError(undefined);
+    setPredict(endEpoch);
+    typist?.flush();
+    queue.push({ text: PAGE_TEXT[dir] }).then(refresh, () => {});
+  };
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     atEnd.current =
@@ -271,7 +327,9 @@ export function TerminalView({
           contentContainerStyle={{ padding: space.md }}
           onScroll={onScroll}
           scrollEventThrottle={100}
-          onContentSizeChange={() => {
+          onContentSizeChange={(_w, h) => {
+            contentHeight.current = h;
+            measure();
             // While a search shows a match, new output does not pull the view to the end.
             if (atEnd.current && !term.trim()) scroll.current?.scrollToEnd({ animated: false });
           }}
@@ -317,6 +375,35 @@ export function TerminalView({
             <LatencyBadge ms={srtt} />
           </View>
         ) : null}
+        {controls && fullScreen && overflow === false ? (
+          <View style={{ position: "absolute", bottom: space.sm, right: space.sm, gap: space.xs }}>
+            {(["up", "down"] as const).map((dir) => {
+              const PageIcon = dir === "up" ? ChevronsUp : ChevronsDown;
+              return (
+                <Pressable
+                  key={dir}
+                  accessibilityRole="button"
+                  accessibilityLabel={dir === "up" ? "Page up" : "Page down"}
+                  accessibilityHint="Scrolls the full-screen app in the terminal"
+                  accessibilityState={{ disabled: !online }}
+                  disabled={!online}
+                  onPress={() => page(dir)}
+                  style={({ pressed }) => ({
+                    width: hitTarget,
+                    height: hitTarget,
+                    borderRadius: radius.md,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: colors.raised,
+                    opacity: !online ? state.disabledOpacity : pressed ? state.pressedFill : 0.8,
+                  })}
+                >
+                  <PageIcon size={18} color={colors.textMuted} />
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
       {lines && error ? (
         <Text
@@ -331,8 +418,11 @@ export function TerminalView({
       {controls ? (
         <TerminalControls
           hostId={hostId}
-          paneId={paneId}
           shell={shell}
+          queue={queue}
+          typist={typist}
+          error={sendError}
+          setError={setSendError}
           bottomInset={bottomInset}
           onSent={refresh}
           onEcho={addEcho}
@@ -351,8 +441,11 @@ export function TerminalView({
  */
 function TerminalControls({
   hostId,
-  paneId,
   shell,
+  queue,
+  typist,
+  error,
+  setError,
   bottomInset,
   onSent,
   onEcho,
@@ -360,8 +453,12 @@ function TerminalControls({
   setPredict,
 }: {
   hostId: string;
-  paneId: string;
   shell: boolean;
+  queue: SendQueue | undefined;
+  typist: Typist | undefined;
+  /** The last send error, shown above the text box. */
+  error: string | undefined;
+  setError: (e: string | undefined) => void;
   bottomInset: number;
   onSent: () => void;
   /** Shows a sent line at once; returns its id. */
@@ -369,30 +466,15 @@ function TerminalControls({
   onEchoFailed: (id: number) => void;
   setPredict: (f: (p: Prediction) => Prediction) => void;
 }) {
-  const { rpc, status, hello } = useHostConn(hostId);
+  const { rpc, status } = useHostConn(hostId);
   const online = status === "online" && !!rpc;
   const [line, setLine] = useState("");
-  const [error, setError] = useState<string>();
   const [direct, setDirect] = useState(false);
   const [buf, setBuf] = useState(SENTINEL);
   const canSend = online && (direct || line.length > 0);
   const commands = useHostCommands(hostId);
   const keyboard = useKeyboardShown();
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
-  // herdlingd with `pane.watch` keeps the order of typing calls, so the queue need not wait.
-  const ordered = listsMethod(hello, "pane.watch");
-  const queue = useMemo(
-    () =>
-      rpc
-        ? new SendQueue((op) => sendInput(rpc, paneId, op), {
-            pipeline: () => ordered && sendInputWorks(rpc),
-            onError: (e) => setError(message(e)),
-          })
-        : undefined,
-    [rpc, paneId, ordered],
-  );
-  useEffect(() => () => queue?.dispose(), [queue]);
-  const typist = useMemo(() => (queue ? new Typist(queue) : undefined), [queue]);
 
   const key = (k: string) => {
     if (!queue || !typist || !online) return;

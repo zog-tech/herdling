@@ -249,3 +249,60 @@ test("Remove in the chip menu removes the command", async () => {
   expect(useRecentCommands.getState().byHost["host-1"]).toEqual(["make test"]);
   expect(sends()).toEqual([]);
 });
+
+/** Gives the terminal scroll view a size: a view of 600 pt and content of `contentHeight` pt. */
+async function measure(contentHeight: number) {
+  const view = tree!.root.find((n) => !!n.props.onContentSizeChange && !!n.props.onLayout);
+  await act(async () => view.props.onLayout({ nativeEvent: { layout: { width: 360, height: 600 } } }));
+  await act(async () => view.props.onContentSizeChange(360, contentHeight));
+  await flush();
+}
+/** herdr `pane.get` with a scroll field: `rows` screen rows and `scrollback` rows above them. */
+const paneGet = (rows: number, scrollback: number) => async (p: any) =>
+  p.method === "pane.get"
+    ? { type: "pane_info", pane: { pane_id: "w1:p1", scroll: { max_offset_from_bottom: scrollback, offset_from_bottom: 0, viewport_rows: rows } } }
+    : { type: "ok" };
+const pageButtons = () => tree!.root.findAll((n) => n.props.accessibilityLabel === "Page up" && !!n.props.onPress);
+
+test("full_screen_app_gets_page_buttons_that_send_page_keys", async () => {
+  // The screen has 2 lines and herdr says the pane has 2 rows and no scrollback.
+  mockSend = paneGet(2, 0);
+  await mount();
+  expect(pageButtons()).toHaveLength(0);
+  await measure(100);
+  expect(pageButtons()).toHaveLength(1);
+  const before = reads();
+  await act(async () => pressable("Page up").props.onPress());
+  await flush();
+  await act(async () => pressable("Page down").props.onPress());
+  await flush();
+  expect(sends().filter((c) => c.method !== "pane.get")).toEqual([
+    { method: "pane.send_input", params: { pane_id: "w1:p1", text: "\x1b[5~" } },
+    { method: "pane.send_input", params: { pane_id: "w1:p1", text: "\x1b[6~" } },
+  ]);
+  expect(reads()).toBe(before + 2);
+});
+
+test("no_page_buttons_for_a_short_shell_or_a_screen_that_scrolls", async () => {
+  // A short shell: 2 lines of 40 rows.
+  mockSend = paneGet(40, 0);
+  await mount();
+  await measure(100);
+  expect(pageButtons()).toHaveLength(0);
+  act(() => tree?.unmount());
+  // Content taller than the view: the phone scrolls it, and herdr is not asked.
+  mockCalls.length = 0;
+  mockSend = paneGet(2, 0);
+  mockRpc = makeRpc();
+  await mount();
+  await measure(2000);
+  expect(pageButtons()).toHaveLength(0);
+  expect(mockCalls.filter((c) => c.method === "pane.get")).toHaveLength(0);
+});
+
+test("no_page_buttons_without_controls", async () => {
+  mockSend = paneGet(2, 0);
+  await mount(false);
+  await measure(100);
+  expect(pageButtons()).toHaveLength(0);
+});

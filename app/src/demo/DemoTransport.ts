@@ -406,6 +406,10 @@ export class DemoTransport implements LineTransport {
       case "pane.send_text":
         s.sendText(need(p, "pane_id", m), need(p, "text", m));
         return {};
+      case "pane.get": {
+        const pane = need(p, "pane_id", m);
+        return { type: "pane_info", pane: { pane_id: pane, scroll: s.paneScroll(pane) } };
+      }
       case "pane.process_info": {
         // The shell of a demo pane is in the foreground, except in the shell that runs a dev server.
         const pane = need(p, "pane_id", m);
