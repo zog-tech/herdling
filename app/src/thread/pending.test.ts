@@ -82,3 +82,21 @@ describe("photo prompts", () => {
     expect(matchKey(`Look\n${path}\n${path}`)).toBe(matchKey("[Image #1] [Image #2]Look"));
   });
 });
+
+test("prompts_that_claude_code_joins_into_one_item_all_go_away", () => {
+  addPending(H, P, "Fix it\n/home/sam/.cache/herdling/uploads/1-shot.jpg");
+  addPending(H, P, "Okay so what changed?");
+  reconcilePending(H, P, [user("u1", "older")]);
+  reconcilePending(H, P, [user("u1", "older")]);
+  expect(pendingOf(H, P)).toHaveLength(2);
+  reconcilePending(H, P, [user("u1", "older"), user("u2", "Fix it [Image #3]Okay so what changed?")]);
+  expect(states()).toEqual([]);
+});
+
+test("an_older_item_that_contains_the_prompt_does_not_match", () => {
+  const old = [user("u1", "please continue now")];
+  addPending(H, P, "continue");
+  reconcilePending(H, P, old);
+  reconcilePending(H, P, old);
+  expect(states()).toEqual(["continue:sending"]);
+});

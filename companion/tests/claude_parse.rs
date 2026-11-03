@@ -410,3 +410,18 @@ fn image_placeholders_go_when_the_line_has_images() {
         other => panic!("expected a user item, got {other:?}"),
     }
 }
+
+#[test]
+fn a_placeholder_between_two_joined_prompts_leaves_a_space() {
+    let line = json!({
+        "type": "user", "uuid": "u11", "timestamp": "2026-10-30T23:19:40.688Z",
+        "message": { "role": "user", "content": [
+            { "type": "text", "text": "Fix it[Image #35]Okay so what changed?" },
+            { "type": "image", "source": { "type": "base64", "media_type": "image/jpeg", "data": "AA==" } }
+        ] }
+    });
+    match &parse_line(&line.to_string())[0] {
+        ThreadItem::User { text, .. } => assert_eq!(text, "Fix it Okay so what changed?"),
+        other => panic!("expected a user item, got {other:?}"),
+    }
+}

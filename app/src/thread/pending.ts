@@ -20,8 +20,8 @@ export type Pending = {
   state: PendingState;
   error?: string;
   /**
-   * Ids of log user items with the same text that the thread already had when this prompt was first
-   * compared. They are older copies (the same prompt sent before) and never match.
+   * Ids of the log user items that the thread already had when this prompt was first compared.
+   * They are older than this prompt (an older copy of the same text, for example) and never match.
    */
   before?: string[];
 };
@@ -52,8 +52,10 @@ export function splitUploads(text: string): { text: string; images: number } {
  * The text compared. Claude Code turns an image path into an attachment and writes "[Image #N]"
  * in its place, so both the paths and the placeholders go, and runs of white space become one space.
  */
-export const matchKey = (text: string) =>
-  splitUploads(text).text.replace(IMAGE_TAG, " ").replace(/\s+/g, " ").trim().slice(0, MATCH_CHARS);
+export const matchKey = (text: string) => normalized(text).slice(0, MATCH_CHARS);
+
+/** The prompt with no upload paths and no image placeholders, and one space for each run of white space. */
+const normalized = (text: string) => splitUploads(text).text.replace(IMAGE_TAG, " ").replace(/\s+/g, " ").trim();
 
 let seq = 0;
 
@@ -99,6 +101,9 @@ export function usePendingList(hostId: string, paneId: string): Pending[] {
  * Compares the pending prompts with the thread. A pending prompt goes away when a user item with
  * the same text (trimmed, first 200 chars) appears that was not there at the first compare. One
  * log item matches one pending prompt, oldest first. Prompts older than 30 min go away too.
+ *
+ * Claude Code joins the prompts that wait in its queue into one user item. So a prompt also goes
+ * away when a new user item contains its full text. That item can clear several prompts.
  */
 export function reconcilePending(hostId: string, paneId: string, items: ThreadItem[], now = Date.now()): void {
   update(paneKey(hostId, paneId), (list) => {
@@ -112,18 +117,24 @@ export function reconcilePending(hostId: string, paneId: string, items: ThreadIt
         changed = true;
         continue;
       }
-      const key = matchKey(p.text);
-      const same = users.filter((u) => matchKey(u.text) === key);
       if (!p.before) {
         // First compare: what is in the log now is older than this prompt.
-        next.push({ ...p, before: same.map((u) => u.id) });
+        next.push({ ...p, before: users.map((u) => u.id) });
         changed = true;
         continue;
       }
       if (p.state !== "failed") {
-        const hit = same.find((u) => !p.before!.includes(u.id) && !used.has(u.id));
+        const before = new Set(p.before);
+        const fresh = users.filter((u) => !before.has(u.id));
+        const key = matchKey(p.text);
+        const hit = fresh.find((u) => !used.has(u.id) && matchKey(u.text) === key);
         if (hit) {
           used.add(hit.id);
+          changed = true;
+          continue;
+        }
+        const full = normalized(p.text);
+        if (full.length > 0 && fresh.some((u) => !used.has(u.id) && normalized(u.text).includes(full))) {
           changed = true;
           continue;
         }
