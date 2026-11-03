@@ -11,21 +11,24 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 /** The JS clock of the VoiceOver label ticks this often. The label shows whole minutes. */
 export const SPOKEN_TICK_MS = 15_000;
 
-/** The text a clock that started at `since` (epoch ms) shows at `now`. Runs on both threads. */
-export function durationText(since: number, now: number): string {
+/**
+ * The text a clock that started at `since` (epoch ms) shows at `now`. Runs on both threads.
+ * `secondsUntil`: see `formatDuration`.
+ */
+export function durationText(since: number, now: number, secondsUntil = 60): string {
   "worklet";
-  return formatDuration((now - since) / 1000);
+  return formatDuration((now - since) / 1000, secondsUntil);
 }
 
 /**
  * One frame of the clock: the new text when the shown second changed since `lastSec`, else
  * undefined (nothing to write). Runs on the UI thread.
  */
-export function tick(since: number, now: number, lastSec: number): { sec: number; text: string } | undefined {
+export function tick(since: number, now: number, lastSec: number, secondsUntil = 60): { sec: number; text: string } | undefined {
   "worklet";
   const sec = Math.floor((now - since) / 1000);
   if (sec === lastSec) return undefined;
-  return { sec, text: durationText(since, now) };
+  return { sec, text: durationText(since, now, secondsUntil) };
 }
 
 type Props = {
@@ -45,6 +48,8 @@ type Props = {
    * read a new value every second.
    */
   accessible?: boolean;
+  /** The minute count from which the text drops the seconds (see `formatDuration`). Default 60. */
+  secondsUntil?: number;
 };
 
 /**
@@ -62,23 +67,26 @@ export const TickingDuration = memo(function TickingDuration({
   maxFontSizeMultiplier,
   style,
   accessible = true,
+  secondsUntil = 60,
 }: Props) {
   // Right at each JS render. Between renders the UI thread writes the text.
   const now = Date.now();
-  const initial = durationText(since, now);
+  const initial = durationText(since, now, secondsUntil);
   const sinceSV = useSharedValue(since);
+  const untilSV = useSharedValue(secondsUntil);
   const lastSec = useSharedValue(Math.floor((now - since) / 1000));
   const text = useSharedValue(initial);
 
   useEffect(() => {
     sinceSV.set(since);
+    untilSV.set(secondsUntil);
     lastSec.set(Math.floor((Date.now() - since) / 1000));
-    text.set(durationText(since, Date.now()));
-  }, [since, sinceSV, lastSec, text]);
+    text.set(durationText(since, Date.now(), secondsUntil));
+  }, [since, secondsUntil, sinceSV, untilSV, lastSec, text]);
 
   const frame = useFrameCallback(() => {
     "worklet";
-    const next = tick(sinceSV.get(), Date.now(), lastSec.get());
+    const next = tick(sinceSV.get(), Date.now(), lastSec.get(), untilSV.get());
     if (!next) return;
     lastSec.set(next.sec);
     text.set(next.text);

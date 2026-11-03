@@ -33,13 +33,18 @@ export function formatResetIn(resetsAt: number | null, nowS: number): string {
   return `resets in ${min}m`;
 }
 
-/** Elapsed time with seconds: `12` -> `"12s"`, `72` -> `"1m 12s"`, `3720` -> `"1h 2m"`. Negative counts as 0. */
-export function formatDuration(seconds: number): string {
+/**
+ * Elapsed time with seconds: `12` -> `"12s"`, `72` -> `"1m 12s"`, `3720` -> `"1h 2m"`. Negative counts as 0.
+ * `secondsUntil`: the minute count from which the text drops the seconds (`720` -> `"12m"` at 10).
+ * The default 60 keeps the seconds for the full first hour.
+ */
+export function formatDuration(seconds: number, secondsUntil = 60): string {
   "worklet"; // Also runs on the UI thread (TickingDuration).
   const s = Math.max(0, Math.floor(seconds));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
+  if (m < secondsUntil) return `${m}m ${s % 60}s`;
+  if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 

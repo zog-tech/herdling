@@ -7,8 +7,10 @@ import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
 import { subagentCount, type SubagentList } from "@/thread/subagentState";
 import { SubagentSheet } from "@/thread/SubagentSheet";
 import { StatusGlyph } from "./StatusGlyph";
-import { STATUS_META, statusSpoken, type BadgeStatus } from "./StatusIcon";
+import { spokenDuration } from "./format";
+import { STATUS_META, statusSpoken, useElapsed, type BadgeStatus } from "./StatusIcon";
 import { Text } from "./Text";
+import { SPOKEN_TICK_MS, TickingDuration } from "./TickingDuration";
 
 /** Only these states show a row. Idle, done and unknown hide it, unless background work runs. */
 const SHOWN: readonly BadgeStatus[] = ["working", "blocked", "offline"];
@@ -24,6 +26,9 @@ const ROW_HEIGHT = PILL_HEIGHT + PILL_GAP;
 const SLIDE = 6;
 const EASE_OUT = Easing.bezier(...motion.ease.out);
 
+/** The pill clock shows seconds under this many minutes: "42s", "9m 59s", then "10m" and "1h 4m". */
+export const PILL_SECONDS_UNTIL = 10;
+
 /** Hide-and-show time of the pill, so the list can keep it in view while it grows. */
 export const STATUS_ANIM_MS = motion.stateMs;
 
@@ -34,20 +39,26 @@ export const STATUS_ANIM_MS = motion.stateMs;
 export const isStatusShown = (status: BadgeStatus, background?: string, running = 0) =>
   SHOWN.includes(status) || running > 0 || (!!background && QUIET.includes(status));
 
-/** What the pill shows. `status`: the icon and the color. `detail`: the muted text after the label. */
-export type PillContent = { status: BadgeStatus; label: string; detail?: string; tappable: boolean; spoken: string };
+/**
+ * What the pill shows. `status`: the icon and the color. `detail`: the muted text after the label.
+ * `since`: epoch ms when the working state began; the pill ends with a clock from it.
+ */
+export type PillContent = { status: BadgeStatus; label: string; detail?: string; since?: number; tappable: boolean; spoken: string };
 
 /**
  * The text and the state of the one pill. Working: "Working", and "· 2 subagents" while subagents run.
  * Quiet agent with running subagents: "2 subagents running" with the working indicator. Quiet agent with
  * background work only: "Idle · 1 shell running". A pill with running subagents opens the subagent sheet.
+ * `since` (epoch ms) and `elapsedS`: the start of the working state and the time since then. Only a working
+ * agent shows the clock ("Working · 2 subagents · 12m"). VoiceOver reads the time in whole minutes.
  */
-export function pillContent(status: BadgeStatus, background?: string, running = 0): PillContent {
+export function pillContent(status: BadgeStatus, background?: string, running = 0, since?: number, elapsedS?: number): PillContent {
   const tappable = running > 0;
   if (status === "working") {
     const detail = tappable ? subagentCount(running) : undefined;
-    const spoken = statusSpoken(status);
-    return { status, label: STATUS_META[status].label, detail, tappable, spoken: detail ? `${spoken}, ${detail}` : spoken };
+    const time = since !== undefined ? spokenDuration(elapsedS ?? 0) : undefined;
+    const spoken = [statusSpoken(status), detail, time].filter((p) => p !== undefined).join(", ");
+    return { status, label: STATUS_META[status].label, detail, since, tappable, spoken };
   }
   if (!SHOWN.includes(status) && tappable) {
     const label = `${subagentCount(running)} running`;
@@ -72,20 +83,33 @@ export function announcement(from: BadgeStatus, to: BadgeStatus): string | undef
  * `subagents`: the subagents of the turn. While some run, the pill adds the count, shows a chevron and
  * a tap opens the subagent sheet. A quiet agent with running subagents shows "2 subagents running".
  * `background`: background work of an idle agent ("1 shell running"); the pill shows "Idle · 1 shell running".
+ * `since`: the start of the working state; the pill ends with a clock ("Working · 1m 12s"). The clock ticks on
+ * the UI thread once a second (`TickingDuration`), with tabular digits, and only while the pill shows and
+ * `active` (the screen is focused) is true.
  */
 export const StatusRow = memo(function StatusRow({
   status,
   subagents,
   background,
+  since,
+  active = true,
 }: {
   status: BadgeStatus;
   subagents?: SubagentList;
   background?: string;
+  /** Epoch ms when the current status began (the companion's `status_since`). Missing: no clock. */
+  since?: number;
+  /** False while the screen is not focused: the clock stops. */
+  active?: boolean;
 }) {
   const reduced = useReducedMotion();
   const running = subagents?.running.length ?? 0;
   const visible = isStatusShown(status, background, running);
-  const content = pillContent(status, background, running);
+  // The clock runs only while the pill shows and the screen is focused.
+  const ticking = visible && active && status === "working" && since !== undefined;
+  // Coarse JS clock, for the VoiceOver label only. The shown clock ticks on the UI thread.
+  const elapsed = useElapsed(status === "working" ? since : undefined, ticking, SPOKEN_TICK_MS);
+  const content = pillContent(status, background, running, since, elapsed);
   // Keep the last shown content, so the pill stays the same while the row fades out.
   const [last, setLast] = useState<PillContent>(content);
   const [open, setOpen] = useState(false);
@@ -93,8 +117,11 @@ export const StatusRow = memo(function StatusRow({
   const prev = useRef(status);
 
   useEffect(() => {
-    if (visible) setLast(pillContent(status, background, running));
-    else setOpen(false);
+    if (visible) setLast(pillContent(status, background, running, since, elapsed));
+  }, [status, background, running, since, elapsed, visible]);
+
+  useEffect(() => {
+    if (!visible) setOpen(false);
     const to = visible ? 1 : 0;
     if (reduced) {
       progress.set(to);
@@ -102,7 +129,7 @@ export const StatusRow = memo(function StatusRow({
     }
     const ms = visible ? motion.stateMs : motion.stateMs * motion.exitRatio;
     progress.set(withTiming(to, { duration: ms, easing: EASE_OUT }));
-  }, [status, background, running, visible, reduced, progress]);
+  }, [visible, reduced, progress]);
 
   useEffect(() => {
     const said = announcement(prev.current, status);
@@ -129,6 +156,21 @@ export const StatusRow = memo(function StatusRow({
         <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {`· ${view.detail}`}
         </Text>
+      ) : null}
+      {view.since !== undefined ? (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text variant="small" muted maxFontSizeMultiplier={1.3}>
+            {"· "}
+          </Text>
+          <TickingDuration
+            variant="small"
+            since={view.since}
+            active={ticking}
+            secondsUntil={PILL_SECONDS_UNTIL}
+            maxFontSizeMultiplier={1.3}
+            accessible={false}
+          />
+        </View>
       ) : null}
       {view.tappable ? <ChevronRight size={16} color={colors.textMuted} /> : null}
     </>

@@ -34,4 +34,15 @@ test("format_duration_shows_seconds_under_an_hour", () => {
   expect(formatDuration(72)).toBe("1m 12s");
   expect(formatDuration(3720)).toBe("1h 2m");
   expect(formatDuration(-5)).toBe("0s");
+  expect(formatDuration(720)).toBe("12m 0s");
+});
+
+test("format_duration_drops_the_seconds_from_a_given_minute", () => {
+  expect(formatDuration(42, 10)).toBe("42s");
+  expect(formatDuration(72, 10)).toBe("1m 12s");
+  expect(formatDuration(599, 10)).toBe("9m 59s");
+  expect(formatDuration(600, 10)).toBe("10m");
+  expect(formatDuration(725, 10)).toBe("12m");
+  expect(formatDuration(3599, 10)).toBe("59m");
+  expect(formatDuration(3840, 10)).toBe("1h 4m");
 });
