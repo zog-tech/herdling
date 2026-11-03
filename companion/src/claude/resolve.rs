@@ -121,12 +121,30 @@ fn locate(home: &Path, cwd: &str, direct: &[u32], roots: &[u32], table: ProcessT
         let mut dirs = vec![project_dir(home, cwd)];
         dirs.extend(s.cwd.as_deref().map(|c| project_dir(home, c)));
         let paths: Vec<PathBuf> = dirs.iter().map(|d| d.join(format!("{}.jsonl", s.id))).collect();
-        let log = paths.iter().find(|p| p.exists()).unwrap_or(&paths[0]).clone();
+        let log = paths
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .or_else(|| log_in_any_project(home, &s.id))
+            .unwrap_or_else(|| paths[0].clone());
         return Some((s.id, log));
     }
     let (path, _) = newest_jsonl(&project_dir(home, cwd), Some(RECENT_WINDOW))?;
     let id = path.file_stem()?.to_string_lossy().into_owned();
     Some((id, path))
+}
+
+/// The newest `<id>.jsonl` in any project dir. After `/restart` from a folder reached through a
+/// symlink, Claude Code reports the real folder but keeps the log under the old path.
+fn log_in_any_project(home: &Path, id: &str) -> Option<PathBuf> {
+    let name = format!("{id}.jsonl");
+    std::fs::read_dir(home.join(".claude").join("projects"))
+        .ok()?
+        .flatten()
+        .map(|e| e.path().join(&name))
+        .filter_map(|p| Some((mtime(&p)?, p)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, p)| p)
 }
 
 /// `(pid, ppid)` pairs for every process. Works on macOS and Linux.
