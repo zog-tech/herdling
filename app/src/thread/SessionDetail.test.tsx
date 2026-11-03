@@ -5,6 +5,7 @@
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { EXPECT_MS, expectedKind, expectPane, resetExpected } from "@/herdr/expectedPanes";
 import type { Snapshot } from "@/herdr/snapshot";
 import { setHostSnapshot } from "@/herdr/snapshotStore";
 
@@ -102,6 +103,7 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
   setHostSnapshot("h", undefined);
+  resetExpected();
   jest.useRealTimers();
 });
 
@@ -156,6 +158,40 @@ test("a_new_shell_before_the_snapshot_shows_it_opens_as_a_terminal", async () =>
   expect(texts(t)).toContain("Terminal");
   expect(texts(t)).not.toContain("Thread");
   expect(hasLabel(t, "Search the terminal")).toBe(true);
+});
+
+test("a_pane_that_expects_an_agent_shows_no_terminal_view_before_the_agent_appears", async () => {
+  // New session started an agent, but the snapshot shows the pane before its agent.
+  expectPane("h", "p9", "agent");
+  setHostSnapshot("h", fresh([]));
+  const t = await open();
+  expect(segments(t)).toContain("Thread");
+  expect(texts(t)).not.toContain("h · Terminal");
+  // The agent appears: the mark goes away, and the snapshot decides from now on.
+  act(() => setHostSnapshot("h", fresh([{ ...noKind, agent: "claude", agent_status: "idle" }])));
+  await flush();
+  expect(segments(t)).toContain("Thread");
+  expect(expectedKind("h", "p9")).toBeUndefined();
+});
+
+test("an_expected_shell_with_no_route_hint_opens_as_a_terminal_at_once", async () => {
+  // The detail column of regular width gets no shell param: the mark tells it.
+  expectPane("h", "p9", "shell");
+  const t = await open();
+  expect(texts(t)).toContain("Terminal");
+  expect(texts(t)).not.toContain("Thread");
+  expect(hasLabel(t, "Search the terminal")).toBe(true);
+});
+
+test("an_agent_mark_expires_and_a_pane_with_no_agent_becomes_a_terminal", async () => {
+  expectPane("h", "p9", "agent");
+  setHostSnapshot("h", fresh([]));
+  const t = await open();
+  expect(segments(t)).toContain("Thread");
+  act(() => jest.advanceTimersByTime(EXPECT_MS + 1));
+  await flush();
+  expect(segments(t)).not.toContain("Thread");
+  expect(texts(t)).toContain("h · Terminal");
 });
 
 test("closing_a_terminal_asks_then_closes_its_pane", async () => {

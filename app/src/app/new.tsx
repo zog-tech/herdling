@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { branchError, defaultBranch, worktreeSlug } from "@/changes/worktree";
 import { agentLabel } from "@/herdr/agentKinds";
+import { expectPane } from "@/herdr/expectedPanes";
 import { canResume, resumeInFolder } from "@/herdr/sessionActions";
 import { startSession, startShell, workspaceExists } from "@/herdr/startSession";
 import { useSnapshots } from "@/herdr/snapshotStore";
@@ -373,6 +374,8 @@ export default function NewSessionScreen() {
       if (shell) {
         const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, onProgress: setProgress });
         allowLeave();
+        // The mark carries the hint into the detail column of regular width too.
+        expectPane(hostId, paneId, "shell");
         router.replace({ pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, shell: "1" } } as never);
         // The shell runs even when the command did not go through: say so over the open terminal.
         if (commandError) Alert.alert("Command not sent", commandError);
@@ -387,6 +390,8 @@ export default function NewSessionScreen() {
       });
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
       allowLeave();
+      // The snapshot can show the pane before its agent: keep the agent layout, not a terminal.
+      expectPane(hostId, paneId, "agent");
       router.replace(
         (promptError
           ? { pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, prompt, promptError } }
@@ -412,6 +417,7 @@ export default function NewSessionScreen() {
         const reuse = ws && (await workspaceExists(rpc, ws.workspace_id));
         const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId: reuse && ws ? ws.workspace_id : undefined });
         allowLeave();
+        expectPane(hostId, paneId, "agent");
         router.replace(`/session/${hostId}/${paneId}` as never);
       } catch (e) {
         haptics.fail();

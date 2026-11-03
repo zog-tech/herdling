@@ -510,7 +510,7 @@ export default function BoardScreen() {
       const { rpc } = getHostConn(i.hostId);
       if (!rpc || !(await confirmRestart())) return;
       try {
-        await restartConfirmed(rpc, i.agent, (paneId) => openPane(i.hostId, paneId));
+        await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId));
       } catch (e) {
         Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
       }

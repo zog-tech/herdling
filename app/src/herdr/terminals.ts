@@ -23,6 +23,23 @@ export function terminalPane(snapshot: Pick<Snapshot, "agents" | "panes"> | unde
   return pane && snapshot && !hasAgent(snapshot, pane) ? pane : undefined;
 }
 
+/**
+ * True when the session screen shows the pane as a terminal only. An agent in the pane always gets
+ * the agent layout. A pane where the app just started an agent (`expected` "agent") keeps the agent
+ * layout while the snapshot lags. A new shell (`expected` "shell") is a terminal before the snapshot
+ * shows its pane. Other panes follow the snapshot: no agent means a terminal.
+ */
+export function showsTerminal(
+  snapshot: Pick<Snapshot, "agents" | "panes"> | undefined,
+  paneId: string,
+  expected?: "agent" | "shell",
+): boolean {
+  if (snapshot?.agents.some((a) => a.pane_id === paneId)) return false;
+  if (expected === "agent") return false;
+  if (terminalPane(snapshot, paneId)) return true;
+  return expected === "shell" && !snapshot?.panes.some((p) => p.pane_id === paneId);
+}
+
 /** The folder of the terminal: the folder herdr reports for the pane, else the folder of its foreground process. */
 export const terminalFolder = (pane: PaneInfo): string | undefined => nonEmpty(pane.cwd) ?? nonEmpty(pane.foreground_cwd);
 

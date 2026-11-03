@@ -4,6 +4,7 @@ import type { RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
 import { showActionSheet } from "@/ui/nativeSheet";
 
+import { expectPane } from "./expectedPanes";
 import { closeAgent, restartAgent } from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
 
@@ -39,12 +40,14 @@ export const confirmRestart = () =>
   confirmDestructive("Restart this agent?", "A new agent starts in a new tab. This pane closes.", "Restart");
 
 /**
- * Restarts `agent` (already confirmed) and hands the new pane to `opened`. A pane that did not
+ * Restarts `agent` of `hostId` (already confirmed) and hands the new pane to `opened`. The new pane
+ * expects an agent, so it does not show as a terminal while the snapshot lags. A pane that did not
  * close gets the "still running" offer.
  */
-export async function restartConfirmed(rpc: Rpc, agent: AgentInfo, opened: (paneId: string) => void): Promise<void> {
+export async function restartConfirmed(rpc: Rpc, hostId: string, agent: AgentInfo, opened: (paneId: string) => void): Promise<void> {
   const oldPane = agent.pane_id;
   const { paneId, closeError } = await restartAgent(rpc, agent);
+  expectPane(hostId, paneId, "agent");
   opened(paneId);
   if (closeError) offerCloseOld(rpc, oldPane, closeError);
 }

@@ -22,11 +22,12 @@ import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
 import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
+import { useExpectedPane } from "@/herdr/expectedPanes";
 import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
+import { showsTerminal, terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
 import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
@@ -129,7 +130,7 @@ function useSessionMenu(
         destructive: true,
         onPick: async () => {
           const ok = await confirmRestart();
-          if (ok) run("Restarting…", "Can't restart", () => restartConfirmed(rpc, agent, openPane));
+          if (ok) run("Restarting…", "Can't restart", () => restartConfirmed(rpc, hostId, agent, openPane));
         },
       });
     }
@@ -537,9 +538,15 @@ export function SessionDetail({
   }, [hostId, paneId, seq]);
 
   const snapshot = useSnapshots((s) => s.byHost[hostId]);
+  // What the app just started here: an agent keeps this layout while the snapshot lags, a new
+  // shell is a terminal at once. The mark goes away when the snapshot shows the agent or the pane.
+  const mark = useExpectedPane(hostId, paneId, (kind) =>
+    kind === "agent" ? !!agent : !!snapshot?.panes.some((p) => p.pane_id === paneId),
+  );
+  const expected = shell ? "shell" : mark;
   // A terminal: a pane with no agent, or the new shell that the snapshot does not show yet.
-  const termPane = agent ? undefined : terminalPane(snapshot, paneId);
-  const terminal = !agent && (!!termPane || (shell && !snapshot?.panes.some((p) => p.pane_id === paneId)));
+  const terminal = showsTerminal(snapshot, paneId, expected);
+  const termPane = terminal ? terminalPane(snapshot, paneId) : undefined;
   const view: Mode = terminal ? "terminal" : mode;
   const folder = termPane ? terminalFolder(termPane) : undefined;
   const title = terminal
