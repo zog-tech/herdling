@@ -5,10 +5,10 @@ import * as haptics from "@/ui/haptics";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { showNotice } from "@/ui/notice";
 
-import type { ThreadPane } from "./LiveToolContext";
+import type { RunHost, ThreadPane } from "./LiveToolContext";
 import { plainText } from "./plainText";
 import { requestQuote } from "./quote";
-import { openRunSheet } from "./runCommand";
+import { runAt } from "./runCommand";
 import { openSelectText } from "./selectText";
 import { fullInputText, type ToolResult } from "./toolView";
 
@@ -33,6 +33,8 @@ export type MenuTarget = {
   code?: string;
   /** The command of that code block when it is a shell block that can run (host online). */
   run?: string;
+  /** Where the command runs outside a live session thread (the peek sheet, a subagent thread). */
+  runAt?: RunHost;
 };
 
 export type RowAction = "copyCode" | "run" | "copy" | "copyMarkdown" | "select" | "share" | "read" | "quote";
@@ -49,8 +51,8 @@ export function readableText(t: MenuTarget): string {
 export function rowActions(t: MenuTarget, pane: ThreadPane | null): RowAction[] {
   const out: RowAction[] = [];
   if (t.code !== undefined) out.push("copyCode");
-  // Run needs the pane of the reply: the run sheet offers the terminals of its host.
-  if (t.run !== undefined && pane) out.push("run");
+  // Run needs the host of the reply: the run sheet offers the terminals of that host.
+  if (t.run !== undefined && (t.runAt ?? pane)) out.push("run");
   out.push("copy");
   // Only offered when the reply has markdown marks; otherwise both copies are the same.
   if (t.kind === "assistant" && plainText(t.text) !== t.text.trim()) out.push("copyMarkdown");
@@ -105,15 +107,24 @@ export function subagentCopyText(description: string, summary?: string): string 
   return [description || "Subagent", summary?.trim()].filter(Boolean).join("\n\n");
 }
 
-/** Copies the text, then gives one haptic and a short "Copied" notice. */
-export async function copyText(text: string, done = "Copied"): Promise<void> {
+/**
+ * Copies the text, then gives one haptic and a short "Copied" notice. `quiet`: a light haptic and
+ * no notice, for a button that shows its own check mark. A failure always shows a notice.
+ * It returns true when the text is on the clipboard.
+ */
+export async function copyText(text: string, done = "Copied", opts?: { quiet?: boolean }): Promise<boolean> {
   try {
     await Clipboard.setStringAsync(text);
-    haptics.commit();
-    showNotice(done);
+    if (opts?.quiet) haptics.press();
+    else {
+      haptics.commit();
+      showNotice(done);
+    }
+    return true;
   } catch {
     haptics.fail();
     showNotice("Can't copy", { failed: true });
+    return false;
   }
 }
 
@@ -122,9 +133,11 @@ export function runRowAction(a: RowAction, t: MenuTarget, pane: ThreadPane | nul
     case "copyCode":
       void copyText(t.code ?? "", "Code copied");
       return;
-    case "run":
-      if (pane && t.run !== undefined) openRunSheet({ hostId: pane.hostId, paneId: pane.paneId, command: t.run });
+    case "run": {
+      const at: RunHost | null = t.runAt ?? pane;
+      if (at && t.run !== undefined) runAt(at, t.run);
       return;
+    }
     case "copy":
       void copyText(readableText(t));
       return;

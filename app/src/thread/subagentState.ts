@@ -74,6 +74,8 @@ export function subagentHref(
       agentId: s.agentId,
       log: log.logPath,
       title: s.description,
+      // The parent pane: Run on a code block of the subagent uses the folder of the parent agent.
+      ...(log.paneId ? { pane: log.paneId } : {}),
       ...(s.startedAt ? { since: String(s.startedAt) } : {}),
     },
   } as const;

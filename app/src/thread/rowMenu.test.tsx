@@ -106,6 +106,12 @@ describe("rowActions", () => {
     expect(rowActions(t("user"), null)).toEqual(["copy", "select", "share"]);
     expect(rowActions(t("assistant", { code: "ls", run: "ls" }), null)).toEqual(["copyCode", "copy", "select", "share"]);
   });
+
+  test("run_outside_a_session_needs_the_host_of_the_reply", () => {
+    // The peek sheet and a subagent thread give the host in `runAt`.
+    const runAt = { hostId: "studio" };
+    expect(rowActions(t("assistant", { code: "ls", run: "ls", runAt }), null)).toEqual(["copyCode", "run", "copy", "select", "share"]);
+  });
 });
 
 test("copy_texts_of_tool_and_subagent_cards", () => {

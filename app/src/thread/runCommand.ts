@@ -11,6 +11,7 @@ import { foregroundProcess, type ProcessInfo } from "@/herdr/terminalStatus";
 import { terminalFolder } from "@/herdr/terminals";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import type { RpcClient } from "@/rpc/RpcClient";
+import type { RunHost } from "@/thread/LiveToolContext";
 import { sendLine } from "@/terminal/keys";
 
 type Rpc = Pick<RpcClient, "call">;
@@ -89,8 +90,11 @@ export async function runCommand(
   return startShell(rpc, { cwd: target.cwd, command, workspaceId: reuse && ws ? ws.workspace_id : undefined });
 }
 
-/** What the run sheet opens with: the pane of the reply and the command of the block. */
-export type RunRequest = { hostId: string; paneId: string; command: string };
+/**
+ * What the run sheet opens with: the pane of the reply and the command of the block. With no pane
+ * (a subagent whose parent is not known), the sheet offers only the terminals of the host.
+ */
+export type RunRequest = { hostId: string; paneId?: string; command: string };
 
 export const useRunRequest = create<{ req?: RunRequest }>(() => ({}));
 
@@ -100,4 +104,14 @@ export function openRunSheet(req: RunRequest): void {
   // Loaded on first use: the router module is large, and thread rows load this module.
   const { router } = require("expo-router") as typeof import("expo-router");
   router.push("/run-command" as never);
+}
+
+/**
+ * Opens the run sheet for a command of a reply on this host: through the `open` of the thread
+ * (the peek sheet closes first), else at once.
+ */
+export function runAt(at: RunHost, command: string): void {
+  const req: RunRequest = { hostId: at.hostId, paneId: at.paneId, command };
+  if (at.open) at.open(req);
+  else openRunSheet(req);
 }
