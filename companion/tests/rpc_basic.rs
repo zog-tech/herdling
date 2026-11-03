@@ -180,3 +180,30 @@ async fn herdr_call_marks_phone_input() {
     s.recv().await;
     assert!(herdlingd::phone_input::last(dir.path(), "w1:p1").is_some());
 }
+
+#[tokio::test]
+async fn shell_watch_adds_lists_and_removes_a_watch() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    s.send(r#"{"id":1,"method":"shell.watch","params":{"pane_id":"w1:p2","device_id":"d_1"}}"#).await;
+    let r = s.recv().await;
+    assert_eq!(r["result"]["pane_id"], "w1:p2");
+    assert_eq!(r["result"]["busy"], false);
+    let since = r["result"]["since"].as_u64().unwrap();
+    assert_eq!(r["result"]["expires_at"].as_u64().unwrap(), since + 24 * 3600);
+    assert!(herdlingd::shell_watch::path(dir.path()).exists());
+
+    s.send(r#"{"id":2,"method":"shell.watches"}"#).await;
+    let r = s.recv().await;
+    assert_eq!(r["result"]["watches"].as_array().unwrap().len(), 1);
+
+    s.send(r#"{"id":3,"method":"shell.unwatch","params":{"pane_id":"w1:p2"}}"#).await;
+    assert_eq!(s.recv().await["result"], json!({"removed": true}));
+    s.send(r#"{"id":4,"method":"shell.unwatch","params":{"pane_id":"w1:p2"}}"#).await;
+    assert_eq!(s.recv().await["result"], json!({"removed": false}));
+
+    s.send(r#"{"id":5,"method":"shell.watch","params":{"pane_id":""}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "bad_request");
+    s.send(r#"{"id":6,"method":"shell.watch","params":{"pane_id":"p","device_id":7}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "bad_request");
+}

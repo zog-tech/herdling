@@ -12,6 +12,9 @@ import type {
   PaneAnswer,
   PortsList,
   PreviewClose,
+  ShellUnwatch,
+  ShellWatch,
+  ShellWatches,
   Stats,
   UpdateApply,
   UpdateCheck,
@@ -93,6 +96,8 @@ export class DemoTransport implements LineTransport {
   private nextStream = 1;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private automations: Automation[] = makeAutomations();
+  /** Shell panes with "Notify me when it finishes": pane id to the watch. The demo sends no push. */
+  private shellWatches = new Map<string, ShellWatch>();
   private readonly runs: AutomationRun[] = makeRuns();
   private cpu = 18;
 
@@ -329,6 +334,17 @@ export class DemoTransport implements LineTransport {
         if (!/^[0-9a-f]{32}$/.test(grant)) throw new DemoError("grant_invalid", "grant must be 32 lowercase hex characters");
         return { closed: true } satisfies PreviewClose;
       }
+      case "shell.watch": {
+        const pane = need(p, "pane_id", method);
+        const since = Math.floor(Date.now() / 1000);
+        const w: ShellWatch = { pane_id: pane, since, expires_at: since + 24 * 3600, busy: false };
+        this.shellWatches.set(pane, w);
+        return w;
+      }
+      case "shell.unwatch":
+        return { removed: this.shellWatches.delete(need(p, "pane_id", method)) } satisfies ShellUnwatch;
+      case "shell.watches":
+        return { watches: [...this.shellWatches.values()] } satisfies ShellWatches;
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":

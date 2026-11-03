@@ -15,6 +15,9 @@ import type {
   PaneAnswer,
   PortsList,
   PreviewClose,
+  ShellUnwatch,
+  ShellWatch,
+  ShellWatches,
   PreviewOpen,
   RecentSession,
   Stats,
@@ -228,6 +231,12 @@ describe("DemoTransport", () => {
     expect(await callError("preview.open", { port: "5173" })).toMatchObject({ code: "bad_request" });
     expect(await call<PreviewClose>("preview.close", { grant: open.grant }).then(ok("preview.close"))).toEqual({ closed: true });
     expect(await callError("preview.close", { grant: "../x" })).toMatchObject({ code: "grant_invalid" });
+
+    // "Notify me when it finishes": the demo keeps the watch and sends no push.
+    expect(await call<ShellWatch>("shell.watch", { pane_id: "p1" }).then(ok("shell.watch"))).toMatchObject({ pane_id: "p1", busy: false });
+    expect(await call<ShellWatches>("shell.watches").then(ok("shell.watches"))).toMatchObject({ watches: [{ pane_id: "p1" }] });
+    expect(await call<ShellUnwatch>("shell.unwatch", { pane_id: "p1" }).then(ok("shell.unwatch"))).toEqual({ removed: true });
+    expect(await callError("shell.watch", {})).toMatchObject({ code: "bad_request" });
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

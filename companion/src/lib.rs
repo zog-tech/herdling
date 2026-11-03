@@ -21,6 +21,7 @@ pub mod proxy;
 pub mod push;
 pub mod rpc;
 pub mod serve;
+pub mod shell_watch;
 pub mod stats;
 pub mod summary;
 pub mod tail;

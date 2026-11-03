@@ -14,10 +14,17 @@ function pushPane(data: unknown): { hostId: string; paneId: string } | null {
   return { hostId, paneId };
 }
 
-/** The session route for a push's data `{hostId, paneId}`, or null when the data has another shape. */
+/** True for a "command finished" push of a shell pane (`data.kind` "shell", from `shell.watch`). */
+const isShellPush = (data: unknown): boolean => typeof data === "object" && data !== null && (data as { kind?: unknown }).kind === "shell";
+
+/**
+ * The session route for a push's data `{hostId, paneId}`, or null when the data has another shape.
+ * A shell push adds `shell=1`: the screen shows the terminal before the snapshot arrives.
+ */
 export function notificationTarget(data: unknown): string | null {
   const p = pushPane(data);
-  return p ? `/session/${encodeURIComponent(p.hostId)}/${encodeURIComponent(p.paneId)}?from=push` : null;
+  if (!p) return null;
+  return `/session/${encodeURIComponent(p.hostId)}/${encodeURIComponent(p.paneId)}?from=push${isShellPush(data) ? "&shell=1" : ""}`;
 }
 
 const decode = (s: string) => {

@@ -64,7 +64,13 @@ pub struct PushData {
     /// The Yes and No options of the menu, for the buttons of [`CHOICE_CATEGORY`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choice: Option<PushChoice>,
+    /// [`SHELL_KIND`] on a "command finished" push. Missing on an agent push.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<&'static str>,
 }
+
+/// `data.kind` of a "command finished" push: the pane is a terminal, not an agent.
+pub const SHELL_KIND: &str = "shell";
 
 /// One message per device that has a push token and wants `notice`. While the user is
 /// `at_desk`, devices with `quiet_at_desk` get no message.
@@ -115,7 +121,35 @@ pub fn messages(
                 collapse_id: collapse,
                 thread_id: d.prefs.group.then(|| stable_id(&[&d.host_id])),
                 category_id: choice.map(|_| CHOICE_CATEGORY.to_string()),
-                data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string(), choice: choice.cloned() },
+                data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string(), choice: choice.cloned(), kind: None },
+            })
+        })
+        .collect()
+}
+
+/// The "command finished" push of a watched shell pane (`shell.watch`). It goes to the device
+/// `device_id` only, or to every device when it is `None`. The user asked for it, so the
+/// `finished` and `needs_you` prefs do not apply. While the user is `at_desk`, devices with
+/// `quiet_at_desk` get no message. `replace` and `group` apply as for an agent push.
+pub fn shell_messages(cfg: &Config, device_id: Option<&str>, pane: &str, title: &str, body: &str, at_desk: bool) -> Vec<PushMessage> {
+    cfg.devices
+        .iter()
+        .filter(|d| device_id.is_none_or(|id| d.id == id))
+        .filter(|d| !(at_desk && d.prefs.quiet_at_desk))
+        .filter_map(|d| {
+            let to = d.expo_token.clone()?;
+            let collapse = d.prefs.replace.then(|| stable_id(&[&d.host_id, pane]));
+            Some(PushMessage {
+                to,
+                title: title.to_string(),
+                body: body.to_string(),
+                sound: Some("default"),
+                interruption_level: None,
+                tag: collapse.clone(),
+                collapse_id: collapse,
+                thread_id: d.prefs.group.then(|| stable_id(&[&d.host_id])),
+                category_id: None,
+                data: PushData { host_id: d.host_id.clone(), pane_id: pane.to_string(), choice: None, kind: Some(SHELL_KIND) },
             })
         })
         .collect()

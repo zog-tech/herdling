@@ -39,6 +39,9 @@ export const APP_METHODS = [
   "ports.list",
   "preview.open",
   "preview.close",
+  "shell.watch",
+  "shell.unwatch",
+  "shell.watches",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

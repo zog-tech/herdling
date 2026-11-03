@@ -414,3 +414,17 @@ export type PreviewOpen = { grant: string; port: number; expires_at: number };
 /** `preview.close` params and result. `closed` is false when the grant was not live. */
 export type PreviewCloseParams = { grant: string };
 export type PreviewClose = { closed: boolean };
+
+/**
+ * `shell.watch` params. herdlingd sends one push when the command in the shell pane finishes
+ * (the foreground goes from another process back to the shell). With `device_id`, only that
+ * device gets the push. A new watch of the same pane replaces the old one.
+ */
+export type ShellWatchParams = { pane_id: string; device_id?: string };
+/** One watch. `busy` is true when herdlingd saw the command run. `since` and `expires_at` are Unix seconds (24 h apart). */
+export type ShellWatch = { pane_id: string; since: number; expires_at: number; busy: boolean };
+/** `shell.unwatch` params and result. `removed` is false when the pane had no watch. */
+export type ShellUnwatchParams = { pane_id: string };
+export type ShellUnwatch = { removed: boolean };
+/** `shell.watches` result: the live watches of the computer. */
+export type ShellWatches = { watches: ShellWatch[] };

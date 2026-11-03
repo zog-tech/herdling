@@ -12,6 +12,7 @@ pub mod bonjour;
 pub mod debounce;
 pub mod desk;
 pub mod http;
+pub mod shells;
 pub mod watch;
 
 pub struct ServeCtx {
