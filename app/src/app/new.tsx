@@ -2,7 +2,7 @@ import type { AgentsInstalled, FsDirs, GitStatus, GitWorktree, RecentSession } f
 import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { Eye, EyeOff, TriangleAlert } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { Alert, Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -29,6 +29,9 @@ import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
 import { RpcError } from "@/rpc/RpcClient";
 import { rememberCommand } from "@/terminal/recentCommands";
+import { uploadErrorText, uploadPhotos, withPaths } from "@/thread/attachments";
+import { PhotoStrip } from "@/thread/PlusMenu";
+import { usePasteChips } from "@/thread/usePasteChips";
 import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -136,6 +139,15 @@ export default function NewSessionScreen() {
   // Shell is chosen for this screen only: it is not remembered, so the next session starts with the agent again.
   const [shell, setShell] = useState(false);
   const [prompt, setPrompt] = useState("");
+  /** The prompt as set last. The paste check compares each change with it (see `usePasteChips`). */
+  const latestPrompt = useRef(prompt);
+  /** Sets the prompt text. `latestPrompt` changes at once, so code-set text never becomes a chip. */
+  const putPrompt = useCallback((next: string | ((cur: string) => string)) => {
+    const t = typeof next === "function" ? next(latestPrompt.current) : next;
+    latestPrompt.current = t;
+    setPrompt(t);
+  }, []);
+  const promptRef = useRef<ComponentRef<typeof TextInput>>(null);
   /** Live transcript while the mic is held. */
   const [heard, setHeard] = useState("");
   const [newWorkspace, setNewWorkspace] = useState(false);
@@ -149,13 +161,26 @@ export default function NewSessionScreen() {
 
   const { rpc, hello } = useHostConn(hostId ?? "");
   const dictation = useDictation({
-    onText: (t) => setPrompt((p) => appendDictation(p, t)),
+    onText: (t) => putPrompt((p) => appendDictation(p, t)),
     onPartial: setHeard,
     hostStt:
       rpc && hasMethod(hello, "stt.make")
         ? hostTranscriber((m, p, ms) => rpc.call(m, p, ms), (uri) => new File(uri).base64())
         : undefined,
   });
+
+  /**
+   * Long pastes in the first prompt become chips, like in the session composer. On start they go
+   * to the computer as `.txt` files, and their paths go at the end of the first prompt. A shell
+   * command makes no chips; chips made before the switch to Shell stay hidden and are not sent.
+   */
+  const pasteChips = usePasteChips({
+    enabled: !shell && hasMethod(hello, "files.put"),
+    disabled: progress !== undefined,
+    putText: putPrompt,
+    focus: () => promptRef.current?.focus(),
+  });
+  const pastes = shell ? [] : pasteChips.pastes;
 
   // ---------- folders ----------
 
@@ -346,13 +371,31 @@ export default function NewSessionScreen() {
   const busy = progress !== undefined || resuming !== undefined;
   // Swiping the sheet away mid-start would leave a half-started session behind (lock). A typed
   // first prompt asks before the modal closes; a started session leaves without asking.
-  const allowLeave = useDraftGuard(prompt.trim().length > 0, { lock: busy });
+  const allowLeave = useDraftGuard(prompt.trim().length > 0 || pasteChips.pastes.length > 0, { lock: busy });
+  const { sent: pastesSent } = pasteChips;
   const start = useCallback(async () => {
     if (!rpc || !hostId || !cwd) return;
     const inWorktree = worktree && repo?.is_repo;
     if (inWorktree && branchError(branch)) return;
     haptics.press();
     setError(undefined);
+    // The pasted texts go first, the same way as in the composer: a failed upload starts nothing.
+    let firstPrompt = prompt;
+    const sentPastes = pastes;
+    if (sentPastes.length > 0) {
+      setProgress(sentPastes.length > 1 ? `Uploading 1 of ${sentPastes.length}…` : "Uploading pasted text…");
+      try {
+        const paths = await uploadPhotos(rpc, sentPastes, (done) => {
+          if (done < sentPastes.length) setProgress(`Uploading ${done + 1} of ${sentPastes.length}…`);
+        });
+        firstPrompt = withPaths(prompt, paths);
+      } catch (e) {
+        haptics.fail();
+        setError(`Upload failed, nothing started: ${uploadErrorText(e)}`);
+        setProgress(undefined);
+        return;
+      }
+    }
     let folder = cwd;
     if (inWorktree) {
       setProgress("Creating worktree…");
@@ -386,17 +429,19 @@ export default function NewSessionScreen() {
       const { paneId, promptError } = await startSession(rpc, {
         cwd: folder,
         kind,
-        prompt,
+        prompt: firstPrompt,
         workspaceId,
         onProgress: setProgress,
       });
+      pastesSent(sentPastes);
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
+      // The uploaded files stay on the computer, so their paths stay in the prompt.
       allowLeave();
       // The snapshot can show the pane before its agent: keep the agent layout, not a terminal.
       expectPane(hostId, paneId, "agent");
       router.replace(
         (promptError
-          ? { pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, prompt, promptError } }
+          ? { pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, prompt: firstPrompt, promptError } }
           : `/session/${hostId}/${paneId}`) as never,
       );
     } catch (e) {
@@ -404,13 +449,13 @@ export default function NewSessionScreen() {
       setError(message(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, shell, prompt, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
+  }, [rpc, hostId, cwd, kind, shell, prompt, pastes, pastesSent, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
 
   const resume = useCallback(
     async (s: RecentSession) => {
       if (!rpc || !hostId || busy) return;
       // Resuming does not use the typed first prompt: ask before it goes away.
-      if (prompt.trim() && !(await confirmDiscard())) return;
+      if ((prompt.trim() || pasteChips.pastes.length > 0) && !(await confirmDiscard())) return;
       haptics.press();
       setError(undefined);
       setResuming(s.session);
@@ -427,7 +472,7 @@ export default function NewSessionScreen() {
         setResuming(undefined);
       }
     },
-    [rpc, hostId, busy, prompt, snapshot, kind, allowLeave, router],
+    [rpc, hostId, busy, prompt, pasteChips.pastes.length, snapshot, kind, allowLeave, router],
   );
 
   if (online.length === 0)
@@ -568,11 +613,18 @@ export default function NewSessionScreen() {
             </Text>
           </View>
         ) : null}
+        {pastes.length > 0 ? (
+          <PhotoStrip photos={[]} disabled={busy} onRemove={() => {}}>
+            {pasteChips.chips}
+          </PhotoStrip>
+        ) : null}
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
           <TextInput
+            ref={promptRef}
             accessibilityLabel={shell ? "Command (optional)" : "First prompt (optional)"}
             value={prompt}
-            onChangeText={setPrompt}
+            onChangeText={(t) => putPrompt(pasteChips.change(latestPrompt.current, t))}
+            onSelectionChange={pasteChips.onSelectionChange}
             editable={!busy}
             // A command is one line: no spell check or capitals in the way.
             multiline={!shell}
@@ -600,6 +652,7 @@ export default function NewSessionScreen() {
           />
           <MicButton dictation={dictation} disabled={busy} size={hitTarget} />
         </View>
+        {pasteChips.viewer}
         {heard ? (
           <Text variant="small" muted numberOfLines={2} accessibilityLiveRegion="polite">
             {heard}

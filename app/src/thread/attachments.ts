@@ -238,6 +238,13 @@ export async function uploadPhotos(
   return paths;
 }
 
+/** Why an upload failed, for "Upload failed, nothing sent: …". */
+export function uploadErrorText(e: unknown): string {
+  const code = (e as { code?: unknown })?.code;
+  if (code === "too_large") return "a file is larger than this computer accepts. Update herdlingd for files up to 25 MB";
+  return e instanceof Error ? e.message : String(e);
+}
+
 /** The prompt text, then each path on its own line. The agents read the files at these paths. */
 export function withPaths(text: string, paths: string[]): string {
   const body = text.trimEnd();
