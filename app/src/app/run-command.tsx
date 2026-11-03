@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { expectPane } from "@/herdr/expectedPanes";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { basename } from "@/herdr/startSession";
 import { terminalDetail, terminalFolder, terminalPanes, terminalTitle } from "@/herdr/terminals";
@@ -154,6 +155,8 @@ export default function RunCommandScreen() {
       let watchError: string | undefined;
       if (notify && canNotify && !commandError) await watchShell(rpc, paneId).catch((e: unknown) => (watchError = message(e)));
       allowLeave();
+      // The mark carries the hint into the detail column of regular width too.
+      expectPane(hostId, paneId, "shell");
       router.replace({ pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, shell: "1" } } as never);
       // The shell runs even when the command did not go through: say so over the open terminal.
       if (commandError) Alert.alert("Command not sent", commandError);

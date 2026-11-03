@@ -1,5 +1,5 @@
 import type { AgentInfo, PaneInfo, Snapshot } from "./snapshot";
-import { boardTerminals, terminalDetail, terminalPane, terminalPanes, terminalTitle } from "./terminals";
+import { boardTerminals, showsTerminal, terminalDetail, terminalPane, terminalPanes, terminalTitle } from "./terminals";
 
 const pane = (id: string, extra: Partial<PaneInfo> = {}): PaneInfo => ({ pane_id: id, tab_id: `t-${id}`, workspace_id: "w1", label: null, ...extra });
 const agent = (id: string, kind: string | null = "claude"): AgentInfo => ({
@@ -31,6 +31,27 @@ describe("terminalPanes", () => {
     expect(terminalPane(s, "p1")).toBeUndefined();
     expect(terminalPane(s, "nope")).toBeUndefined();
     expect(terminalPane(undefined, "p2")).toBeUndefined();
+  });
+});
+
+describe("showsTerminal", () => {
+  const lagging = snap([pane("p1")], []);
+  it("shows a pane with no agent and no mark as a terminal", () => {
+    expect(showsTerminal(lagging, "p1")).toBe(true);
+  });
+  it("keeps the agent layout for a pane that expects an agent, while the snapshot lags", () => {
+    expect(showsTerminal(lagging, "p1", "agent")).toBe(false);
+    expect(showsTerminal(undefined, "p1", "agent")).toBe(false);
+  });
+  it("shows a new shell as a terminal before the snapshot shows its pane", () => {
+    expect(showsTerminal(undefined, "p1", "shell")).toBe(true);
+    expect(showsTerminal(snap([], []), "p1", "shell")).toBe(true);
+    expect(showsTerminal(snap([], []), "p1")).toBe(false);
+  });
+  it("gives an agent in the pane the agent layout, whatever the mark", () => {
+    const s = snap([pane("p1")], [agent("p1")]);
+    expect(showsTerminal(s, "p1", "shell")).toBe(false);
+    expect(showsTerminal(s, "p1")).toBe(false);
   });
 });
 

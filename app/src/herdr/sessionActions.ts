@@ -3,6 +3,7 @@ import type { Hello } from "@herdling/protocol";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
+import { expectPane } from "./expectedPanes";
 import type { AgentInfo } from "./snapshot";
 import { startSession } from "./startSession";
 
@@ -106,9 +107,11 @@ export async function closeAgent(rpc: Rpc, paneId: string): Promise<void> {
 
 /**
  * After "Resume older session": closes the resume modal, then replaces the old session screen
- * with the new one, so the old screen unmounts (it would keep speaking and polling).
+ * with the new one, so the old screen unmounts (it would keep speaking and polling). The new pane
+ * expects an agent: it does not show as a terminal while the snapshot lags.
  */
 export function openResumedSession(router: { dismiss: () => void; replace: (href: never) => void }, hostId: string, paneId: string) {
+  expectPane(hostId, paneId, "agent");
   router.dismiss();
   router.replace(`/session/${hostId}/${paneId}` as never);
 }
