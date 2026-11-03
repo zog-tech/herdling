@@ -27,7 +27,9 @@ import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { statusLabel, useTerminalStatus } from "@/herdr/terminalStatus";
 import { showsTerminal, terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
+import { useTerminalStatusPolling } from "@/herdr/useTerminalStatusPolling";
 import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
@@ -560,6 +562,9 @@ export function SessionDetail({
   const termPane = terminal ? terminalPane(snapshot, paneId) : undefined;
   const view: Mode = terminal ? "terminal" : mode;
   const folder = termPane ? terminalFolder(termPane) : undefined;
+  // A terminal shows "Idle" or "Running: <command>" under its title. Agent panes are never polled.
+  useTerminalStatusPolling(hostId, termPane ? [paneId] : [], focused && !!termPane);
+  const termStatus = useTerminalStatus((s) => (termPane ? s.byKey[`${hostId}:${paneId}`] : undefined));
   const title = terminal
     ? termPane
       ? terminalTitle(termPane)
@@ -617,7 +622,7 @@ export function SessionDetail({
         kind={kind}
         terminal={terminal}
         title={title}
-        subtitle={terminal ? `${hostName} · Terminal` : kind ? `${hostName} · ${kind}` : hostName}
+        subtitle={terminal ? `${hostName} · ${termStatus ? statusLabel(termStatus) : "Terminal"}` : kind ? `${hostName} · ${kind}` : hostName}
         menu={menu}
       />
       <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>

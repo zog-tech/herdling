@@ -56,8 +56,14 @@ type Agent = {
 
 type Subagent = { log: string; parentPane: string; agentId: string; items: ThreadItem[]; running: boolean };
 
-/** A pane with no agent: a plain shell. `lines` is its scrollback; `input` is the typed line. */
-type Shell = { lines: string[]; input: string };
+/**
+ * A pane with no agent: a plain shell. `lines` is its scrollback; `input` is the typed line.
+ * `running`: the program in the foreground (a dev server), until Ctrl-C stops it.
+ */
+type Shell = { lines: string[]; input: string; running?: { pid: number; name: string; argv: string[] } };
+
+/** The pid of the shell of every demo pane. */
+const SHELL_PID = 4242;
 
 const HOME = "/home/demo";
 const WEBAPP = `${HOME}/projects/webapp`;
@@ -130,8 +136,8 @@ export class DemoScenario {
   private followers = new Map<string, Set<(d: FollowData) => void>>();
   private nextId = 1;
   private nextWs = 3;
-  private nextTab = 7;
-  private nextPane = 7;
+  private nextTab = 8;
+  private nextPane = 8;
   /** `state_change_seq` grows from the launch time, so an agent that finished is "Ready" again after a relaunch. */
   private seq: number;
   private stopped = false;
@@ -302,7 +308,8 @@ export class DemoScenario {
       if (!pane) throw new DemoError("not_found", `pane ${paneId} not found`);
       const sh = this.shell(paneId);
       const prompt = `${c("32", "demo@demo")}:${c("34", (pane.cwd ?? HOME).replace(HOME, "~"))}$ `;
-      return [...sh.lines.slice(-30).map((l) => (l.startsWith("$ ") ? prompt + l.slice(2) : l)), prompt + sh.input].join("\n");
+      // A running program has the terminal: no prompt until it stops.
+      return [...sh.lines.slice(-30).map((l) => (l.startsWith("$ ") ? prompt + l.slice(2) : l)), (sh.running ? "" : prompt) + sh.input].join("\n");
     }
     const lines: string[] = [];
     const cwd = (a.info.cwd ?? HOME).replace(HOME, "~");
@@ -521,6 +528,22 @@ export class DemoScenario {
     throw new DemoError("not_found", `no such log: ${log}`);
   }
 
+  /**
+   * `pane.process_info`: the shell is in the foreground, except in a shell that runs a program.
+   * It throws for a pane that does not exist.
+   */
+  processInfo(paneId: string): { shell_pid: number; foreground_process_group_id: number; foreground_processes: { pid: number; name: string; argv: string[]; cmdline: string }[] } {
+    if (!this.panes.some((p) => p.pane_id === paneId)) throw new DemoError("not_found", `pane ${paneId} not found`);
+    const run = this.agents.has(paneId) ? undefined : this.shells.get(paneId)?.running;
+    const shell = { pid: SHELL_PID, name: "zsh", argv: ["-zsh"], cmdline: "-zsh" };
+    if (!run) return { shell_pid: SHELL_PID, foreground_process_group_id: SHELL_PID, foreground_processes: [shell] };
+    return {
+      shell_pid: SHELL_PID,
+      foreground_process_group_id: run.pid,
+      foreground_processes: [{ ...run, cmdline: run.argv.join(" ") }],
+    };
+  }
+
   /** The shell state of a pane with no agent, made on first use. */
   private shell(paneId: string): Shell {
     let sh = this.shells.get(paneId);
@@ -536,7 +559,16 @@ export class DemoScenario {
     const sh = this.shell(paneId);
     for (const k of keys) {
       const key = k.toLowerCase();
-      if (key === "enter") {
+      if (sh.running && (key === "c-c" || key === "ctrl+c")) {
+        // Ctrl-C stops the program: the shell is in the foreground again.
+        sh.lines.push("^C");
+        sh.running = undefined;
+        sh.input = "";
+      } else if (sh.running && key === "enter") {
+        // The program reads the line; the demo program does nothing with it.
+        sh.lines.push(sh.input);
+        sh.input = "";
+      } else if (key === "enter") {
         const cmd = sh.input.trim();
         sh.input = "";
         sh.lines.push(`$ ${cmd}`, ...(cmd ? this.runCommand(paneId, cmd) : []));
@@ -758,7 +790,7 @@ export class DemoScenario {
     return a;
   }
 
-  /** The starting state: 2 workspaces, 6 tabs, 5 agents and 1 shell. */
+  /** The starting state: 2 workspaces, 7 tabs, 5 agents and 2 shells (one runs a dev server). */
   private seed(): void {
     const now = Date.now();
     const min = 60_000;
@@ -780,6 +812,7 @@ export class DemoScenario {
       tab("t4", "w2", "validation", 1),
       tab("t5", "w2", "docs", 2),
       tab("t6", "w1", "shell", 4),
+      tab("t7", "w2", "dev server", 3),
     ];
     const pane = (n: number, tabId: string, ws: string): PaneInfo => ({ pane_id: `p${n}`, tab_id: tabId, workspace_id: ws, label: null });
     this.panes = [pane(1, "t1", "w1"), pane(2, "t4", "w2"), pane(3, "t2", "w1"), pane(4, "t5", "w2"), pane(5, "t3", "w1")];
@@ -788,6 +821,13 @@ export class DemoScenario {
     this.shells.set("p6", {
       lines: ["$ git status", "On branch main", "Your branch is up to date with 'origin/main'.", "", "nothing to commit, working tree clean"],
       input: "",
+    });
+    // 7. A shell that runs a dev server: the board shows "Running: pnpm dev".
+    this.panes.push({ ...pane(7, "t7", "w2"), cwd: API });
+    this.shells.set("p7", {
+      lines: ["$ pnpm dev", "", "> api-server@0.4.0 dev /home/demo/projects/api-server", "> tsx watch src/index.ts", "", "Server listening on http://localhost:3000"],
+      input: "",
+      running: { pid: 5150, name: "node", argv: ["pnpm", "dev"] },
     });
 
     // 1. Claude, working: fixes the login form, with a running subagent.
