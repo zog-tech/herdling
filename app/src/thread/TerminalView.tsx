@@ -6,7 +6,7 @@ import {
   WrapText,
   MoveHorizontal,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import {
   Keyboard,
   Pressable,
@@ -40,6 +40,8 @@ import {
   type WidthMode,
 } from "@/terminal/fit";
 import { KeyRow } from "@/terminal/KeyRow";
+import { forgetCommand, rememberCommand, useHostCommands } from "@/terminal/recentCommands";
+import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { useTerminalWidth } from "@/terminal/widthMode";
 import { sendInput, sendInputWorks } from "@/terminal/keys";
@@ -59,6 +61,7 @@ import { SendQueue, Typist } from "@/terminal/sendQueue";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
+import { useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
 
 import { HScrollView } from "./HScrollView";
@@ -94,6 +97,7 @@ const resetBuf = (prev: string) => (prev === SENTINEL ? SENTINEL_2 : SENTINEL);
  * Follows the screen (`pane.watch`, or a 1 s poll) only while this screen is focused, the view is
  * mounted and the app is active. `controls`: a key row and a text box that type into the pane,
  * a sent line shown at once (local echo), typing prediction in "Type directly" mode, and the latency.
+ * `shell`: the pane runs a plain shell (no agent). Then the controls keep and show recent commands.
  */
 export function TerminalView({
   hostId,
@@ -102,10 +106,13 @@ export function TerminalView({
   bottomInset = 0,
   search,
   active = true,
+  shell = false,
 }: {
   hostId: string;
   paneId: string;
   controls?: boolean;
+  /** A pane with no agent: lines sent from the box are kept as recent commands, and chips show them. */
+  shell?: boolean;
   bottomInset?: number;
   /**
    * Search in the visible text. `index`: the current match, top to bottom; -1 or out of range means
@@ -325,6 +332,7 @@ export function TerminalView({
         <TerminalControls
           hostId={hostId}
           paneId={paneId}
+          shell={shell}
           bottomInset={bottomInset}
           onSent={refresh}
           onEcho={addEcho}
@@ -339,10 +347,12 @@ export function TerminalView({
 /**
  * Key row plus a one-line box. The box sends its text and Enter in one call (`pane.send_input`).
  * Keys and lines go through an ordered send queue. "Type directly" sends each keystroke at once.
+ * In a shell, a row of recent commands sits above the key row.
  */
 function TerminalControls({
   hostId,
   paneId,
+  shell,
   bottomInset,
   onSent,
   onEcho,
@@ -351,6 +361,7 @@ function TerminalControls({
 }: {
   hostId: string;
   paneId: string;
+  shell: boolean;
   bottomInset: number;
   onSent: () => void;
   /** Shows a sent line at once; returns its id. */
@@ -365,6 +376,9 @@ function TerminalControls({
   const [direct, setDirect] = useState(false);
   const [buf, setBuf] = useState(SENTINEL);
   const canSend = online && (direct || line.length > 0);
+  const commands = useHostCommands(hostId);
+  const keyboard = useKeyboardShown();
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   // herdlingd with `pane.watch` keeps the order of typing calls, so the queue need not wait.
   const ordered = listsMethod(hello, "pane.watch");
   const queue = useMemo(
@@ -397,13 +411,43 @@ function TerminalControls({
     }
     const sent = line;
     setLine("");
+    sendLine(sent, true);
+  };
+
+  /** Sends a line and Enter. `giveBack`: a failed line comes back to the box. */
+  const sendLine = (sent: string, giveBack: boolean) => {
+    if (!queue || !online) return;
     setError(undefined);
+    // Only a shell keeps the line: text for an agent is not a command.
+    if (shell) rememberCommand(hostId, sent);
     const echo = onEcho(sent);
     queue.push({ text: sent, keys: ["enter"] }).then(onSent, () => {
       onEchoFailed(echo);
       // Give the text back, unless the user typed something new.
-      setLine((cur) => (cur === "" ? sent : cur));
+      if (giveBack) setLine((cur) => (cur === "" ? sent : cur));
     });
+  };
+
+  /** A tap on a chip: the command goes in the box to edit or send. "Type directly" types it into the pane. */
+  const pickCommand = (cmd: string) => {
+    if (direct) {
+      if (!typist || !online) return;
+      setError(undefined);
+      typist.type(cmd);
+      const now = Date.now();
+      setPredict((p) => onType(p, cmd, now));
+      return;
+    }
+    setLine(cmd);
+    if (error) setError(undefined);
+    inputRef.current?.focus();
+  };
+
+  /** "Run now" on a chip: the command and Enter, after the keys that wait. */
+  const runCommand = (cmd: string) => {
+    typist?.flush();
+    setPredict(endEpoch);
+    sendLine(cmd, false);
   };
 
   /** "Type directly": the change of the box text is the keystrokes since the last change. */
@@ -445,6 +489,15 @@ function TerminalControls({
         gap: space.sm,
       }}
     >
+      {shell && (commands.length > 0 || keyboard) ? (
+        <RecentCommandRow
+          commands={commands}
+          canRun={online}
+          onPick={pickCommand}
+          onRun={runCommand}
+          onRemove={(cmd) => forgetCommand(hostId, cmd)}
+        />
+      ) : null}
       <KeyRow onKey={key} disabled={!online} />
       {error ? (
         <Text
@@ -487,6 +540,7 @@ function TerminalControls({
           <KeyboardIcon size={20} color={direct ? colors.accent : colors.textMuted} />
         </Pressable>
         <TextInput
+          ref={inputRef}
           value={direct ? buf : line}
           onChangeText={(t) => {
             if (direct) return typeDirect(t);

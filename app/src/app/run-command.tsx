@@ -10,6 +10,7 @@ import { basename } from "@/herdr/startSession";
 import { terminalDetail, terminalFolder, terminalPanes, terminalTitle } from "@/herdr/terminals";
 import { useHostConn } from "@/hosts/connection";
 import { startBarAtScreenBottom } from "@/newSession/startBar";
+import { rememberCommand } from "@/terminal/recentCommands";
 import { canWatchShell, NOTIFY_LABEL, watchShell } from "@/terminal/shellWatch";
 import { fontFamily } from "@/theme/fonts";
 import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
@@ -154,6 +155,7 @@ export default function RunCommandScreen() {
       const { paneId, commandError } = await runCommand(rpc, snapshot, where, text);
       let watchError: string | undefined;
       if (notify && canNotify && !commandError) await watchShell(rpc, paneId).catch((e: unknown) => (watchError = message(e)));
+      if (!commandError) rememberCommand(hostId, text);
       allowLeave();
       // The mark carries the hint into the detail column of regular width too.
       expectPane(hostId, paneId, "shell");

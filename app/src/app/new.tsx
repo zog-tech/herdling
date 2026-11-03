@@ -28,6 +28,7 @@ import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
 import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
 import { RpcError } from "@/rpc/RpcClient";
+import { rememberCommand } from "@/terminal/recentCommands";
 import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -373,6 +374,7 @@ export default function NewSessionScreen() {
       const workspaceId = reuse && existing ? existing.workspace_id : undefined;
       if (shell) {
         const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, onProgress: setProgress });
+        if (!commandError) rememberCommand(hostId, prompt);
         allowLeave();
         // The mark carries the hint into the detail column of regular width too.
         expectPane(hostId, paneId, "shell");
