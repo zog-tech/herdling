@@ -287,3 +287,35 @@ async fn resolve_finds_the_log_in_another_project_dir() {
     assert_eq!(r["result"]["session"], "moved-sess");
     assert_eq!(r["result"]["log_path"], log.to_string_lossy().as_ref());
 }
+
+#[tokio::test]
+async fn resolve_follows_a_continued_in_record_to_the_new_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    write(&home.join(".claude/sessions/4344.json"), r#"{"pid":4344,"sessionId":"old-sess","cwd":"/home/sam/proj"}"#);
+    let project = home.join(".claude/projects/-home-sam-proj");
+    write(
+        &project.join("old-sess.jsonl"),
+        "{\"type\":\"user\"}\n{\"type\":\"continued-in\",\"sessionId\":\"old-sess\",\"continuedInSessionId\":\"new-sess\"}\n",
+    );
+    let new_log = project.join("new-sess.jsonl");
+    write(&new_log, "{}\n");
+    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4344);
+    let mut s = Session::start(sock, home.clone());
+    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    assert_eq!(r["result"]["session"], "new-sess");
+    assert_eq!(r["result"]["log_path"], new_log.to_string_lossy().as_ref());
+}
+
+#[tokio::test]
+async fn resolve_stays_on_the_old_log_when_the_new_log_is_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    write(&home.join(".claude/sessions/4345.json"), r#"{"pid":4345,"sessionId":"old-sess","cwd":"/home/sam/proj"}"#);
+    let log = home.join(".claude/projects/-home-sam-proj/old-sess.jsonl");
+    write(&log, "{\"type\":\"continued-in\",\"continuedInSessionId\":\"../../etc\"}\n");
+    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4345);
+    let mut s = Session::start(sock, home.clone());
+    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    assert_eq!(r["result"]["session"], "old-sess");
+}
