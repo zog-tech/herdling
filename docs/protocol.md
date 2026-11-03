@@ -375,6 +375,43 @@ channels run at once per host; more connections wait. When a channel does not op
 first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
 for the preview.
 
+## Command finished: `shell.watch`, `shell.unwatch` and `shell.watches`
+
+Since the herdlingd that lists `shell.watch`. The user asks for one push when the command in a
+shell pane finishes ("Notify me when it finishes" in the session menu of a terminal and in the
+Run sheet). The app shows the option only when `hello.methods` has `shell.watch`.
+
+```json
+{"id": 1, "method": "shell.watch", "params": {"pane_id": "w1:p2", "device_id": "d_1"}}
+→ {"id": 1, "result": {"pane_id": "w1:p2", "since": 1767225600, "expires_at": 1767312000, "busy": false}}
+{"id": 2, "method": "shell.unwatch", "params": {"pane_id": "w1:p2"}}
+→ {"id": 2, "result": {"removed": true}}
+{"id": 3, "method": "shell.watches"}
+→ {"id": 3, "result": {"watches": [{"pane_id": "w1:p2", "since": 1767225600, "expires_at": 1767312000, "busy": true}]}}
+```
+
+- `pane_id` is 1 to 256 bytes, else `bad_request`. `device_id` is optional: with it, only that
+  device gets the push. Without it, every device with a push token gets it.
+- A new `shell.watch` of the same pane replaces the old watch. At most 32 watches are live; a new
+  watch drops the oldest. A watch expires 24 hours after `since`.
+- The watches go to `~/.local/state/herdling/shell-watches.json` (folder 0700, file 0600, a lock
+  file and an atomic rename), because each SSH channel runs its own `rpc` process.
+- `serve` asks herdr for `pane.process_info` of each watched pane every 3 seconds. The pane is busy
+  when `foreground_process_group_id` is not `shell_pid`, and idle when it is the same.
+  `busy: true` means that `serve` saw the pane busy.
+- When a pane goes from busy to idle, `serve` removes the watch and sends one push. A pane that is
+  idle and was never seen busy keeps its watch. A command that ends in less than 3 seconds can
+  end before the first check and then sends no push.
+- herdr `pane_not_found` removes the watch with no push. Other herdr errors keep the watch.
+- The push title is `<folder tail>: command finished` (the pane's `cwd` in the snapshot, else the
+  folder of the process, else `Terminal`). The body is the command line of the foreground
+  process at the last busy check, on one line, at most 80 characters.
+- The push has `sound: "default"` and `data: {"hostId", "paneId", "kind": "shell"}`. The device
+  prefs `finished` and `needs_you` do not apply, because the user asked for this push.
+  `quiet_at_desk`, `replace` and `group` apply as for an agent push.
+- A tap on the push opens the terminal of the pane (`kind: "shell"` adds `shell=1` to the route).
+- An older app ignores `kind` and opens the session of the pane as before.
+
 ## Background work: `agents.preview` `background`
 
 An `agents.preview` item has the optional field `background` (since this version, Claude Code

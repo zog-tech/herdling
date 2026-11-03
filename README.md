@@ -54,7 +54,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   screen, a sent line shows at once, and a badge shows the latency. "Type directly" sends each key
   at once, for a hardware keyboard.
 - **A notification when it matters.** `herdlingd` sends a push when an agent finishes or waits
-  for you. A tap opens that session.
+  for you. A tap opens that session. In a shell, "Notify me when it finishes" sends one push when
+  a long command ends.
 - **Quiet at the computer.** No pushes while you use herdr at your desk, and for 5 minutes after.
 - **Voice in and out.** Speak a prompt: speech becomes text on the phone (also with a private
   on-device model) or on your own computer. Herdling can read replies out loud, in full or as a
@@ -65,7 +66,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 - **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The phone gets its own SSH
   key that can only run `herdlingd rpc`, and the app pins the host key of the computer.
 - **No accounts, no servers.** Session traffic goes only between the phone and your computers.
-  A push holds only the agent name, the agent kind and the terminal title.
+  A push holds only the agent name, the agent kind and the terminal title (for a shell, the
+  folder name and the command).
 - **A demo mode.** The app has a demo host with made-up agents, so you can try it with no computer.
 
 ## Get it

@@ -25,10 +25,13 @@ const mockRpc = {
     return {};
   },
 };
+/** The methods that the host lists in `hello`. */
+let mockMethods: string[] = [];
 jest.mock("@/hosts/connection", () => ({
-  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: [] } }),
-  getHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: [] } }),
+  useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: mockMethods } }),
+  getHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: mockMethods } }),
 }));
+jest.mock("@/device", () => ({ getDeviceId: async () => "d_test" }));
 jest.mock("expo-router", () => {
   const { View } = jest.requireActual<typeof import("react-native")>("react-native");
   // The native header draws the title view and the bar buttons: the test draws them in place.
@@ -97,6 +100,7 @@ let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
   jest.useFakeTimers();
   mockRef = null;
+  mockMethods = [];
 });
 afterEach(() => {
   act(() => tree?.unmount());
@@ -169,6 +173,8 @@ test("closing_a_terminal_asks_then_closes_its_pane", async () => {
   const [menu, pick] = showActionSheet.mock.calls[0];
   // No agent actions: no Restart and no renames.
   expect(menu.options).not.toContain("Restart");
+  // An older herdlingd does not list shell.watch: no notify option.
+  expect(menu.options).not.toContain("Notify me when it finishes");
   expect(menu.options.at(-2)).toBe("Close");
   // The confirm sheet waits for its answer: do not wait for the pick itself.
   act(() => {
@@ -182,6 +188,28 @@ test("closing_a_terminal_asks_then_closes_its_pane", async () => {
   });
   await flush();
   expect(call).toHaveBeenCalledWith("herdr.call", { method: "pane.close", params: { pane_id: "p9" } });
+  call.mockRestore();
+});
+
+test("a_terminal_on_a_new_host_can_notify_when_its_command_finishes", async () => {
+  const { showActionSheet } = jest.requireMock<{ showActionSheet: jest.Mock }>("@/ui/nativeSheet");
+  showActionSheet.mockReset();
+  mockMethods = ["shell.watch", "shell.unwatch", "shell.watches"];
+  const call = jest.spyOn(mockRpc, "call");
+  setHostSnapshot("h", fresh([]));
+  const t = await open();
+  expect(call).toHaveBeenCalledWith("shell.watches");
+  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
+  const [menu, pick] = showActionSheet.mock.calls[0];
+  expect(menu.options[0]).toBe("Notify me when it finishes");
+  act(() => {
+    pick(0);
+  });
+  await flush();
+  expect(call).toHaveBeenCalledWith("shell.watch", { pane_id: "p9", device_id: "d_test" });
+  // The next menu offers to turn it off.
+  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
+  expect(showActionSheet.mock.calls[1][0].options[0]).toBe("Do not notify me when it finishes");
   call.mockRestore();
 });
 

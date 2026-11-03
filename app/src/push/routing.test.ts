@@ -75,6 +75,10 @@ describe("notificationTarget", () => {
     expect(notificationTarget({ hostId: "h_1", paneId: "w1:p1" })).toBe("/session/h_1/w1%3Ap1?from=push");
   });
 
+  it("target_of_a_shell_push_opens_the_terminal", () => {
+    expect(notificationTarget({ hostId: "h_1", paneId: "w1:p1", kind: "shell" })).toBe("/session/h_1/w1%3Ap1?from=push&shell=1");
+  });
+
   it("target_encodes_host_id", () => {
     expect(notificationTarget({ hostId: "h 1/x", paneId: "p" })).toBe("/session/h%201%2Fx/p?from=push");
   });

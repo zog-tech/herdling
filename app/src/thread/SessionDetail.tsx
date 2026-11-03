@@ -30,6 +30,7 @@ import { terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
 import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
+import { NOTIFY_LABEL, STOP_NOTIFY_LABEL, useShellWatch } from "@/terminal/shellWatch";
 import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { SwipePanContext } from "@/thread/HScrollView";
@@ -89,7 +90,8 @@ function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: 
 
 /**
  * Restart, Resume (agents with a resume flag), Changes, Preview, the three renames and Close for
- * the session's agent. A terminal (`terminal` true, no agent) gets Changes, Preview and Close only.
+ * the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
+ * (a host that lists `shell.watch`), Changes, Preview and Close.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
  * `ports` is undefined when the preview does not show for this host.
  */
@@ -105,6 +107,7 @@ function useSessionMenu(
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
+  const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent);
 
   const run = useCallback(
     async (label: string, failTitle: string, action: () => Promise<void>) => {
@@ -123,6 +126,14 @@ function useSessionMenu(
   const open = useCallback(() => {
     if (!rpc || !(agent || terminal) || busy) return;
     const items: { label: string; destructive?: boolean; onPick: () => void }[] = [];
+    if (shellWatch.supported) {
+      items.push({
+        label: shellWatch.watched ? STOP_NOTIFY_LABEL : NOTIFY_LABEL,
+        onPick: () => run("Saving…", "Can't change the notification", shellWatch.toggle),
+      });
+      // herdlingd removes the watch after the push: ask again for the next time the menu opens.
+      shellWatch.refresh();
+    }
     if (agent) {
       items.push({
         label: "Restart",
@@ -175,7 +186,7 @@ function useSessionMenu(
       },
       (i) => items[i]?.onPick(),
     );
-  }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports]);
+  }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports, shellWatch]);
 
   return { open, busy, enabled: !!rpc && (!!agent || terminal) && !busy, ports };
 }

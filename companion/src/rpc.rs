@@ -387,6 +387,9 @@ pub const METHODS: &[&str] = &[
     "ports.list",
     "preview.open",
     "preview.close",
+    "shell.watch",
+    "shell.unwatch",
+    "shell.watches",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -429,6 +432,9 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "ports.list" => ports_list(ctx, params).await,
         "preview.open" => preview_open(ctx, params).await,
         "preview.close" => preview_close(ctx, params).await,
+        "shell.watch" => shell_watch(ctx, params).await,
+        "shell.unwatch" => shell_unwatch(ctx, params).await,
+        "shell.watches" => shell_watches(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -1153,4 +1159,56 @@ async fn preview_close(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .map_err(|e| err("internal", e.to_string()))?
         .map_err(|e| err("io_error", format!("preview.close: {e}")))?;
     Ok(json!({ "closed": closed }))
+}
+
+/// A pane id param of the `shell.*` methods: a string of 1 to `MAX_ID` bytes.
+fn watch_pane<'a>(params: &'a Value, method: &str) -> Result<&'a str, RpcError> {
+    let pane = str_param(params, "pane_id", method)?;
+    if pane.is_empty() || pane.len() > crate::shell_watch::MAX_ID {
+        return Err(err("bad_request", format!("{method}: pane_id must be 1 to 256 bytes")));
+    }
+    Ok(pane)
+}
+
+/// The JSON form of a watch for the app.
+fn watch_json(w: &crate::shell_watch::Watch) -> Value {
+    json!({ "pane_id": w.pane_id, "since": w.since, "expires_at": w.expires_at(), "busy": w.busy.is_some() })
+}
+
+/// `shell.watch`: `serve` sends one push when the command in the pane finishes (busy to idle).
+/// With `device_id`, only that device gets the push. See [`crate::shell_watch`].
+async fn shell_watch(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let pane = watch_pane(&params, "shell.watch")?.to_string();
+    let device = match params.get("device_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(d)) if !d.is_empty() && d.len() <= crate::shell_watch::MAX_ID => Some(d.clone()),
+        Some(_) => return Err(err("bad_request", "shell.watch: device_id must be a string of 1 to 256 bytes")),
+    };
+    let path = crate::shell_watch::path(&ctx.home);
+    let w = tokio::task::spawn_blocking(move || crate::shell_watch::add(&path, &pane, device.as_deref(), crate::proxy::now_secs()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| err("io_error", format!("shell.watch: {e}")))?;
+    Ok(watch_json(&w))
+}
+
+/// `shell.unwatch`: removes the watch of the pane. `removed` is false when it had none.
+async fn shell_unwatch(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let pane = watch_pane(&params, "shell.unwatch")?.to_string();
+    let path = crate::shell_watch::path(&ctx.home);
+    let removed = tokio::task::spawn_blocking(move || crate::shell_watch::remove(&path, &pane, crate::proxy::now_secs()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| err("io_error", format!("shell.unwatch: {e}")))?;
+    Ok(json!({ "removed": removed }))
+}
+
+/// `shell.watches`: the live watches of this computer.
+async fn shell_watches(ctx: &Ctx) -> Result<Value, RpcError> {
+    let path = crate::shell_watch::path(&ctx.home);
+    let list = tokio::task::spawn_blocking(move || crate::shell_watch::list(&path, crate::proxy::now_secs()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))?
+        .map_err(|e| err("io_error", format!("shell.watches: {e}")))?;
+    Ok(json!({ "watches": list.iter().map(watch_json).collect::<Vec<_>>() }))
 }

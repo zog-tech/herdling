@@ -14,20 +14,30 @@ jest.mock("@/ui/draftGuard", () => ({ useDraftGuard: () => () => {} }));
 type Call = { method: string; params: Record<string, unknown> };
 const mockCalls: Call[] = [];
 let mockStatus = "online";
+/** The methods that the host lists in `hello`. Empty: an older herdlingd. */
+let mockMethods: string[] = [];
 /** A fake herdr: `w2:p1` runs vim, every other shell is idle. */
 const mockRpc = {
-  call: async (_m: string, p: Call) => {
-    mockCalls.push(p);
-    if (p.method === "workspace.create" || p.method === "tab.create") return { root_pane: { pane_id: "w9:p1" } };
-    if (p.method === "pane.process_info") {
-      return p.params.pane_id === "w2:p1"
+  call: async (m: string, p: Call | Record<string, unknown>) => {
+    if (m !== "herdr.call") {
+      mockCalls.push({ method: m, params: p as Record<string, unknown> });
+      return m === "shell.watch" ? { pane_id: (p as { pane_id: string }).pane_id, since: 1, expires_at: 2, busy: false } : {};
+    }
+    const c = p as Call;
+    mockCalls.push(c);
+    if (c.method === "workspace.create" || c.method === "tab.create") return { root_pane: { pane_id: "w9:p1" } };
+    if (c.method === "pane.process_info") {
+      return c.params.pane_id === "w2:p1"
         ? { process_info: { shell_pid: 41, foreground_process_group_id: 77, foreground_processes: [{ pid: 77, name: "vim" }] } }
         : { process_info: { shell_pid: 41, foreground_process_group_id: 41 } };
     }
     return {};
   },
 };
-jest.mock("@/hosts/connection", () => ({ useHostConn: () => ({ status: mockStatus, rpc: mockStatus === "online" ? mockRpc : undefined }) }));
+jest.mock("@/hosts/connection", () => ({
+  useHostConn: () => ({ status: mockStatus, rpc: mockStatus === "online" ? mockRpc : undefined, hello: { methods: mockMethods } }),
+}));
+jest.mock("@/device", () => ({ getDeviceId: async () => "d_test" }));
 
 const SNAP: Snapshot = {
   agents: [{ pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1", agent: "claude", agent_status: "idle", cwd: "/home/sam/proj", state_change_seq: 1 }],
@@ -45,6 +55,7 @@ beforeEach(() => {
   mockCalls.length = 0;
   mockReplace.mockClear();
   mockStatus = "online";
+  mockMethods = [];
   useSnapshots.setState({ byHost: { studio: SNAP } });
   useRunRequest.setState({ req: { hostId: "studio", paneId: "w1:p1", command: "ls\npwd" } });
 });
@@ -103,4 +114,31 @@ test("offline_or_empty_the_run_button_is_disabled", async () => {
   await act(async () => t.root.findByType(TextInput).props.onChangeText("  \n"));
   expect(runButton(t).props.disabled).toBe(true);
   tree = t;
+});
+
+const notifySwitch = (t: ReactTestRenderer) =>
+  t.root.findAll((n) => n.props.accessibilityLabel === "Notify me when it finishes" && typeof n.props.onValueChange === "function");
+
+test("an_older_host_shows_no_notify_switch", async () => {
+  const t = await render();
+  expect(notifySwitch(t)).toHaveLength(0);
+});
+
+test("notify_asks_the_host_to_watch_the_new_terminal_after_the_run", async () => {
+  mockMethods = ["shell.watch", "shell.unwatch", "shell.watches"];
+  const t = await render();
+  expect(notifySwitch(t)).toHaveLength(1);
+  await act(async () => notifySwitch(t)[0].props.onValueChange(true));
+  await press(runButton(t));
+  const methods = mockCalls.filter((c) => c.method !== "pane.process_info").map((c) => c.method);
+  expect(methods).toEqual(["workspace.get", "tab.create", "pane.send_input", "shell.watch"]);
+  expect(mockCalls.at(-1)!.params).toEqual({ pane_id: "w9:p1", device_id: "d_test" });
+  expect(mockReplace).toHaveBeenCalledWith({ pathname: "/session/[hostId]/[paneId]", params: { hostId: "studio", paneId: "w9:p1", shell: "1" } });
+});
+
+test("notify_off_sends_no_watch", async () => {
+  mockMethods = ["shell.watch"];
+  const t = await render();
+  await press(runButton(t));
+  expect(mockCalls.some((c) => c.method === "shell.watch")).toBe(false);
 });

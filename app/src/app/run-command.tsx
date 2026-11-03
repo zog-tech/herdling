@@ -9,11 +9,13 @@ import { basename } from "@/herdr/startSession";
 import { terminalDetail, terminalFolder, terminalPanes, terminalTitle } from "@/herdr/terminals";
 import { useHostConn } from "@/hosts/connection";
 import { startBarAtScreenBottom } from "@/newSession/startBar";
+import { canWatchShell, NOTIFY_LABEL, watchShell } from "@/terminal/shellWatch";
 import { fontFamily } from "@/theme/fonts";
 import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import { busyProcess, paneFolder, runCommand, useRunRequest, type ProcessInfo, type RunTarget } from "@/thread/runCommand";
 import { Button } from "@/ui/Button";
 import { useDraftGuard } from "@/ui/draftGuard";
+import { GoldSwitch } from "@/ui/GoldSwitch";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
 import { TerminalMark } from "@/ui/TerminalMark";
@@ -90,20 +92,23 @@ function TargetRow({
 /**
  * The run sheet of a shell code block. It is the confirmation: nothing runs before the user taps
  * Run. The command is editable. The target is a new shell in the agent's folder (the default) or an
- * existing terminal on the same host. After the run it opens that terminal.
+ * existing terminal on the same host. After the run it opens that terminal. On a host that lists
+ * `shell.watch`, "Notify me when it finishes" asks for one push when the command finishes.
  */
 export default function RunCommandScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const req = useRunRequest((s) => s.req);
   const hostId = req?.hostId ?? "";
-  const { rpc, status } = useHostConn(hostId);
+  const { rpc, status, hello } = useHostConn(hostId);
   const online = status === "online" && !!rpc;
   const snapshot = useSnapshots((s) => (hostId ? s.byHost[hostId] : undefined));
 
   const [command, setCommand] = useState(req?.command ?? "");
   const [target, setTarget] = useState(NEW);
   const [running, setRunning] = useState(false);
+  const [notify, setNotify] = useState(false);
+  const canNotify = canWatchShell(hello);
   const [error, setError] = useState<string>();
   /** Swipe-down is off while the run is in flight: the sheet must stay until the terminal opens. */
   const allowLeave = useDraftGuard(false, { lock: running });
@@ -146,10 +151,13 @@ export default function RunCommandScreen() {
     try {
       const where: RunTarget = chosen === NEW ? { kind: "new", cwd: folder ?? "" } : { kind: "pane", paneId: chosen! };
       const { paneId, commandError } = await runCommand(rpc, snapshot, where, text);
+      let watchError: string | undefined;
+      if (notify && canNotify && !commandError) await watchShell(rpc, paneId).catch((e: unknown) => (watchError = message(e)));
       allowLeave();
       router.replace({ pathname: "/session/[hostId]/[paneId]", params: { hostId, paneId, shell: "1" } } as never);
       // The shell runs even when the command did not go through: say so over the open terminal.
       if (commandError) Alert.alert("Command not sent", commandError);
+      else if (watchError) Alert.alert("No notification", `The command runs, but the computer can't notify you: ${watchError}`);
     } catch (e) {
       haptics.fail();
       setError(`Can't run the command: ${message(e)}`);
@@ -223,6 +231,18 @@ export default function RunCommandScreen() {
             );
           })}
         </View>
+
+        {canNotify ? (
+          <View style={{ minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.md }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text maxFontSizeMultiplier={denseScale.row}>{NOTIFY_LABEL}</Text>
+              <Text variant="caption" muted maxFontSizeMultiplier={denseScale.row}>
+                A push comes when the shell is free again.
+              </Text>
+            </View>
+            <GoldSwitch label={NOTIFY_LABEL} value={notify} onValueChange={setNotify} />
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: Math.max(insets.bottom, space.lg), gap: space.sm }}>

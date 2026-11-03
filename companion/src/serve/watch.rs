@@ -75,6 +75,9 @@ async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventS
             }
         }
     });
+    // Checks the shell panes that the phone watches ("Notify me when it finishes").
+    let mut shell_tick = tokio::time::interval(crate::shell_watch::POLL);
+    shell_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let deadline = debouncer.next_deadline();
         let wait = async {
@@ -96,6 +99,7 @@ async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventS
                 None => break,
             },
             _ = wait => {}
+            _ = shell_tick.tick() => super::shells::poll(ctx, client, desk.active(Instant::now())).await,
         }
         let now = Instant::now();
         for (pane, notice) in debouncer.due(now) {
@@ -167,10 +171,15 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, pane: &str, notic
             eprintln!("herdlingd serve: user is at the computer, skipped {skipped} push(es) for pane {pane}");
         }
     }
+    deliver(ctx, client, &msgs).await;
+}
+
+/// Sends `msgs` and removes the push tokens that Expo reports as no longer registered.
+pub(super) async fn deliver(ctx: &ServeCtx, client: &reqwest::Client, msgs: &[push::PushMessage]) {
     if msgs.is_empty() {
         return;
     }
-    let gone = match push::send(client, &ctx.push_url, &msgs).await {
+    let gone = match push::send(client, &ctx.push_url, msgs).await {
         Ok(gone) => gone,
         Err(e) => {
             eprintln!("herdlingd serve: push: {e:#}");
@@ -208,7 +217,7 @@ async fn choice_of(ctx: &ServeCtx, pane: &str) -> Option<crate::choices::PushCho
 }
 
 /// The inner `snapshot` object of `session.snapshot`. One connection per call.
-async fn snapshot(ctx: &ServeCtx) -> Result<Value, HerdrError> {
+pub(super) async fn snapshot(ctx: &ServeCtx) -> Result<Value, HerdrError> {
     let mut c = herdr::Client::connect(&ctx.herdr_socket, HERDR_TIMEOUT).await?;
     let mut r = c.call("session.snapshot", json!({})).await?;
     Ok(match r.get_mut("snapshot") {
