@@ -1,6 +1,6 @@
 import Markdown, { type RenderRules } from "@ronradtke/react-native-markdown-display";
-import { Play } from "lucide-react-native";
-import { createContext, memo, useContext } from "react";
+import { Check, Copy, Play } from "lucide-react-native";
+import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
@@ -10,19 +10,23 @@ import * as haptics from "@/ui/haptics";
 import { HScrollView } from "../HScrollView";
 import { ThreadLink } from "../LinkText";
 import { findLinks, replyMarkdownIt } from "../links";
-import { ThreadPaneContext } from "../LiveToolContext";
+import { RunHostContext, ThreadPaneContext, type RunHost } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
-import type { MenuTarget } from "../rowMenu";
-import { openRunSheet, runnableCommand } from "../runCommand";
+import { copyText, type MenuTarget } from "../rowMenu";
+import { runAt, runnableCommand } from "../runCommand";
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
 const CODE = type.size.small - 1;
 /** Width of one table column. */
 const TABLE_COL = 140;
-/** The visible box of the Run button; `hitSlop` makes the touch area `hitTarget`. */
-const RUN_BOX = 28;
-const RUN_SLOP = (hitTarget - RUN_BOX) / 2;
+/** The visible box of the Run and Copy buttons; `hitSlop` makes the touch area `hitTarget`. */
+const BTN_BOX = 28;
+const BTN_SLOP = (hitTarget - BTN_BOX) / 2;
+/** Space between the two buttons: their touch areas meet but do not overlap. */
+const BTN_GAP = BTN_SLOP * 2;
+/** How long the Copy button shows its check mark after a copy. */
+const COPIED_MS = 1500;
 
 /** The reply parser: it also links bare URLs that have a scheme (see `links.ts`). */
 const markdownit = replyMarkdownIt();
@@ -36,47 +40,84 @@ function codeUrl(content: string): string | undefined {
 /** The menu target of the reply being drawn: its code blocks open the same menu. Links have their own menu. */
 const ReplyMenu = createContext<MenuTarget | null>(null);
 
+/** The Copy button of a code block: a check mark for `COPIED_MS` after a copy. No notice. */
+function CopyButton({ text }: { text: string }) {
+  // A count, not a flag: a second copy while the check shows starts the time again.
+  const [copied, setCopied] = useState(0);
+  useEffect(() => {
+    if (copied === 0) return;
+    const id = setTimeout(() => setCopied(0), COPIED_MS);
+    return () => clearTimeout(id);
+  }, [copied]);
+  const Icon = copied > 0 ? Check : Copy;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Copy code"
+      accessibilityValue={copied > 0 ? { text: "Copied" } : undefined}
+      hitSlop={BTN_SLOP}
+      onPress={() => {
+        void copyText(text, "Code copied", { quiet: true }).then((ok) => {
+          if (ok) setCopied((c) => c + 1);
+        });
+      }}
+      style={({ pressed }) => [styles().codeButton, { opacity: pressed ? state.pressedOpacity : 1 }]}
+    >
+      <Icon size={icon.sm} color={copied > 0 ? colors.status.done : colors.textMuted} strokeWidth={icon.strokeWidth} />
+    </Pressable>
+  );
+}
+
 /**
  * Code block: JetBrains Mono, scrolls sideways instead of wrapping. A long press opens the reply
  * menu with "Copy code" (this block only) on top. The text is not `selectable`: on iOS that adds
  * its own long press, which fights the menu. "Select text" in the menu is the way to copy a part.
- * A shell block in a live session thread also gets a Run button (top right) and "Run in shell…".
+ * Every block has a Copy button (top right). A shell block also gets a Run button and "Run in
+ * shell…" when the host is known: a session thread, the peek sheet or a subagent thread.
  */
 function CodeBlock({ content, lang }: { content: string; lang?: string }) {
   const reply = useContext(ReplyMenu);
   const pane = useContext(ThreadPaneContext);
-  const online = useHostConn(pane?.hostId ?? "").status === "online";
+  const runHost = useContext(RunHostContext);
+  const at: RunHost | null = pane ?? runHost;
+  const online = useHostConn(at?.hostId ?? "").status === "online";
   const text = content.endsWith("\n") ? content.slice(0, -1) : content;
-  const command = pane ? runnableCommand(lang, text) : null;
+  const command = at ? runnableCommand(lang, text) : null;
   const run = command !== null && online ? command : undefined;
+  const buttons = command !== null ? 2 : 1;
+  const menu: MenuTarget | null = reply ? { ...reply, code: text, run, ...(pane ? {} : runHost ? { runAt: runHost } : {}) } : null;
   return (
-    <MenuPressable menu={reply ? { ...reply, code: text, run } : null} accessible={false}>
+    <MenuPressable menu={menu} accessible={false}>
       <View>
         <HScrollView
           showsHorizontalScrollIndicator={false}
           style={styles().codeScroll}
-          // Room on the right so the end of a long first line can scroll out from under the button.
-          contentContainerStyle={{ padding: space.md, paddingRight: command !== null ? space.md + RUN_BOX : space.md }}
+          // Room on the right so the end of a long first line can scroll out from under the buttons.
+          contentContainerStyle={{ padding: space.md, paddingRight: space.md + buttons * BTN_BOX + (buttons - 1) * BTN_GAP }}
         >
           <Text style={styles().codeText}>{text}</Text>
         </HScrollView>
-        {pane && command !== null ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Run command"
-            accessibilityHint="Opens the run sheet"
-            accessibilityState={{ disabled: !online }}
-            disabled={!online}
-            hitSlop={RUN_SLOP}
-            onPress={() => {
-              haptics.tap();
-              openRunSheet({ hostId: pane.hostId, paneId: pane.paneId, command });
-            }}
-            style={({ pressed }) => [styles().runButton, { opacity: !online ? state.offlineOpacity : pressed ? state.pressedOpacity : 1 }]}
-          >
-            <Play size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
-          </Pressable>
-        ) : null}
+        {/* box-none: a drag in the gap between the buttons still scrolls the code. */}
+        <View pointerEvents="box-none" style={styles().codeButtons}>
+          {at && command !== null ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Run command"
+              accessibilityHint="Opens the run sheet"
+              accessibilityState={{ disabled: !online }}
+              disabled={!online}
+              hitSlop={BTN_SLOP}
+              onPress={() => {
+                haptics.tap();
+                runAt(at, command);
+              }}
+              style={({ pressed }) => [styles().codeButton, { opacity: !online ? state.offlineOpacity : pressed ? state.pressedOpacity : 1 }]}
+            >
+              <Play size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+            </Pressable>
+          ) : null}
+          <CopyButton text={text} />
+        </View>
       </View>
     </MenuPressable>
   );
@@ -166,12 +207,10 @@ const styles = themed(() =>
   StyleSheet.create({
     codeScroll: { backgroundColor: colors.sunken, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, marginBottom: space.sm },
     codeText: { fontFamily: fontFamily.mono, fontSize: CODE, lineHeight: 20, color: colors.text },
-    runButton: {
-      position: "absolute",
-      top: space.xs,
-      right: space.xs,
-      width: RUN_BOX,
-      height: RUN_BOX,
+    codeButtons: { position: "absolute", top: space.xs, right: space.xs, flexDirection: "row", gap: BTN_GAP },
+    codeButton: {
+      width: BTN_BOX,
+      height: BTN_BOX,
       borderRadius: radius.sm,
       backgroundColor: colors.raised,
       alignItems: "center",

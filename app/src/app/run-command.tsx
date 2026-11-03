@@ -108,7 +108,7 @@ export default function RunCommandScreen() {
   /** Swipe-down is off while the run is in flight: the sheet must stay until the terminal opens. */
   const allowLeave = useDraftGuard(false, { lock: running });
 
-  const folder = req ? paneFolder(snapshot, req.paneId) : undefined;
+  const folder = req?.paneId ? paneFolder(snapshot, req.paneId) : undefined;
   const terminals = useMemo(() => (snapshot ? terminalPanes(snapshot) : []), [snapshot]);
 
   // The busy terminals: a shell whose foreground is another process (an editor, a server).

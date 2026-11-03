@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PeekSheet } from "@/board/PeekSheet";
-import { useDraftGuard } from "@/ui/draftGuard";
+import { openRunSheet, type RunRequest } from "@/thread/runCommand";
+import { confirmDiscard, useDraftGuard } from "@/ui/draftGuard";
 
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 
@@ -11,12 +12,34 @@ export default function PeekScreen() {
   const { hostId, paneId, reply } = useLocalSearchParams<{ hostId: string; paneId: string; reply?: string }>();
   const router = useRouter();
   const [draft, setDraft] = useState(false);
-  useDraftGuard(draft);
+  const allowLeave = useDraftGuard(draft);
   const open = useCallback(() => {
     router.dismiss();
     router.push(`/session/${hostId}/${paneId}` as never);
   }, [router, hostId, paneId]);
   const close = useCallback(() => router.back(), [router]);
+
+  // Run on a code block: the sheet closes first, and the run sheet opens when the sheet is gone.
+  // A screen pushed while the form sheet is up shows inside it, and so does the terminal that the
+  // run sheet opens after the run. A draft asks first, the same as every other way out.
+  const pendingRun = useRef<RunRequest | null>(null);
+  useEffect(
+    () => () => {
+      if (pendingRun.current) openRunSheet(pendingRun.current);
+    },
+    [],
+  );
+  const run = useCallback(
+    async (req: RunRequest) => {
+      if (draft && !(await confirmDiscard())) return;
+      pendingRun.current = req;
+      allowLeave();
+      router.dismiss();
+    },
+    [draft, allowLeave, router],
+  );
+  const onRun = useCallback((req: RunRequest) => void run(req), [run]);
+
   return (
     <PeekSheet
       hostId={hostId}
@@ -25,6 +48,7 @@ export default function PeekScreen() {
       onOpenSession={open}
       onClose={close}
       onDraftChange={setDraft}
+      onRun={onRun}
     />
   );
 }

@@ -77,4 +77,10 @@ test("subagent_href_needs_the_log_and_the_agent_id", () => {
     params: { hostId: "studio", agentId: "a1", log: log.logPath, title: "Fix", since: "7" },
   });
   expect(subagentHref(log, { agentId: "a1", description: "Fix" })?.params).not.toHaveProperty("since");
+  expect(subagentHref(log, { agentId: "a1", description: "Fix" })?.params).not.toHaveProperty("pane");
+});
+
+test("the_subagent_route_carries_the_parent_pane_for_run", () => {
+  const log = { hostId: "studio", logPath: "/home/sam/.claude/projects/p/s.jsonl", paneId: "w1:p1" };
+  expect(subagentHref(log, { agentId: "a1", description: "Fix" })?.params).toMatchObject({ pane: "w1:p1" });
 });

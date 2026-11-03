@@ -9,6 +9,8 @@ import { useHosts } from "@/hosts/store";
 import { colors, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
+import { RunHostContext } from "@/thread/LiveToolContext";
+import type { RunRequest } from "@/thread/runCommand";
 import { useThread } from "@/thread/useThread";
 import { GlassButton } from "@/ui/GlassButton";
 import { glassAvailable } from "@/ui/Glass";
@@ -26,6 +28,8 @@ import { PEEK_DETENT_ANDROID } from "./peekDetent";
 /**
  * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
  * when blocked, and the composer with hold-to-talk. Closing marks the pane seen.
+ * A shell code block in the reply has a Run button; `onRun` opens the run sheet (the route closes
+ * the sheet first).
  */
 export function PeekSheet({
   hostId,
@@ -34,6 +38,7 @@ export function PeekSheet({
   onOpenSession,
   onClose,
   onDraftChange,
+  onRun,
 }: {
   hostId: string;
   paneId: string;
@@ -42,6 +47,8 @@ export function PeekSheet({
   onOpenSession: () => void;
   onClose?: () => void;
   onDraftChange?: (hasDraft: boolean) => void;
+  /** Opens the run sheet for a code block of the reply. Without it, the run sheet opens at once. */
+  onRun?: (req: RunRequest) => void;
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useSheetKeyboardPad(PEEK_DETENT_ANDROID);
@@ -83,6 +90,7 @@ export function PeekSheet({
   }, [hostId, paneId]);
 
   const title = item?.title ?? paneId;
+  const runHost = useMemo(() => ({ hostId, paneId, open: onRun }), [hostId, paneId, onRun]);
 
   // Header fixed at the top, the reply fills the space between, the composer sits at the bottom
   // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
@@ -153,7 +161,9 @@ export function PeekSheet({
           accessibilityLabel="Last reply"
         >
           {lastReply ? (
-            <AssistantMessage markdown={lastReply} />
+            <RunHostContext.Provider value={runHost}>
+              <AssistantMessage markdown={lastReply} />
+            </RunHostContext.Provider>
           ) : thread.status === "loading" ? (
             <DelayedSpinner color={colors.textMuted} />
           ) : (

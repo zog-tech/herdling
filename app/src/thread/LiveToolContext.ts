@@ -1,5 +1,7 @@
 import { createContext } from "react";
 
+import type { RunRequest } from "./runCommand";
+
 /**
  * What a tool card needs to show live output: the pane, the id of the newest running tool
  * (only that card polls), and whether the thread is on screen and focused.
@@ -24,3 +26,14 @@ export function newestRunningTool(items: readonly { kind: string; id: string; re
   }
   return undefined;
 }
+
+/**
+ * Where the Run button of a shell code block opens the run sheet, for a thread that is not a live
+ * session thread: the peek sheet and a subagent thread. `paneId` is the pane whose folder "New
+ * shell" uses (for a subagent, the parent agent). `open` replaces `openRunSheet`: the peek sheet
+ * closes first, so the run sheet and the terminal it opens do not show inside it.
+ * A live session thread uses `ThreadPaneContext` instead.
+ */
+export type RunHost = { hostId: string; paneId?: string; open?: (req: RunRequest) => void };
+
+export const RunHostContext = createContext<RunHost | null>(null);

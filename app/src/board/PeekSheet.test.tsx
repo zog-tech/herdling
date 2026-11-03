@@ -19,7 +19,18 @@ jest.mock("expo-haptics", () => ({
 }));
 jest.mock("./BucketStatus", () => ({ BucketStatus: () => null }));
 jest.mock("@/thread/Composer", () => ({ Composer: () => null }));
-jest.mock("@/thread/items/AssistantMessage", () => ({ AssistantMessage: () => null }));
+// The reply reads the run host the way its code blocks do.
+let mockRunHost: unknown = "unset";
+jest.mock("@/thread/items/AssistantMessage", () => {
+  const { useContext } = jest.requireActual("react");
+  const { RunHostContext } = jest.requireActual("@/thread/LiveToolContext");
+  return {
+    AssistantMessage: () => {
+      mockRunHost = useContext(RunHostContext);
+      return null;
+    },
+  };
+});
 jest.mock("@/thread/useThread", () => ({
   useThread: () => ({
     items: [
@@ -80,5 +91,14 @@ test("open_session_button_calls_back", () => {
   });
   act(() => tree!.root.find((n) => n.props.accessibilityLabel === "Open session" && !!n.props.onPress).props.onPress());
   expect(open).toHaveBeenCalled();
+  act(() => tree!.unmount());
+});
+
+test("run_on_a_code_block_of_the_reply_goes_through_on_run", () => {
+  const onRun = jest.fn();
+  act(() => {
+    tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} onRun={onRun} />);
+  });
+  expect(mockRunHost).toEqual({ hostId: "host-1", paneId: "w1:p1", open: onRun });
   act(() => tree!.unmount());
 });

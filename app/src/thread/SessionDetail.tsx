@@ -314,7 +314,7 @@ function ThreadBody({
           </Text>
         </View>
       ) : null}
-      <ThreadLogContext.Provider value={thread.ref?.log_path ? { hostId, logPath: thread.ref.log_path } : null}>
+      <ThreadLogContext.Provider value={thread.ref?.log_path ? { hostId, logPath: thread.ref.log_path, paneId } : null}>
         <ThreadList
           items={items}
           loadOlder={thread.loadOlder}

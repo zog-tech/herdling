@@ -1,10 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, TriangleAlert } from "lucide-react-native";
+import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHosts } from "@/hosts/store";
 import { colors, hitTarget, space } from "@/theme/tokens";
+import { RunHostContext } from "@/thread/LiveToolContext";
 import { ThreadList } from "@/thread/ThreadList";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { useSubagentThread } from "@/thread/useSubagentThread";
@@ -14,17 +16,21 @@ import { DelayedSpinner } from "@/ui/Delayed";
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 
 export default function SubagentScreen() {
-  const { hostId, agentId, log, title } = useLocalSearchParams<{
+  const { hostId, agentId, log, title, pane } = useLocalSearchParams<{
     hostId: string;
     agentId: string;
     log: string;
     title?: string;
     since?: string;
+    /** The pane of the parent agent. An older link has none: Run then offers only the terminals. */
+    pane?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const hostName = useHosts((s) => s.hosts.find((h) => h.id === hostId)?.name ?? hostId);
   const thread = useSubagentThread(hostId, log, agentId);
+  // Run on a shell code block: the host of the subagent, and the folder of the parent agent.
+  const runHost = useMemo(() => ({ hostId, paneId: pane || undefined }), [hostId, pane]);
   const back = () => (router.canGoBack() ? router.back() : router.replace("/"));
   const { status, items } = thread;
   // "Working" while the host says the subagent runs. An older host does not tell: no pill.
@@ -67,14 +73,16 @@ export default function SubagentScreen() {
             </Text>
           </View>
         ) : null}
-        <ThreadList
-          items={items}
-          loadOlder={thread.loadOlder}
-          loadingOlder={thread.loadingOlder}
-          hasOlder={thread.hasOlder}
-          footer={pill}
-          footerShown={isStatusShown(badge)}
-        />
+        <RunHostContext.Provider value={runHost}>
+          <ThreadList
+            items={items}
+            loadOlder={thread.loadOlder}
+            loadingOlder={thread.loadingOlder}
+            hasOlder={thread.hasOlder}
+            footer={pill}
+            footerShown={isStatusShown(badge)}
+          />
+        </RunHostContext.Provider>
       </View>
     );
   }
