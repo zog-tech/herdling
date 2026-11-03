@@ -127,6 +127,7 @@ function ThemedRoot() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
+        <Stack.Screen name="display-log" options={{ ...hostHeader, title: "Display log" }} />
         <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />
         <Stack.Screen name="theme" options={{ ...hostHeader, title: "Theme" }} />
         <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />

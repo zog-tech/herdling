@@ -1,7 +1,9 @@
 import type { FilePut } from "@herdling/protocol";
 import { requireOptionalNativeModule } from "expo";
+import { Keyboard } from "react-native";
 
 import type { RpcClient } from "@/rpc/RpcClient";
+import { logDisplay } from "@/ui/displayLog";
 
 import { utf8Base64, type PastedText } from "./pastedText";
 
@@ -74,6 +76,69 @@ export function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Wait before the second try to open a picker. */
+export const PRESENTER_RETRY_MS = 400;
+
+/** What the composer shows when a picker cannot open two times. */
+export const PRESENTER_HELP = {
+  photos: "Could not open Photos. If the screen is shared with AirPlay, stop sharing and try again.",
+  files: "Could not open Files. If the screen is shared with AirPlay, stop sharing and try again.",
+} as const;
+
+/**
+ * A picker could not find a view controller to show itself on. The message is for the user.
+ * Expo finds that controller from the key window of the app scene. With no key window
+ * (seen while the screen is shared with AirPlay) it finds none.
+ */
+export class PresenterError extends Error {}
+
+/**
+ * True for the error that expo-image-picker ("Cannot determine currently presented view
+ * controller") and expo-document-picker ("Could not find the current ViewController") give when
+ * they find no view controller to show on.
+ */
+export function isPresenterError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const code = (e as { code?: unknown } | null)?.code;
+  return (
+    /currently presented view controller|current ViewController/i.test(msg) ||
+    code === "ERR_MISSING_CURRENT_VIEW_CONTROLLER" ||
+    code === "ERR_MISSING_VIEW_CONTROLLER"
+  );
+}
+
+/** An error message on one line, for the display log. */
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/\s+/g, " ").trim();
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Opens a picker with `open`. When it fails because it finds no view controller, it closes the
+ * keyboard (a keyboard window can hold the key status), waits `PRESENTER_RETRY_MS` and tries once more.
+ * A second failure throws a `PresenterError` with help for the user. Each failure goes to the display log.
+ */
+export async function withPresenterRetry<T>(
+  kind: keyof typeof PRESENTER_HELP,
+  open: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<T> {
+  try {
+    return await open();
+  } catch (e) {
+    logDisplay(`picker ${kind} failed, try 1: ${errorText(e)}`);
+    if (!isPresenterError(e)) throw e;
+  }
+  Keyboard.dismiss();
+  await wait(PRESENTER_RETRY_MS);
+  try {
+    return await open();
+  } catch (e) {
+    logDisplay(`picker ${kind} failed, try 2: ${errorText(e)}`);
+    if (!isPresenterError(e)) throw e;
+    throw new PresenterError(PRESENTER_HELP[kind]);
+  }
+}
+
 /** The result of a document pick: the files to attach, and the names of files that are too large. */
 export type PickedFiles = { files: DocFile[]; tooLarge: string[] };
 
@@ -84,7 +149,9 @@ export type PickedFiles = { files: DocFile[]; tooLarge: string[] };
 export async function pickFiles(max: number): Promise<PickedFiles> {
   if (max <= 0 || !documentsAvailable()) return { files: [], tooLarge: [] };
   const DocumentPicker = require("expo-document-picker") as typeof import("expo-document-picker");
-  const r = await DocumentPicker.getDocumentAsync({ type: "*/*", multiple: true, copyToCacheDirectory: true });
+  const r = await withPresenterRetry("files", () =>
+    DocumentPicker.getDocumentAsync({ type: "*/*", multiple: true, copyToCacheDirectory: true }),
+  );
   if (r.canceled) return { files: [], tooLarge: [] };
   const tooLarge: string[] = [];
   const files: DocFile[] = [];
@@ -111,16 +178,18 @@ async function readBase64(uri: string): Promise<string> {
 export async function pickPhotos(max: number): Promise<Photo[]> {
   if (max <= 0 || !photosAvailable()) return [];
   const ImagePicker = require("expo-image-picker") as typeof import("expo-image-picker");
-  const r = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    allowsMultipleSelection: true,
-    selectionLimit: max,
-    orderedSelection: true,
-    quality: PHOTO_QUALITY,
-    base64: true,
-    exif: false,
-    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-  });
+  const r = await withPresenterRetry("photos", () =>
+    ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: max,
+      orderedSelection: true,
+      quality: PHOTO_QUALITY,
+      base64: true,
+      exif: false,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+    }),
+  );
   if (r.canceled) return [];
   return r.assets
     .filter((a) => !!a.base64)

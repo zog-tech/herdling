@@ -35,6 +35,7 @@ import {
   photosAvailable,
   pickFiles,
   pickPhotos,
+  PresenterError,
   uploadPhotos, withPaths,
   type Attachment,
   type Photo,
@@ -362,7 +363,7 @@ export const Composer = memo(function Composer({
       const picked = await pickPhotos(photoRoom(photos));
       if (picked.length > 0) setPhotos((cur) => [...cur, ...picked].slice(0, MAX_ATTACHMENTS));
     } catch (e) {
-      setError(`Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
+      setError(e instanceof PresenterError ? e.message : `Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   const attachFiles = async () => {
@@ -373,7 +374,7 @@ export const Composer = memo(function Composer({
       if (tooLarge.length > 0) setError(`Too large to attach (max ${formatBytes(MAX_FILE_BYTES)}): ${tooLarge.join(", ")}`);
       else if (error) setError(undefined);
     } catch (e) {
-      setError(`Could not open the files: ${e instanceof Error ? e.message : String(e)}`);
+      setError(e instanceof PresenterError ? e.message : `Could not open the files: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   /**

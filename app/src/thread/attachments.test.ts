@@ -2,12 +2,16 @@ import * as ImagePicker from "expo-image-picker";
 
 import * as DocumentPicker from "expo-document-picker";
 
+import { Keyboard } from "react-native";
+
 import type { RpcClient } from "@/rpc/RpcClient";
+import { useDisplayLog } from "@/ui/displayLog";
 
 import {
   documentsAvailable,
   fileRoom,
   formatBytes,
+  isPresenterError,
   jpegName,
   MAX_ATTACHMENTS,
   MAX_FILE_BYTES,
@@ -15,8 +19,12 @@ import {
   photosAvailable,
   pickFiles,
   pickPhotos,
+  PRESENTER_HELP,
+  PRESENTER_RETRY_MS,
+  PresenterError,
   uploadPhotos,
   withPaths,
+  withPresenterRetry,
   type Attachment,
 } from "./attachments";
 
@@ -148,4 +156,69 @@ test("format_bytes", () => {
   expect(formatBytes(12 * 1024)).toBe("12 KB");
   expect(formatBytes(3.4 * 1024 * 1024)).toBe("3.4 MB");
   expect(formatBytes(MAX_FILE_BYTES)).toBe("25.0 MB");
+});
+
+describe("picker retry when no view controller is found", () => {
+  const presenterError = () =>
+    new Error("Calling the 'launchImageLibraryAsync' function has failed\n→ Caused by: Cannot determine currently presented view controller");
+
+  beforeEach(() => useDisplayLog.getState().clear());
+
+  test("is_presenter_error_knows_both_picker_messages_and_codes", () => {
+    expect(isPresenterError(presenterError())).toBe(true);
+    expect(isPresenterError(new Error("Could not find the current ViewController"))).toBe(true);
+    expect(isPresenterError(Object.assign(new Error("x"), { code: "ERR_MISSING_CURRENT_VIEW_CONTROLLER" }))).toBe(true);
+    expect(isPresenterError(new Error("Permission denied"))).toBe(false);
+  });
+
+  test("pick_photos_closes_the_keyboard_and_tries_again_once", async () => {
+    const dismiss = jest.spyOn(Keyboard, "dismiss");
+    const launch = ImagePicker.launchImageLibraryAsync as jest.Mock;
+    launch.mockClear();
+    launch.mockRejectedValueOnce(presenterError()).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///a", fileName: "a.png", base64: "AAA" }],
+    });
+    expect(await pickPhotos(4)).toEqual([{ uri: "file:///a", name: "a.jpg", base64: "AAA" }]);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(dismiss).toHaveBeenCalled();
+    expect(useDisplayLog.getState().events.map((e) => e.text)[0]).toMatch(/^picker photos failed, try 1: .*presented view controller/);
+    dismiss.mockRestore();
+  });
+
+  test("a_second_failure_gives_the_airplay_help", async () => {
+    const launch = ImagePicker.launchImageLibraryAsync as jest.Mock;
+    launch.mockClear();
+    launch.mockRejectedValueOnce(presenterError()).mockRejectedValueOnce(presenterError());
+    const err = await pickPhotos(4).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PresenterError);
+    expect((err as Error).message).toBe(PRESENTER_HELP.photos);
+    expect(useDisplayLog.getState().events).toHaveLength(2);
+  });
+
+  test("pick_files_tries_again_too", async () => {
+    const get = DocumentPicker.getDocumentAsync as jest.Mock;
+    get.mockClear();
+    get.mockRejectedValueOnce(new Error("Could not find the current ViewController")).mockResolvedValueOnce({ canceled: true, assets: null });
+    expect(await pickFiles(4)).toEqual({ files: [], tooLarge: [] });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  test("other_errors_are_not_tried_again", async () => {
+    const wait = jest.fn(async () => {});
+    const open = jest.fn(async () => {
+      throw new Error("Permission denied");
+    });
+    await expect(withPresenterRetry("photos", open, wait)).rejects.toThrow("Permission denied");
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+    expect(useDisplayLog.getState().events.map((e) => e.text)).toEqual(["picker photos failed, try 1: Permission denied"]);
+  });
+
+  test("it_waits_before_the_second_try", async () => {
+    const wait = jest.fn(async () => {});
+    const open = jest.fn().mockRejectedValueOnce(presenterError()).mockResolvedValueOnce("ok");
+    await expect(withPresenterRetry("files", open, wait)).resolves.toBe("ok");
+    expect(wait).toHaveBeenCalledWith(PRESENTER_RETRY_MS);
+  });
 });
