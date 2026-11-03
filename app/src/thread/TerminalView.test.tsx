@@ -2,7 +2,9 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { useRecentCommands } from "@/terminal/recentCommands";
 import { colors } from "@/theme/tokens";
+import { showActionSheet } from "@/ui/nativeSheet";
 
 import { TerminalView } from "./TerminalView";
 
@@ -26,7 +28,9 @@ jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc }),
 }));
 jest.mock("expo-router", () => ({ useIsFocused: () => true }));
-jest.mock("@/ui/haptics", () => ({ tap: jest.fn() }));
+jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn() }));
+jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+const sheet = showActionSheet as jest.Mock;
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -42,6 +46,8 @@ beforeEach(() => {
   mockScreen = "\x1b[31mred\x1b[0m ok\r\n$ ";
   mockSend = async () => ({ type: "ok" });
   mockRpc = makeRpc();
+  sheet.mockClear();
+  useRecentCommands.setState({ byHost: {} });
 });
 afterEach(() => {
   act(() => tree?.unmount());
@@ -49,11 +55,11 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-async function mount(controls = true) {
+async function mount(controls = true, shell = false) {
   await act(async () => {
     tree = create(
       <GestureHandlerRootView>
-        <TerminalView hostId="host-1" paneId="w1:p1" controls={controls} />
+        <TerminalView hostId="host-1" paneId="w1:p1" controls={controls} shell={shell} />
       </GestureHandlerRootView>,
     );
   });
@@ -190,4 +196,56 @@ test("inactive_view_reads_nothing", async () => {
   await flush();
   await act(async () => jest.advanceTimersByTime(3000));
   expect(reads()).toBe(0);
+});
+
+const chip = (cmd: string) => pressable(`Recent command: ${cmd}`);
+const recentRow = () => tree!.root.findAll((n) => n.props.accessibilityLabel === "Recent commands");
+
+test("a shell keeps sent lines as recent commands; an agent pane does not", async () => {
+  await mount(true, false);
+  await typeLine("ls");
+  await flush();
+  expect(useRecentCommands.getState().byHost["host-1"]).toBeUndefined();
+  expect(recentRow()).toHaveLength(0);
+  act(() => tree!.unmount());
+
+  await mount(true, true);
+  expect(recentRow()).toHaveLength(0);
+  await typeLine("pnpm test");
+  await flush();
+  expect(useRecentCommands.getState().byHost["host-1"]).toEqual(["pnpm test"]);
+  expect(recentRow().length).toBeGreaterThan(0);
+});
+
+test("a tap on a chip puts the command in the box and sends nothing", async () => {
+  useRecentCommands.setState({ byHost: { "host-1": ["git status", "make test"] } });
+  await mount(true, true);
+  await act(async () => chip("make test").props.onPress());
+  await flush();
+  expect(input().props.value).toBe("make test");
+  expect(sends()).toEqual([]);
+});
+
+test("Run now in the chip menu sends the command and Enter", async () => {
+  useRecentCommands.setState({ byHost: { "host-1": ["git status", "make test"] } });
+  await mount(true, true);
+  await act(async () => chip("make test").props.onLongPress());
+  expect(sheet).toHaveBeenCalledTimes(1);
+  const [opts, onPick] = sheet.mock.calls[0];
+  expect(opts.options).toEqual(["Run now", "Remove", "Cancel"]);
+  await act(async () => onPick(0));
+  await flush();
+  expect(sends()).toEqual([{ method: "pane.send_input", params: { pane_id: "w1:p1", text: "make test", keys: ["enter"] } }]);
+  // The command moves to the front, and the box stays as it was.
+  expect(useRecentCommands.getState().byHost["host-1"]).toEqual(["make test", "git status"]);
+  expect(input().props.value).toBe("");
+});
+
+test("Remove in the chip menu removes the command", async () => {
+  useRecentCommands.setState({ byHost: { "host-1": ["git status", "make test"] } });
+  await mount(true, true);
+  await act(async () => chip("git status").props.onLongPress());
+  await act(async () => sheet.mock.calls[0][1](1));
+  expect(useRecentCommands.getState().byHost["host-1"]).toEqual(["make test"]);
+  expect(sends()).toEqual([]);
 });

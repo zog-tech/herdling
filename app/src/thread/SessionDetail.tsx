@@ -700,6 +700,7 @@ export function SessionDetail({
           hostId={hostId}
           paneId={paneId}
           controls
+          shell={terminal}
           active={active}
           bottomInset={keyboard ? 0 : insets.bottom}
           search={termSearch}
