@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::parse::{cap, parse_line, parse_ts};
 use super::subagent_path;
+use crate::tail::read_lines_from;
 use crate::types::ThreadItem;
 
 /// Time between checks of running subagents in a follow.
@@ -21,6 +22,29 @@ pub const STALE: Duration = Duration::from_secs(30 * 60);
 /// Max chars of an activity line.
 pub const ACTIVITY_CAP: usize = 80;
 const SUMMARY_CAP: usize = 500;
+/// Bytes of lines read in one step of a scan.
+const STEP_BYTES: u64 = 1024 * 1024;
+/// Most transcript scans kept between pages. The cache is cleared when it is full.
+const SCAN_CACHE_CAP: usize = 64;
+
+/// Scans of subagent transcripts kept by one process. A page reads only the lines added
+/// since the last page, not the whole transcript again.
+static SCANS: Mutex<Option<HashMap<PathBuf, Scan>>> = Mutex::new(None);
+
+/// The scan of `path`, brought up to date. A scan from the cache reads only the new lines.
+fn cached_scan(path: &Path) -> Scan {
+    let old = SCANS.lock().ok().and_then(|mut g| g.as_mut()?.remove(path));
+    let mut s = old.unwrap_or_default();
+    s.update(path);
+    if let Ok(mut g) = SCANS.lock() {
+        let map = g.get_or_insert_with(HashMap::new);
+        if map.len() >= SCAN_CACHE_CAP {
+            map.clear();
+        }
+        map.insert(path.to_path_buf(), s.clone());
+    }
+    s
+}
 
 /// The `subagents` folder of a parent log.
 pub fn subagents_dir(log: &Path) -> PathBuf {
@@ -126,21 +150,20 @@ impl Scan {
             return false;
         }
         let Ok(mut f) = File::open(path) else { return false };
-        if f.seek(SeekFrom::Start(self.offset)).is_err() {
-            return false;
+        // Read in bounded steps. A line still being written stays for the next read.
+        let mut changed = false;
+        while self.offset < len {
+            let Ok((lines, next)) = read_lines_from(&mut f, self.offset, STEP_BYTES) else { break };
+            if next == self.offset {
+                break;
+            }
+            for (_, line) in &lines {
+                self.line(line);
+            }
+            self.offset = next;
+            changed = true;
         }
-        let mut buf = Vec::with_capacity((len - self.offset) as usize);
-        if f.take(len - self.offset).read_to_end(&mut buf).is_err() {
-            return false;
-        }
-        // A line still being written stays for the next read.
-        let Some(i) = buf.iter().rposition(|c| *c == b'\n') else { return false };
-        buf.truncate(i + 1);
-        self.offset += buf.len() as u64;
-        for line in String::from_utf8_lossy(&buf).lines() {
-            self.line(line);
-        }
-        true
+        changed
     }
 
     fn line(&mut self, line: &str) {
@@ -289,11 +312,7 @@ pub fn enrich_items(log: &Path, items: &mut [ThreadItem], now: SystemTime) {
             read_meta(log, agent_id)
         };
         let aid = if agent_id.is_empty() { meta.as_ref().map(|m| m.agent_id.clone()) } else { Some(agent_id.clone()) };
-        let scan = aid.and_then(|a| subagent_path(log, &a)).map(|p| {
-            let mut s = Scan::default();
-            s.update(&p);
-            s
-        });
+        let scan = aid.and_then(|a| subagent_path(log, &a)).map(|p| cached_scan(&p));
         enrich(item, meta.as_ref(), scan.as_ref(), now);
     }
 }

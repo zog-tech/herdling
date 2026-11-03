@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use serde_json::{json, Value};
 
 use super::jsonl::{LineParser, Parsed};
-use super::{millis, mtime, short, text_result, tool_summary, CandidateSession, PROMPT_SCAN_LINES};
+use super::{millis, mtime, short, text_result, tool_summary, CandidateSession, PROMPT_SCAN_BYTES, PROMPT_SCAN_LINES};
 use crate::claude::parse_ts;
 use crate::types::{ThreadItem, ToolResult};
 
@@ -249,12 +249,10 @@ pub fn candidates(home: &Path) -> Vec<CandidateSession> {
 
 /// The first user prompt of a log.
 pub fn first_prompt(path: &Path) -> String {
-    let Ok(f) = File::open(path) else { return String::new() };
+    let Ok(mut f) = File::open(path) else { return String::new() };
+    let Ok(lines) = crate::tail::head_lines(&mut f, PROMPT_SCAN_LINES, PROMPT_SCAN_BYTES) else { return String::new() };
     let mut p = Parser;
-    let mut off = 0u64;
-    for line in BufReader::new(f).lines().take(PROMPT_SCAN_LINES) {
-        let Ok(line) = line else { break };
-        let len = line.len() as u64 + 1;
+    for (off, line) in lines {
         for item in p.parse(off, &line).items {
             if let ThreadItem::User { text, .. } = item {
                 if !text.trim().is_empty() {
@@ -262,7 +260,6 @@ pub fn first_prompt(path: &Path) -> String {
                 }
             }
         }
-        off += len;
     }
     String::new()
 }

@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use serde_json::{json, Value};
@@ -17,6 +17,12 @@ const RECENT_WINDOW: Duration = Duration::from_secs(10 * 60);
 /// First-prompt scan limit in lines.
 const PROMPT_SCAN_LINES: usize = 200;
 const PROMPT_CHARS: usize = 120;
+/// First-prompt scan limit in bytes. A large image or paste must not make the scan long.
+const PROMPT_SCAN_BYTES: u64 = 4 * 1024 * 1024;
+/// Bytes from the end of a log searched for its cwd.
+const CWD_SCAN_BYTES: u64 = 4 * 1024 * 1024;
+/// Most project dirs listed for `recent_cwds`.
+const PROJECT_SCAN: usize = 2000;
 
 /// `home/.claude/projects/<cwd with every char not [A-Za-z0-9] replaced by '-'>`.
 pub fn project_dir(home: &Path, cwd: &str) -> PathBuf {
@@ -205,7 +211,13 @@ fn jsonl_files(dir: &Path) -> Vec<(PathBuf, SystemTime)> {
 
 /// The newest `.jsonl` in `dir`, optionally only if modified within `max_age`.
 pub fn newest_jsonl(dir: &Path, max_age: Option<Duration>) -> Option<(PathBuf, SystemTime)> {
-    let (p, t) = jsonl_files(dir).into_iter().next()?;
+    let rd = std::fs::read_dir(dir).ok()?;
+    let (p, t) = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.is_file())
+        .filter_map(|p| mtime(&p).map(|t| (p, t)))
+        .min_by_key(|e| std::cmp::Reverse(e.1))?;
     if let Some(age) = max_age {
         if SystemTime::now().duration_since(t).is_ok_and(|d| d > age) {
             return None;
@@ -228,11 +240,38 @@ pub fn recent_sessions(home: &Path, cwd: &str, limit: usize) -> Vec<RecentSessio
         .collect()
 }
 
-/// The first non-meta user text in a log, cut to 120 chars.
+/// First prompts kept by one process: log path → (log length, mtime, prompt).
+type PromptCache = HashMap<PathBuf, (u64, Option<SystemTime>, String)>;
+static PROMPTS: Mutex<Option<PromptCache>> = Mutex::new(None);
+/// Most first prompts kept. The cache is cleared when it is full.
+const PROMPT_CACHE_CAP: usize = 512;
+
+/// The first non-meta user text in a log, cut to 120 chars. A log only grows, so a prompt
+/// once found stays valid. An empty result is kept only while the log does not change.
 fn first_prompt(path: &Path) -> String {
-    let Ok(f) = File::open(path) else { return String::new() };
-    for line in BufReader::new(f).lines().take(PROMPT_SCAN_LINES) {
-        let Ok(line) = line else { break };
+    let meta = std::fs::metadata(path).ok();
+    let len = meta.as_ref().map_or(0, |m| m.len());
+    let mtime = meta.and_then(|m| m.modified().ok());
+    if let Some((l, t, p)) = PROMPTS.lock().ok().and_then(|g| g.as_ref()?.get(path).cloned()) {
+        if (!p.is_empty() && len >= l) || (len == l && mtime == t) {
+            return p;
+        }
+    }
+    let p = scan_first_prompt(path);
+    if let Ok(mut g) = PROMPTS.lock() {
+        let map = g.get_or_insert_with(HashMap::new);
+        if map.len() >= PROMPT_CACHE_CAP {
+            map.clear();
+        }
+        map.insert(path.to_path_buf(), (len, mtime, p.clone()));
+    }
+    p
+}
+
+fn scan_first_prompt(path: &Path) -> String {
+    let Ok(mut f) = File::open(path) else { return String::new() };
+    let Ok(lines) = crate::tail::head_lines(&mut f, PROMPT_SCAN_LINES, PROMPT_SCAN_BYTES) else { return String::new() };
+    for (_, line) in lines {
         for item in parse_line(&line) {
             if let ThreadItem::User { text, .. } = item {
                 if !text.trim().is_empty() {
@@ -247,29 +286,39 @@ fn first_prompt(path: &Path) -> String {
 /// Project dirs hold a `cwd` field in every line. Collect the newest cwd of each project,
 /// newest project first. Project dir names decode lossily, so they are not decoded.
 pub fn recent_cwds(home: &Path, cap: usize) -> Vec<String> {
-    let found = recent_cwds_timed(home, usize::MAX);
     let mut seen = HashSet::new();
-    found.into_iter().map(|(_, c)| c).filter(|c| seen.insert(c.clone())).take(cap).collect()
+    newest_logs(home)
+        .into_iter()
+        .filter_map(|(_, path)| last_cwd(&path))
+        .filter(|c| seen.insert(c.clone()))
+        .take(cap)
+        .collect()
 }
 
 /// Like [`recent_cwds`], with the mtime of the newest log of each project. Repeats stay.
+/// Only the newest logs are read, until `cap` cwds are found.
 pub fn recent_cwds_timed(home: &Path, cap: usize) -> Vec<(SystemTime, String)> {
+    newest_logs(home).into_iter().filter_map(|(t, path)| Some((t, last_cwd(&path)?))).take(cap).collect()
+}
+
+/// The newest log of each project dir, newest first. Only file metadata is read.
+fn newest_logs(home: &Path) -> Vec<(SystemTime, PathBuf)> {
     let Ok(rd) = std::fs::read_dir(home.join(".claude/projects")) else { return Vec::new() };
-    let mut found: Vec<(SystemTime, String)> = rd
+    let mut found: Vec<(SystemTime, PathBuf)> = rd
         .filter_map(|e| e.ok())
+        .take(PROJECT_SCAN)
         .filter_map(|e| {
             let (path, t) = newest_jsonl(&e.path(), None)?;
-            Some((t, last_cwd(&path)?))
+            Some((t, path))
         })
         .collect();
     found.sort_by_key(|e| std::cmp::Reverse(e.0));
-    found.truncate(cap);
     found
 }
 
-/// The `cwd` of the newest line that has one.
+/// The `cwd` of the newest line that has one, in the last lines of the log.
 fn last_cwd(path: &Path) -> Option<String> {
-    let lines = crate::tail::read_offset_lines_before(File::open(path).ok()?, None, 20).ok()?;
+    let lines = crate::tail::read_offset_lines_within(File::open(path).ok()?, None, 20, CWD_SCAN_BYTES).ok()?;
     lines.into_iter().rev().find_map(|(_, l)| {
         let v: Value = serde_json::from_str(&l).ok()?;
         v.get("cwd")?.as_str().filter(|s| !s.is_empty()).map(String::from)
