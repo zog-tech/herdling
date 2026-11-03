@@ -36,7 +36,9 @@ import {
   pickFiles,
   pickPhotos,
   PresenterError,
-  uploadPhotos, withPaths,
+  uploadErrorText,
+  uploadPhotos,
+  withPaths,
   type Attachment,
   type Photo,
 } from "./attachments";
@@ -46,11 +48,10 @@ import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
 import { isFreeform } from "./parseChoices";
-import { openPasteMenu, PasteChip, PasteViewer } from "./PasteChip";
-import { detectPaste, insertAt, makePaste, type PastedText } from "./pastedText";
 import { sendWithPending } from "./pending";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 import { useQuoteInto, withQuote } from "./quote";
+import { usePasteChips } from "./usePasteChips";
 
 const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
@@ -123,17 +124,6 @@ export const Composer = memo(function Composer({
     latest.current = t;
     setText(t);
   };
-  /** Long pastes, shown as chips. They go as `.txt` files with the next prompt. */
-  const [pastes, setPastes] = useState<PastedText[]>([]);
-  /** The number of the last paste chip in this draft. */
-  const pasteTextCount = useRef(0);
-  const pastesNow = useRef(pastes);
-  pastesNow.current = pastes;
-  /** The paste in the viewer sheet. It stays set while the sheet closes. */
-  const [viewing, setViewing] = useState<PastedText>();
-  const [viewerOpen, setViewerOpen] = useState(false);
-  /** The cursor in the box, for "Insert as text". */
-  const cursor = useRef<number | undefined>(undefined);
   const online = status === "online" && !!rpc;
   /** Photos and files to attach to the next prompt. */
   const [photos, setPhotos] = useState<Attachment[]>([]);
@@ -144,6 +134,15 @@ export const Composer = memo(function Composer({
   /** Bumped when the sheet opens: a new sheet starts with an empty search. */
   const [sheetKey, setSheetKey] = useState(0);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  /** Long pastes, shown as chips. They go as `.txt` files with the next prompt. */
+  const pasteChips = usePasteChips({
+    // A host without `files.put` cannot take a pasted text file: the paste stays in the box.
+    enabled: hasMethod(hello, "files.put"),
+    disabled: sending,
+    putText,
+    focus: () => inputRef.current?.focus(),
+  });
+  const { pastes } = pasteChips;
   const hostStt =
     rpc && hasMethod(hello, "stt.make")
       ? hostTranscriber(
@@ -217,8 +216,6 @@ export const Composer = memo(function Composer({
   const canPasteRow = !hasNativePaste && canAttach && clipboardAvailable() && photoRoom(photos) > 0;
   /** Builds without the document picker (older binaries that got this code over the air) hide "Files". */
   const canAttachFiles = hasMethod(hello, "files.put") && documentsAvailable();
-  /** A host without `files.put` cannot take a pasted text file: the paste stays in the box. */
-  const canPasteText = hasMethod(hello, "files.put");
   const showPlus = canAttach || canAttachFiles || slash.supported;
   /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
   const [focused, setFocused] = useState(false);
@@ -294,14 +291,7 @@ export const Composer = memo(function Composer({
         paths = await uploadPhotos(rpc, [...sent, ...sentPastes], setUploaded);
       } catch (e) {
         haptics.fail();
-        const code = (e as { code?: unknown })?.code;
-        const why =
-          code === "too_large"
-            ? "a file is larger than this computer accepts. Update herdlingd for files up to 25 MB"
-            : e instanceof Error
-              ? e.message
-              : String(e);
-        setError(`Upload failed, nothing sent: ${why}`);
+        setError(`Upload failed, nothing sent: ${uploadErrorText(e)}`);
         if (!fromInput && !latest.current.trim()) putText(prompt);
         setUploaded(undefined);
         setSending(false);
@@ -311,11 +301,7 @@ export const Composer = memo(function Composer({
     }
     const full = withPaths(prompt, paths);
     if (sent.length > 0) setPhotos((cur) => cur.filter((p) => !sent.includes(p)));
-    if (sentPastes.length > 0) {
-      setPastes((cur) => cur.filter((p) => !sentPastes.includes(p)));
-      // A new draft numbers its pastes from 1 again, unless a paste came in during the upload.
-      if (pastesNow.current.length === sentPastes.length) pasteTextCount.current = 0;
-    }
+    pasteChips.sent(sentPastes);
     // The prompt now shows as a pending bubble in the thread, so the box empties at once.
     // Keep anything typed after the tap.
     if (fromInput && latest.current === prompt) {
@@ -405,12 +391,6 @@ export const Composer = memo(function Composer({
     putText(`${c.trigger ?? "/"}${c.name} `);
     if (error) setError(undefined);
   };
-  /** Puts a paste back in the box at the cursor (or at the end) and removes its chip. */
-  const insertPaste = (p: PastedText) => {
-    putText((cur) => insertAt(cur, p.text, cursor.current));
-    setPastes((cur) => cur.filter((x) => x !== p));
-    inputRef.current?.focus();
-  };
 
   return (
     // No top rule and no fill: the glass prompt box and its buttons float on what is behind (the page, or the glass sheet).
@@ -473,24 +453,7 @@ export const Composer = memo(function Composer({
       ) : null}
       {photos.length > 0 || pastes.length > 0 ? (
         <PhotoStrip photos={photos} disabled={sending} onRemove={(p) => setPhotos((cur) => cur.filter((x) => x !== p))}>
-          {pastes.map((p) => (
-            <PasteChip
-              key={p.n}
-              paste={p}
-              disabled={sending}
-              onPress={() =>
-                openPasteMenu(
-                  p,
-                  () => {
-                    setViewing(p);
-                    setViewerOpen(true);
-                  },
-                  () => insertPaste(p),
-                )
-              }
-              onRemove={() => setPastes((cur) => cur.filter((x) => x !== p))}
-            />
-          ))}
+          {pasteChips.chips}
         </PhotoStrip>
       ) : null}
       {partial ? (
@@ -533,22 +496,13 @@ export const Composer = memo(function Composer({
               key={inputKey}
               value={text}
               onChangeText={(t) => {
-                // No paste event in React Native: a change that inserts a long block is a paste.
-                const cut = canPasteText ? detectPaste(latest.current, t) : undefined;
-                if (cut) {
-                  const p = makePaste(++pasteTextCount.current, cut.pasted);
-                  setPastes((cur) => [...cur, p]);
-                  cursor.current = cut.at;
-                  putText(cut.text);
-                } else putText(t);
+                putText(pasteChips.change(latest.current, t));
                 if (plusOpen) setPlusOpen(false);
                 if (error) setError(undefined);
               }}
               editable={online}
               autoFocus={autoFocus}
-              onSelectionChange={(e) => {
-                cursor.current = e.nativeEvent.selection.start;
-              }}
+              onSelectionChange={pasteChips.onSelectionChange}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               multiline
@@ -621,7 +575,7 @@ export const Composer = memo(function Composer({
         </Pressable>
         )}
       </View>
-      <PasteViewer paste={viewing} visible={viewerOpen} onClose={() => setViewerOpen(false)} />
+      {pasteChips.viewer}
       {slash.supported ? (
         <CommandSheet
           key={sheetKey}

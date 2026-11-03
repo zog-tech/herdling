@@ -179,3 +179,64 @@ test("shows every agent normally on a herdlingd without agents.installed", async
   expect(has(t, "omp")).toBe(true);
   expect(has(t, "omp, not installed")).toBe(false);
 });
+
+describe("long pastes in the first prompt", () => {
+  const block = Array.from({ length: 30 }, (_, i) => `log line ${i + 1}`).join("\n");
+  const box = (t: ReactTestRenderer, label: string) => t.root.findAllByType(TextInput).find((n) => n.props.accessibilityLabel === label)!;
+  const firstPrompt = (t: ReactTestRenderer) => box(t, "First prompt (optional)");
+
+  test("a long paste becomes a chip, and Start uploads it and puts its path in the first prompt", async () => {
+    const t = await render();
+    const calls = jest.spyOn(mockConn.rpc!, "call");
+    act(() => firstPrompt(t).props.onChangeText("Why does this fail? "));
+    act(() => firstPrompt(t).props.onChangeText(`Why does this fail? ${block}`));
+    expect(firstPrompt(t).props.value).toBe("Why does this fail? ");
+    expect(has(t, "Pasted text #1 · 30 lines")).toBe(true);
+    // The remove button drops a chip.
+    act(() => firstPrompt(t).props.onChangeText(`Why does this fail? ${block}`));
+    expect(has(t, "Pasted text #2 · 30 lines")).toBe(true);
+    await act(async () => byLabel(t, "Remove pasted text 2").props.onPress());
+    expect(has(t, "Pasted text #2 · 30 lines")).toBe(false);
+
+    await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\//));
+    const puts = calls.mock.calls.filter(([m]) => m === "files.put").map(([, p]) => p);
+    expect(puts).toEqual([{ name: "pasted-text-1.txt", data_b64: Buffer.from(block, "utf8").toString("base64") }]);
+    const prompts = calls.mock.calls
+      .filter(([m, p]) => m === "herdr.call" && (p as { method: string }).method === "agent.prompt")
+      .map(([, p]) => (p as { params: { text: string } }).params.text);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatch(/^Why does this fail\?\n~\/\.cache\/herdling\/uploads\/\d+-pasted-text-1\.txt$/);
+  });
+
+  test("a failed upload starts nothing and keeps the chip", async () => {
+    const t = await render();
+    const rpc = mockConn.rpc!;
+    const real = rpc.call.bind(rpc) as (...a: unknown[]) => Promise<unknown>;
+    jest
+      .spyOn(rpc, "call")
+      .mockImplementation(((method: string, ...rest: unknown[]) =>
+        method === "files.put" ? Promise.reject(new Error("disk full")) : real(method, ...rest)) as never);
+    act(() => firstPrompt(t).props.onChangeText(block));
+    await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await settle();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(t.root.findAll((n) => n.props.children === "Upload failed, nothing started: disk full").length).toBeGreaterThan(0);
+    expect(has(t, "Pasted text #1 · 30 lines")).toBe(true);
+  });
+
+  test("a shell command makes no chip", async () => {
+    const t = await render();
+    await act(async () => byLabel(t, "Shell").props.onPress());
+    act(() => box(t, "Command (optional)").props.onChangeText(block));
+    expect(box(t, "Command (optional)").props.value).toBe(block);
+    expect(has(t, "Pasted text #1 · 30 lines")).toBe(false);
+  });
+});
