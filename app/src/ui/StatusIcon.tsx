@@ -27,6 +27,14 @@ export const STATUS_META: Record<BadgeStatus, { label: string; color: string; Ic
   offline: { label: "Offline", get color() { return colors.textMuted; }, Icon: CircleSlash },
 };
 
+/**
+ * The meta of a status. A status that the app does not know (a newer herdr can add one, and an
+ * event status reaches the app unchecked) uses the `unknown` meta, so the render does not throw.
+ */
+export function statusMeta(status: BadgeStatus): { label: string; color: string; Icon: LucideIcon } {
+  return Object.prototype.hasOwnProperty.call(STATUS_META, status) ? STATUS_META[status] : STATUS_META.unknown;
+}
+
 /** One linear turn, looped: a CSS animation, so it runs on the UI thread with no JS per frame. */
 const SPIN = { from: { transform: [{ rotate: "0deg" }] }, to: { transform: [{ rotate: "360deg" }] } };
 const EASE_OUT = Easing.bezier(...motion.ease.out);
@@ -37,7 +45,7 @@ const EASE_OUT = Easing.bezier(...motion.ease.out);
  */
 export function StatusIcon({ status, size = icon.header, color }: { status: BadgeStatus; size?: number; color?: string }) {
   const reduced = useReducedMotion();
-  const { Icon, color: own } = STATUS_META[status];
+  const { Icon, color: own } = statusMeta(status);
   const scale = useSharedValue(1);
   const prev = useRef(status);
 
@@ -100,12 +108,12 @@ export function useElapsed(since: number | undefined, tick: boolean, everyMs = 1
 
 /** "Working 1m 12s", "Needs you", "Done". */
 export function statusText(status: BadgeStatus, elapsedS?: number): string {
-  const label = STATUS_META[status].label;
+  const label = statusMeta(status).label;
   return status === "working" && elapsedS !== undefined ? `${label} ${formatDuration(elapsedS)}` : label;
 }
 
 /** What VoiceOver says: "Working, 2 minutes", "Working, under a minute", "Needs you". */
 export function statusSpoken(status: BadgeStatus, elapsedS?: number): string {
-  const label = STATUS_META[status].label;
+  const label = statusMeta(status).label;
   return status === "working" && elapsedS !== undefined ? `${label}, ${spokenDuration(elapsedS)}` : label;
 }

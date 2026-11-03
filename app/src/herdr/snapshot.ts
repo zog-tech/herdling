@@ -7,12 +7,13 @@ export type AgentInfo = {
   workspace_id: string;
   /**
    * The agent kind. herdr sends null while it has not detected the agent yet, for example in the
-   * first seconds after `agent.start` (`launch_pending`).
+   * first seconds after `agent.start` (`launch_pending`). The herdr schema does not require the field.
    */
-  agent: string | null;
+  agent?: string | null;
   agent_status: AgentStatus;
   cwd?: string | null;
-  state_change_seq: number;
+  /** Grows on each status change. The herdr schema does not require it, so treat a missing value as 0. */
+  state_change_seq?: number;
   terminal_title_stripped?: string | null;
   /** The agent's own name (`agent.rename`); null or missing when it has none. */
   name?: string | null;
@@ -176,11 +177,11 @@ export function needsYou(
       if (agent.agent_status === "blocked") blocked.push({ hostId, agent });
       else if (
         (agent.agent_status === "idle" || agent.agent_status === "done") &&
-        agent.state_change_seq > (seen[paneKey(hostId, agent.pane_id)] ?? 0)
+        (agent.state_change_seq ?? 0) > (seen[paneKey(hostId, agent.pane_id)] ?? 0)
       )
         finished.push({ hostId, agent });
     }
   }
-  const newest = (a: NeedsYou, b: NeedsYou) => b.agent.state_change_seq - a.agent.state_change_seq;
+  const newest = (a: NeedsYou, b: NeedsYou) => (b.agent.state_change_seq ?? 0) - (a.agent.state_change_seq ?? 0);
   return [...blocked.sort(newest), ...finished.sort(newest)];
 }
