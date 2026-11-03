@@ -18,8 +18,11 @@ export const CRASH_LOG_BYTES = 4096;
 const STACK_LINES = 40;
 const MESSAGE_CHARS = 500;
 
-/** `fatal`: the error closed the app. `screen`: an error screen caught it and the app stayed open. */
-export type CrashKind = "fatal" | "screen";
+/**
+ * `fatal`: the error closed the app. `screen`: an error screen caught it and the app stayed open.
+ * `native`: a native exception closed the app; the next launch read it from the native crash file.
+ */
+export type CrashKind = "fatal" | "screen" | "native";
 
 export type CrashEntry = {
   /** Epoch ms. */
@@ -47,7 +50,14 @@ export function makeEntry(error: unknown, kind: CrashKind, context: CrashContext
   return { time, kind, message, ...(stack ? { stack } : {}), ...(context.route ? { route: context.route } : {}), ...(context.update ? { update: context.update } : {}) };
 }
 
-const isEntry = (x: unknown): x is CrashEntry =>
+/** One entry from a saved native crash: the first line is the message, the next lines the stack. */
+export function nativeEntry(at: number, text: string): CrashEntry {
+  const [first = "", ...rest] = text.split("\n");
+  const stack = rest.slice(0, STACK_LINES).join("\n").trimEnd();
+  return { time: at, kind: "native", message: clip(first.trim() || "Native crash", MESSAGE_CHARS), ...(stack ? { stack } : {}) };
+}
+
+const isEntry =(x: unknown): x is CrashEntry =>
   !!x && typeof x === "object" && typeof (x as CrashEntry).time === "number" && typeof (x as CrashEntry).message === "string";
 
 /** The entries in a stored value, oldest first. A missing or damaged value gives an empty log. */
@@ -120,13 +130,26 @@ export function loadCrashLog(): CrashEntry[] {
  */
 export function recordCrash(error: unknown, kind: CrashKind, context: CrashContext = {}): void {
   try {
+    appendEntry(makeEntry(error, kind, context));
+  } catch {
+    // makeEntry failed on a strange thrown value: nothing to save.
+  }
+}
+
+/**
+ * Adds a ready entry and writes the log synchronously. The log stays in time order, so an older
+ * native crash that the next launch reads goes before newer entries. It never throws.
+ */
+export function appendEntry(entry: CrashEntry): void {
+  try {
     let stored: CrashEntry[] = [];
     try {
       stored = parseLog(SecureStore.getItem(CRASH_LOG_KEY));
     } catch {
       stored = useCrashLog.getState().entries;
     }
-    const value = encodeLog([...stored, makeEntry(error, kind, context)]);
+    const list = [...stored, entry].sort((a, b) => a.time - b.time);
+    const value = encodeLog(list);
     useCrashLog.setState({ entries: parseLog(value) });
     SecureStore.setItem(CRASH_LOG_KEY, value);
   } catch {
@@ -148,10 +171,22 @@ export function crashTime(at: number): string {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }
 
+const KIND_TEXT: Record<CrashKind, string> = { fatal: "Fatal", screen: "Caught", native: "Native" };
+const KIND_LABEL: Record<CrashKind, string> = {
+  fatal: "Closed the app",
+  screen: "Caught by an error screen",
+  native: "Native crash, closed the app",
+};
+
+/** The kind as the Crash log screen shows it. */
+export function crashKindLabel(kind: CrashKind): string {
+  return KIND_LABEL[kind] ?? KIND_LABEL.screen;
+}
+
 /** One entry as text: the heading line, then the stack. */
 export function entryText(e: CrashEntry): string {
   const where = [e.route ? `route ${e.route}` : undefined, e.update ? `update ${e.update}` : undefined].filter(Boolean).join(", ");
-  const head = `${crashTime(e.time)} ${e.kind === "fatal" ? "Fatal" : "Caught"}: ${e.message}${where ? ` (${where})` : ""}`;
+  const head = `${crashTime(e.time)} ${KIND_TEXT[e.kind] ?? "Caught"}: ${e.message}${where ? ` (${where})` : ""}`;
   return e.stack ? `${head}\n${e.stack}` : head;
 }
 

@@ -5,10 +5,12 @@ import {
   CRASH_LOG_KEY,
   CRASH_LOG_MAX,
   clearCrashLog,
+  crashKindLabel,
   crashLogText,
   encodeLog,
   loadCrashLog,
   makeEntry,
+  nativeEntry,
   parseLog,
   recordCrash,
   useCrashLog,
@@ -81,6 +83,16 @@ test("record_never_throws_when_the_keychain_fails", () => {
     throw new Error("locked");
   });
   expect(() => recordCrash(new Error("x"), "fatal")).not.toThrow();
+});
+
+test("a_native_entry_keeps_the_headline_and_the_first_40_stack_lines", () => {
+  const text = ["java.lang.RuntimeException: boom (thread main)", ...Array.from({ length: 60 }, (_, i) => `    at a.b.C.f${i}(C.java:${i})`)].join("\n");
+  const got = nativeEntry(7, text);
+  expect(got).toMatchObject({ time: 7, kind: "native", message: "java.lang.RuntimeException: boom (thread main)" });
+  expect(got.stack?.split("\n")).toHaveLength(40);
+  expect(nativeEntry(7, "only a line").stack).toBeUndefined();
+  expect(crashKindLabel("native")).toBe("Native crash, closed the app");
+  expect(crashKindLabel("fatal")).toBe("Closed the app");
 });
 
 test("load_and_clear", async () => {

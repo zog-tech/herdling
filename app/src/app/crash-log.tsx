@@ -3,7 +3,7 @@ import { Copy, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { clearCrashLog, crashLogText, crashTime, loadCrashLog, useCrashLog } from "@/crash/crashLog";
+import { clearCrashLog, crashKindLabel, crashLogText, crashTime, loadCrashLog, useCrashLog } from "@/crash/crashLog";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Screen } from "@/ui/Screen";
@@ -11,7 +11,7 @@ import { Text } from "@/ui/Text";
 import * as haptics from "@/ui/haptics";
 
 /**
- * The last JavaScript errors, newest first: the time, the message, the route, the update and the
+ * The last JavaScript errors and native crashes, newest first: the time, the message, the route, the update and the
  * stack. The text is selectable; Copy puts all of it on the clipboard. Nothing goes to a server.
  */
 export default function CrashLogScreen() {
@@ -55,7 +55,7 @@ export default function CrashLogScreen() {
       ) : (
         newest.map((e, i) => (
           <View key={`${e.time}-${i}`} style={{ gap: space.xs }}>
-            <Text bold>{`${crashTime(e.time)} · ${e.kind === "fatal" ? "Closed the app" : "Caught by an error screen"}`}</Text>
+            <Text bold>{`${crashTime(e.time)} · ${crashKindLabel(e.kind)}`}</Text>
             <Text selectable>{e.message}</Text>
             {e.route || e.update ? (
               <Text variant="caption" muted selectable>
