@@ -295,6 +295,12 @@ fn drop_image_tags(s: &str) -> String {
         if digits > 0 && after[digits..].starts_with(']') {
             out.push_str(&rest[..i]);
             rest = &after[digits + 1..];
+            // Claude Code joins queued prompts at a tag ("Fix it [Image #1]Okay"). Keep a space there.
+            let glued = out.chars().last().is_some_and(|c| !c.is_whitespace())
+                && rest.chars().next().is_some_and(|c| !c.is_whitespace());
+            if glued {
+                out.push(' ');
+            }
         } else {
             out.push_str(&rest[..i + 1]);
             rest = &rest[i + 1..];
