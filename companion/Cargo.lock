@@ -399,7 +399,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "fs4",
- "if-addrs",
+ "if-addrs 0.15.0",
  "libc",
  "mdns-sd",
  "qrcode",
@@ -636,6 +636,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -741,7 +751,7 @@ checksum = "328f4e1041f7cfeb3affccb814ddbe2f004856a2ce769c8bf22080d74c5204c6"
 dependencies = [
  "fastrand",
  "flume",
- "if-addrs",
+ "if-addrs 0.13.4",
  "log",
  "mio",
  "socket2 0.5.10",
