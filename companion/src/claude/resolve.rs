@@ -127,11 +127,47 @@ fn locate(home: &Path, cwd: &str, direct: &[u32], roots: &[u32], table: ProcessT
             .cloned()
             .or_else(|| log_in_any_project(home, &s.id))
             .unwrap_or_else(|| paths[0].clone());
-        return Some((s.id, log));
+        return Some(follow_continued(home, s.id, log));
     }
     let (path, _) = newest_jsonl(&project_dir(home, cwd), Some(RECENT_WINDOW))?;
     let id = path.file_stem()?.to_string_lossy().into_owned();
-    Some((id, path))
+    Some(follow_continued(home, id, path))
+}
+
+/// Most `continued-in` links followed from one log. A loop of links cannot hang the resolver.
+const MAX_CONTINUED_HOPS: usize = 8;
+
+/// The session that a log continues in. Claude Code can move a running conversation to a new
+/// session id (for example a background job). The old log then ends with a `continued-in` record
+/// that names the new id, and the process keeps the old id in its session file.
+fn follow_continued(home: &Path, mut id: String, mut log: PathBuf) -> (String, PathBuf) {
+    for _ in 0..MAX_CONTINUED_HOPS {
+        let Some(next) = continued_in(&log) else { break };
+        let same_dir = log.with_file_name(format!("{next}.jsonl"));
+        let Some(next_log) = Some(same_dir).filter(|p| p.exists()).or_else(|| log_in_any_project(home, &next)) else {
+            break;
+        };
+        id = next;
+        log = next_log;
+    }
+    (id, log)
+}
+
+/// The `continuedInSessionId` of a `continued-in` record near the end of the log, if there is one.
+fn continued_in(log: &Path) -> Option<String> {
+    let lines = crate::tail::read_offset_lines_before(File::open(log).ok()?, None, 5).ok()?;
+    lines.into_iter().rev().find_map(|(_, l)| {
+        if !l.contains("continued-in") {
+            return None;
+        }
+        let v: Value = serde_json::from_str(&l).ok()?;
+        if v.get("type")?.as_str()? != "continued-in" {
+            return None;
+        }
+        let id = v.get("continuedInSessionId")?.as_str()?;
+        let ok = !id.is_empty() && !id.contains(['/', '\\']) && !id.contains("..");
+        ok.then(|| id.to_string())
+    })
 }
 
 /// The newest `<id>.jsonl` in any project dir. After `/restart` from a folder reached through a
