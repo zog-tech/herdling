@@ -4,7 +4,7 @@ Package `com.zogtech.herdling`. Version 1.0.0. Paste each field as written. Coun
 
 ## Store listing
 
-- **App name** (max 30): `Herdling`
+- **App name** (max 30): `Herdling: Mobile Agent Client`
 - **Category:** Applications > Tools
 - **Tags:** Developer tools, Productivity (choose the closest Play tags)
 - **Contact email:** admin@zog-tech.com
@@ -16,7 +16,7 @@ Package `com.zogtech.herdling`. Version 1.0.0. Paste each field as written. Coun
 ### Short description (max 80)
 
 ```
-Follow and answer the AI coding agents on your own computers, from your phone.
+Follow and answer your AI coding agents, or open a shell, from your phone.
 ```
 
 ### Full description (max 4000)
@@ -25,10 +25,13 @@ Follow and answer the AI coding agents on your own computers, from your phone.
 Herdling is a phone app for herdr, the terminal workspace for AI coding agents. Your agents keep working when you leave your desk. Herdling lets you follow them and answer them from anywhere your phone can reach your computers.
 
 SEE EVERY AGENT
-One board shows the agents on all of your computers. Each agent shows if it is working, done or waiting for you. The ones that need an answer come first. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
+One board shows the agents on all of your computers. Each tile shows the agent's logo, its status, what it is doing now and its last reply. The ones that need an answer come first. Group the board by folder, by computer or by herdr workspace. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
 
 READ AND REPLY
-Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt.
+Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt. Long pasted text goes in as an attachment, so your prompt stays readable. One status line shows when the agent and its subagents are working; tap it to open a subagent.
+
+RUN COMMANDS
+Open a plain shell in any folder on your computer and type commands in a live terminal, with a key row for Esc, Tab, Ctrl and the arrows. When an agent suggests a shell command, tap the play button on it to run it in a new shell or in an open terminal. Nothing runs until you check the command and tap Run.
 
 START NEW WORK
 Start a new agent session in any folder on any computer. Resume an earlier session. Run saved automations.
@@ -158,12 +161,23 @@ No location, contacts, SMS, call log, storage, accessibility or background locat
 
 The Expo push service delivers to Android through Firebase Cloud Messaging. Until FCM is set up, Android push notifications do not arrive; everything else works, and review can go ahead.
 
-To finish it (maintainer):
+To finish it (maintainer, with agent help):
 1. Create a Firebase project (name it Herdling, under the Zog Tech Google account). Disable Google Analytics when asked.
 2. Add an Android app with package `com.zogtech.herdling`. Download `google-services.json`.
-3. Add it to the app: `"android": { "googleServicesFile": "./google-services.json" }` in `app/app.json`. This is a native change, so it needs a new build.
-4. In Firebase > Project settings > Service accounts, create a private key (FCM V1). Upload it to EAS: `eas credentials` > Android > Google Service Account > FCM V1.
+3. Upload the file to EAS as a secret file variable. Do not commit it: `app/google-services.json` is in `.gitignore`. Run this in `app/`:
+
+   ```
+   eas env:create --name GOOGLE_SERVICES_JSON --type file --visibility secret --environment production --environment preview --value ./google-services.json
+   ```
+
+   (`eas env:create` is deprecated in eas-cli 27; `eas env:set` takes the same flags.)
+   `app/app.config.ts` sets `android.googleServicesFile` from `GOOGLE_SERVICES_JSON`, or from `./google-services.json` for a local build. When neither file exists, the build works without push. This is a native change, so it needs a new build.
+4. In Firebase > Project settings > Service accounts, create a private key (FCM V1). Upload it to EAS: `eas credentials -p android` > production > Google Service Account > "Manage your Google Service Account Key for Push Notifications (FCM V1)" > upload the JSON key. Do not commit the key.
 5. Test a notification on a real Android device.
+
+## Uploads with eas submit
+
+`app/eas.json` has `submit.production.android` with track `internal` and release status `draft`. It has no `serviceAccountKeyPath`, because the key must not be in the repo. Store the Play service account key in EAS instead: `eas credentials -p android` > production > Google Service Account > "Manage your Google Service Account Key for Play Store Submissions". Then `eas submit -p android --profile production --latest` uploads the latest build as a draft on the Internal testing track. Play needs the first AAB upload by hand in the Console.
 
 ## Release details
 
@@ -171,5 +185,5 @@ To finish it (maintainer):
 - **Release notes (en-US, max 500):**
 
 ```
-First release. Follow the coding agents that herdr runs on your own computers. See their status, read and answer their sessions, open the terminal, start new sessions and get a notification when an agent finishes or needs you.
+First release. Follow the coding agents that herdr runs on your own computers. See their status, read and answer their sessions, open the terminal or a shell, start new sessions and get a notification when an agent finishes or needs you.
 ```

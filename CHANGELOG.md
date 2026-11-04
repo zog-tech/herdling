@@ -64,6 +64,9 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Android push setup and notification icon.** The Android build reads `google-services.json`
+  from the EAS file variable `GOOGLE_SERVICES_JSON` (not in git). Android notifications show the
+  sheep icon in gold, not a white circle. Native build.
 - **Notify me when a command finishes.** A terminal's menu and the Run sheet have "Notify me when
   it finishes". The computer sends one push when the command finishes. Needs `herdlingd` 0.1.4.
 - **Recent commands in a shell.** A shell shows chips with your last 20 commands on that computer.
