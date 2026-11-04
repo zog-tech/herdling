@@ -8,3 +8,5 @@ target/
 .claude/worktrees/
 .superpowers/
 .playwright-mcp/
+# Firebase config for Android push. EAS gives it to the build as a file variable.
+/app/google-services.json
