@@ -7,13 +7,14 @@ import { DemoTransport } from "@/demo/DemoTransport";
 import { RpcClient } from "@/rpc/RpcClient";
 
 import { useAgentMemory } from "./agentMemory";
-import { DANGER_WARNING } from "./StartOptionsPanel";
+import { DANGER_WARNING } from "./StartOptionsBar";
 import { useStartOptionsMemory } from "./startOptionsMemory";
 
 // The screen with the demo host behind it: real `fs.dirs`, `agents.installed` and `sessions.recent` answers.
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, dismiss: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush, dismiss: jest.fn() }),
   useNavigation: () => ({ dispatch: jest.fn(), setOptions: jest.fn() }),
   usePreventRemove: () => {},
 }));
@@ -22,6 +23,10 @@ jest.mock("expo-file-system", () => ({ File: jest.fn() }));
 jest.mock("@/voice/MicButton", () => ({ MicButton: () => null }));
 jest.mock("@/voice/useDictation", () => ({ useDictation: () => ({ state: { phase: "idle" }, dispatch: jest.fn() }) }));
 jest.mock("@/hosts/store", () => ({ useHosts: (sel: (s: unknown) => unknown) => sel({ hosts: [{ id: "h1", name: "studio" }] }) }));
+/** The action sheet picks the row that `mockSheetPick` names, by its label. */
+let mockSheetPick = "Cancel";
+const mockShowActionSheet = jest.fn((o: { options: string[] }, onPick: (i: number) => void) => onPick(o.options.indexOf(mockSheetPick)));
+jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: (...a: unknown[]) => (mockShowActionSheet as (...x: unknown[]) => void)(...a) }));
 let mockConn: { status: string; rpc?: RpcClient; hello?: Hello } = { status: "offline" };
 jest.mock("@/hosts/connection", () => ({
   useHostConn: () => mockConn,
@@ -41,6 +46,9 @@ beforeEach(async () => {
   useAgentMemory.setState({ byHost: {} });
   useStartOptionsMemory.setState({ byKind: {} });
   mockReplace.mockClear();
+  mockPush.mockClear();
+  mockShowActionSheet.mockClear();
+  mockSheetPick = "Cancel";
 });
 afterEach(() => {
   act(() => tree?.unmount());
@@ -162,17 +170,21 @@ const startArgs = (calls: jest.SpyInstance) =>
     .map(([, p]) => (p as { params: { args?: string[] } }).params.args);
 
 describe("start options", () => {
-  test("a selected mode and model reach agent.start, and a danger mode shows the warning", async () => {
+  test("the mode pill picks a mode in a sheet, the model reaches agent.start, and a danger mode shows the warning", async () => {
+    useStartOptionsMemory.setState({ byKind: { claude: { model: "opus" } } });
     const t = await render();
     const calls = jest.spyOn(mockConn.rpc!, "call");
-    expect(has(t, "Start options: Default")).toBe(true);
-    // Collapsed: no mode chips.
-    expect(has(t, "Mode Plan")).toBe(false);
-    await act(async () => byLabel(t, "Start options: Default").props.onPress());
-    await act(async () => byLabel(t, "Mode Skip permissions").props.onPress());
-    const model = t.root.findAllByType(TextInput).find((n) => n.props.accessibilityLabel === "Model")!;
-    act(() => model.props.onChangeText("opus"));
-    expect(has(t, "Start options: Skip permissions · opus")).toBe(true);
+    expect(has(t, "Permission mode: Default")).toBe(true);
+    expect(has(t, "Model: opus")).toBe(true);
+    expect(t.root.findAll((n) => n.props.children === DANGER_WARNING)).toHaveLength(0);
+
+    mockSheetPick = "Skip permissions";
+    await act(async () => byLabel(t, "Permission mode: Default").props.onPress());
+    const [sheet] = mockShowActionSheet.mock.calls[0] as unknown as [{ options: string[]; destructiveButtonIndex: number[]; cancelButtonIndex: number }];
+    expect(sheet.options).toEqual(["✓ Default", "Plan", "Accept edits", "Auto", "Skip permissions", "Cancel"]);
+    expect(sheet.destructiveButtonIndex).toEqual([4]);
+    expect(sheet.cancelButtonIndex).toBe(5);
+    expect(has(t, "Permission mode: Skip permissions")).toBe(true);
     expect(t.root.findAll((n) => n.props.children === DANGER_WARNING).length).toBeGreaterThan(0);
 
     await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
@@ -186,15 +198,46 @@ describe("start options", () => {
     expect(useStartOptionsMemory.getState().byKind.claude).toEqual({ mode: "skip", model: "opus" });
   });
 
-  test("each agent kind keeps its own options, and a shell has none", async () => {
+  test("Cancel in the mode sheet changes nothing", async () => {
+    const t = await render();
+    await act(async () => byLabel(t, "Permission mode: Default").props.onPress());
+    expect(has(t, "Permission mode: Default")).toBe(true);
+    expect(useStartOptionsMemory.getState().byKind).toEqual({});
+  });
+
+  test("the model and more pills open the options sheet", async () => {
+    const t = await render();
+    await act(async () => byLabel(t, "Model: the agent's default").props.onPress());
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: "/start-options", params: { kind: "claude", focus: "model" } });
+    await act(async () => byLabel(t, "More start options").props.onPress());
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: "/start-options", params: { kind: "claude" } });
+    // Extra flags set: the more pill says how many.
+    act(() => {
+      useStartOptionsMemory.setState({ byKind: { claude: { extra: "--a b" } } });
+    });
+    expect(has(t, "More start options, 2 extra flags")).toBe(true);
+  });
+
+  test("each agent kind keeps its own options, Pi has a thinking pill, and a shell has no pills", async () => {
     useStartOptionsMemory.setState({ byKind: { claude: { mode: "plan" }, codex: { mode: "gone" } } });
     const t = await render();
-    expect(has(t, "Start options: Plan")).toBe(true);
+    expect(has(t, "Permission mode: Plan")).toBe(true);
     await act(async () => byLabel(t, "Codex").props.onPress());
     // An unknown stored mode falls back to Default.
-    expect(has(t, "Start options: Default")).toBe(true);
+    expect(has(t, "Permission mode: Default")).toBe(true);
+    await act(async () => byLabel(t, "Pi").props.onPress());
+    expect(t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Permission mode"))).toHaveLength(0);
+    mockSheetPick = "High";
+    await act(async () => byLabel(t, "Thinking: Default").props.onPress());
+    expect(has(t, "Thinking: High")).toBe(true);
+    expect(useStartOptionsMemory.getState().byKind.pi).toEqual({ thinking: "high" });
     await act(async () => byLabel(t, "Shell").props.onPress());
-    expect(t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Start options")).length).toBe(0);
+    const pills = t.root.findAll(
+      (n) =>
+        typeof n.props.accessibilityLabel === "string" &&
+        /^(Permission mode|Thinking|Model|More start options)/.test(n.props.accessibilityLabel),
+    );
+    expect(pills).toHaveLength(0);
   });
 
   test("a resume does not use the start options", async () => {

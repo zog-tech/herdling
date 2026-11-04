@@ -13,6 +13,7 @@ import { PEEK_DETENT_ANDROID } from "@/board/peekDetent";
 import { setCrashRoute } from "@/crash/globalHandler";
 import { startConnections } from "@/hosts/connection";
 import { UpdateChecks } from "@/hosts/UpdateChecks";
+import { START_OPTIONS_DETENT_ANDROID } from "@/newSession/StartOptionsSheet";
 import { registerChoiceCategory } from "@/push/choiceActions";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
@@ -127,6 +128,26 @@ function ThemedRoot() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />
+        {/* The start options of New session and the restart screen: the same form sheet as the peek sheet. */}
+        <Stack.Screen
+          name="start-options"
+          options={
+            Platform.OS === "android"
+              ? {
+                  presentation: "formSheet",
+                  sheetAllowedDetents: [START_OPTIONS_DETENT_ANDROID],
+                  sheetCornerRadius: 16,
+                  contentStyle: { backgroundColor: colors.card },
+                }
+              : {
+                  presentation: "formSheet",
+                  sheetAllowedDetents: [0.6, 1],
+                  sheetGrabberVisible: true,
+                  ...(glassAvailable() ? {} : { sheetCornerRadius: 16 }),
+                  contentStyle: { backgroundColor: glassAvailable() ? "transparent" : colors.bg },
+                }
+          }
+        />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
         <Stack.Screen name="display-log" options={{ ...hostHeader, title: "Display log" }} />
         <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />

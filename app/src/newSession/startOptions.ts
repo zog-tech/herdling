@@ -1,7 +1,7 @@
 /**
  * Start options of New session: the permission mode, the model and extra command line flags of
- * the agent. Pure rules only: the definitions per agent kind, the argument list for `agent.start`
- * and the short summary on the collapsed row. The flags were checked against the real CLIs on
+ * the agent. Pure rules only: the definitions per agent kind, the argument list for `agent.start`,
+ * the short summary, the command preview and the choice lists of the option pills. The flags were checked against the real CLIs on
  * 2026-11-04. A kind with no entry here gets extra flags only.
  */
 
@@ -153,7 +153,7 @@ export function isDanger(kind: string, choice: StartChoice): boolean {
   return !!modeOf(kind, choice)?.danger;
 }
 
-/** The short text of the collapsed row, for example "Default" or "Plan · opus". */
+/** A short text of all options, for example "Default" or "Plan · opus". */
 export function summary(kind: string, choice: StartChoice): string {
   const parts: string[] = [];
   const mode = modeOf(kind, choice);
@@ -186,4 +186,75 @@ export function cleanChoice(kind: string, raw: unknown): StartChoice {
   const extra = str(r.extra);
   if (extra) out.extra = extra;
   return out;
+}
+
+/** The number of extra flags in `choice`. */
+export function extraFlagCount(choice: StartChoice): number {
+  return choice.extra ? splitFlags(choice.extra).length : 0;
+}
+
+/** One argument as a shell shows it: quoted when it is empty or has a space or a quote. */
+function shellWord(arg: string): string {
+  if (arg !== "" && !/[\s'"]/.test(arg)) return arg;
+  return arg.includes("'") ? `"${arg}"` : `'${arg}'`;
+}
+
+/**
+ * The command line that the options start, for example `claude --permission-mode plan --model opus`.
+ * The binary name is the agent kind. Only for display: `agent.start` gets the argument list.
+ */
+export function commandPreview(kind: string, choice: StartChoice): string {
+  return [kind, ...buildArgs(kind, choice)].map(shellWord).join(" ");
+}
+
+/**
+ * The rows of an action sheet that picks one item: the item labels with a check mark on the
+ * current one, then Cancel. `ids[i]` is the id of row `i` (undefined for Cancel). Items with
+ * `danger` are the destructive rows.
+ */
+export type ChoiceMenu = {
+  options: string[];
+  ids: (string | undefined)[];
+  destructiveButtonIndex: number[];
+  cancelButtonIndex: number;
+};
+
+export const CHECK_MARK = "✓ ";
+
+function choiceMenu(items: readonly { id: string; label: string; danger?: boolean }[], current: string): ChoiceMenu {
+  const options = items.map((i) => (i.id === current ? CHECK_MARK + i.label : i.label));
+  const destructiveButtonIndex = items.flatMap((i, n) => (i.danger ? [n] : []));
+  return {
+    options: [...options, "Cancel"],
+    ids: [...items.map((i) => i.id), undefined],
+    destructiveButtonIndex,
+    cancelButtonIndex: items.length,
+  };
+}
+
+/** The permission mode sheet of `kind`. Undefined when the kind has no modes. */
+export function modeMenu(kind: string, choice: StartChoice): ChoiceMenu | undefined {
+  const { modes } = optionsFor(kind);
+  const mode = modeOf(kind, choice);
+  return mode ? choiceMenu(modes, mode.id) : undefined;
+}
+
+/** The id of the "agent's default" thinking level in `thinkingMenu`. It sets no flag. */
+export const DEFAULT_THINKING_ID = "default";
+
+/** The thinking level sheet of `kind` (Pi), with "Default" first. Undefined when the kind has no levels. */
+export function thinkingMenu(kind: string, choice: StartChoice): ChoiceMenu | undefined {
+  const t = optionsFor(kind).thinking;
+  if (!t) return undefined;
+  return choiceMenu([{ id: DEFAULT_THINKING_ID, label: "Default" }, ...t.levels], thinkingOf(kind, choice)?.id ?? DEFAULT_THINKING_ID);
+}
+
+/** `choice` with the mode `id`. Default is stored as no mode. */
+export function withMode(choice: StartChoice, id: string): StartChoice {
+  return { ...choice, mode: id === DEFAULT_MODE_ID ? undefined : id };
+}
+
+/** `choice` with the thinking level `id`. Default is stored as no level. */
+export function withThinking(choice: StartChoice, id: string): StartChoice {
+  return { ...choice, thinking: id === DEFAULT_THINKING_ID ? undefined : id };
 }

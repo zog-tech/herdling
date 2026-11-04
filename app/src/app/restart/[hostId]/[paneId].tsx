@@ -9,9 +9,9 @@ import { expectPane } from "@/herdr/expectedPanes";
 import { canResume, openResumedSession, paneSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
-import { buildArgs, type StartChoice } from "@/newSession/startOptions";
-import { choiceFor, rememberChoice, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
-import { StartOptionsPanel } from "@/newSession/StartOptionsPanel";
+import { DangerWarning, StartOptionsBar } from "@/newSession/StartOptionsBar";
+import { buildArgs } from "@/newSession/startOptions";
+import { choiceFor, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
 import { colors, icon, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -27,7 +27,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * Modal: restart an agent with other start options, for example in Plan mode or with no
  * permission prompts. "Keep the conversation" resumes the same session when the host can.
- * The options are remembered for the agent kind, like in New session.
+ * The options are the remembered ones of the agent kind: the same pills and sheet as in New session change them.
  * `replace=1`: opened from the session screen, which the new session replaces.
  */
 export default function RestartScreen() {
@@ -37,8 +37,7 @@ export default function RestartScreen() {
   const agent = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId));
   const kind = agent?.agent ?? undefined;
   const stored = useStartOptionsMemory((s) => s.byKind);
-  const [draft, setDraft] = useState<StartChoice>();
-  const choice = draft ?? (kind ? choiceFor(stored, kind) : {});
+  const choice = kind ? choiceFor(stored, kind) : {};
   const [session, setSession] = useState<string>();
   const [keep, setKeep] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -71,7 +70,6 @@ export default function RestartScreen() {
     if (!rpc || !agent || !kind || busy) return;
     setBusy(true);
     setError(undefined);
-    rememberChoice(kind, choice);
     try {
       await restartConfirmed(rpc, hostId, agent, opened, {
         session: keep ? session : undefined,
@@ -103,7 +101,13 @@ export default function RestartScreen() {
           />
         </Card>
       ) : null}
-      <StartOptionsPanel kind={kind} choice={choice} onChange={(c) => setDraft(c)} onCommit={() => {}} disabled={busy} initiallyOpen />
+      <View style={{ gap: space.sm }}>
+        <Text variant="section" accessibilityRole="header">
+          Start options
+        </Text>
+        <StartOptionsBar kind={kind} choice={choice} disabled={busy} />
+        <DangerWarning kind={kind} choice={choice} />
+      </View>
       {error ? (
         <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
           <TriangleAlert size={icon.sm} color={colors.danger} strokeWidth={icon.strokeWidth} />
