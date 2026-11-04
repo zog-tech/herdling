@@ -17,6 +17,7 @@ import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { hasMethod, listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { AgentPicker } from "@/newSession/AgentPicker";
+import { Chip } from "@/newSession/Chip";
 import { agentFor, rememberAgent, useAgentMemory } from "@/newSession/agentMemory";
 import { Autocomplete, type Suggestion } from "@/newSession/autocomplete";
 import { DirCache } from "@/newSession/dirCache";
@@ -27,6 +28,9 @@ import { completeInput, displayPath, resolveInput } from "@/newSession/paths";
 import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
 import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
+import { StartOptionsPanel } from "@/newSession/StartOptionsPanel";
+import { buildArgs, type StartChoice } from "@/newSession/startOptions";
+import { choiceFor, rememberChoice, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
 import { RpcError } from "@/rpc/RpcClient";
 import { rememberCommand } from "@/terminal/recentCommands";
 import { uploadErrorText, uploadPhotos, withPaths } from "@/thread/attachments";
@@ -53,34 +57,6 @@ export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 const GIT_STATUS_DELAY_MS = 300;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={label}
-      onPress={() => {
-        if (!selected) haptics.tap();
-        onPress();
-      }}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        paddingHorizontal: space.lg,
-        borderRadius: radius.pill,
-        borderWidth: 1,
-        borderColor: selected ? colors.accent : colors.border,
-        backgroundColor: selected ? colors.accent : pressed ? colors.raised : "transparent",
-        alignItems: "center",
-        justifyContent: "center",
-      })}
-    >
-      <Text bold color={selected ? colors.onAccent : colors.text} maxFontSizeMultiplier={denseScale.row}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 
 function Section({ title, trailing, children }: { title: string; trailing?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -306,6 +282,15 @@ export default function NewSessionScreen() {
     void loadInstalled();
   }, [loadInstalled]);
 
+  // Start options per agent kind: the remembered ones until the user changes them on this screen.
+  const storedChoices = useStartOptionsMemory((s) => s.byKind);
+  const [choices, setChoices] = useState<Record<string, StartChoice>>({});
+  const choice = choices[kind] ?? choiceFor(storedChoices, kind);
+  const changeChoice = (next: StartChoice, remember: boolean) => {
+    setChoices((c) => ({ ...c, [kind]: next }));
+    if (remember) rememberChoice(kind, next);
+  };
+
   const pickAgent = (k: string) => {
     setShell(k === SHELL_CHOICE);
     if (k !== SHELL_CHOICE && hostId) rememberAgent(hostId, k);
@@ -426,11 +411,14 @@ export default function NewSessionScreen() {
         if (commandError) Alert.alert("Command not sent", commandError);
         return;
       }
+      // The start options apply to a new agent only: not to a resume and not to a shell.
+      rememberChoice(kind, choice);
       const { paneId, promptError } = await startSession(rpc, {
         cwd: folder,
         kind,
         prompt: firstPrompt,
         workspaceId,
+        args: buildArgs(kind, choice),
         onProgress: setProgress,
       });
       pastesSent(sentPastes);
@@ -449,7 +437,7 @@ export default function NewSessionScreen() {
       setError(message(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, shell, prompt, pastes, pastesSent, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
+  }, [rpc, hostId, cwd, kind, choice, shell, prompt, pastes, pastesSent, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
 
   const resume = useCallback(
     async (s: RecentSession) => {
@@ -504,6 +492,9 @@ export default function NewSessionScreen() {
 
         <Section title="Agent">
           <AgentPicker key={hostId} value={shell ? SHELL_CHOICE : kind} onChange={pickAgent} installed={installed} disabled={busy} />
+          {shell ? null : (
+            <StartOptionsPanel kind={kind} choice={choice} onChange={changeChoice} onCommit={() => rememberChoice(kind, choice)} disabled={busy} />
+          )}
         </Section>
 
         {sessions.length > 0 ? (
