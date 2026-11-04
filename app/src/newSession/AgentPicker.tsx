@@ -10,6 +10,7 @@ import { TerminalMark } from "@/ui/TerminalMark";
 import { Text } from "@/ui/Text";
 
 import { availability, pickerChoices, SHELL_CHOICE } from "./installed";
+import { revealOffset } from "./pickerScroll";
 
 /**
  * The agent row at the top of New session: one chip per agent kind, in a row that scrolls
@@ -30,21 +31,28 @@ export function AgentPicker({
 }) {
   const kinds = pickerChoices(installed);
   const scroll = useRef<ScrollViewInstance>(null);
-  const xs = useRef(new Map<string, number>());
+  const chips = useRef(new Map<string, { x: number; width: number }>());
+  const viewport = useRef(0);
   const shown = useRef(false);
   // Bring a remembered agent far down the row into view once, not on every tap. The parent
-  // gives the picker a new key for each host, so a host change shows its agent again.
-  const reveal = (kind: string) => {
-    const x = xs.current.get(kind);
-    if (shown.current || x === undefined) return;
+  // gives the picker a new key for each host, so a host change shows its agent again. Only when
+  // the chip is out of view: a scroll to a chip in view hides the Shell chip before it.
+  const reveal = () => {
+    const chip = chips.current.get(value);
+    if (shown.current || !chip || viewport.current <= 0) return;
     shown.current = true;
-    if (x > 0) scroll.current?.scrollTo({ x: Math.max(0, x - space.lg), animated: false });
+    const x = revealOffset(chip.x, chip.width, viewport.current, space.lg);
+    if (x !== undefined) scroll.current?.scrollTo({ x, animated: false });
   };
 
   return (
     <ScrollView
       ref={scroll}
       horizontal
+      onLayout={(e) => {
+        viewport.current = e.nativeEvent.layout.width;
+        reveal();
+      }}
       showsHorizontalScrollIndicator={false}
       accessibilityRole="radiogroup"
       accessibilityLabel="Agent"
@@ -65,8 +73,8 @@ export function AgentPicker({
             accessibilityLabel={missing ? `${label}, not installed` : label}
             disabled={disabled}
             onLayout={(e) => {
-              xs.current.set(k, e.nativeEvent.layout.x);
-              if (k === value) reveal(k);
+              chips.current.set(k, { x: e.nativeEvent.layout.x, width: e.nativeEvent.layout.width });
+              if (k === value) reveal();
             }}
             onPress={() => {
               if (selected) return;
