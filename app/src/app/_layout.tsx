@@ -126,6 +126,7 @@ function ThemedRoot() {
         <Stack.Screen name="hosts/boot-help" options={{ ...hostHeader, title: "Start at boot" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
+        <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
         <Stack.Screen name="display-log" options={{ ...hostHeader, title: "Display log" }} />
         <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />

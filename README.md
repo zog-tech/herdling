@@ -64,7 +64,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   short summary.
 - **Start new work.** Start an agent in any folder on any computer, restart or resume a session,
   rename sessions, tabs and workspaces, and review your automations. Start options set the
-  permission mode (also "skip permissions"), the model and extra flags of the agent.
+  permission mode (also "skip permissions"), the model and extra flags of the agent. A restart
+  can keep the conversation and change these options.
 - **Meters.** The plan usage of Claude and Codex, and the CPU and memory of each computer.
 - **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The phone gets its own SSH
   key that can only run `herdlingd rpc`, and the app pins the host key of the computer.

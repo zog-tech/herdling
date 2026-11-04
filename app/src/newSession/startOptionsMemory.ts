@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { secureJSONStorage } from "@/secureStorage";
 
-import { cleanChoice, type StartChoice } from "./startOptions";
+import { buildArgs, cleanChoice, type StartChoice } from "./startOptions";
 
 type Store = { byKind: Record<string, StartChoice> };
 
@@ -19,4 +19,9 @@ export function choiceFor(byKind: Record<string, unknown>, kind: string): StartC
 
 export function rememberChoice(kind: string, choice: StartChoice): void {
   useStartOptionsMemory.setState((s) => ({ byKind: { ...s.byKind, [kind]: cleanChoice(kind, choice) } }));
+}
+
+/** The agent arguments of the remembered options of `kind` (for a restart). */
+export function rememberedArgs(kind: string | null | undefined): string[] {
+  return kind ? buildArgs(kind, choiceFor(useStartOptionsMemory.getState().byKind, kind)) : [];
 }

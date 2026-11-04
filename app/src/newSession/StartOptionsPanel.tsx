@@ -36,14 +36,17 @@ export function StartOptionsPanel({
   onChange,
   onCommit,
   disabled,
+  initiallyOpen,
 }: {
   kind: string;
   choice: StartChoice;
   onChange: (choice: StartChoice, remember: boolean) => void;
   onCommit: () => void;
   disabled?: boolean;
+  /** Show the options at once (the restart screen). */
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!initiallyOpen);
   const opts = optionsFor(kind);
   const danger = isDanger(kind, choice);
   const text = summary(kind, choice);
