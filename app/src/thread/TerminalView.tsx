@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import {
   Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   TextInput,
@@ -75,6 +76,12 @@ const MAX_LINES = 300;
 /** Within this many points of the end counts as "at the end": new output scrolls into view. */
 const STICK_PX = 40;
 const LINE_HEIGHT = lineHeightFor(type.size.caption);
+/**
+ * Android: the latency badge and the width button sit in a strip above the terminal text. As a
+ * float over the text (the iOS look) they covered the end of the top lines, which a full-width
+ * Android terminal fills. The strip costs one row of height but covers no text.
+ */
+const topBar = Platform.OS === "android";
 
 const MODES: Record<WidthMode, { label: string; Icon: typeof Maximize2 }> = {
   fit: { label: "Fit to screen", Icon: Maximize2 },
@@ -317,8 +324,52 @@ export function TerminalView({
   );
   const { label, Icon } = MODES[mode];
 
+  const topControls = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
+      {controls && srtt !== undefined ? (
+        <View pointerEvents="none">
+          <LatencyBadge ms={srtt} />
+        </View>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Terminal width: ${label}`}
+        accessibilityHint="Double tap to change how the terminal text fits the screen"
+        onPress={() => {
+          haptics.tap();
+          setMode(nextWidthMode(mode));
+        }}
+        style={({ pressed }) => ({
+          width: hitTarget,
+          height: hitTarget,
+          borderRadius: radius.md,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.raised,
+          opacity: pressed ? state.pressedFill : 0.8,
+        })}
+      >
+        <Icon size={18} color={colors.textMuted} />
+      </Pressable>
+    </View>
+  );
+
   return (
     <View style={{ flex: 1 }}>
+      {/* Android: the controls take their own strip above the text, so they cover no line. */}
+      {topBar ? (
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "flex-end",
+            paddingTop: space.xs,
+            paddingHorizontal: space.sm,
+            backgroundColor: colors.terminal.bg,
+          }}
+        >
+          {topControls}
+        </View>
+      ) : null}
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={scroll}
@@ -344,37 +395,10 @@ export function TerminalView({
             </HScrollView>
           )}
         </ScrollView>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Terminal width: ${label}`}
-          accessibilityHint="Double tap to change how the terminal text fits the screen"
-          onPress={() => {
-            haptics.tap();
-            setMode(nextWidthMode(mode));
-          }}
-          style={({ pressed }) => ({
-            position: "absolute",
-            top: space.sm,
-            right: space.sm,
-            width: hitTarget,
-            height: hitTarget,
-            borderRadius: radius.md,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: colors.raised,
-            opacity: pressed ? state.pressedFill : 0.8,
-          })}
-        >
-          <Icon size={18} color={colors.textMuted} />
-        </Pressable>
-        {controls && srtt !== undefined ? (
-          <View
-            pointerEvents="none"
-            style={{ position: "absolute", top: space.sm, right: space.sm + hitTarget + space.xs, height: hitTarget, justifyContent: "center" }}
-          >
-            <LatencyBadge ms={srtt} />
-          </View>
-        ) : null}
+        {/* iOS: the latency badge and the width button float over the top right corner. */}
+        {topBar ? null : (
+          <View pointerEvents="box-none" style={{ position: "absolute", top: space.sm, right: space.sm }}>{topControls}</View>
+        )}
         {controls && fullScreen && overflow === false ? (
           <View style={{ position: "absolute", bottom: space.sm, right: space.sm, gap: space.xs }}>
             {(["up", "down"] as const).map((dir) => {
