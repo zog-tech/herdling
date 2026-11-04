@@ -22,7 +22,8 @@ import { spotlight } from "@/board/spotlight";
 import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
-import { confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
+import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
+import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
@@ -513,15 +514,25 @@ export default function BoardScreen() {
   }, []);
   const onRestart = useCallback(
     async (i: BoardItem) => {
-      const { rpc } = getHostConn(i.hostId);
-      if (!rpc || !(await confirmRestart())) return;
+      const { rpc, hello } = getHostConn(i.hostId);
+      if (!rpc) return;
+      const session = await sessionToKeep(rpc, hello, i.agent);
+      const choice = await chooseRestart(!!session);
+      if (!choice) return;
+      if (choice === "options") {
+        router.push(`/restart/${i.hostId}/${i.agent.pane_id}` as never);
+        return;
+      }
       try {
-        await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId));
+        await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId), {
+          session: choice === "keep" ? session : undefined,
+          args: rememberedArgs(i.agent.agent),
+        });
       } catch (e) {
         Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
       }
     },
-    [openPane],
+    [openPane, router],
   );
 
   const onMenu = useCallback(

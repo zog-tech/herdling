@@ -1,6 +1,18 @@
 import { RpcError } from "@/rpc/RpcClient";
 
-import { canResume, closeAgent, openResumedSession, renameAgent, restartAgent, resumeArgs, resumeSession } from "./sessionActions";
+import {
+  canResume,
+  closeAgent,
+  keepsConversation,
+  openResumedSession,
+  paneSession,
+  renameAgent,
+  RESTART_AFTER_CLOSE,
+  restartAgent,
+  restartArgs,
+  resumeArgs,
+  resumeSession,
+} from "./sessionActions";
 import type { AgentInfo } from "./snapshot";
 
 function fakeRpc(fail?: string, failWith?: Error) {
@@ -11,6 +23,7 @@ function fakeRpc(fail?: string, failWith?: Error) {
       calls.push({ method: p.method, params: p.params });
       if (p.method === fail) throw failWith ?? new Error(`${fail} failed`);
       if (p.method === "tab.create") return { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } };
+      if (p.method === "workspace.create") return { workspace: { workspace_id: "w2" }, root_pane: { pane_id: "w2:p1" } };
       return {};
     },
   } as any;
@@ -125,4 +138,67 @@ it("open_resumed_session_closes_the_modal_then_replaces_the_old_session", () => 
   const router = { dismiss: jest.fn(() => order.push("dismiss")), replace: jest.fn((h: never) => order.push(`replace ${h}`)) };
   openResumedSession(router, "h_1", "w1:p9");
   expect(order).toEqual(["dismiss", "replace /session/h_1/w1:p9"]);
+});
+
+describe("restart with the conversation and start options", () => {
+  const methods = (rpc: { calls: { method: string }[] }) => rpc.calls.map((c) => c.method);
+  const startParams = (rpc: { calls: { method: string; params: any }[] }) => rpc.calls.find((c) => c.method === "agent.start")?.params;
+
+  it("puts the resume arguments first, then the option arguments", () => {
+    expect(restartArgs("claude", { session: "s1", args: ["--dangerously-skip-permissions"] })).toEqual(["--resume", "s1", "--dangerously-skip-permissions"]);
+    expect(restartArgs("codex", { session: "s1", args: ["-m", "gpt-5"] })).toEqual(["resume", "s1", "-m", "gpt-5"]);
+    expect(restartArgs("claude", { args: ["--permission-mode", "plan"] })).toEqual(["--permission-mode", "plan"]);
+    expect(restartArgs("claude", {})).toEqual([]);
+  });
+
+  it("falls back to a new conversation without a session or a resume flag", () => {
+    expect(keepsConversation("claude", {})).toBe(false);
+    expect(keepsConversation("amp", { session: "s1" })).toBe(false);
+    expect(restartArgs("amp", { session: "s1", args: ["--x"] })).toEqual(["--x"]);
+    expect(keepsConversation("claude", { session: "s1" })).toBe(true);
+  });
+
+  it("a new conversation starts with the options first and closes the old pane after", async () => {
+    const rpc = fakeRpc();
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), { args: ["--permission-mode", "plan"] })).resolves.toEqual({ paneId: "w1:p2" });
+    expect(methods(rpc)).toEqual(["tab.create", "agent.start", "pane.close"]);
+    expect(startParams(rpc).args).toEqual(["--permission-mode", "plan"]);
+  });
+
+  it("a kept conversation closes the old pane first, then resumes in the same workspace", async () => {
+    const rpc = fakeRpc();
+    const plan = { session: "s1", args: ["--dangerously-skip-permissions"] };
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), plan)).resolves.toEqual({ paneId: "w1:p2" });
+    expect(methods(rpc)).toEqual(["pane.close", "workspace.get", "tab.create", "agent.start"]);
+    expect(startParams(rpc)).toMatchObject({ kind: "claude", args: ["--resume", "s1", "--dangerously-skip-permissions"] });
+  });
+
+  it("a kept conversation gets a new workspace when the old one closed with its last pane", async () => {
+    const rpc = fakeRpc("workspace.get");
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), { session: "s1" })).resolves.toEqual({ paneId: "w2:p1" });
+    expect(methods(rpc)).toEqual(["pane.close", "workspace.get", "workspace.create", "agent.start"]);
+  });
+
+  it("a kept conversation starts nothing when the old pane does not close", async () => {
+    const rpc = fakeRpc("pane.close");
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), { session: "s1" })).rejects.toThrow("pane.close failed");
+    expect(methods(rpc)).toEqual(["pane.close"]);
+  });
+
+  it("a kept conversation whose start fails says that the old agent is closed", async () => {
+    const rpc = fakeRpc("agent.start");
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), { session: "s1" })).rejects.toMatchObject({
+      code: RESTART_AFTER_CLOSE,
+      message: expect.stringContaining("The conversation is safe on the computer."),
+    });
+  });
+
+  it("reads the session of the pane, only for the same kind", async () => {
+    const answer = (r: unknown) => ({ call: jest.fn(async () => r) }) as any;
+    expect(await paneSession(answer({ kind: "claude", session: "s1", log_path: "/x", cwd: "/p" }), "w1:p1", "claude")).toBe("s1");
+    expect(await paneSession(answer({ kind: "claude", session: null, log_path: null, cwd: null }), "w1:p1", "claude")).toBeUndefined();
+    expect(await paneSession(answer({ kind: "codex", session: "s1", log_path: "/x", cwd: "/p" }), "w1:p1", "claude")).toBeUndefined();
+    const failing = { call: jest.fn(async () => Promise.reject(new Error("no method"))) } as any;
+    expect(await paneSession(failing, "w1:p1", "claude")).toBeUndefined();
+  });
 });

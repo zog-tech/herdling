@@ -7,6 +7,8 @@ import { DemoTransport } from "@/demo/DemoTransport";
 import { RpcClient } from "@/rpc/RpcClient";
 
 import { useAgentMemory } from "./agentMemory";
+import { DANGER_WARNING } from "./StartOptionsPanel";
+import { useStartOptionsMemory } from "./startOptionsMemory";
 
 // The screen with the demo host behind it: real `fs.dirs`, `agents.installed` and `sessions.recent` answers.
 const mockReplace = jest.fn();
@@ -37,6 +39,7 @@ beforeEach(async () => {
   await jest.advanceTimersByTimeAsync(100);
   mockConn = { status: "online", rpc, hello: await hello };
   useAgentMemory.setState({ byHost: {} });
+  useStartOptionsMemory.setState({ byKind: {} });
   mockReplace.mockClear();
 });
 afterEach(() => {
@@ -150,6 +153,65 @@ test("opens a shell with no agent, runs the typed command and does not remember 
   await jest.advanceTimersByTimeAsync(500);
   expect((await snap).snapshot.agents.some((a) => a.pane_id === paneId)).toBe(false);
   expect((await read).read.text).toContain("$ pwd\n/home/demo/projects/api-server");
+});
+
+/** The `args` of each `agent.start` call. */
+const startArgs = (calls: jest.SpyInstance) =>
+  calls.mock.calls
+    .filter(([m, p]) => m === "herdr.call" && (p as { method: string }).method === "agent.start")
+    .map(([, p]) => (p as { params: { args?: string[] } }).params.args);
+
+describe("start options", () => {
+  test("a selected mode and model reach agent.start, and a danger mode shows the warning", async () => {
+    const t = await render();
+    const calls = jest.spyOn(mockConn.rpc!, "call");
+    expect(has(t, "Start options: Default")).toBe(true);
+    // Collapsed: no mode chips.
+    expect(has(t, "Mode Plan")).toBe(false);
+    await act(async () => byLabel(t, "Start options: Default").props.onPress());
+    await act(async () => byLabel(t, "Mode Skip permissions").props.onPress());
+    const model = t.root.findAllByType(TextInput).find((n) => n.props.accessibilityLabel === "Model")!;
+    act(() => model.props.onChangeText("opus"));
+    expect(has(t, "Start options: Skip permissions · opus")).toBe(true);
+    expect(t.root.findAll((n) => n.props.children === DANGER_WARNING).length).toBeGreaterThan(0);
+
+    await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    expect(startArgs(calls)).toEqual([["--dangerously-skip-permissions", "--model", "opus"]]);
+    // Remembered for the next session of the same agent.
+    expect(useStartOptionsMemory.getState().byKind.claude).toEqual({ mode: "skip", model: "opus" });
+  });
+
+  test("each agent kind keeps its own options, and a shell has none", async () => {
+    useStartOptionsMemory.setState({ byKind: { claude: { mode: "plan" }, codex: { mode: "gone" } } });
+    const t = await render();
+    expect(has(t, "Start options: Plan")).toBe(true);
+    await act(async () => byLabel(t, "Codex").props.onPress());
+    // An unknown stored mode falls back to Default.
+    expect(has(t, "Start options: Default")).toBe(true);
+    await act(async () => byLabel(t, "Shell").props.onPress());
+    expect(t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Start options")).length).toBe(0);
+  });
+
+  test("a resume does not use the start options", async () => {
+    useStartOptionsMemory.setState({ byKind: { claude: { mode: "skip" } } });
+    const t = await render();
+    const calls = jest.spyOn(mockConn.rpc!, "call");
+    const [card] = t.root.findAll(
+      (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Resume: ") && typeof n.props.onPress === "function",
+    );
+    await act(async () => card.props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    const [args] = startArgs(calls);
+    expect(args?.[0]).toBe("--resume");
+    expect(args).not.toContain("--dangerously-skip-permissions");
+  });
 });
 
 test("offers the new git worktree option in a repo", async () => {

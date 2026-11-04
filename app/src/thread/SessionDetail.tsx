@@ -21,7 +21,8 @@ import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
 import { markSeen } from "@/herdr/seen";
-import { confirmDestructive, confirmRestart, restartConfirmed } from "@/herdr/confirmActions";
+import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
+import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { useExpectedPane } from "@/herdr/expectedPanes";
 import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
@@ -142,8 +143,16 @@ function useSessionMenu(
         label: "Restart",
         destructive: true,
         onPick: async () => {
-          const ok = await confirmRestart();
-          if (ok) run("Restarting…", "Can't restart", () => restartConfirmed(rpc, hostId, agent, openPane));
+          const session = await sessionToKeep(rpc, hello, agent);
+          const choice = await chooseRestart(!!session);
+          if (choice === "options") router.push(`/restart/${hostId}/${paneId}?replace=1` as never);
+          else if (choice)
+            run("Restarting…", "Can't restart", () =>
+              restartConfirmed(rpc, hostId, agent, openPane, {
+                session: choice === "keep" ? session : undefined,
+                args: rememberedArgs(agent.agent),
+              }),
+            );
         },
       });
     }

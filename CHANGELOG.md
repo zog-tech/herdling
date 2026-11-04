@@ -64,6 +64,15 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
+- **Start options in New session.** An "Options" row under the agent picker sets the permission
+  mode (for example Plan, or Skip permissions for Claude Code), the model, the thinking level of Pi
+  and extra flags. A mode with no approval shows a warning in red. The app remembers the options
+  per agent. They apply to a new agent only, not to a resume or a shell. Over-the-air update.
+- **Restart and keep the conversation.** Restart asks how: keep the conversation (the agent
+  resumes the same session), a new conversation, or "Restart with options…" to change the mode or
+  the model first. A restart uses the start options of the agent. To keep the conversation, the old
+  agent closes first, so that two agents do not write the same session log. When the new agent
+  does not start, "Try again" starts it again. Over-the-air update.
 - **Android push setup and notification icon.** The Android build reads `google-services.json`
   from the EAS file variable `GOOGLE_SERVICES_JSON` (not in git). Android notifications show the
   sheep icon in gold, not a white circle. Native build.

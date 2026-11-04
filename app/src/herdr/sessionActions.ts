@@ -1,11 +1,11 @@
-import type { Hello } from "@herdling/protocol";
+import type { Hello, ThreadRef } from "@herdling/protocol";
 
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
 import { expectPane } from "./expectedPanes";
 import type { AgentInfo } from "./snapshot";
-import { startSession } from "./startSession";
+import { startSession, workspaceExists } from "./startSession";
 
 type Rpc = Pick<RpcClient, "call">;
 
@@ -25,12 +25,46 @@ function kindOf(a: AgentInfo): string {
   return a.agent;
 }
 
+/** What a restart does: resume `session` (keep the conversation) or not, and the extra agent arguments. */
+export type RestartPlan = {
+  /** The session id to resume. Undefined: a new conversation. */
+  session?: string;
+  /** Start options of the kind (`buildArgs`), after the resume arguments. */
+  args?: string[];
+};
+
+/** The agent arguments of a restart: the resume arguments first (when the kind can resume), then the option arguments. */
+export function restartArgs(kind: string, plan: RestartPlan): string[] {
+  const resume = plan.session ? resumeArgs(kind, plan.session) : undefined;
+  return [...(resume ?? []), ...(plan.args ?? [])];
+}
+
+/** True when the plan keeps the conversation: it has a session and the kind has a resume flag. */
+export const keepsConversation = (kind: string, plan: RestartPlan) => !!plan.session && !!resumeArgs(kind, plan.session);
+
+/** Error code: the old agent closed, but the new one did not start. The conversation is still on the computer. */
+export const RESTART_AFTER_CLOSE = "restart_after_close";
+
 /**
- * herdr has no agent stop: start the same kind in a new tab of the same workspace, then close
- * the old pane. A failed start leaves the old pane as it was.
+ * herdr has no agent stop: start the same kind in a new tab of the same workspace, and close the
+ * old pane. A new conversation starts first and closes the old pane after: a failed start leaves
+ * the old pane as it was.
+ *
+ * A kept conversation closes the old pane first. Two agents on one session at the same time both
+ * write its log (Claude Code appends to the same `.jsonl`), and the log can break. When the start
+ * then fails, the error has the code `RESTART_AFTER_CLOSE`: the conversation is safe in its log,
+ * "Try again" (`startRestarted`) or "Resume older session" brings it back.
  */
-export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: string; closeError?: string }> {
-  const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: kindOf(a), workspaceId: a.workspace_id });
+export async function restartAgent(rpc: Rpc, a: AgentInfo, plan: RestartPlan = {}): Promise<{ paneId: string; closeError?: string }> {
+  const cwd = cwdOf(a);
+  const kind = kindOf(a);
+  const args = restartArgs(kind, plan);
+  if (keepsConversation(kind, plan)) {
+    // A failed close throws: nothing changed, the old agent still runs.
+    await closeAgent(rpc, a.pane_id);
+    return startRestarted(rpc, a, args);
+  }
+  const { paneId } = await startSession(rpc, { cwd, kind, workspaceId: a.workspace_id, args });
   // The new agent runs, so do not throw: the caller opens it and offers to close the old one.
   try {
     await herdr(rpc, "pane.close", { pane_id: a.pane_id });
@@ -38,6 +72,32 @@ export async function restartAgent(rpc: Rpc, a: AgentInfo): Promise<{ paneId: st
     return { paneId, closeError: e instanceof Error ? e.message : String(e) };
   }
   return { paneId };
+}
+
+/**
+ * The start half of a restart that closed the old pane first. The workspace of the old pane can be
+ * gone (the old pane was its last one): then the agent gets a new workspace. A failed start throws
+ * an error with the code `RESTART_AFTER_CLOSE`.
+ */
+export async function startRestarted(rpc: Rpc, a: AgentInfo, args: string[]): Promise<{ paneId: string }> {
+  try {
+    const workspaceId = a.workspace_id && (await workspaceExists(rpc, a.workspace_id)) ? a.workspace_id : undefined;
+    const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: kindOf(a), workspaceId, args });
+    return { paneId };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new RpcError(RESTART_AFTER_CLOSE, `The old agent is closed, but the new one did not start: ${why}. The conversation is safe on the computer.`);
+  }
+}
+
+/** The session id of the conversation in `paneId` (`thread.resolve`), or undefined when there is none or the call fails. */
+export async function paneSession(rpc: Rpc, paneId: string, kind: string): Promise<string | undefined> {
+  try {
+    const r = await rpc.call<ThreadRef>("thread.resolve", { pane_id: paneId });
+    return r?.kind === kind && typeof r.session === "string" && r.session ? r.session : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The agent arguments that resume `session`, or `undefined` when the agent has no resume flag. */
