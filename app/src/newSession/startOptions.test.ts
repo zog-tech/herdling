@@ -1,4 +1,18 @@
-import { buildArgs, cleanChoice, isDanger, modeOf, optionsFor, splitFlags, summary } from "./startOptions";
+import {
+  buildArgs,
+  cleanChoice,
+  commandPreview,
+  extraFlagCount,
+  isDanger,
+  modeMenu,
+  modeOf,
+  optionsFor,
+  splitFlags,
+  summary,
+  thinkingMenu,
+  withMode,
+  withThinking,
+} from "./startOptions";
 import { choiceFor, rememberChoice, useStartOptionsMemory } from "./startOptionsMemory";
 
 describe("splitFlags", () => {
@@ -113,5 +127,50 @@ describe("stored options", () => {
     expect(choiceFor(byKind, "gemini")).toEqual({});
     expect(choiceFor({ claude: { mode: "removed-mode" } }, "claude")).toEqual({});
     expect(buildArgs("claude", choiceFor({ claude: { mode: "removed-mode" } }, "claude"))).toEqual([]);
+  });
+});
+
+describe("commandPreview", () => {
+  it("shows the agent binary and its flags", () => {
+    expect(commandPreview("claude", {})).toBe("claude");
+    expect(commandPreview("claude", { mode: "plan", model: "opus" })).toBe("claude --permission-mode plan --model opus");
+    expect(commandPreview("pi", { thinking: "low" })).toBe("pi --thinking low");
+  });
+
+  it("quotes an argument with a space or a quote", () => {
+    expect(commandPreview("amp", { extra: `--name "two words" --q "it's"` })).toBe(`amp --name 'two words' --q "it's"`);
+    expect(commandPreview("amp", { extra: `--empty ""` })).toBe("amp --empty ''");
+  });
+});
+
+describe("pill menus", () => {
+  it("lists the modes with a check on the current one, the danger mode red and Cancel last", () => {
+    const m = modeMenu("claude", { mode: "plan" })!;
+    expect(m.options).toEqual(["Default", "✓ Plan", "Accept edits", "Auto", "Skip permissions", "Cancel"]);
+    expect(m.destructiveButtonIndex).toEqual([4]);
+    expect(m.cancelButtonIndex).toBe(5);
+    expect(m.ids[4]).toBe("skip");
+    expect(m.ids[5]).toBeUndefined();
+    expect(modeMenu("claude", {})!.options[0]).toBe("✓ Default");
+    expect(modeMenu("pi", {})).toBeUndefined();
+  });
+
+  it("lists the thinking levels with Default first", () => {
+    expect(thinkingMenu("pi", {})!.options).toEqual(["✓ Default", "Off", "Low", "Medium", "High", "Cancel"]);
+    expect(thinkingMenu("pi", { thinking: "high" })!.options[4]).toBe("✓ High");
+    expect(thinkingMenu("claude", {})).toBeUndefined();
+  });
+
+  it("stores Default as no value", () => {
+    expect(withMode({ mode: "plan", model: "m" }, "default")).toEqual({ mode: undefined, model: "m" });
+    expect(withMode({}, "skip")).toEqual({ mode: "skip" });
+    expect(withThinking({ thinking: "low" }, "default")).toEqual({ thinking: undefined });
+    expect(withThinking({}, "high")).toEqual({ thinking: "high" });
+  });
+
+  it("counts the extra flags", () => {
+    expect(extraFlagCount({})).toBe(0);
+    expect(extraFlagCount({ extra: "  " })).toBe(0);
+    expect(extraFlagCount({ extra: "--a b" })).toBe(2);
   });
 });

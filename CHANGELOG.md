@@ -64,9 +64,11 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Added
 
-- **Start options in New session.** An "Options" row under the agent picker sets the permission
-  mode (for example Plan, or Skip permissions for Claude Code), the model, the thinking level of Pi
-  and extra flags. A mode with no approval shows a warning in red. The app remembers the options
+- **Start options in New session.** Small pills in the start bar, above the Start button, set the
+  permission mode (for example Plan, or Skip permissions for Claude Code) and the thinking level of
+  Pi with one tap. The model pill and the "more" pill open the start options sheet: the model, extra
+  flags, a preview of the command line and "Reset to default". The restart screen has the same
+  pills. A mode with no approval shows a warning in red above the Start button. The app remembers the options
   per agent. They apply to a new agent only, not to a resume or a shell. Over-the-air update.
 - **Restart and keep the conversation.** Restart asks how: keep the conversation (the agent
   resumes the same session), a new conversation, or "Restart with options…" to change the mode or

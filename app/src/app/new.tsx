@@ -28,9 +28,9 @@ import { completeInput, displayPath, resolveInput } from "@/newSession/paths";
 import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
 import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
-import { StartOptionsPanel } from "@/newSession/StartOptionsPanel";
-import { buildArgs, type StartChoice } from "@/newSession/startOptions";
-import { choiceFor, rememberChoice, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
+import { DangerWarning, StartOptionsBar } from "@/newSession/StartOptionsBar";
+import { buildArgs } from "@/newSession/startOptions";
+import { choiceFor, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
 import { RpcError } from "@/rpc/RpcClient";
 import { rememberCommand } from "@/terminal/recentCommands";
 import { uploadErrorText, uploadPhotos, withPaths } from "@/thread/attachments";
@@ -282,14 +282,9 @@ export default function NewSessionScreen() {
     void loadInstalled();
   }, [loadInstalled]);
 
-  // Start options per agent kind: the remembered ones until the user changes them on this screen.
+  // Start options per agent kind: the pills in the start bar and the options sheet change the remembered ones.
   const storedChoices = useStartOptionsMemory((s) => s.byKind);
-  const [choices, setChoices] = useState<Record<string, StartChoice>>({});
-  const choice = choices[kind] ?? choiceFor(storedChoices, kind);
-  const changeChoice = (next: StartChoice, remember: boolean) => {
-    setChoices((c) => ({ ...c, [kind]: next }));
-    if (remember) rememberChoice(kind, next);
-  };
+  const choice = choiceFor(storedChoices, kind);
 
   const pickAgent = (k: string) => {
     setShell(k === SHELL_CHOICE);
@@ -412,7 +407,6 @@ export default function NewSessionScreen() {
         return;
       }
       // The start options apply to a new agent only: not to a resume and not to a shell.
-      rememberChoice(kind, choice);
       const { paneId, promptError } = await startSession(rpc, {
         cwd: folder,
         kind,
@@ -492,9 +486,6 @@ export default function NewSessionScreen() {
 
         <Section title="Agent">
           <AgentPicker key={hostId} value={shell ? SHELL_CHOICE : kind} onChange={pickAgent} installed={installed} disabled={busy} />
-          {shell ? null : (
-            <StartOptionsPanel kind={kind} choice={choice} onChange={changeChoice} onCommit={() => rememberChoice(kind, choice)} disabled={busy} />
-          )}
         </Section>
 
         {sessions.length > 0 ? (
@@ -586,7 +577,7 @@ export default function NewSessionScreen() {
         ) : null}
       </Screen>
 
-      {/* The start bar stays at the bottom: first prompt, dictation and the start button. */}
+      {/* The start bar stays at the bottom: first prompt, dictation, the start options and the start button. */}
       <GlassSurface
         style={{
           marginHorizontal: space.sm,
@@ -649,6 +640,12 @@ export default function NewSessionScreen() {
             {heard}
           </Text>
         ) : null}
+        {shell ? null : (
+          <>
+            <StartOptionsBar kind={kind} choice={choice} disabled={busy} />
+            <DangerWarning kind={kind} choice={choice} />
+          </>
+        )}
         <Button
           label={progress ?? (resuming ? "Resuming…" : shell ? "Open shell here" : `Start ${label} here`)}
           loading={busy}
