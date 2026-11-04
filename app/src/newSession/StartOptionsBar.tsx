@@ -135,7 +135,7 @@ function Pill({
   );
 }
 
-/** The icon-only pill that opens the options sheet. A small gold dot shows that extra flags are set. */
+/** The icon-only pill that opens the options sheet. A small dot in the text color shows that extra flags are set. */
 function MorePill({ extra, disabled, onPress }: { extra: number; disabled?: boolean; onPress: () => void }) {
   return (
     <Pressable
@@ -166,7 +166,7 @@ function MorePill({ extra, disabled, onPress }: { extra: number; disabled?: bool
             width: dot.size,
             height: dot.size,
             borderRadius: radius.pill,
-            backgroundColor: colors.accent,
+            backgroundColor: colors.text,
           }}
         />
       ) : null}
