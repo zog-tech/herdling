@@ -126,7 +126,8 @@ export default function NewSessionScreen() {
   const promptRef = useRef<ComponentRef<typeof TextInput>>(null);
   /** Live transcript while the mic is held. */
   const [heard, setHeard] = useState("");
-  const [newWorkspace, setNewWorkspace] = useState(false);
+  /** A new session gets its own workspace unless the user picks a tab in the workspace of an agent in the same folder. */
+  const [newWorkspace, setNewWorkspace] = useState(true);
   const [progress, setProgress] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -442,7 +443,8 @@ export default function NewSessionScreen() {
       setError(undefined);
       setResuming(s.session);
       try {
-        const ws = workspaceForCwd(snapshot, s.cwd);
+        // Same rule as Start: a new workspace, unless the user picked a tab in an existing one.
+        const ws = newWorkspace ? undefined : workspaceForCwd(snapshot, s.cwd);
         const reuse = ws && (await workspaceExists(rpc, ws.workspace_id));
         const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId: reuse && ws ? ws.workspace_id : undefined });
         allowLeave();
@@ -454,7 +456,7 @@ export default function NewSessionScreen() {
         setResuming(undefined);
       }
     },
-    [rpc, hostId, busy, prompt, pasteChips.pastes.length, snapshot, kind, allowLeave, router],
+    [rpc, hostId, busy, prompt, pasteChips.pastes.length, snapshot, kind, allowLeave, router, newWorkspace],
   );
 
   if (online.length === 0)
@@ -570,8 +572,8 @@ export default function NewSessionScreen() {
         {cwd && existing && !inWorktree ? (
           <Section title="Where">
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-              <Chip label={`New tab in ${existing.label}`} selected={!newWorkspace} onPress={() => setNewWorkspace(false)} />
               <Chip label="New workspace" selected={newWorkspace} onPress={() => setNewWorkspace(true)} />
+              <Chip label={`New tab in ${existing.label}`} selected={!newWorkspace} onPress={() => setNewWorkspace(false)} />
             </View>
           </Section>
         ) : null}

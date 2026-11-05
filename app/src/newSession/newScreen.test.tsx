@@ -135,6 +135,20 @@ test("starts the agent in the open folder", async () => {
   expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\//));
 });
 
+test("starts in a new workspace by default, not in a tab of another workspace", async () => {
+  const call = jest.spyOn(mockConn.rpc!, "call");
+  const t = await render();
+  await act(async () => byLabel(t, "Recent folder ~/projects/api-server").props.onPress());
+  await settle();
+  await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  const methods = call.mock.calls.filter(([m]) => m === "herdr.call").map(([, p]) => (p as { method: string }).method);
+  expect(methods).toContain("workspace.create");
+  expect(methods).not.toContain("tab.create");
+});
+
 test("opens a shell with no agent, runs the typed command and does not remember Shell", async () => {
   const t = await render();
   await act(async () => byLabel(t, "Codex").props.onPress());
