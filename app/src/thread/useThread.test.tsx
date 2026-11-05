@@ -93,6 +93,42 @@ test("missing log file gives status waiting and retries until it exists", async 
   expect(mockRpc.follows[0]).toMatchObject({ logPath: "/home/sam/.claude/projects/p/new.jsonl", from: 120 });
 });
 
+test("a new agent with no log yet keeps loading and finds its log on a retry", async () => {
+  mockRpc.refs = [ref(null), ref(null), ref("/logs/new.jsonl")];
+  mockRpc.pages["/logs/new.jsonl"] = page([user("u1")], 40);
+  await mount("idle");
+  expect(latest.status).toBe("loading");
+
+  for (let i = 0; i < 2; i++) {
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await flush();
+  }
+  expect(latest.status).toBe("live");
+  expect(latest.items.map((i) => i.id)).toEqual(["u1"]);
+});
+
+test("an agent with a chat view and no log falls back to its terminal after the retries", async () => {
+  mockRpc.refs = [ref(null)];
+  await mount("idle");
+  for (let i = 0; i < 8; i++) {
+    expect(latest.status).toBe("loading");
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await flush();
+  }
+  expect(latest.status).toBe("no_session");
+  expect(mockRpc.count("thread.resolve")).toBe(9);
+});
+
+test("an agent without a chat view shows its terminal at once", async () => {
+  mockRpc.refs = [{ kind: "amp", session: null, log_path: null, cwd: null }];
+  await mount("idle");
+  expect(latest.status).toBe("no_session");
+});
+
 test("follow error re-resolves and follows again", async () => {
   mockRpc.refs = [ref("/logs/a.jsonl")];
   mockRpc.pages["/logs/a.jsonl"] = page([user("u1")], 50);
