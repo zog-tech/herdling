@@ -175,7 +175,7 @@ describe("start options", () => {
     const t = await render();
     const calls = jest.spyOn(mockConn.rpc!, "call");
     expect(has(t, "Permission mode: Default")).toBe(true);
-    expect(has(t, "Model: opus")).toBe(true);
+    expect(has(t, "Start options, model Opus")).toBe(true);
     expect(t.root.findAll((n) => n.props.children === DANGER_WARNING)).toHaveLength(0);
 
     mockSheetPick = "Skip permissions";
@@ -205,17 +205,18 @@ describe("start options", () => {
     expect(useStartOptionsMemory.getState().byKind).toEqual({});
   });
 
-  test("the model and more pills open the options sheet", async () => {
+  test("the options pill opens the options sheet and shows the model", async () => {
     const t = await render();
-    await act(async () => byLabel(t, "Model: the agent's default").props.onPress());
-    expect(mockPush).toHaveBeenLastCalledWith({ pathname: "/start-options", params: { kind: "claude", focus: "model" } });
-    await act(async () => byLabel(t, "More start options").props.onPress());
+    expect(has(t, "Model: the agent's default")).toBe(false);
+    await act(async () => byLabel(t, "Start options").props.onPress());
     expect(mockPush).toHaveBeenLastCalledWith({ pathname: "/start-options", params: { kind: "claude" } });
-    // Extra flags set: the more pill says how many.
+    expect(t.root.findAll((n) => n.props.children === "Options").length).toBeGreaterThan(0);
+    // A model alias shows as its label; extra flags are in the VoiceOver label.
     act(() => {
-      useStartOptionsMemory.setState({ byKind: { claude: { extra: "--a b" } } });
+      useStartOptionsMemory.setState({ byKind: { claude: { model: "opus", extra: "--a b" } } });
     });
-    expect(has(t, "More start options, 2 extra flags")).toBe(true);
+    expect(has(t, "Start options, model Opus, 2 extra flags")).toBe(true);
+    expect(t.root.findAll((n) => n.props.children === "Opus").length).toBeGreaterThan(0);
   });
 
   test("each agent kind keeps its own options, Pi has a thinking pill, and a shell has no pills", async () => {
@@ -235,7 +236,7 @@ describe("start options", () => {
     const pills = t.root.findAll(
       (n) =>
         typeof n.props.accessibilityLabel === "string" &&
-        /^(Permission mode|Thinking|Model|More start options)/.test(n.props.accessibilityLabel),
+        /^(Permission mode|Thinking|Start options)/.test(n.props.accessibilityLabel),
     );
     expect(pills).toHaveLength(0);
   });

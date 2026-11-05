@@ -1,23 +1,11 @@
 /**
  * The start options as small pills in the start bar of New session and on the restart screen, like
  * the model picker of a chat composer: one tap changes the permission mode or the thinking level
- * with an action sheet. The model pill and the "more" pill open the start options sheet
- * (`app/start-options.tsx`). The pills read and write the remembered options of the kind directly.
+ * with an action sheet. The "Options" pill opens the start options sheet (`app/start-options.tsx`)
+ * and shows the model when one is set. The pills read and write the remembered options of the kind directly.
  */
 import { useRouter } from "expo-router";
-import {
-  Brain,
-  ChevronDown,
-  ClipboardList,
-  Cpu,
-  FilePen,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  SlidersHorizontal,
-  TriangleAlert,
-  type LucideIcon,
-} from "lucide-react-native";
+import { Brain, ChevronDown, SlidersHorizontal, TriangleAlert, type LucideIcon } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 
 import { colors, denseScale, dot, hitTarget, icon, radius, space, state } from "@/theme/tokens";
@@ -30,35 +18,25 @@ import {
   extraFlagCount,
   isDanger,
   modeMenu,
+  modelAliases,
+  modelLabel,
   modeOf,
-  optionsFor,
   thinkingMenu,
   thinkingOf,
+  optionsFor,
   withMode,
   withThinking,
   type ChoiceMenu,
-  type PermissionMode,
   type StartChoice,
 } from "./startOptions";
+import { modeIcon } from "./modeIcon";
 import { rememberChoice } from "./startOptionsMemory";
 
 export const DANGER_WARNING = "The agent runs commands and edits files with no approval.";
 
-/** The field that the options sheet focuses when it opens. */
-export type SheetFocus = "model" | "extra";
-
 /** The visual height of a pill. `hitSlop` makes the touch target 44 pt. */
 const PILL_HEIGHT = 32;
 const SLOP = (hitTarget - PILL_HEIGHT) / 2;
-
-/** The icon of a permission mode. The same icons show for the same kind of mode in every agent. */
-function modeIcon(mode: PermissionMode): LucideIcon {
-  if (mode.danger) return ShieldAlert;
-  if (mode.id === DEFAULT_MODE_ID) return Shield;
-  if (mode.id === "plan") return ClipboardList;
-  if (mode.id === "acceptEdits" || mode.id === "autoEdit") return FilePen;
-  return ShieldCheck;
-}
 
 /** Shows `menu` as an action sheet and gives the picked id to `onPick`. Cancel picks nothing. */
 function pickFrom(title: string, menu: ChoiceMenu, onPick: (id: string) => void) {
@@ -84,6 +62,7 @@ function Pill({
   danger,
   mono,
   chevron,
+  marked,
   accessibilityLabel,
   accessibilityHint,
   disabled,
@@ -95,6 +74,8 @@ function Pill({
   danger?: boolean;
   mono?: boolean;
   chevron?: boolean;
+  /** A small dot after the label: more options are set than the label shows. */
+  marked?: boolean;
   accessibilityLabel: string;
   accessibilityHint: string;
   disabled?: boolean;
@@ -130,64 +111,33 @@ function Pill({
       <Text variant="small" mono={mono} color={tint} numberOfLines={1} maxFontSizeMultiplier={denseScale.pill} style={{ flexShrink: 1 }}>
         {label}
       </Text>
+      {marked ? <View style={{ width: dot.size, height: dot.size, borderRadius: radius.pill, backgroundColor: colors.text }} /> : null}
       {chevron ? <ChevronDown size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} /> : null}
     </Pressable>
   );
 }
 
-/** The icon-only pill that opens the options sheet. A small dot in the text color shows that extra flags are set. */
-function MorePill({ extra, disabled, onPress }: { extra: number; disabled?: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={extra > 0 ? `More start options, ${extra === 1 ? "1 extra flag" : `${extra} extra flags`}` : "More start options"}
-      accessibilityHint="Double tap to change the model and extra flags"
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      hitSlop={SLOP}
-      style={({ pressed }) => ({
-        width: PILL_HEIGHT,
-        height: PILL_HEIGHT,
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: radius.pill,
-        backgroundColor: colors.raised,
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <SlidersHorizontal size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
-      {extra > 0 ? (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: dot.size,
-            height: dot.size,
-            borderRadius: radius.pill,
-            backgroundColor: colors.text,
-          }}
-        />
-      ) : null}
-    </Pressable>
-  );
+/** The VoiceOver label of the "Options" pill: the model and the number of extra flags, when set. */
+function optionsLabel(model: string | undefined, extra: number): string {
+  const parts = ["Start options"];
+  if (model) parts.push(`model ${model}`);
+  if (extra > 0) parts.push(extra === 1 ? "1 extra flag" : `${extra} extra flags`);
+  return parts.join(", ");
 }
 
 /**
- * One row of option pills for `kind`: the permission mode, the thinking level (Pi), the model and
- * "more". `choice` is the remembered choice of the kind (the caller reads it from the store).
+ * One row of option pills for `kind`: the permission mode, the thinking level (Pi) and "Options".
+ * `choice` is the remembered choice of the kind (the caller reads it from the store).
  */
 export function StartOptionsBar({ kind, choice, disabled }: { kind: string; choice: StartChoice; disabled?: boolean }) {
   const router = useRouter();
   const opts = optionsFor(kind);
   const mode = modeOf(kind, choice);
   const level = thinkingOf(kind, choice);
-  const model = choice.model?.trim();
-  const openSheet = (focus?: SheetFocus) => {
-    haptics.tap();
-    router.push({ pathname: "/start-options", params: focus ? { kind, focus } : { kind } } as never);
-  };
+  const model = modelLabel(kind, choice);
+  const extra = extraFlagCount(choice);
+  // An alias label ("Opus") is a word; a typed model name is an identifier.
+  const typedModel = !!model && !modelAliases(kind).some((a) => a.label === model);
 
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.sm }}>
@@ -222,19 +172,20 @@ export function StartOptionsBar({ kind, choice, disabled }: { kind: string; choi
           }}
         />
       ) : null}
-      {opts.modelFlag ? (
-        <Pill
-          Icon={Cpu}
-          label={model || "Model"}
-          mono={!!model}
-          muted={!model}
-          accessibilityLabel={model ? `Model: ${model}` : "Model: the agent's default"}
-          accessibilityHint="Double tap to change the model"
-          disabled={disabled}
-          onPress={() => openSheet("model")}
-        />
-      ) : null}
-      <MorePill extra={extraFlagCount(choice)} disabled={disabled} onPress={() => openSheet()} />
+      <Pill
+        Icon={SlidersHorizontal}
+        label={model ?? "Options"}
+        mono={typedModel}
+        muted={!model && extra === 0}
+        marked={extra > 0}
+        accessibilityLabel={optionsLabel(model, extra)}
+        accessibilityHint="Double tap to open the start options"
+        disabled={disabled}
+        onPress={() => {
+          haptics.tap();
+          router.push({ pathname: "/start-options", params: { kind } } as never);
+        }}
+      />
     </View>
   );
 }
