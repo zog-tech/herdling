@@ -2,6 +2,7 @@ import type { AgentStatus, ThreadItem, ThreadPage, ThreadRef } from "@herdling/p
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { RpcError } from "@/rpc/RpcClient";
+import { addPending, pendingOf, setPendingState, usePending } from "./pending";
 import { useThread, type Thread } from "./useThread";
 
 /** Fake rpc: `thread.*` answers come from the test; follow streams are kept so the test can push data. */
@@ -127,6 +128,50 @@ test("an agent without a chat view shows its terminal at once", async () => {
   mockRpc.refs = [{ kind: "amp", session: null, log_path: null, cwd: null }];
   await mount("idle");
   expect(latest.status).toBe("no_session");
+});
+
+test("a sent /clear moves the thread to the new log with no status change", async () => {
+  usePending.setState({ byPane: {} });
+  mockRpc.refs = [ref("/logs/old.jsonl")];
+  mockRpc.pages["/logs/old.jsonl"] = page([user("u1")], 50);
+  await mount("idle");
+  expect(latest.status).toBe("live");
+
+  await act(async () => {
+    const id = addPending("host-1", "w1:p1", "/clear");
+    setPendingState("host-1", "w1:p1", id, "queued");
+  });
+  await flush();
+  mockRpc.refs = [ref("/logs/new.jsonl")];
+  mockRpc.pages["/logs/new.jsonl"] = page([user("c1", "/clear")], 30);
+  await act(async () => {
+    jest.advanceTimersByTime(2_000);
+  });
+  await flush();
+  expect(mockRpc.follows.at(-1)).toMatchObject({ logPath: "/logs/new.jsonl", from: 30 });
+  expect(latest.items.map((i) => i.id)).toEqual(["c1"]);
+  expect(pendingOf("host-1", "w1:p1")).toEqual([]);
+});
+
+test("the log check stops 20 s after the send", async () => {
+  usePending.setState({ byPane: {} });
+  mockRpc.refs = [ref("/logs/a.jsonl")];
+  mockRpc.pages["/logs/a.jsonl"] = page([user("u1")], 50);
+  await mount("idle");
+  await act(async () => {
+    const id = addPending("host-1", "w1:p1", "hello");
+    setPendingState("host-1", "w1:p1", id, "queued");
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(30_000);
+  });
+  await flush();
+  const n = mockRpc.count("thread.resolve");
+  await act(async () => {
+    jest.advanceTimersByTime(10_000);
+  });
+  expect(mockRpc.count("thread.resolve")).toBe(n);
+  expect(n).toBeLessThanOrEqual(12);
 });
 
 test("follow error re-resolves and follows again", async () => {
