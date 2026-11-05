@@ -9,6 +9,8 @@
 export type PermissionMode = {
   id: string;
   label: string;
+  /** One short line that tells what the mode lets the agent do (the options sheet). */
+  detail: string;
   args: readonly string[];
   /** The agent runs commands and edits files with no approval. */
   danger?: boolean;
@@ -39,38 +41,57 @@ export type StartChoice = {
 };
 
 export const DEFAULT_MODE_ID = "default";
-const DEFAULT_MODE: PermissionMode = { id: DEFAULT_MODE_ID, label: "Default", args: [] };
+
+/** The Default mode of a kind (no flags). `detail` tells what the agent does with no flag. */
+const defaultMode = (detail: string): PermissionMode => ({ id: DEFAULT_MODE_ID, label: "Default", detail, args: [] });
+
+const NO_APPROVAL = "Runs commands and edits files with no approval.";
+const EDITS_ONLY = "Edits files without asking. Asks before commands.";
 
 const KINDS: Record<string, KindOptions> = {
   claude: {
     modes: [
-      DEFAULT_MODE,
-      { id: "plan", label: "Plan", args: ["--permission-mode", "plan"] },
-      { id: "acceptEdits", label: "Accept edits", args: ["--permission-mode", "acceptEdits"] },
-      { id: "auto", label: "Auto", args: ["--permission-mode", "auto"] },
-      { id: "skip", label: "Skip permissions", args: ["--dangerously-skip-permissions"], danger: true },
+      defaultMode("Asks before it edits files or runs commands."),
+      { id: "plan", label: "Plan", detail: "Reads and plans. Asks before it changes files.", args: ["--permission-mode", "plan"] },
+      { id: "acceptEdits", label: "Accept edits", detail: EDITS_ONLY, args: ["--permission-mode", "acceptEdits"] },
+      { id: "auto", label: "Auto", detail: "Decides when to ask.", args: ["--permission-mode", "auto"] },
+      { id: "skip", label: "Skip permissions", detail: NO_APPROVAL, args: ["--dangerously-skip-permissions"], danger: true },
     ],
     modelFlag: "--model",
   },
   codex: {
     modes: [
-      DEFAULT_MODE,
-      { id: "readOnly", label: "Read only", args: ["--sandbox", "read-only"] },
-      { id: "auto", label: "Auto", args: ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"] },
-      { id: "fullAccess", label: "Full access", args: ["--dangerously-bypass-approvals-and-sandbox"], danger: true },
+      defaultMode("Uses the sandbox and approval settings of the agent."),
+      { id: "readOnly", label: "Read only", detail: "Reads files. Asks before it edits files or runs commands.", args: ["--sandbox", "read-only"] },
+      {
+        id: "auto",
+        label: "Auto",
+        detail: "Edits files in the folder. Asks when it needs more access.",
+        args: ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
+      },
+      {
+        id: "fullAccess",
+        label: "Full access",
+        detail: "No sandbox. Runs commands and edits files with no approval.",
+        args: ["--dangerously-bypass-approvals-and-sandbox"],
+        danger: true,
+      },
     ],
     modelFlag: "-m",
   },
   gemini: {
     modes: [
-      DEFAULT_MODE,
-      { id: "autoEdit", label: "Auto edit", args: ["--approval-mode", "auto_edit"] },
-      { id: "yolo", label: "YOLO", args: ["--yolo"], danger: true },
+      defaultMode("Asks before it edits files or runs commands."),
+      { id: "autoEdit", label: "Auto edit", detail: EDITS_ONLY, args: ["--approval-mode", "auto_edit"] },
+      { id: "yolo", label: "YOLO", detail: NO_APPROVAL, args: ["--yolo"], danger: true },
     ],
     modelFlag: "-m",
   },
   opencode: {
-    modes: [DEFAULT_MODE, { id: "auto", label: "Auto approve", args: ["--auto"], danger: true }],
+    modes: [
+      defaultMode("Uses the permission settings of the agent."),
+      { id: "auto", label: "Auto approve", detail: "Approves every permission request.", args: ["--auto"], danger: true },
+    ],
   },
   // Pi has no permission prompts, so it has no modes.
   pi: {
@@ -89,6 +110,35 @@ const KINDS: Record<string, KindOptions> = {
 };
 
 const EXTRA_ONLY: KindOptions = { modes: [] };
+
+/** One quick model choice: `id` is the value for the model flag. */
+export type ModelAlias = { id: string; label: string };
+
+/** The model aliases that Claude Code accepts for `--model`. Other kinds get only the model name field. */
+const MODEL_ALIASES: Record<string, readonly ModelAlias[]> = {
+  claude: [
+    { id: "opus", label: "Opus" },
+    { id: "sonnet", label: "Sonnet" },
+    { id: "haiku", label: "Haiku" },
+  ],
+};
+
+/** The quick model choices of `kind`. Empty: the kind has only the model name field. */
+export function modelAliases(kind: string): readonly ModelAlias[] {
+  return MODEL_ALIASES[kind] ?? [];
+}
+
+/** The model of `choice` as the start bar shows it: an alias label (for example "Opus") or the name as typed. Undefined: no model. */
+export function modelLabel(kind: string, choice: StartChoice): string | undefined {
+  const model = choice.model?.trim();
+  if (!model || !optionsFor(kind).modelFlag) return undefined;
+  return modelAliases(kind).find((a) => a.id === model)?.label ?? model;
+}
+
+/** True when `choice` starts the agent as it starts with no flags. */
+export function isDefaultChoice(kind: string, choice: StartChoice): boolean {
+  return buildArgs(kind, choice).length === 0;
+}
 
 /** The options of `kind`. A kind with no entry gets extra flags only. */
 export function optionsFor(kind: string): KindOptions {
