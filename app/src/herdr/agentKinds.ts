@@ -9,6 +9,12 @@ export const DEFAULT_KIND = "claude";
 /** Kinds at the start of the agent picker: the agents with a chat view. The rest follow in `AGENT_KINDS` order. */
 export const FEATURED_KINDS = ["claude", "codex", "pi", "opencode", "omp", "gemini"] as const;
 
+/**
+ * Kinds whose conversation log herdlingd can read. For these, a pane with no log yet is
+ * usually an agent that just started: it writes its session file a moment later.
+ */
+export const THREAD_KINDS: readonly string[] = FEATURED_KINDS;
+
 /** Product names for the picker and the start button. A kind not here shows as its kind name. */
 const LABELS: Record<string, string> = {
   claude: "Claude Code",

@@ -1,6 +1,7 @@
 import type { AgentStatus, ThreadItem, ThreadPage, ThreadRef } from "@herdling/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { THREAD_KINDS } from "@/herdr/agentKinds";
 import { useHostConn } from "@/hosts/connection";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { PAGE_SIZE, type FollowData, codeOf, fetchOlder, followHandler, makeFail, messageOf } from "./followShared";
@@ -30,6 +31,13 @@ export type Thread = {
 /** Retry delay while the log file does not exist yet. */
 const WAITING_RETRY_MS = 2_000;
 
+/**
+ * A new agent writes its session file a moment after it starts, so the first resolves find no log.
+ * Retry this often, this many times, before the terminal fallback. The skeleton shows meanwhile.
+ */
+const NO_LOG_RETRY_MS = 1_000;
+const NO_LOG_RETRIES = 8;
+
 /** The cursor that reaches further back; null means the start of the file is loaded. */
 function olderCursor(a: number | null, b: number | null): number | null {
   return a == null || b == null ? null : Math.min(a, b);
@@ -51,6 +59,8 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   /** Bumped to run resolve → get → follow again. */
   const [epoch, setEpoch] = useState(0);
   const failures = useRef(0);
+  /** Resolves of this pane that found no log for an agent with a chat view. */
+  const noLogTries = useRef(0);
   /** The source `loadOlder` reads from; replaced on every successful start. */
   const source = useRef<{ rpc: RpcClient; logPath: string; cursor: number | null; token: object }>(undefined);
   const statusRef = useRef(status);
@@ -69,6 +79,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
     setHasOlder(false);
     source.current = undefined;
     failures.current = 0;
+    noLogTries.current = 0;
   }, [hostId, paneId]);
 
   useEffect(() => {
@@ -91,6 +102,12 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         if (dead) return;
         setRef(r);
         const logPath = r.log_path;
+        if (!logPath && THREAD_KINDS.includes(r.kind) && noLogTries.current < NO_LOG_RETRIES) {
+          // Probably a new agent: keep the skeleton and look again soon.
+          noLogTries.current += 1;
+          restartIn(NO_LOG_RETRY_MS);
+          return;
+        }
         if (!logPath) {
           source.current = undefined;
           setItems([]);
