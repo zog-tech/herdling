@@ -156,6 +156,12 @@ JS-only dependencies.
   `app/app.json` get the same OTA updates. **Never bump `version` in `app/app.json`.** A new
   `version` cuts every installed binary off from new updates. Only the maintainer decides on a
   version change. EAS sets the build number (`appVersionSource: remote`).
+- **Never change a build that is in store review.** While a build is in App Store or Google Play
+  review, do not submit another build: upload only to TestFlight or the Play internal track as a
+  draft. Do not publish an OTA update to the runtime version of the build in review. To ship JS to
+  testers in that time, the maintainer approves a new `version` (for example 1.0.0 → 1.0.1). Make
+  one build of it, then publish OTA updates only to that runtime. After the review passes, submit
+  the new version as the next store update.
 - Old binaries get new JS. **New JS must not need a native module that older binaries lack.**
   Load a new native module lazily and handle its absence (see the photo picker and the document picker in `thread/attachments.ts`, which load only on use).
 - Before an OTA update, compare the native dependencies and plugins with the oldest build still
