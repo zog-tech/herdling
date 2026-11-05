@@ -12,8 +12,8 @@ describe("workspaceForCwd", () => {
   it("matches an agent cwd, ignoring a trailing slash", () => {
     expect(workspaceForCwd(snap, "/home/sam/proj/")?.workspace_id).toBe("w1");
   });
-  it("matches a pane cwd", () => {
-    expect(workspaceForCwd(snap, "/home/sam/api")?.workspace_id).toBe("w2");
+  it("ignores a plain pane cwd: a shell can cd anywhere", () => {
+    expect(workspaceForCwd(snap, "/home/sam/api")).toBeUndefined();
   });
   it("returns undefined when nothing matches", () => {
     expect(workspaceForCwd(snap, "/home/sam/other")).toBeUndefined();
