@@ -38,6 +38,13 @@ const WAITING_RETRY_MS = 2_000;
 const NO_LOG_RETRY_MS = 1_000;
 const NO_LOG_RETRIES = 8;
 
+/**
+ * After a send, the pane can move to a new log with no status change (`/clear` keeps the agent idle).
+ * While a sent prompt has no copy in the log, check the pane's log this often, for this long.
+ */
+const SWITCH_CHECK_MS = 2_000;
+const SWITCH_CHECK_FOR_MS = 20_000;
+
 /** The cursor that reaches further back; null means the start of the file is loaded. */
 function olderCursor(a: number | null, b: number | null): number | null {
   return a == null || b == null ? null : Math.min(a, b);
@@ -207,6 +214,29 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
 
   // Pending prompts go away when the log shows them. Only compare against a loaded thread.
   const pending = usePendingList(hostId, paneId);
+
+  // A queued prompt that the log does not show: the agent may write a new log (`/clear`). Look for it.
+  const lastQueued = pending.reduce((t, p) => (p.state === "queued" ? Math.max(t, p.sentAt) : t), 0);
+  useEffect(() => {
+    if (!rpc || status !== "live" || lastQueued === 0) return;
+    let dead = false;
+    const timer = setInterval(() => {
+      if (Date.now() - lastQueued > SWITCH_CHECK_FOR_MS) {
+        clearInterval(timer);
+        return;
+      }
+      rpc
+        .call<ThreadRef>("thread.resolve", { pane_id: paneId })
+        .then((r) => {
+          if (!dead && r.log_path && r.log_path !== refRef.current?.log_path) setEpoch((n) => n + 1);
+        })
+        .catch(() => {});
+    }, SWITCH_CHECK_MS);
+    return () => {
+      dead = true;
+      clearInterval(timer);
+    };
+  }, [rpc, paneId, status, lastQueued]);
   useEffect(() => {
     if (pending.length > 0 && (status === "live" || status === "waiting")) reconcilePending(hostId, paneId, items);
   }, [hostId, paneId, items, pending, status]);
