@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { View } from "react-native";
 import { join } from "path";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
@@ -195,16 +196,32 @@ test("hidden_composer_polls_nothing_and_has_no_mic", async () => {
   expect(tree!.root.findAll((n) => n.type === MicButton)).toHaveLength(1);
 });
 
-test("mic_and_send_have_the_same_size", async () => {
+test("mic_and_send_sit_in_the_pill_with_the_same_size_and_a_44pt_target", async () => {
   await act(async () => {
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
   });
   const mic = tree!.root.findAll((n) => n.type === MicButton)[0];
-  expect(mic.props.size).toBe(hitTarget);
+  expect(mic.props.size).toBe(36);
+  expect(mic.props.bare).toBe(true);
   const send = tree!.root.find((n) => n.props.accessibilityLabel === "Send" && n.props.style?.width !== undefined);
   const style = send.props.style;
-  expect(style.width).toBe(hitTarget);
-  expect(style.height).toBe(hitTarget);
+  expect(style.width).toBe(36);
+  expect(style.height).toBe(36);
+  expect(36 + 2 * send.props.hitSlop).toBe(hitTarget);
+});
+
+test("wrapped_text_moves_the_buttons_to_a_row_under_it", async () => {
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="a long prompt" />);
+  });
+  const pill = tree!.root.find((n) => n.type === View && typeof n.props.onLayout === "function");
+  await act(async () => pill.props.onLayout({ nativeEvent: { layout: { width: 300, height: 44 } } }));
+  const measure = () => tree!.root.find((n) => n.props.importantForAccessibility === "no-hide-descendants" && !!n.props.onLayout);
+  const pad = () => prompt(tree!).props.style.paddingBottom;
+  await act(async () => measure().props.onLayout({ nativeEvent: { layout: { height: 21 } } }));
+  expect(pad()).toBe(10);
+  await act(async () => measure().props.onLayout({ nativeEvent: { layout: { height: 63 } } }));
+  expect(pad()).toBe(hitTarget);
 });
 
 const idle = (agent = "claude") =>
@@ -664,7 +681,8 @@ test("recording_swaps_the_box_for_the_record_bar_and_the_text_lands_appended", a
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="fix the bug" />);
   });
   expect(tree!.root.findAll((n) => n.type === MockRecordBar)).toHaveLength(1);
-  expect(tree!.root.findAll((n) => n.props.accessibilityLabel === "Prompt" && !!n.props.onChangeText)).toHaveLength(0);
+  // The box stays mounted (the keyboard stays up) but takes no text while the mic records.
+  expect(prompt(tree!).props.editable).toBe(false);
   const check = tree!.root.find((n) => n.props.accessibilityLabel === "Stop and transcribe" && !!n.props.onPress);
   act(() => check.props.onPress());
   expect(mockVoiceDispatch).toHaveBeenCalledWith({ type: "toggle" });
