@@ -11,8 +11,25 @@ import { formatBytes, isFile, type Attachment } from "./attachments";
 /** Size of a photo thumbnail above the prompt box. */
 export const THUMB = 56;
 
-/** The "+" button of the composer. Same size as the send button. */
-export function PlusButton({ open, disabled, onPress }: { open: boolean; disabled?: boolean; onPress: () => void }) {
+/**
+ * The "+" button of the composer. Same size as the send button.
+ * `bare`: no glass of its own, for a button inside the prompt pill. The touch target stays 44 pt.
+ */
+export function PlusButton({
+  open,
+  disabled,
+  onPress,
+  size = hitTarget,
+  bare = false,
+}: {
+  open: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  size?: number;
+  bare?: boolean;
+}) {
+  const slop = Math.max(0, (hitTarget - size) / 2);
+  const glyph = open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />;
   return (
     <Pressable
       accessibilityRole="button"
@@ -21,19 +38,28 @@ export function PlusButton({ open, disabled, onPress }: { open: boolean; disable
       accessibilityState={{ disabled: !!disabled, expanded: open }}
       disabled={disabled}
       onPress={onPress}
+      hitSlop={slop}
       style={({ pressed }) => ({
-        width: hitTarget,
-        height: hitTarget,
-        opacity: disabled ? state.disabledOpacity : pressed && !glassAvailable() ? state.pressedFill : 1,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: bare && pressed ? colors.raised : "transparent",
+        opacity: disabled ? state.disabledOpacity : pressed && !bare && !glassAvailable() ? state.pressedFill : 1,
       })}
     >
-      <GlassSurface
-        interactive
-        pointerEvents="none"
-        style={{ flex: 1, borderRadius: hitTarget / 2, alignItems: "center", justifyContent: "center" }}
-      >
-        {open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />}
-      </GlassSurface>
+      {bare ? (
+        glyph
+      ) : (
+        <GlassSurface
+          interactive
+          pointerEvents="none"
+          style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center", justifyContent: "center" }}
+        >
+          {glyph}
+        </GlassSurface>
+      )}
     </Pressable>
   );
 }

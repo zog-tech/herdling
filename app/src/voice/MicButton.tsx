@@ -27,12 +27,15 @@ export function MicButton({
   disabled,
   size = MIC_SIZE,
   hint: showHint = true,
+  bare = false,
 }: {
   dictation: Dictation;
   disabled?: boolean;
   /** Diameter of the idle button in points. While held, the button grows a little. */
   size?: number;
   hint?: boolean;
+  /** No fill and no ring at rest: a button inside the prompt pill. */
+  bare?: boolean;
 }) {
   const icon = Math.min(28, Math.round(size / 2));
   const { state, error, dispatch } = dictation;
@@ -147,8 +150,8 @@ export function MicButton({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: RING,
-            borderColor: holding ? colors.danger : colors.raised,
-            backgroundColor: armed ? colors.danger : holding ? colors.card : colors.raised,
+            borderColor: holding ? colors.danger : bare ? "transparent" : colors.raised,
+            backgroundColor: armed ? colors.danger : holding ? colors.card : bare ? "transparent" : colors.raised,
             opacity: off ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? motion.press.growScale : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],

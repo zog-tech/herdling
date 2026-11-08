@@ -9,7 +9,7 @@ import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
-import { colors, denseScale, hitTarget, motion, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, motion, radius, space, state, type } from "@/theme/tokens";
 import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { sendLine } from "@/terminal/keys";
@@ -57,6 +57,13 @@ const LINE = Math.round(type.size.body * 1.35);
 const MAX_LINES = 5;
 const SEND_EASE = cubicBezier(...motion.ease.out);
 const PAD_V = 10;
+/** A button inside the prompt pill. Its touch target is still 44 pt (hitSlop). */
+const INNER = 36;
+/** Space between the pill edge and its buttons: 44 pt pill = 4 + 36 + 4. */
+const INSET = (hitTarget - INNER) / 2;
+const INNER_GAP = space.xs;
+/** Height of the button row under wrapped text. */
+const BUTTON_ROW = hitTarget;
 /** Most matches the typed `/` menu renders. */
 const MENU_MAX = 50;
 
@@ -111,6 +118,10 @@ export const Composer = memo(function Composer({
   const [error, setError] = useState<string | undefined>(initialError);
   /** Bumped after a send: a remount resets the grown multiline height (iOS keeps it otherwise). */
   const [inputKey, setInputKey] = useState(0);
+  /** Width of the prompt pill, and the line count of the text at the one-line layout width. */
+  const [pillWidth, setPillWidth] = useState(0);
+  const [narrowLines, setNarrowLines] = useState(1);
+  const lineHeight = Math.round(LINE * inputScale);
   /** Live transcript while the mic is held. */
   const [partial, setPartial] = useState("");
   const latest = useRef(text);
@@ -217,6 +228,11 @@ export const Composer = memo(function Composer({
   /** Builds without the document picker (older binaries that got this code over the air) hide "Files". */
   const canAttachFiles = hasMethod(hello, "files.put") && documentsAvailable();
   const showPlus = canAttach || canAttachFiles || slash.supported;
+  /** Text padding in the one-line layout: room for "+" on the left, and the mic and send on the right. */
+  const leadInset = showPlus ? INSET + INNER + INNER_GAP : space.lg;
+  const trailInset = INSET + INNER + (visible ? INNER + INNER_GAP : 0) + INNER_GAP;
+  /** The wide layout: the text wraps at the one-line width. Never while the mic records. */
+  const expanded = !voiceActive && text.length > 0 && narrowLines >= 2;
   /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
   const [focused, setFocused] = useState(false);
   /** Room for more photos, read by the paste listener between renders. */
@@ -461,119 +477,160 @@ export const Composer = memo(function Composer({
           {partial}
         </Text>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
-        {voiceActive ? (
-          <RecordBar
-            phase={voicePhase}
-            onCancel={() => dictation.dispatch({ type: "cancel", force: true })}
-            onRetry={() => dictation.dispatch({ type: "retry" })}
-            onDiscard={() => dictation.dispatch({ type: "discard" })}
-          />
-        ) : null}
-        {!voiceActive && showPlus ? (
-          <PlusButton
-            open={plusOpen}
-            disabled={!online || sending}
-            onPress={() => {
-              if (!plusOpen) haptics.press();
-              setPlusOpen((o) => !o);
-            }}
-          />
-        ) : null}
-        {voiceActive ? null : (
-          // The prompt box: a Liquid Glass capsule (a translucent fill before iOS 26). No outline.
-          <GlassSurface
+      {/*
+        The prompt pill: one glass capsule with "+", the text, the mic and send inside. On one line
+        the buttons sit at the two ends. When the text wraps, it takes the full width and the buttons
+        move to a row under it. The TextInput stays at one place in the tree, so the keyboard stays up.
+      */}
+      <View onLayout={(e) => setPillWidth(e.nativeEvent.layout.width)}>
+      <GlassSurface
+        style={{
+          minHeight: hitTarget,
+          borderRadius: expanded ? radius.lg + space.xs : hitTarget / 2,
+          opacity: online ? 1 : state.offlineOpacity,
+        }}
+      >
+        {/* Measures the text at the one-line width: two lines or more opens the wide layout. */}
+        {pillWidth > 0 ? (
+          <Text
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            maxFontSizeMultiplier={denseScale.row}
+            onLayout={(e) => setNarrowLines(Math.round(e.nativeEvent.layout.height / lineHeight))}
             style={{
-              flex: 1,
-              minHeight: hitTarget,
-              borderRadius: hitTarget / 2,
-              justifyContent: "center",
-              opacity: online ? 1 : state.offlineOpacity,
+              position: "absolute",
+              opacity: 0,
+              width: Math.max(1, pillWidth - leadInset - trailInset),
+              fontSize: type.size.body,
+              lineHeight: LINE,
             }}
           >
-            <TextInput
-              ref={inputRef}
-              key={inputKey}
-              value={text}
-              onChangeText={(t) => {
-                putText(pasteChips.change(latest.current, t));
-                if (plusOpen) setPlusOpen(false);
-                if (error) setError(undefined);
-              }}
-              editable={online}
-              autoFocus={autoFocus}
-              onSelectionChange={pasteChips.onSelectionChange}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              multiline
-              placeholder={online ? "Message the agent" : "Host offline"}
-              placeholderTextColor={colors.textMuted}
-              accessibilityLabel="Prompt"
-              maxFontSizeMultiplier={denseScale.row}
-              style={{
-                minHeight: hitTarget,
-                maxHeight: Math.round(LINE * inputScale) * MAX_LINES + PAD_V * 2,
-                color: colors.text,
-                fontSize: type.size.body,
-                lineHeight: LINE,
-                paddingHorizontal: space.lg,
-                paddingTop: PAD_V,
-                paddingBottom: PAD_V,
+            {`${text} `}
+          </Text>
+        ) : null}
+        <TextInput
+          ref={inputRef}
+          key={inputKey}
+          value={text}
+          onChangeText={(t) => {
+            putText(pasteChips.change(latest.current, t));
+            if (plusOpen) setPlusOpen(false);
+            if (error) setError(undefined);
+          }}
+          editable={online && !voiceActive}
+          autoFocus={autoFocus}
+          onSelectionChange={pasteChips.onSelectionChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          multiline
+          placeholder={online ? "Message the agent" : "Host offline"}
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="Prompt"
+          maxFontSizeMultiplier={denseScale.row}
+          style={{
+            minHeight: hitTarget,
+            maxHeight: voiceActive ? hitTarget : lineHeight * MAX_LINES + PAD_V * 2 + (expanded ? BUTTON_ROW : 0),
+            opacity: voiceActive ? 0 : 1,
+            color: colors.text,
+            fontSize: type.size.body,
+            lineHeight: LINE,
+            paddingLeft: expanded ? space.lg : leadInset,
+            paddingRight: expanded ? space.lg : trailInset,
+            paddingTop: PAD_V,
+            paddingBottom: expanded ? BUTTON_ROW : PAD_V,
+          }}
+        />
+        {voiceActive ? (
+          <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: trailInset - INSET, flexDirection: "row" }}>
+            <RecordBar
+              phase={voicePhase}
+              onCancel={() => dictation.dispatch({ type: "cancel", force: true })}
+              onRetry={() => dictation.dispatch({ type: "retry" })}
+              onDiscard={() => dictation.dispatch({ type: "discard" })}
+            />
+          </View>
+        ) : null}
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: INSET,
+            right: INSET,
+            bottom: INSET,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: INNER_GAP,
+          }}
+        >
+          {showPlus && !voiceActive ? (
+            <PlusButton
+              bare
+              size={INNER}
+              open={plusOpen}
+              disabled={!online || sending}
+              onPress={() => {
+                if (!plusOpen) haptics.press();
+                setPlusOpen((o) => !o);
               }}
             />
-          </GlassSurface>
-        )}
-        {visible ? <MicButton dictation={dictation} disabled={!online || sending} size={hitTarget} hint={false} /> : null}
-        {recordingNow ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Stop and transcribe"
-            onPress={() => dictation.dispatch({ type: "toggle" })}
-            style={({ pressed }) => ({
-              width: hitTarget,
-              height: hitTarget,
-              borderRadius: hitTarget / 2,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: pressed ? colors.accentPressed : colors.accent,
-            })}
-          >
-            <Check size={22} color={colors.onAccent} />
-          </Pressable>
-        ) : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Send"
-          accessibilityState={{ disabled: !canSend, busy: sending }}
-          disabled={!canSend}
-          onPress={send}
-          style={{ width: hitTarget, height: hitTarget }}
-        >
-          {({ pressed }) => (
-            // Quiet graphite when empty; gold fades in (CSS transition, UI thread) when there is text.
-            // A press dips it; Reduce Motion keeps the color change and drops the scale.
-            <Animated.View
-              style={{
-                flex: 1,
-                borderRadius: hitTarget / 2,
+          ) : null}
+          <View style={{ flex: 1 }} pointerEvents="none" />
+          {visible ? <MicButton bare dictation={dictation} disabled={!online || sending} size={INNER} hint={false} /> : null}
+          {recordingNow ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Stop and transcribe"
+              onPress={() => dictation.dispatch({ type: "toggle" })}
+              hitSlop={(hitTarget - INNER) / 2}
+              style={({ pressed }) => ({
+                width: INNER,
+                height: INNER,
+                borderRadius: INNER / 2,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: canSend ? (pressed ? colors.accentPressed : colors.accent) : colors.raised,
-                transform: [{ scale: pressed && !reduced ? motion.send.pressScale : 1 }],
-                transitionProperty: ["backgroundColor", "transform"],
-                transitionDuration: [motion.send.fadeMs, motion.raisedPressMs],
-                transitionTimingFunction: SEND_EASE,
-              }}
+                backgroundColor: pressed ? colors.accentPressed : colors.accent,
+              })}
             >
-              {sending ? (
-                <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={22} color={colors.onAccent} />} />
-              ) : (
-                <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
+              <Check size={20} color={colors.onAccent} />
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send"
+              accessibilityState={{ disabled: !canSend, busy: sending }}
+              disabled={!canSend}
+              onPress={send}
+              hitSlop={(hitTarget - INNER) / 2}
+              style={{ width: INNER, height: INNER }}
+            >
+              {({ pressed }) => (
+                // Quiet graphite when empty; gold fades in (CSS transition, UI thread) when there is text.
+                // A press dips it; Reduce Motion keeps the color change and drops the scale.
+                <Animated.View
+                  style={{
+                    flex: 1,
+                    borderRadius: INNER / 2,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: canSend ? (pressed ? colors.accentPressed : colors.accent) : colors.raised,
+                    transform: [{ scale: pressed && !reduced ? motion.send.pressScale : 1 }],
+                    transitionProperty: ["backgroundColor", "transform"],
+                    transitionDuration: [motion.send.fadeMs, motion.raisedPressMs],
+                    transitionTimingFunction: SEND_EASE,
+                  }}
+                >
+                  {sending ? (
+                    <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={20} color={colors.onAccent} />} />
+                  ) : (
+                    <ArrowUp size={20} color={canSend ? colors.onAccent : colors.textMuted} />
+                  )}
+                </Animated.View>
               )}
-            </Animated.View>
+            </Pressable>
           )}
-        </Pressable>
-        )}
+        </View>
+      </GlassSurface>
       </View>
       {pasteChips.viewer}
       {slash.supported ? (
