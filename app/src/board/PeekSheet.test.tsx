@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { useHerdrSupport } from "@/herdr/support";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 
@@ -101,4 +102,20 @@ test("run_on_a_code_block_of_the_reply_goes_through_on_run", () => {
   });
   expect(mockRunHost).toEqual({ hostId: "host-1", paneId: "w1:p1", open: onRun });
   act(() => tree!.unmount());
+});
+
+test("why_this_status_shows_with_on_explain_and_hides_when_herdr_lacks_the_method", () => {
+  const onExplain = jest.fn();
+  const find = () => tree!.root.findAll((n) => n.props.accessibilityLabel === "Why this status?" && typeof n.props.onPress === "function");
+  useHerdrSupport.setState({ missing: {} });
+  act(() => {
+    tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} onExplain={onExplain} />);
+  });
+  expect(find().length).toBeGreaterThan(0);
+  act(() => find()[0].props.onPress());
+  expect(onExplain).toHaveBeenCalledTimes(1);
+  act(() => useHerdrSupport.setState({ missing: { "host-1": ["agent.explain"] } }));
+  expect(find()).toHaveLength(0);
+  act(() => tree!.unmount());
+  useHerdrSupport.setState({ missing: {} });
 });

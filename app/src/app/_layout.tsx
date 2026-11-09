@@ -129,6 +129,7 @@ function ThemedRoot() {
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />
+        <Stack.Screen name="explain/[hostId]/[paneId]" options={{ ...modalHeader, title: "Why this status?" }} />
         {/* The start options of New session and the restart screen: the same form sheet as the peek sheet. */}
         <Stack.Screen
           name="start-options"
