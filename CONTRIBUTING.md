@@ -77,8 +77,11 @@ Only the maintainer releases. A release is a tag; GitHub Actions does the rest.
 
 4. `.github/workflows/release-herdlingd.yml` checks that the tag matches `companion/Cargo.toml`,
    builds `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl` and
-   `aarch64-unknown-linux-musl`, and publishes the GitHub Release `herdlingd-v0.2.0` with
-   `herdlingd-<target>.tar.gz`, `SHA256SUMS` and `latest.json`. It marks the release as "latest".
+   `aarch64-unknown-linux-musl`, signs `latest.json` and `SHA256SUMS` with the release key, and
+   publishes the GitHub Release `herdlingd-v0.2.0` with `herdlingd-<target>.tar.gz`, `SHA256SUMS`,
+   `latest.json`, `latest.json.sig` and `SHA256SUMS.sig`. It marks the release as "latest".
+   When a runner is not available and a build job is cancelled, run the failed jobs again
+   (`gh run rerun <run-id> --failed`). Do not make a new tag for it.
 5. The app and `herdlingd update` find the new version through
    `https://github.com/zog-tech/herdling/releases/latest/download/latest.json`. The installer
    at `https://herdling.zog-tech.com/install.sh` downloads it.
@@ -89,6 +92,38 @@ Rules:
   the "latest" release.
 - Do not delete or change the assets of a published release. Make a new version instead.
 - The `version` in `app/app.json` is a different thing. Do not change it for a herdlingd release.
+
+### The release key
+
+`herdlingd` 0.1.7 and later install an update only when `latest.json.sig` is a valid Ed25519
+signature of a release key. The trust model is in
+`docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md`.
+
+- The private key is in the GitHub Actions secret `HERDLINGD_SIGNING_KEY`, as an OpenSSL PEM
+  (PKCS#8). Only the signing step of the release job gets it. The maintainer keeps an offline
+  backup of the key. Never put the key in the repository or in a log.
+- The accepted public keys are in `RELEASE_KEYS` in `companion/src/update.rs` (raw 32 bytes,
+  base64). The workflow reads the same list and checks both signatures before it publishes.
+- To check a release by hand (OpenSSL 1.1.1 or later, not LibreSSL):
+
+  ```sh
+  printf '%s' MCowBQYDK2VwAyEA | base64 -d > pub.der
+  printf '%s' '<key from RELEASE_KEYS>' | base64 -d >> pub.der
+  base64 -d < latest.json.sig > sig.bin
+  openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey pub.der -in latest.json -sigfile sig.bin
+  ```
+
+- To make a new key: `openssl genpkey -algorithm ed25519 -out herdlingd-release.pem`. The raw
+  public key is `openssl pkey -in herdlingd-release.pem -pubout -outform DER | tail -c 32 | base64`.
+- To rotate the key:
+  1. Add the new public key to `RELEASE_KEYS` and to the key list in `site/public/install.sh`.
+     Release with the old key.
+  2. When most computers run that release, put the new key in `HERDLINGD_SIGNING_KEY`. Remove the
+     old public key from both lists in the next release.
+  3. A computer that runs a version without the new key refuses the new releases. It updates
+     with the installer script.
+- If the key is lost or leaked, remove its public key in a release signed with another listed
+  key. Without another listed key, the computers must update with the installer script.
 
 ## Code style
 

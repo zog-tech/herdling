@@ -5,6 +5,17 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd unreleased]
+
+- Signed updates: the release workflow signs `latest.json` and `SHA256SUMS` with an Ed25519
+  release key (new assets `latest.json.sig` and `SHA256SUMS.sig`). `update.check`,
+  `update.apply` and `herdlingd update` check the signature of `latest.json` before they read it.
+  A missing or bad signature stops the update with the new error `bad_signature`. Releases before
+  this version have no signature, so this version cannot install them.
+- The installer script checks `SHA256SUMS.sig` when `openssl` can check Ed25519 signatures.
+- Release builds: the `cross` images are pinned by digest (`companion/Cross.toml`). The Intel
+  macOS build runs on an Intel runner (`macos-15-intel`), and its smoke test runs natively.
+
 ## [herdlingd 0.1.6] - 2026-11-09
 
 - This release also carries the fixes of 0.1.5. The 0.1.5 build did not publish.

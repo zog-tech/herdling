@@ -22,7 +22,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`.
 
 A `herdr.call` error can also carry a code from herdr itself.
@@ -176,7 +176,9 @@ Result:
 ```
 
 - `status` is `"updated"` or `"up_to_date"`. With `up_to_date` nothing changes.
-- The method downloads the tarball for this computer, checks its SHA-256 against the release
+- The method downloads `latest.json` and `latest.json.sig` of the release and checks the Ed25519
+  signature of the release key over the exact bytes of `latest.json` (from herdlingd 0.1.7).
+  Then it downloads the tarball for this computer, checks its SHA-256 against the release
   manifest, and replaces the running executable with one rename. Then it restarts the user
   service (launchd or systemd), if it is installed. `service_restarted` is false when there is no
   service or the restart failed.
@@ -189,9 +191,10 @@ Error codes:
 | Code | Meaning |
 |---|---|
 | `update_unavailable` | The release or the manifest could not be read, a download URL is not a release URL of the project, or updates are off in this process |
+| `bad_signature` | `latest.json.sig` is missing, or it is not a valid signature of a release key over `latest.json`. Nothing changed. `update.check` gives it too. From herdlingd 0.1.7 |
 | `unsupported_target` | No release build for this OS and CPU |
 | `checksum_mismatch` | The download does not match the SHA-256 of the release. Nothing changed |
-| `downgrade` | The release is older than the running version and `allow_downgrade` is not true |
+| `downgrade` | The release is older than the running version and `allow_downgrade` is not true. An old release keeps its valid signature, so `allow_downgrade` is the choice of the user |
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |

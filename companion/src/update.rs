@@ -4,6 +4,10 @@
 //! The paired phone key can only run `herdlingd rpc`, so the update runs inside this process.
 //! Rules: download only from `<release_base>/download/` URLs, check the SHA-256 before anything
 //! changes, replace only the running executable, and never use `sudo`.
+//!
+//! The release key signs `latest.json` (Ed25519). herdlingd checks the signature over the exact
+//! downloaded bytes before it reads them. Write access to the GitHub releases alone thus cannot
+//! ship a binary. A missing or bad signature stops the update (`bad_signature`).
 //! See `docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md`.
 
 use std::collections::BTreeMap;
@@ -29,6 +33,25 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MANIFEST_LIMIT: usize = 256 * 1024;
 /// Largest accepted tarball.
 pub const DOWNLOAD_LIMIT: usize = 64 << 20;
+/// Largest accepted signature file. The real one is 88 characters of base64.
+const SIGNATURE_LIMIT: usize = 1024;
+
+/// The Ed25519 public keys (raw 32 bytes, base64) that may sign `latest.json`. A signature of
+/// any key in the list is accepted. To rotate the key, add the new key here, release with the
+/// old key, then sign with the new key and remove the old key in a later release.
+/// See "Releasing herdlingd" in CONTRIBUTING.md.
+pub const RELEASE_KEYS: &[&str] = &["dCt5YDC59zFw70uSbhTMjsU6rPFgSPVh/XS/rkeb3YE="];
+
+/// [`RELEASE_KEYS`] as raw keys. It drops a key that is not 32 bytes of base64; a test checks
+/// that it drops none.
+pub fn release_keys() -> Vec<Vec<u8>> {
+    use base64::Engine as _;
+    RELEASE_KEYS
+        .iter()
+        .filter_map(|k| base64::engine::general_purpose::STANDARD.decode(k).ok())
+        .filter(|k| k.len() == 32)
+        .collect()
+}
 
 /// `latest.json` of a release.
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +86,9 @@ pub struct UpdateCtx {
     pub current: String,
     /// Runs the service restart command.
     pub runner: Arc<dyn Runner + Send + Sync>,
+    /// Ed25519 public keys (raw 32 bytes) that may sign `latest.json`. Production:
+    /// [`release_keys`]. Tests pass a throwaway key.
+    pub release_keys: Vec<Vec<u8>>,
 }
 
 impl UpdateCtx {
@@ -76,6 +102,7 @@ impl UpdateCtx {
             arch: std::env::consts::ARCH.into(),
             current: env!("CARGO_PKG_VERSION").into(),
             runner: Arc::new(SystemRunner),
+            release_keys: release_keys(),
         }
     }
 }
@@ -203,10 +230,15 @@ fn client(timeout: Duration) -> Result<reqwest::Client, RpcError> {
 
 /// GETs `url` and returns the body, refusing more than `limit` bytes.
 async fn get_bytes(url: &str, timeout: Duration, limit: usize) -> Result<Vec<u8>, RpcError> {
+    get_bytes_or(url, timeout, limit, "update_unavailable").await
+}
+
+/// [`get_bytes`], with `status_code` as the error code when the server answers with an HTTP error.
+async fn get_bytes_or(url: &str, timeout: Duration, limit: usize, status_code: &str) -> Result<Vec<u8>, RpcError> {
     let unavailable = |m: String| err("update_unavailable", m);
     let mut resp = client(timeout)?.get(url).send().await.map_err(|e| unavailable(format!("download {url}: {e}")))?;
     if !resp.status().is_success() {
-        return Err(unavailable(format!("download {url}: HTTP {}", resp.status().as_u16())));
+        return Err(err(status_code, format!("download {url}: HTTP {}", resp.status().as_u16())));
     }
     if resp.content_length().is_some_and(|n| n > limit as u64) {
         return Err(unavailable(format!("download {url}: larger than {limit} bytes")));
@@ -221,8 +253,32 @@ async fn get_bytes(url: &str, timeout: Duration, limit: usize) -> Result<Vec<u8>
     Ok(body)
 }
 
-/// Gets and checks the manifest of the latest release, or of `version`.
-pub async fn fetch_manifest(base: &str, version: Option<&str>) -> Result<Manifest, RpcError> {
+/// Checks `sig`, the text of `latest.json.sig`, against `body`, the exact bytes of `latest.json`.
+///
+/// `sig` is the base64 text of a raw 64-byte Ed25519 signature. Spaces and line ends around it
+/// are allowed. The check passes when one key of `keys` (raw 32-byte Ed25519 public keys) made
+/// the signature. Every other case is the error `bad_signature`.
+pub fn verify_manifest(body: &[u8], sig: &[u8], keys: &[Vec<u8>]) -> Result<(), RpcError> {
+    use base64::Engine as _;
+    use ring::signature::{UnparsedPublicKey, ED25519};
+    let bad = |m: &str| err("bad_signature", m.to_string());
+    let text = std::str::from_utf8(sig).map_err(|_| bad("the signature of the release manifest is not base64 text"))?;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(text.trim())
+        .map_err(|_| bad("the signature of the release manifest is not base64 text"))?;
+    if raw.len() != 64 {
+        return Err(bad("the signature of the release manifest is not 64 bytes"));
+    }
+    if keys.iter().any(|k| k.len() == 32 && UnparsedPublicKey::new(&ED25519, k).verify(body, &raw).is_ok()) {
+        Ok(())
+    } else {
+        Err(bad("the release manifest does not have a valid signature of the Herdling release key. Nothing changed"))
+    }
+}
+
+/// Gets the manifest of the latest release, or of `version`, and checks its signature with
+/// one of `keys` before it reads it.
+pub async fn fetch_manifest(base: &str, version: Option<&str>, keys: &[Vec<u8>]) -> Result<Manifest, RpcError> {
     if let Some(v) = version {
         if parse_version(v).is_none() {
             return Err(err("bad_request", format!("not a version: {v}")));
@@ -230,6 +286,16 @@ pub async fn fetch_manifest(base: &str, version: Option<&str>) -> Result<Manifes
     }
     let url = manifest_url(base, version);
     let body = get_bytes(&url, MANIFEST_TIMEOUT, MANIFEST_LIMIT).await?;
+    // Fail closed: a release without `latest.json.sig` (an HTTP error) is refused, not trusted.
+    let sig_url = format!("{url}.sig");
+    let sig = match get_bytes_or(&sig_url, MANIFEST_TIMEOUT, SIGNATURE_LIMIT, "bad_signature").await {
+        Ok(s) => s,
+        Err(e) if e.code == "bad_signature" => {
+            return Err(err("bad_signature", format!("the release has no signature file latest.json.sig ({})", e.message)));
+        }
+        Err(e) => return Err(e),
+    };
+    verify_manifest(&body, &sig, keys)?;
     let m: Manifest =
         serde_json::from_slice(&body).map_err(|e| err("update_unavailable", format!("bad release manifest: {e}")))?;
     if parse_version(&m.version).is_none() {
@@ -255,7 +321,7 @@ fn asset_for<'a>(m: &'a Manifest, target: &str) -> Result<&'a Asset, RpcError> {
 /// `update.check`: the running version and the release (latest, or `version`).
 pub async fn check(ctx: &UpdateCtx, version: Option<&str>) -> Result<UpdateCheck, RpcError> {
     let target = target_of(ctx)?;
-    let m = fetch_manifest(&ctx.release_base, version).await?;
+    let m = fetch_manifest(&ctx.release_base, version, &ctx.release_keys).await?;
     asset_for(&m, target)?;
     let newer = compare_versions(&m.version, &ctx.current) == Some(Ordering::Greater);
     Ok(UpdateCheck {
@@ -293,7 +359,7 @@ fn take_lock(home: &Path) -> Result<UpdateLock, RpcError> {
 pub async fn apply(ctx: &UpdateCtx, version: Option<&str>, allow_downgrade: bool) -> Result<UpdateApply, RpcError> {
     let target = target_of(ctx)?;
     let _lock = take_lock(&ctx.home)?;
-    let m = fetch_manifest(&ctx.release_base, version).await?;
+    let m = fetch_manifest(&ctx.release_base, version, &ctx.release_keys).await?;
     let asset = asset_for(&m, target)?.clone();
     let order = compare_versions(&m.version, &ctx.current).unwrap_or(Ordering::Greater);
     let result = |status: &str, service_restarted: bool| UpdateApply {

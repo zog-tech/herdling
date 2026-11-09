@@ -29,15 +29,22 @@ Targets (Linux builds are static musl binaries, so they run on every distributio
 
 | Target | Runner |
 |---|---|
-| `aarch64-apple-darwin` | macOS runner |
-| `x86_64-apple-darwin` | macOS runner (cross target) |
+| `aarch64-apple-darwin` | Apple silicon macOS runner (`macos-15`) |
+| `x86_64-apple-darwin` | Intel macOS runner (`macos-15-intel`) |
 | `x86_64-unknown-linux-musl` | Ubuntu runner with `cross` |
 | `aarch64-unknown-linux-musl` | Ubuntu runner with `cross` |
+
+Each macOS build runs on a runner of its own CPU type, so the smoke test (`herdlingd version`)
+runs the binary natively. The Intel runners are a separate pool: the Intel job does not wait for
+the Apple silicon runners. `companion/Cross.toml` pins the `cross` images by digest.
 
 Assets of each release:
 
 - `herdlingd-<target>.tar.gz`. It holds `herdlingd` and `LICENSE` at the top level.
 - `SHA256SUMS`. One `<sha256>  <file name>` line for each tarball (the `sha256sum` format).
+- `latest.json.sig` and `SHA256SUMS.sig` (from herdlingd 0.1.7). The Ed25519 signature of the
+  release key over the exact bytes of `latest.json` and of `SHA256SUMS`. Each file is the base64
+  text of the raw 64-byte signature, then a line end. See "Signatures" in the trust model.
 - `latest.json`:
 
 ```json
@@ -144,7 +151,9 @@ type UpdateApply = {
 
 Steps:
 
-1. Get the manifest (`latest.json` of the latest release, or of `herdlingd-v<version>`).
+1. Get the manifest (`latest.json` of the latest release, or of `herdlingd-v<version>`) and
+   `latest.json.sig` from the same folder. Check the signature over the exact downloaded bytes
+   before the manifest is parsed. A missing or bad signature stops the update: error `bad_signature`.
 2. Pick the asset for this computer from `std::env::consts::{OS, ARCH}`. Linux always uses the musl asset.
 3. Same version: return `up_to_date` and change nothing. Older version: error `downgrade`,
    unless `allow_downgrade` is true.
@@ -164,8 +173,8 @@ The app then reads the new version from `hello`.
 A lock file (`~/.config/herdling/update.lock`) stops two updates at the same time
 (error `update_in_progress`).
 
-Error codes: `update_unavailable` (network or manifest failure), `unsupported_target`,
-`checksum_mismatch`, `downgrade`, `update_in_progress`, `io_error`.
+Error codes: `update_unavailable` (network or manifest failure), `bad_signature`,
+`unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `io_error`.
 
 ### CLI
 
@@ -224,9 +233,32 @@ The "Set up with password" row in Add host says that it installs `herdlingd` whe
   `github.com/zog-tech/herdling` release URLs. GitHub redirects the download to its storage host;
   the TLS certificate of each host is checked.
 - The SHA-256 comes from the same release as the tarball. It protects against a broken or
-  changed download, not against a person who controls the GitHub repository or the release.
-  The binaries are not signed. A later step can add signatures (for example minisign or
-  GitHub artifact attestations).
+  changed download.
+- Signatures (from herdlingd 0.1.7). The release workflow signs `latest.json` and `SHA256SUMS`
+  with an Ed25519 release key. The private key is in the GitHub Actions secret
+  `HERDLINGD_SIGNING_KEY`. Only the signing step of the release job gets it. The maintainer keeps
+  an offline backup.
+  - `herdlingd` holds the accepted public keys (`RELEASE_KEYS` in `companion/src/update.rs`). It
+    checks `latest.json.sig` over the exact bytes of `latest.json` before it reads them. The
+    manifest holds the version and, for each target, the URL and the SHA-256 of the tarball. So the
+    signature covers every byte that `herdlingd` trusts: the tarball through its SHA-256.
+  - A person who can only change the release assets (for example with a stolen release token)
+    cannot make a manifest that `herdlingd` accepts. That person also needs the release key.
+  - A missing or bad signature stops the update with `bad_signature` (fail closed). Nothing changes.
+  - Replay: an old signed manifest stays valid. `update.apply` refuses a version older than the
+    running one (`downgrade`). `allow_downgrade` is a choice of the user: with it, an old signed
+    release can be installed. A pinned `version` must match the version in the signed manifest.
+  - The workflow checks both signatures with `RELEASE_KEYS` before it publishes. A wrong secret
+    stops the release.
+  - Key rotation: add the new public key to `RELEASE_KEYS` and release with the old key. When most
+    computers run that release, sign with the new key and remove the old key in a later release.
+    A computer that skips the middle release refuses the new signatures; it updates with the
+    installer script.
+- The installer script trusts HTTPS and the site (below). When `openssl` can check Ed25519
+  signatures (`pkeyutl -rawin`, OpenSSL 1.1.1 or later), it also checks `SHA256SUMS.sig` with the
+  release key in the script. A bad signature stops it (`HERDLINGD_ERROR checksum_mismatch`). It
+  skips the check when `SHA256SUMS.sig` is missing (releases before 0.1.7) or `openssl` cannot do
+  it. The `openssl` of macOS (LibreSSL) cannot, so on most Macs the script does not check it.
 - The installer script comes from `herdling.zog-tech.com` over HTTPS (Cloudflare Pages).
   A person who controls the site can change the script.
 - Nothing runs with `sudo`. The update replaces only the executable of the running `herdlingd`.

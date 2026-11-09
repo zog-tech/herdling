@@ -163,6 +163,62 @@ jobs:
               f.write("\n")
           EOF
           cat latest.json
+      # The release key signs the exact bytes of latest.json and SHA256SUMS. herdlingd checks
+      # latest.json.sig before it reads latest.json. A .sig file is the base64 text of the raw
+      # 64-byte Ed25519 signature. Only this step gets the secret.
+      - name: Sign latest.json and SHA256SUMS
+        env:
+          SIGNING_KEY: ${{ secrets.HERDLINGD_SIGNING_KEY }}
+        run: |
+          set -eu
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::The secret HERDLINGD_SIGNING_KEY is not set"
+            exit 1
+          fi
+          umask 077
+          key=$(mktemp)
+          trap 'rm -f "$key" dist/*.sig.bin' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$key"
+          for f in latest.json SHA256SUMS; do
+            openssl pkeyutl -sign -rawin -inkey "$key" -in "dist/$f" -out "dist/$f.sig.bin"
+            base64 -w 0 "dist/$f.sig.bin" > "dist/$f.sig"
+            echo >> "dist/$f.sig"
+          done
+          rm -f "$key"
+          ls -l dist
+      # A wrong secret stops the release here, before anything is published. The public keys come
+      # from RELEASE_KEYS in companion/src/update.rs, the same list that herdlingd uses.
+      - name: Check the signatures with the public keys of herdlingd
+        run: |
+          set -eu
+          keys=$(awk '/^pub const RELEASE_KEYS/ { on = 1 } on { print } on && /\];/ { exit }' companion/src/update.rs | grep -oE '"[A-Za-z0-9+/]{43}="' | tr -d '"')
+          if [ -z "$keys" ]; then
+            echo "::error::No RELEASE_KEYS found in companion/src/update.rs"
+            exit 1
+          fi
+          work=$(mktemp -d)
+          for f in latest.json SHA256SUMS; do
+            base64 -d "dist/$f.sig" > "$work/sig"
+            if [ "$(wc -c < "$work/sig")" -ne 64 ]; then
+              echo "::error::dist/$f.sig is not a 64-byte signature"
+              exit 1
+            fi
+            ok=0
+            for k in $keys; do
+              # SubjectPublicKeyInfo of an Ed25519 key: a fixed 12-byte prefix, then the raw key.
+              { printf '%s' MCowBQYDK2VwAyEA | base64 -d; printf '%s' "$k" | base64 -d; } > "$work/pub.der"
+              if openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey "$work/pub.der" \
+                  -in "dist/$f" -sigfile "$work/sig" >/dev/null 2>&1; then
+                ok=1
+              fi
+            done
+            if [ "$ok" != 1 ]; then
+              echo "::error::The signature of $f does not match a key in RELEASE_KEYS. Check the secret HERDLINGD_SIGNING_KEY."
+              exit 1
+            fi
+            echo "$f: signature OK"
+          done
+          rm -rf "$work"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -174,4 +230,5 @@ jobs:
             --notes-file dist/notes.md \
             --latest \
             --verify-tag \
-            dist/herdlingd-*.tar.gz dist/SHA256SUMS dist/latest.json
+            dist/herdlingd-*.tar.gz dist/SHA256SUMS dist/latest.json \
+            dist/SHA256SUMS.sig dist/latest.json.sig

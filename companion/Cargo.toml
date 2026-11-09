@@ -22,6 +22,8 @@ axum = "0.8"
 rand = "0.9"
 sha2 = "0.10"
 base64 = "0.22"
+# Ed25519 check of the release manifest. ring is already in the tree through rustls.
+ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
 if-addrs = "0.13"
 mdns-sd = "0.13"
