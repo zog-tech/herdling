@@ -5,8 +5,10 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd unreleased]
+## [herdlingd 0.1.7] - 2026-11-09
 
+- 0.1.5 and 0.1.6 did not publish: no macOS build runner was free. This release has all their
+  changes.
 - Signed updates: the release workflow signs `latest.json` and `SHA256SUMS` with an Ed25519
   release key (new assets `latest.json.sig` and `SHA256SUMS.sig`). `update.check`,
   `update.apply` and `herdlingd update` check the signature of `latest.json` before they read it.
@@ -27,10 +29,6 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   does not ask "Keep this phone?". A v1 pairing (an older app) still asks.
 - The QR code has `v=2` and the Bonjour advert has `pv=2`. Older apps ignore them. `POST /pair`
   stays for older apps.
-
-## [herdlingd 0.1.6] - 2026-11-09
-
-- This release also carries the fixes of 0.1.5. The 0.1.5 build did not publish.
 - Pairing: after a phone pairs, `herdlingd pair` shows the key fingerprint of the phone. On a
   terminal it asks "Keep this phone?". No, no answer in 2 minutes or the end of input removes the
   phone again. Compare the fingerprint with the key that the phone shows.
@@ -48,6 +46,14 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `{"closed": true}`, and `serve` subscribes again and reconciles with a fresh snapshot.
 - Self-update: the download URL check parses the URL and refuses encoded dot segments. A version
   pre-release allows only `[0-9A-Za-z.-]`. `~/.config/herdling` gets mode 0700.
+- Pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code can no
+  longer open a closed window again or bring back the old code. When the computer cannot save the
+  phone, the pairing window stays open and the same code works again.
+- Pushes: when herdr closes the status stream of a pane, `serve` subscribes it again. Before, that
+  pane sent no more pushes. A failed snapshot after a reconnect no longer loses the first push of
+  each agent. A closed pane no longer stays the focused pane.
+- "Notify me when it finishes": a new watch of the same pane in the same second is no longer
+  removed by the result of the old watch.
 
 ## [Unreleased app]
 
@@ -71,17 +77,6 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   Pages in the in-app browser do not keep logins between visits on iOS.
 - Browser preview (next native build): the preview cookie is `SameSite=Strict`.
 - "Install and pair": curl downloads the installer over HTTPS only, also after a redirect.
-
-## [herdlingd 0.1.5] - 2026-11-09
-
-- Pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code can no
-  longer open a closed window again or bring back the old code. When the computer cannot save the
-  phone, the pairing window stays open and the same code works again.
-- Pushes: when herdr closes the status stream of a pane, `serve` subscribes it again. Before, that
-  pane sent no more pushes. A failed snapshot after a reconnect no longer loses the first push of
-  each agent. A closed pane no longer stays the focused pane.
-- "Notify me when it finishes": a new watch of the same pane in the same second is no longer
-  removed by the result of the old watch.
 
 ## [herdlingd 0.1.4] - 2026-11-03
 
