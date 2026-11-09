@@ -131,3 +131,19 @@ fn apply_skips_a_watch_that_was_replaced() {
     assert!(ws.contains(&busy));
     assert!(ws.iter().any(|w| w.pane_id == "w1:p2" && w.since == 105));
 }
+
+#[test]
+fn apply_skips_a_watch_replaced_in_the_same_second() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = path(dir.path());
+    let first = add(&p, "w1:p2", None, 100).unwrap();
+    let busy = Watch { busy: Some("make".into()), ..first.clone() };
+    assert_eq!(apply(&p, 100, &[(first, Some(busy))]).unwrap(), vec![true]);
+    // The round reads the busy watch. Then a new shell.watch of the same pane arrives in the
+    // same second, and the round finds the pane idle.
+    let read = list(&p, 100).unwrap().remove(0);
+    let new = add(&p, "w1:p2", None, 100).unwrap();
+    assert_eq!(step(&read, &Probe::Idle, 100), Step::Finished { command: "make".into(), cwd: None });
+    assert_eq!(apply(&p, 100, &[(read, None)]).unwrap(), vec![false], "the old result removed the new watch");
+    assert_eq!(list(&p, 100).unwrap(), vec![new]);
+}
