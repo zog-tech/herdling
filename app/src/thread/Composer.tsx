@@ -52,6 +52,8 @@ import { isFreeform } from "./parseChoices";
 import { sendWithPending } from "./pending";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
 import { useQuoteInto, withQuote } from "./quote";
+import { SavedPromptRow } from "./SavedPromptRow";
+import { useSavedPrompts } from "./savedPrompts";
 import { usePasteChips } from "./usePasteChips";
 
 const LINE = Math.round(type.size.body * 1.35);
@@ -87,6 +89,7 @@ export const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, " ").tri
  * The "+" button attaches photos and files (uploaded with `files.put`, their paths go at the end of the prompt)
  * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
  * A long text paste becomes a "Pasted text #n" chip (see `pastedText.ts`) and goes as a `.txt` file on send.
+ * While the box is empty and has the focus, saved prompts show as chips (see `savedPrompts.ts`).
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
  */
 export const Composer = memo(function Composer({
@@ -241,6 +244,10 @@ export const Composer = memo(function Composer({
   const expanded = !voiceActive && text.length > 0 && narrowLines >= 2;
   /** True while the prompt box has the keyboard. Only then does an edit menu paste land here. */
   const [focused, setFocused] = useState(false);
+  const savedPrompts = useSavedPrompts((s) => s.prompts);
+  /** Saved prompt chips: only while the box is empty, has the focus, and nothing else sits above it. */
+  const showSaved =
+    visible && online && focused && !voiceActive && !showChoices && !showMenu && !plusOpen && text.length === 0 && photos.length === 0 && pastes.length === 0;
   /** Room for more photos, read by the paste listener between renders. */
   const photoCount = useRef(0);
   photoCount.current = MAX_PHOTOS - photoRoom(photos);
@@ -371,6 +378,17 @@ export const Composer = memo(function Composer({
       );
     }
   };
+  /** "Send now" on a saved prompt chip: the text goes as it is, and the box keeps its draft. */
+  const sendSaved = (t: string) => {
+    if (!online || busy.current || voiceActive) return;
+    haptics.press();
+    void sendPrompt(t, false);
+  };
+  const pickSaved = (t: string) => {
+    putText(t);
+    if (error) setError(undefined);
+    inputRef.current?.focus();
+  };
   const send = () => {
     if (!canSend) return;
     // The one haptic of a send: a light tap at the moment the button dips.
@@ -492,6 +510,9 @@ export const Composer = memo(function Composer({
         <PhotoStrip photos={photos} disabled={sending} onRemove={(p) => setPhotos((cur) => cur.filter((x) => x !== p))}>
           {pasteChips.chips}
         </PhotoStrip>
+      ) : null}
+      {showSaved ? (
+        <SavedPromptRow prompts={savedPrompts} canSend={online && !sending && !picking} onPick={pickSaved} onSend={sendSaved} />
       ) : null}
       {partial ? (
         <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>

@@ -937,3 +937,61 @@ describe("long pastes", () => {
     expect(byLabel(tree!, "Pasted text #1 · 30 lines")).toHaveLength(0);
   });
 });
+
+describe("saved prompts", () => {
+  const chip = (t: ReactTestRenderer, text: string) => byLabel(t, `Saved prompt: ${text}`);
+  const showSheet = () => jest.requireMock("@/ui/nativeSheet").showActionSheet as jest.Mock;
+  const mount = async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+  };
+
+  test("the chips show only while the empty box has the focus", async () => {
+    await mount();
+    expect(chip(tree!, "Continue")).toHaveLength(0);
+    await act(async () => prompt(tree!).props.onFocus());
+    expect(chip(tree!, "Continue")).toHaveLength(1);
+    expect(chip(tree!, "Commit and push")).toHaveLength(1);
+    await act(async () => prompt(tree!).props.onChangeText("x"));
+    expect(chip(tree!, "Continue")).toHaveLength(0);
+    await act(async () => prompt(tree!).props.onChangeText(""));
+    await act(async () => prompt(tree!).props.onBlur());
+    expect(chip(tree!, "Continue")).toHaveLength(0);
+  });
+
+  test("a tap puts the text in the box and sends nothing", async () => {
+    await mount();
+    await act(async () => prompt(tree!).props.onFocus());
+    await act(async () => chip(tree!, "Run the tests")[0].props.onPress());
+    await flush();
+    expect(prompt(tree!).props.value).toBe("Run the tests");
+    expect(prompts()).toEqual([]);
+    expect(chip(tree!, "Continue")).toHaveLength(0);
+  });
+
+  test("a long press offers Send now, and a double send goes once", async () => {
+    await mount();
+    await act(async () => prompt(tree!).props.onFocus());
+    await act(async () => chip(tree!, "Yes, go ahead")[0].props.onLongPress());
+    const [opts, pick] = showSheet().mock.calls[0];
+    expect(opts.options).toEqual(["Send now", "Put in the box", "Cancel"]);
+    await act(async () => {
+      pick(0);
+      pick(0);
+    });
+    await flush();
+    expect(prompts()).toEqual(["Yes, go ahead"]);
+    expect(prompt(tree!).props.value).toBe("");
+  });
+
+  test("the VoiceOver action sends the text", async () => {
+    await mount();
+    await act(async () => prompt(tree!).props.onFocus());
+    await act(async () => chip(tree!, "Continue")[0].props.onAccessibilityAction({ nativeEvent: { actionName: "send" } }));
+    await flush();
+    expect(prompts()).toEqual(["Continue"]);
+  });
+});

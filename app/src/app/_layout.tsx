@@ -154,6 +154,7 @@ function ThemedRoot() {
         <Stack.Screen name="display-log" options={{ ...hostHeader, title: "Display log" }} />
         <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />
         <Stack.Screen name="theme" options={{ ...hostHeader, title: "Theme" }} />
+        <Stack.Screen name="saved-prompts" options={{ ...hostHeader, title: "Saved prompts" }} />
         <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />
         <Stack.Screen name="run-command" options={{ ...modalHeader, title: "Run command" }} />
         {/* The session screen sets its own title view and bar buttons. */}
