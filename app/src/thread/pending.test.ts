@@ -1,6 +1,8 @@
 import type { ThreadItem } from "@herdling/protocol";
 
-import { addPending, pendingOf, reconcilePending, removePending, sendWithPending, usePending, PENDING_MAX_AGE_MS, matchKey, splitUploads } from "./pending";
+import { RpcError } from "@/rpc/RpcClient";
+
+import { addPending, pendingLabel, pendingOf, reconcilePending, removePending, sendWithPending, usePending, PENDING_MAX_AGE_MS, matchKey, splitUploads } from "./pending";
 
 const H = "studio";
 const P = "w1:p1";
@@ -28,6 +30,47 @@ test("a_failed_send_shows_not_sent_and_a_retry_sends_the_same_bubble", async () 
   await sendWithPending(rpc, H, P, "deploy", p.id);
   expect(pendingOf(H, P)).toHaveLength(1);
   expect(pendingOf(H, P)[0]).toMatchObject({ id: p.id, state: "queued", error: undefined });
+});
+
+test("a_timeout_marks_the_prompt_unconfirmed_and_the_log_copy_still_removes_it", async () => {
+  const rpc = { call: jest.fn().mockRejectedValueOnce(new RpcError("timeout", "herdr.call timed out after 15000ms")) };
+  await expect(sendWithPending(rpc, H, P, "run the tests")).rejects.toThrow("timed out");
+  expect(states()).toEqual(["run the tests:unconfirmed"]);
+  // The host got the prompt after all: the log shows it, so the bubble goes and no retry sends it twice.
+  reconcilePending(H, P, [user("u1", "older")]);
+  reconcilePending(H, P, [user("u1", "older"), user("u2", "run the tests")]);
+  expect(states()).toEqual([]);
+});
+
+test("a_hard_error_stays_failed_and_a_matching_log_item_does_not_remove_it", async () => {
+  const rpc = { call: jest.fn().mockRejectedValueOnce(new RpcError("agent_blocked", "blocked")) };
+  await expect(sendWithPending(rpc, H, P, "go")).rejects.toThrow("blocked");
+  reconcilePending(H, P, []);
+  reconcilePending(H, P, [user("u1", "go")]);
+  expect(states()).toEqual(["go:failed"]);
+});
+
+test("a_retry_while_the_bubble_is_sending_does_nothing", async () => {
+  let done!: () => void;
+  const rpc = {
+    call: jest.fn().mockRejectedValueOnce(new Error("offline")).mockImplementation(() => new Promise<void>((r) => (done = r))),
+  };
+  await expect(sendWithPending(rpc, H, P, "deploy")).rejects.toThrow("offline");
+  const [p] = pendingOf(H, P);
+  // Two taps on "Retry" before the bubble re-renders.
+  const first = sendWithPending(rpc, H, P, "deploy", p.id);
+  const second = sendWithPending(rpc, H, P, "deploy", p.id);
+  done();
+  await Promise.all([first, second]);
+  expect(rpc.call).toHaveBeenCalledTimes(2);
+  expect(states()).toEqual(["deploy:queued"]);
+});
+
+test("the_bubble_labels", () => {
+  expect(pendingLabel({ state: "sending" })).toBe("Sending…");
+  expect(pendingLabel({ state: "queued" })).toBe("Queued");
+  expect(pendingLabel({ state: "failed" })).toBe("Not sent · Retry");
+  expect(pendingLabel({ state: "unconfirmed" })).toBe("No reply · Retry");
 });
 
 test("the_log_copy_removes_the_bubble_but_an_older_copy_does_not", () => {

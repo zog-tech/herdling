@@ -266,3 +266,59 @@ test("restart on the same log keeps older pages", async () => {
   expect(latest.items.map((i) => i.id)).toEqual(["u1", "u2", "u3", "u4"]);
   expect(latest.hasOlder).toBe(false);
 });
+
+test("each new session in a pane gets the full no-log retries", async () => {
+  // Session 1 needs 5 empty resolves before its log shows.
+  mockRpc.refs = [ref(null), ref(null), ref(null), ref(null), ref(null), ref("/logs/one.jsonl")];
+  mockRpc.pages["/logs/one.jsonl"] = page([user("a1")], 10);
+  await mount("working");
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await flush();
+  }
+  expect(latest.status).toBe("live");
+
+  // `/clear` or a restart: the pane has no log for a moment again (6 resolves), then a new log.
+  mockRpc.refs = [ref(null), ref(null), ref(null), ref(null), ref(null), ref(null), ref(null), ref("/logs/two.jsonl")];
+  mockRpc.pages["/logs/two.jsonl"] = page([user("b1")], 20);
+  await act(async () => {
+    tree!.update(<Probe status="idle" />);
+  });
+  await flush();
+  for (let i = 0; i < 6; i++) {
+    expect(latest.status).not.toBe("no_session");
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await flush();
+  }
+  expect(latest.status).toBe("live");
+  expect(latest.items.map((i) => i.id)).toEqual(["b1"]);
+});
+
+function PaneProbe({ paneId }: { paneId: string }) {
+  latest = useThread("host-1", paneId, "idle");
+  return null;
+}
+
+test("a different pane shows loading, not the old live state or error", async () => {
+  mockRpc.refs = [ref("/logs/a.jsonl")];
+  mockRpc.pages["/logs/a.jsonl"] = page([user("u1")], 10);
+  await act(async () => {
+    tree = create(<PaneProbe paneId="w1:p1" />);
+  });
+  await flush();
+  expect(latest.status).toBe("live");
+
+  // The resolve of the new pane does not answer yet.
+  mockRpc.call = <T,>(method: string): Promise<T> => (method === "thread.resolve" ? new Promise<T>(() => {}) : Promise.reject(new Error(method)));
+  await act(async () => {
+    tree!.update(<PaneProbe paneId="w1:p2" />);
+  });
+  await flush();
+  expect(latest.items).toEqual([]);
+  expect(latest.status).toBe("loading");
+  expect(latest.error).toBeUndefined();
+});
