@@ -33,6 +33,16 @@ fn focus_counts_and_sets_pane() {
 }
 
 #[test]
+fn closed_pane_loses_the_focus() {
+    let mut d = Desk::default();
+    d.set_focused(Some("p"));
+    d.pane_closed("q");
+    assert_eq!(d.focused(), Some("p"));
+    d.pane_closed("p");
+    assert_eq!(d.focused(), None);
+}
+
+#[test]
 fn set_focused_is_not_activity() {
     let mut d = Desk::default();
     d.set_focused(Some("p"));

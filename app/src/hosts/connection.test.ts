@@ -47,7 +47,7 @@ jest.mock("../push/register", () => ({
 }));
 
 import { useNotifPrefs } from "../push/prefs";
-import { ExecTransport, getHostConn, retryNow, startConnections, stopConnections } from "./connection";
+import { ExecTransport, getHostConn, retryNow, startConnections, stopConnections, waitForRpc } from "./connection";
 import { useHosts } from "./store";
 
 const HELLO = { host: "box", os: "macos", herdlingd: "0.1.0", herdr_ok: true };
@@ -433,4 +433,85 @@ test("pref_change_skips_offline_hosts", async () => {
   expect(getHostConn("h1").status).toBe("offline");
   useNotifPrefs.getState().setPref("needs_you", false);
   expect(mockRegisterPush).not.toHaveBeenCalled();
+});
+
+test("late_disconnect_of_replaced_client_keeps_new_attempt", async () => {
+  addHost("SHA256:abc");
+  startConnections();
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+  const next = deferred<{ fingerprint: string }>();
+  mockSsh.connect.mockReturnValueOnce(next.promise);
+  const n = retryNow("h1")!;
+  await flush();
+  // The disconnect of the old client arrives while the new handshake runs.
+  mockSsh.emit("onDisconnect", { hostId: "h1", reason: "connection closed" });
+  await flush();
+  expect(getHostConn("h1")).toMatchObject({ status: "connecting", attempt: n });
+  next.resolve({ fingerprint: "SHA256:abc" });
+  await flush();
+  expect(getHostConn("h1")).toMatchObject({ status: "online", attempt: n });
+  expect(mockSsh.connect).toHaveBeenCalledTimes(2);
+});
+
+test("disconnect_after_handshake_still_drops", async () => {
+  addHost("SHA256:abc");
+  const exec = deferred<string>();
+  mockSsh.openExec.mockReturnValueOnce(exec.promise);
+  startConnections();
+  await flush();
+  // The handshake is done; the channel is not open yet.
+  mockSsh.emit("onDisconnect", { hostId: "h1", reason: "connection closed" });
+  await flush();
+  expect(getHostConn("h1")).toMatchObject({ status: "offline", error: "connection closed" });
+  exec.resolve("ch1");
+  await flush();
+  // The late channel belongs to a dropped attempt: it is closed, not used.
+  expect(getHostConn("h1").status).toBe("offline");
+  expect(mockSsh.closeChannel).toHaveBeenCalledWith("ch1");
+});
+
+test("mismatch_is_in_the_store_and_wait_for_rpc_fails_fast", async () => {
+  addHost("SHA256:old");
+  mockSsh.connect.mockRejectedValue(Object.assign(new Error("host key differs"), { code: "host_key_mismatch" }));
+  startConnections();
+  await flush();
+  expect(getHostConn("h1")).toMatchObject({ status: "offline", blocked: true });
+  let result: unknown = "pending";
+  void waitForRpc("h1", 10_000).then((r) => (result = r));
+  await flush();
+  expect(result).toBeUndefined();
+  // A retry clears the mark.
+  mockSsh.connect.mockResolvedValue({ fingerprint: "SHA256:old" });
+  retryNow("h1");
+  expect(getHostConn("h1").blocked).toBeFalsy();
+  await flush();
+  expect(getHostConn("h1").status).toBe("online");
+  expect(getHostConn("h1").blocked).toBeFalsy();
+});
+
+test("stop_during_demo_hello_stays_stopped", async () => {
+  useHosts.setState({ hosts: [{ id: "demo", name: "Demo", address: "demo", port: 0, user: "demo", command: "", demo: true }] });
+  startConnections();
+  expect(getHostConn("demo").status).toBe("connecting");
+  useHosts.getState().removeHost("demo");
+  await flush();
+  jest.advanceTimersByTime(60_000);
+  await flush();
+  expect(getHostConn("demo")).toEqual({ status: "offline", attempt: 0 });
+});
+
+test("wait_for_rpc_fails_fast_when_the_attempt_hits_a_mismatch", async () => {
+  addHost("SHA256:old");
+  let reject!: (e: Error) => void;
+  mockSsh.connect.mockReturnValueOnce(new Promise((_, r) => (reject = r)));
+  startConnections();
+  await flush();
+  let result: unknown = "pending";
+  void waitForRpc("h1", 10_000).then((r) => (result = r));
+  await flush();
+  expect(result).toBe("pending");
+  reject(Object.assign(new Error("host key differs"), { code: "host_key_mismatch" }));
+  await flush();
+  expect(result).toBeUndefined();
 });

@@ -113,6 +113,16 @@ When you add an RPC method, add it to `METHODS` in `companion/src/rpc.rs`, to `A
 - **Comments explain why.** Each module starts with a short doc comment that says what it is for.
 - **Pure core, thin I/O.** Put rules in pure modules and test them. Pass I/O in as parameters
   (the install `Runner` trait, the demo transport).
+- **Explicit state machines.** A flow with async steps, timers or retries is a state machine.
+  Do not encode its state in loose booleans, refs or `Option` fields.
+  - App: a discriminated union for the state and a pure `reducer(state, event) → { state, effects }`.
+    A thin hook or class sends the events and runs the effects. Examples: `voice/holdToTalk.ts`,
+    `hosts/connectionMachine.ts`.
+  - Companion: enums and a pure `step(state, input, now) → Step`, with the I/O in another module.
+    Examples: `shell_watch.rs` (`Probe`, `Step`) and `serve/debounce.rs`.
+  - Give each async attempt a generation number. Ignore a result that has an old generation.
+  - Use one lock (a ref or a file lock) for each action that must not run twice, such as a send.
+  - Test the pure part directly: each state, each event and each impossible event.
 - **Design system.** Use the tokens from `app/src/theme/` and the rules in
   `design-system/herdling/MASTER.md`. Never put a raw color or size in a style. Gold is only for
   the primary action, the working state and the selected state.

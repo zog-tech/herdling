@@ -48,20 +48,41 @@ pub async fn watch(ctx: &ServeCtx) {
 /// Subscribes, then takes the current statuses from a snapshot so that the first
 /// event of each pane has a "from". A new debouncer per connection: pending notices
 /// of a closed connection are dropped, so a herdr restart cannot send a duplicate.
-/// The snapshot also gives the focused pane to `desk`.
+/// The snapshot also gives the focused pane to `desk`. With no snapshot, the first
+/// change of each pane would only set its baseline and its push would be lost, so the
+/// snapshot is tried `SEED_TRIES` times and then the connection fails.
 async fn connect(ctx: &ServeCtx, desk: &mut Desk) -> Result<(EventStream, Debouncer), HerdrError> {
     let stream = events::subscribe(&ctx.herdr_socket, HERDR_TIMEOUT, None).await?;
     let mut debouncer = Debouncer::new(ctx.debounce);
+    let snap = seed_snapshot(ctx).await?;
     let now = Instant::now();
-    if let Ok(snap) = snapshot(ctx).await {
-        desk.set_focused(str_field(&snap, "focused_pane_id"));
-        for agent in agents(&snap) {
-            if let (Some(pane), Some(status)) = (str_field(agent, "pane_id"), status_field(agent)) {
-                debouncer.observe(pane, status, now);
-            }
+    desk.set_focused(str_field(&snap, "focused_pane_id"));
+    for agent in agents(&snap) {
+        if let (Some(pane), Some(status)) = (str_field(agent, "pane_id"), status_field(agent)) {
+            debouncer.observe(pane, status, now);
         }
     }
     Ok((stream, debouncer))
+}
+
+/// Tries for the seed snapshot of `connect`.
+const SEED_TRIES: usize = 3;
+/// Wait between two tries for the seed snapshot.
+const SEED_RETRY: Duration = Duration::from_millis(200);
+
+/// The snapshot for `connect`: up to `SEED_TRIES` tries, else the last error.
+async fn seed_snapshot(ctx: &ServeCtx) -> Result<Value, HerdrError> {
+    let mut tries = 1;
+    loop {
+        match snapshot(ctx).await {
+            Ok(snap) => return Ok(snap),
+            Err(e) if tries >= SEED_TRIES => return Err(e),
+            Err(_) => {
+                tries += 1;
+                tokio::time::sleep(SEED_RETRY).await;
+            }
+        }
+    }
 }
 
 async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventStream, mut debouncer: Debouncer, desk: &mut Desk) {
@@ -115,6 +136,7 @@ fn observe(home: &Path, debouncer: &mut Debouncer, desk: &mut Desk, ev: &Value) 
     let now = Instant::now();
     if let Some(pane) = events::closed_pane_id(ev) {
         debouncer.forget(pane);
+        desk.pane_closed(pane);
         phone_input::forget(home, pane);
         return false;
     }

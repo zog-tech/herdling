@@ -241,7 +241,9 @@ pub fn apply(path: &Path, now: u64, results: &[(Watch, Option<Watch>)]) -> std::
         let applied = results
             .iter()
             .map(|(old, new)| {
-                let Some(i) = ws.iter().position(|w| w.pane_id == old.pane_id && w.since == old.since) else {
+                // All fields must match: `since` has whole seconds, so a new watch of the same
+                // pane in the same second has the same `pane_id` and `since`.
+                let Some(i) = ws.iter().position(|w| w == old) else {
                     return false;
                 };
                 match new {

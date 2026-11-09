@@ -79,11 +79,15 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   /** Guards `loadOlder` synchronously, so a second call with the same cursor never fetches. */
   const loadingOlderRef = useRef(false);
 
-  // A different pane: forget the old thread.
+  // A different pane: forget the old thread. The status and the error of the old pane go too, so the
+  // new pane shows the skeleton, not an empty "live" thread or an old error.
   useEffect(() => {
     setItems([]);
     setRef(undefined);
     setHasOlder(false);
+    // The effect below runs after this one and sets "offline" when there is no rpc.
+    setStatus("loading");
+    setError(undefined);
     source.current = undefined;
     failures.current = 0;
     noLogTries.current = 0;
@@ -115,6 +119,9 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
           restartIn(NO_LOG_RETRY_MS);
           return;
         }
+        // A found log ends this wait: the next session in the pane (`/clear`, a restart) gets all
+        // the retries again. After the fallback the count stays, so a status change shows the terminal at once.
+        if (logPath) noLogTries.current = 0;
         if (!logPath) {
           source.current = undefined;
           setItems([]);
@@ -215,8 +222,8 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   // Pending prompts go away when the log shows them. Only compare against a loaded thread.
   const pending = usePendingList(hostId, paneId);
 
-  // A queued prompt that the log does not show: the agent may write a new log (`/clear`). Look for it.
-  const lastQueued = pending.reduce((t, p) => (p.state === "queued" ? Math.max(t, p.sentAt) : t), 0);
+  // A queued (or unconfirmed) prompt that the log does not show: the agent may write a new log (`/clear`). Look for it.
+  const lastQueued = pending.reduce((t, p) => (p.state === "queued" || p.state === "unconfirmed" ? Math.max(t, p.sentAt) : t), 0);
   useEffect(() => {
     if (!rpc || status !== "live" || lastQueued === 0) return;
     let dead = false;

@@ -8,22 +8,21 @@ import { colors, hitTarget, motion, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
-import { removePending, sendWithPending, splitUploads, usePendingList, type Pending } from "../pending";
+import { canRetry, pendingLabel, removePending, sendWithPending, splitUploads, usePendingList, type Pending } from "../pending";
 import { UserBubble } from "./UserBubble";
 
-/** A new state line fades in over the old one's place: Sending → Queued → Not sent. Opacity only. */
+/** A new state line fades in over the old one's place: Sending → Queued → No reply or Not sent. Opacity only. */
 const FADE_IN = { from: { opacity: 0 }, to: { opacity: 1 } };
 const FADE_EASE = cubicBezier(...motion.ease.out);
 const fadeIn = { animationName: FADE_IN, animationDuration: motion.crossfadeMs, animationTimingFunction: FADE_EASE } as const;
 
-export function pendingLabel(p: Pick<Pending, "state">): string {
-  return p.state === "sending" ? "Sending…" : p.state === "queued" ? "Queued" : "Not sent · Retry";
-}
-
 /** One prompt the log does not show yet: the user bubble, dimmed, with its state under it. */
 export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: { hostId: string; paneId: string; p: Pending }) {
   const { rpc } = useHostConn(hostId);
-  const failed = p.state === "failed";
+  const retryable = canRetry(p);
+  /** A timeout: the prompt can still arrive, so a softer color than a refused send. */
+  const unconfirmed = p.state === "unconfirmed";
+  const tone = unconfirmed ? colors.status.blocked : colors.danger;
   const label = pendingLabel(p);
   // The photo paths at the end show as "N images", as in a delivered bubble.
   const shown = splitUploads(p.text);
@@ -33,15 +32,15 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
   };
   return (
     <View style={{ gap: space.xs }}>
-      <View style={{ opacity: failed ? 1 : 0.7 }}>
+      <View style={{ opacity: retryable ? 1 : 0.7 }}>
         <UserBubble text={shown.text} images={shown.images || undefined} />
       </View>
       {/* Keyed by state: each change mounts the new line, which fades in. */}
       <Animated.View key={p.state} style={fadeIn}>
-      {failed ? (
+      {retryable ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Not sent. ${p.error ?? ""}`.trim()}
+          accessibilityLabel={unconfirmed ? "No reply. The prompt can still arrive." : `Not sent. ${p.error ?? ""}`.trim()}
           accessibilityHint="Sends it again. Long press removes it."
           accessibilityActions={[{ name: "activate" }, { name: "remove", label: "Remove" }]}
           onAccessibilityAction={(e) => (e.nativeEvent.actionName === "remove" ? removePending(hostId, paneId, p.id) : retry())}
@@ -58,8 +57,8 @@ export const PendingBubble = memo(function PendingBubble({ hostId, paneId, p }: 
             opacity: pressed ? state.pressedOpacity : 1,
           })}
         >
-          <CircleAlert size={12} color={colors.danger} />
-          <Text variant="caption" bold color={colors.danger}>
+          <CircleAlert size={12} color={tone} />
+          <Text variant="caption" bold color={tone}>
             {label}
           </Text>
         </Pressable>
