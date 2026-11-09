@@ -370,7 +370,10 @@ The proxy channel:
 On the phone, the native ssh module listens on `127.0.0.1` only, while the preview screen is
 open. It first tries the same port number as on the computer, so the page origin is the same as
 at the desk. Each connection must send the cookie `herdling_preview=<random 128-bit value>`; the
-app puts it in the web view cookie store. A connection without it gets `403`. At most 6 proxy
+app puts it in the web view cookie store with `SameSite=Strict` (newer native builds), so a
+request that a remote page starts does not carry it. The in-app browser for remote pages does
+not share the cookie: on iOS it uses a separate store that is not saved to disk, and on Android it
+does not accept third-party cookies. A connection without the cookie gets `403`. At most 6 proxy
 channels run at once per host; more connections wait. When a channel does not open on the
 first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
 for the preview.

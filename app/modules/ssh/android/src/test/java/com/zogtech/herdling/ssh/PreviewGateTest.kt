@@ -38,4 +38,13 @@ class PreviewGateTest {
     val longComplete = long + "\r\nCookie: herdling_preview=$cookie\r\n\r\n"
     assertEquals(PreviewGate.Verdict.DENY, check(longComplete))
   }
+
+  @Test
+  fun theCookieIsStrictSameSite() {
+    // A remote page in a web view must not get the cookie sent with its requests to localhost.
+    assertEquals(
+      "herdling_preview=$cookie; Path=/; HttpOnly; SameSite=Strict",
+      PreviewCookie.setCookieText(cookie),
+    )
+  }
 }
