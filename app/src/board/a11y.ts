@@ -1,3 +1,5 @@
+import { allows } from "@/herdr/backend";
+
 import type { BoardItem } from "./buckets";
 import { pillText } from "./elapsed";
 
@@ -19,6 +21,11 @@ export const CARD_ACTIONS = [
   { name: "restart", label: "Restart" },
 ];
 
+/** The VoiceOver actions of one card: a Herdr 2 agent has no Restart. */
+export function cardActionsFor(item: BoardItem): typeof CARD_ACTIONS {
+  return allows(item.agent, "restart") ? CARD_ACTIONS : CARD_ACTIONS.filter((a) => a.name !== "restart");
+}
+
 type Handlers = {
   onOpen: (item: BoardItem) => void;
   onPeek: (item: BoardItem) => void;
@@ -34,7 +41,7 @@ export function runCardAction(name: string, item: BoardItem, h: Handlers): void 
     longpress: h.onPeek,
     markRead: h.onMarkRead,
     reply: h.onReply,
-    restart: h.onRestart,
+    restart: allows(item.agent, "restart") ? h.onRestart : undefined,
   };
   map[name]?.(item);
 }

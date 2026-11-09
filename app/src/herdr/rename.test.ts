@@ -110,3 +110,17 @@ test("the_prompt_starts_with_the_current_name", () => {
   expect(spy.mock.calls[0][4]).toBe("api");
   spy.mockRestore();
 });
+
+test("a_herdr_2_entry_rename_sends_nothing_and_keeps_the_store", async () => {
+  const rpc = fakeRpc();
+  const core = { pane_id: "hc:t1", tab_id: "hc:tab:1", workspace_id: "hc:space:1" };
+  for (const kind of ["session", "tab", "workspace"] as const) {
+    await expect(rename(rpc, H, kind, core, "new")).rejects.toMatchObject({ code: "unsupported" });
+  }
+  // The workspace menu of the board sends only the workspace id.
+  await expect(rename(rpc, H, "workspace", { pane_id: "", tab_id: "", workspace_id: "hc:space:1" }, "new")).rejects.toMatchObject({
+    code: "unsupported",
+  });
+  expect(rpc.calls).toEqual([]);
+  expect(snap()).toEqual(snapshot());
+});

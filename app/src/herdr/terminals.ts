@@ -2,6 +2,7 @@
  * Terminals: herdr panes with no agent in them, for example a plain shell that New session started.
  * The board lists them after the agents, and the session screen shows them in Terminal mode only.
  */
+import { backendLabel } from "./backend";
 import type { PaneInfo, Snapshot } from "./snapshot";
 import { basename } from "./startSession";
 
@@ -62,10 +63,13 @@ export type BoardTerminal = {
 /** The home folder of a user, as `folderTitles` in `board/buckets` finds it. */
 const HOME = /^(?:\/Users|\/home)\/[^/]+(?=\/|$)/;
 
-/** The second line of a board terminal: the host first when there is more than one host, then the folder with "~" for home. */
-export function terminalDetail(t: Pick<BoardTerminal, "hostName" | "folder">, multiHost: boolean): string | undefined {
+/**
+ * The second line of a board terminal: the host first when there is more than one host, then the
+ * folder with "~" for home, then "Herdr 2" for a Herdr 2 terminal.
+ */
+export function terminalDetail(t: Pick<BoardTerminal, "hostName" | "folder"> & Partial<Pick<BoardTerminal, "paneId">>, multiHost: boolean): string | undefined {
   const folder = t.folder?.replace(HOME, "~");
-  const parts = [multiHost ? t.hostName : undefined, folder].filter((p): p is string => !!p);
+  const parts = [multiHost ? t.hostName : undefined, folder, backendLabel(t.paneId)].filter((p): p is string => !!p);
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 

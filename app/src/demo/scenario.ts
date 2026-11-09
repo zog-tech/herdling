@@ -10,6 +10,7 @@ import type {
   ThreadRef,
 } from "@herdling/protocol";
 
+import { isCore } from "@/herdr/backend";
 import type { AgentInfo, HerdrEvent, PaneInfo, Snapshot, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 import { baseName } from "@/newSession/paths";
 import type { FollowData } from "@/thread/followShared";
@@ -215,8 +216,9 @@ export class DemoScenario {
       throw new DemoError("not_found", `pane ${paneId} not found`);
     }
     // As herdlingd: only the kinds with chat support have a thread log; the app shows the terminal for the rest.
+    // A Herdr 2 agent has no thread log yet.
     const kind = a.info.agent ?? "unknown";
-    if (!CHAT_KINDS.includes(kind)) return { kind, session: null, log_path: null, cwd: a.info.cwd ?? null };
+    if (!CHAT_KINDS.includes(kind) || isCore(a.info)) return { kind, session: null, log_path: null, cwd: a.info.cwd ?? null };
     return { kind, session: a.session, log_path: a.log, cwd: a.info.cwd ?? null };
   }
 
@@ -810,6 +812,8 @@ export class DemoScenario {
     seq: number;
     items: ThreadItem[];
     title?: string;
+    /** The app name that a Herdr 2 agent reports. */
+    displayAgent?: string;
   }): Agent {
     const session = `demo-session-${o.pane.pane_id}-${this.nextId++}`;
     const a: Agent = {
@@ -823,6 +827,8 @@ export class DemoScenario {
         state_change_seq: o.seq,
         terminal_title_stripped: o.title,
         name: o.name,
+        ...(o.displayAgent ? { display_agent: o.displayAgent } : {}),
+        ...(isCore(o.pane) ? { backend: "core" as const } : {}),
       },
       log: `demo://${session}.jsonl`,
       session,
@@ -836,7 +842,10 @@ export class DemoScenario {
     return a;
   }
 
-  /** The starting state: 4 workspaces (two of them a worktree group), 9 tabs, 5 agents and 4 shells (one runs a dev server). */
+  /**
+   * The starting state: 4 workspaces (two of them a worktree group), 9 tabs, 5 agents and 4 shells
+   * (one runs a dev server). Then one Herdr 2 space with 2 agents (`seedCore`).
+   */
   private seed(): void {
     const now = Date.now();
     const min = 60_000;
@@ -1049,6 +1058,53 @@ export class DemoScenario {
     p5.since = now - 66 * min;
     // The dev server still runs in the background: the Board shows this agent as "Background".
     p5.background = { count: 1, commands: ["pnpm dev"] };
+    this.seedCore(now);
+  }
+
+  /**
+   * Herdr 2 (herdr-core): one space with two agents, as herdlingd merges them into the snapshot.
+   * The ids start with `hc:` and every entry has `backend: "core"`. These agents have no thread log.
+   */
+  private seedCore(now: number): void {
+    const min = 60_000;
+    const core = { backend: "core" as const };
+    this.workspaces.push({ workspace_id: "hc:space:1", label: "research", number: 5, agent_status: "unknown", ...core });
+    this.tabs.push({ tab_id: "hc:tab:1", workspace_id: "hc:space:1", label: "agents", number: 1, agent_status: "unknown", ...core });
+    const pane = (id: string, cwd: string): PaneInfo => ({ pane_id: id, tab_id: "hc:tab:1", workspace_id: "hc:space:1", label: null, cwd, ...core });
+    this.panes.push(pane("hc:t1", WEBAPP), pane("hc:t2", API));
+    // 10. Claude in Herdr 2, ready: it answered a question about the bundle size.
+    const c1 = this.addAgent({
+      pane: this.panes[this.panes.length - 2],
+      kind: "claude",
+      displayAgent: "Claude Code",
+      name: null,
+      cwd: WEBAPP,
+      status: "done",
+      seq: this.bump(),
+      title: "Bundle size",
+      items: [
+        { kind: "user", id: this.id(), ts: now - 20 * min, text: "Why is the bundle so large?" },
+        {
+          kind: "assistant",
+          id: this.id(),
+          ts: now - 18 * min,
+          markdown: "The chart library is in the main bundle. Load it only on the reports page to save about 180 KB.",
+        },
+      ],
+    });
+    c1.since = now - 18 * min;
+    // 11. Codex in Herdr 2, idle.
+    const c2 = this.addAgent({
+      pane: this.panes[this.panes.length - 1],
+      kind: "codex",
+      displayAgent: "Codex",
+      name: null,
+      cwd: API,
+      status: "idle",
+      seq: 0,
+      items: [],
+    });
+    c2.since = now - 90 * min;
   }
 
   /** The scripts that run without user input: the working agent advances, the blocked one asks. */

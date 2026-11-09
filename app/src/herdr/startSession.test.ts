@@ -269,3 +269,17 @@ describe("agentName", () => {
     }
   });
 });
+
+describe("Herdr 2 workspaces", () => {
+  it("start_session_makes_a_herdr_1_workspace_instead_of_a_tab_in_a_herdr_2_workspace", async () => {
+    const rpc = fakeRpc();
+    await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:1" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create", "agent.start"]);
+  });
+
+  it("start_shell_makes_a_herdr_1_workspace_too", async () => {
+    const rpc = fakeRpc();
+    await startShell(rpc, { cwd: "/home/sam/proj", workspaceId: "hc:loose" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create"]);
+  });
+});

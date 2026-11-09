@@ -24,6 +24,7 @@ import { markSeen } from "@/herdr/seen";
 import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { useExpectedPane } from "@/herdr/expectedPanes";
+import { allows } from "@/herdr/backend";
 import { EXPLAIN_LABEL, EXPLAIN_METHOD } from "@/herdr/explain";
 import { closeWithGroupIntent } from "@/herdr/groupClose";
 import { renameItems } from "@/herdr/rename";
@@ -101,6 +102,7 @@ function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: 
  * (a host that lists `shell.watch`), Changes, Preview and Close.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
  * `ports` is undefined when the preview does not show for this host.
+ * A Herdr 2 pane gets only the items that work there (`allows` in `herdr/backend.ts`).
  */
 function useSessionMenu(
   hostId: string,
@@ -114,7 +116,7 @@ function useSessionMenu(
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
-  const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent);
+  const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent && allows(paneId, "shellWatch"));
 
   const run = useCallback(
     async (label: string, failTitle: string, action: () => Promise<void>) => {
@@ -141,7 +143,7 @@ function useSessionMenu(
       // herdlingd removes the watch after the push: ask again for the next time the menu opens.
       shellWatch.refresh();
     }
-    if (agent) {
+    if (agent && allows(agent, "restart")) {
       items.push({
         label: "Restart",
         destructive: true,
@@ -159,7 +161,7 @@ function useSessionMenu(
         },
       });
     }
-    if (agent?.agent && canResume(hello, agent.agent)) {
+    if (agent?.agent && allows(agent, "resume") && canResume(hello, agent.agent)) {
       items.push({
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${paneId}` as never),
@@ -177,10 +179,10 @@ function useSessionMenu(
       });
     }
     // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
-    if (agent && herdrSupports(hostId, EXPLAIN_METHOD)) {
+    if (agent && allows(agent, "explain") && herdrSupports(hostId, EXPLAIN_METHOD)) {
       items.push({ label: EXPLAIN_LABEL, onPick: () => router.push(`/explain/${hostId}/${paneId}` as never) });
     }
-    if (agent) items.push(...renameItems(rpc, hostId, agent));
+    if (agent && allows(agent, "rename")) items.push(...renameItems(rpc, hostId, agent));
     const [what, detail] = agent
       ? ["Close this agent?", "The agent stops and its pane closes."]
       : ["Close this terminal?", "The shell and the programs in it stop, and the pane closes."];
@@ -191,7 +193,10 @@ function useSessionMenu(
         const ok = await confirmDestructive(what, detail, "Close");
         if (!ok) return;
         // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
-        const workspaceId = agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
+        // A Herdr 2 pane has no worktree group: it never closes a whole workspace.
+        const workspaceId = !allows(paneId, "closeGroup")
+          ? undefined
+          : agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
         run("Closing…", "Can't close", async () => {
           if (await closeWithGroupIntent(rpc, workspaceId, () => closeAgent(rpc, paneId))) closed();
         });
@@ -577,7 +582,9 @@ export function SessionDetail({
   // A terminal: a pane with no agent, or the new shell that the snapshot does not show yet.
   const terminal = showsTerminal(snapshot, paneId, expected);
   const termPane = terminal ? terminalPane(snapshot, paneId) : undefined;
-  const view: Mode = terminal ? "terminal" : mode;
+  // A Herdr 2 agent has no transcript yet: it shows only its terminal, like a shell.
+  const threadOk = allows(agent ?? paneId, "thread");
+  const view: Mode = terminal || !threadOk ? "terminal" : mode;
   const folder = termPane ? terminalFolder(termPane) : undefined;
   // A terminal shows "Idle" or "Running: <command>" under its title. Agent panes are never polled.
   useTerminalStatusPolling(hostId, termPane ? [paneId] : [], focused && !!termPane);
@@ -624,7 +631,7 @@ export function SessionDetail({
   };
   useKeyCommand("interrupt", () => pressKey("ctrl+c"), { enabled: focused });
   useKeyCommand("escape", () => pressKey("esc"), { enabled: focused && view === "terminal" });
-  useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused && !terminal });
+  useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused && !terminal && threadOk });
   // ⌘F opens the search of the thread or the terminal.
   useKeyCommand("find", () => setSearchOpen(true), { enabled: focused });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
@@ -646,10 +653,10 @@ export function SessionDetail({
       />
       <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingLeft: space.lg, paddingRight: space.xs }}>
-          {terminal ? (
-            // A terminal has no Thread: its folder takes the place of the switch.
+          {terminal || !threadOk ? (
+            // A terminal (or a Herdr 2 agent) has no Thread: its folder takes the place of the switch.
             <Text variant="caption" muted mono numberOfLines={1} ellipsizeMode="head" style={{ flex: 1 }}>
-              {folder ?? ""}
+              {(terminal ? folder : agent?.cwd) ?? ""}
             </Text>
           ) : (
             <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ flex: 1 }} />
@@ -726,7 +733,7 @@ export function SessionDetail({
         />
       )}
       {/* Hidden, not unmounted, in Terminal mode and while searching: a half-typed prompt survives. Hidden, it polls nothing. A terminal has no composer. */}
-      {terminal ? null : (
+      {terminal || !threadOk ? null : (
         <View style={{ display: mode === "thread" && !searchOpen ? "flex" : "none" }}>
           <Composer
             hostId={hostId}

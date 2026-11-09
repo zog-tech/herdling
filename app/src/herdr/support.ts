@@ -17,6 +17,8 @@ export const useHerdrSupport = create<{ missing: Record<string, string[]> }>(() 
 export function isMissingMethod(e: unknown): boolean {
   const code = (e as { code?: unknown } | null)?.code;
   const msg = e instanceof Error ? e.message : String(e);
+  // herdlingd refuses a herdr 1 method on a Herdr 2 pane with `unsupported`. herdr itself has the method.
+  if (code === "unsupported") return false;
   if (code === "unknown_method") return true;
   if (code === "invalid_request") return /unknown variant|unknown method/i.test(msg);
   return /unknown method/i.test(msg);

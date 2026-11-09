@@ -5,6 +5,7 @@ import { RpcError, type RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
 import { promptText } from "@/ui/nativeSheet";
 
+import { assertAllows } from "./backend";
 import { renameAgent } from "./sessionActions";
 import type { AgentInfo, Snapshot } from "./snapshot";
 import { useSnapshots } from "./snapshotStore";
@@ -91,6 +92,8 @@ function patchStore(hostId: string, fn: (s: Snapshot) => Snapshot): void {
  * a tab or workspace keeps its label, because herdr needs one. Returns false when nothing was sent.
  */
 export async function rename(rpc: Rpc, hostId: string, kind: RenameKind, t: RenameTarget, text: string): Promise<boolean> {
+  // A Herdr 2 entry has no rename: fail before the store changes.
+  assertAllows(kind === "session" ? t.pane_id : kind === "tab" ? t.tab_id : t.workspace_id, "rename");
   const value = text.trim();
   if (!value && kind !== "session") return false;
   const snap = useSnapshots.getState().byHost[hostId];

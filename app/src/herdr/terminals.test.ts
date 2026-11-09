@@ -86,3 +86,9 @@ describe("boardTerminals", () => {
     expect(terminalDetail({ hostName: "studio" }, true)).toBe("studio");
   });
 });
+
+test("terminal_detail_of_a_herdr_2_terminal_ends_with_herdr_2", () => {
+  expect(terminalDetail({ hostName: "studio", folder: "/home/sam/api", paneId: "hc:t3" }, false)).toBe("~/api · Herdr 2");
+  expect(terminalDetail({ hostName: "studio", paneId: "hc:t3" }, true)).toBe("studio · Herdr 2");
+  expect(terminalDetail({ hostName: "studio", folder: "/home/sam/api", paneId: "w1:p3" }, false)).toBe("~/api");
+});

@@ -72,3 +72,9 @@ test("an_agent_that_herdr_has_not_detected_yet_has_an_empty_kind_and_a_fallback_
   expect(agentTitle(empty, fresh)).toBe("w1:p1");
   expect(secondaryTitle(empty, fresh)).toBeUndefined();
 });
+
+test("subtitle_of_a_herdr_2_agent_ends_with_herdr_2", () => {
+  expect(agentSubtitle("studio", { agent: "claude", display_agent: "Claude Code", backend: "core", pane_id: "hc:t1" })).toBe("studio · Claude Code · Herdr 2");
+  expect(agentSubtitle("studio", { agent: "pi", pane_id: "hc:t2" })).toBe("studio · pi · Herdr 2");
+  expect(agentSubtitle("studio", { agent: "pi", pane_id: "w1:p1" })).toBe("studio · pi");
+});

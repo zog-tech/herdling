@@ -21,6 +21,7 @@ import type {
   Usage,
 } from "@herdling/protocol";
 
+import { CORE_UNSUPPORTED, isCore } from "@/herdr/backend";
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
 import { labelMatches, parseChoices } from "@/thread/parseChoices";
@@ -44,6 +45,21 @@ const GIB = 1024 ** 3;
 const WATCH_MS = 200;
 /** herdr key names (what the app sends) to the names the scenario knows. */
 const KEY_NAMES: Record<string, string> = { enter: "Enter", backspace: "BSpace", esc: "Escape", "ctrl+c": "C-c" };
+
+/** The herdr methods that work on a Herdr 2 pane, as in herdlingd. Every other one answers `unsupported`. */
+export const CORE_HERDR_METHODS: ReadonlySet<string> = new Set([
+  "pane.read",
+  "pane.send_input",
+  "pane.send_text",
+  "pane.send_keys",
+  "pane.get",
+  "pane.process_info",
+  "pane.close",
+  "agent.prompt",
+]);
+
+/** The error of herdlingd for a herdr 1 method on a Herdr 2 id. */
+const coreUnsupported = (method: string) => new DemoError(CORE_UNSUPPORTED, `${method} needs herdr 1; Herdr 2 terminals do not have it`);
 
 const DEMO_BOOT: Boot = {
   starts_at: "boot",
@@ -240,6 +256,8 @@ export class DemoTransport implements LineTransport {
           thread_kinds: [...KINDS, "omp", "gemini"],
           command_kinds: KINDS,
           boot: DEMO_BOOT,
+          // The demo computer runs herdr 1 and Herdr 2 (herdr-core) side by side.
+          backends: { herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } },
         } satisfies Hello;
       // The demo Mac logs in by itself, so herdlingd starts at boot. It opens no settings.
       case "boot.check":
@@ -338,6 +356,7 @@ export class DemoTransport implements LineTransport {
       }
       case "shell.watch": {
         const pane = need(p, "pane_id", method);
+        if (isCore(pane)) throw coreUnsupported(method);
         const since = Math.floor(Date.now() / 1000);
         const w: ShellWatch = { pane_id: pane, since, expires_at: since + 24 * 3600, busy: false };
         this.shellWatches.set(pane, w);
@@ -389,6 +408,9 @@ export class DemoTransport implements LineTransport {
   private herdr(method: string, p: Params): unknown {
     const s = this.scenario;
     const m = `herdr ${method}`;
+    // As herdlingd: a Herdr 2 id gets only the methods that the core has.
+    const target = str(p, "pane_id") ?? str(p, "target") ?? str(p, "tab_id") ?? str(p, "workspace_id");
+    if (isCore(target) && !CORE_HERDR_METHODS.has(method)) throw coreUnsupported(method);
     switch (method) {
       case "session.snapshot":
         return { snapshot: s.snapshot() };

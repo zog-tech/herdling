@@ -1,5 +1,6 @@
 import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 
+import { CORE_LABEL, isCore } from "@/herdr/backend";
 import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
@@ -177,6 +178,8 @@ export type BoardSection = {
   bucket?: Bucket;
   /** Set when grouped by workspace and the section has one workspace on one computer. */
   workspace?: { hostId: string; workspaceId: string };
+  /** A small label after the title: "Herdr 2" for a Herdr 2 workspace. */
+  tag?: string;
   data: BoardItem[];
 };
 
@@ -267,13 +270,16 @@ function groupByFolder(items: BoardItem[]): BoardSection[] {
  * One section per workspace name across all computers (trimmed, case-insensitive). A name on one
  * computer keeps the "<computer> · <workspace>" title and its menu. A name on more computers shows
  * the workspace name with the computers as the subtitle.
+ * A Herdr 2 workspace never shares a section with a herdr 1 workspace of the same name, and its
+ * section has the "Herdr 2" tag.
  */
 function groupByWorkspace(items: BoardItem[]): BoardSection[] {
-  type Group = { label: string; hosts: Map<string, string>; ids: Set<string>; data: BoardItem[] };
+  type Group = { label: string; core: boolean; hosts: Map<string, string>; ids: Set<string>; data: BoardItem[] };
   const groups = new Map<string, Group>();
   for (const i of items) {
-    const key = workspaceKey(i.workspace);
-    const g: Group = groups.get(key) ?? { label: i.workspace.trim() || i.workspace, hosts: new Map(), ids: new Set(), data: [] };
+    const core = isCore(i.agent.workspace_id) || i.agent.backend === "core";
+    const key = core ? `${workspaceKey(i.workspace)}|core` : workspaceKey(i.workspace);
+    const g: Group = groups.get(key) ?? { label: i.workspace.trim() || i.workspace, core, hosts: new Map(), ids: new Set(), data: [] };
     g.hosts.set(i.hostId, i.hostName);
     g.ids.add(i.agent.workspace_id);
     g.data.push(i);
@@ -281,12 +287,13 @@ function groupByWorkspace(items: BoardItem[]): BoardSection[] {
   }
   return [...groups].map(([key, g]) => {
     const names = [...g.hosts.values()];
+    const tag = g.core ? { tag: CORE_LABEL } : {};
     if (g.hosts.size === 1 && g.ids.size === 1) {
       const [hostId] = g.hosts.keys();
-      return { key, title: `${names[0]} · ${g.label}`, workspace: { hostId, workspaceId: [...g.ids][0] }, data: g.data };
+      return { key, title: `${names[0]} · ${g.label}`, workspace: { hostId, workspaceId: [...g.ids][0] }, ...tag, data: g.data };
     }
     const subtitle = names.length <= 2 ? names.join(", ") : `${names.length} computers`;
-    return { key, title: g.label, subtitle, data: g.data };
+    return { key, title: g.label, subtitle, ...tag, data: g.data };
   });
 }
 

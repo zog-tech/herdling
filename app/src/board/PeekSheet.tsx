@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { allows } from "@/herdr/backend";
 import { EXPLAIN_LABEL, EXPLAIN_METHOD } from "@/herdr/explain";
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
@@ -66,7 +67,7 @@ export function PeekSheet({
   const seen = useSeen((s) => s.seen);
   const agent = snapshot?.agents.find((a) => a.pane_id === paneId);
   const thread = useThread(hostId, paneId, agent?.agent_status);
-  const canExplain = useHerdrSupports(hostId, EXPLAIN_METHOD) && !!agent && !!onExplain;
+  const canExplain = useHerdrSupports(hostId, EXPLAIN_METHOD) && !!agent && allows(agent, "explain") && !!onExplain;
 
   const item = useMemo(() => {
     if (!agent || !snapshot) return undefined;

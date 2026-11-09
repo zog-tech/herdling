@@ -18,6 +18,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { colors, denseScale, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
+import { allows } from "@/herdr/backend";
 import { agentKind } from "@/herdr/names";
 import { AgentMark } from "@/ui/AgentMark";
 import * as haptics from "@/ui/haptics";
@@ -29,7 +30,7 @@ import type { RowStyle } from "./boardPrefs";
 import type { BoardItem } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
 import { BucketStatus } from "./BucketStatus";
-import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
+import { cardActionsFor, cardLabel, runCardAction } from "./a11y";
 import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
 import { footerMeta, placeholderLine } from "./rowText";
@@ -279,6 +280,8 @@ export const AgentRow = memo(function AgentRow({
   const meta = cards ? footerMeta(bucket, elapsed, item.sinceKnown === true) : undefined;
   const close = () => swipe.current?.close();
   const label = cardLabel(item);
+  // A Herdr 2 agent cannot restart: herdr 1 starts the new agent.
+  const canRestart = allows(item.agent, "restart");
 
   return (
     <Animated.View style={[enterStyle, cards ? { marginHorizontal: CARD_MARGIN } : null]}>
@@ -316,15 +319,17 @@ export const AgentRow = memo(function AgentRow({
                 actions.onReply(item);
               }}
             />
-            <SwipeAction
-              label="Restart"
-              color={colors.danger}
-              Icon={RotateCcw}
-              onPress={() => {
-                close();
-                actions.onRestart(item);
-              }}
-            />
+            {canRestart ? (
+              <SwipeAction
+                label="Restart"
+                color={colors.danger}
+                Icon={RotateCcw}
+                onPress={() => {
+                  close();
+                  actions.onRestart(item);
+                }}
+              />
+            ) : null}
           </SwipePanels>
         )}
       >
@@ -337,7 +342,7 @@ export const AgentRow = memo(function AgentRow({
               accessibilityLabel={label}
               accessibilityHint="Opens the session. Long press to peek."
               accessibilityState={selected ? { selected: true } : undefined}
-              accessibilityActions={CARD_ACTIONS}
+              accessibilityActions={cardActionsFor(item)}
               onAccessibilityAction={(e) => runCardAction(e.nativeEvent.actionName, item, actions)}
               onPointerEnter={() => setHovered(true)}
               onPointerLeave={() => setHovered(false)}
