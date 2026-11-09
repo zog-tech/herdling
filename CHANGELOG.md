@@ -5,6 +5,26 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd unreleased]
+
+- Pairing: after a phone pairs, `herdlingd pair` shows the key fingerprint of the phone. On a
+  terminal it asks "Keep this phone?". No, no answer in 2 minutes or the end of input removes the
+  phone again. Compare the fingerprint with the key that the phone shows.
+- New commands: `herdlingd devices` lists the paired phones with their key fingerprints, and
+  `herdlingd unpair <device_id>` removes a phone, for example a lost phone.
+- The key line of a new phone uses `restrict,command="<exe> rpc"`. Key lines of older versions
+  stay valid.
+- Browser preview: a grant records the address of the dev server listener. Each proxy connection
+  checks again that a listener of the same user is there, and connects only to that address. A
+  grant with no listener is refused and not renewed.
+- `pane.answer` takes an optional `expect_question`. A choice push has `choice.question`, a digest
+  of the question. When the question changed, the answer is `stale`, also when the labels are the
+  same.
+- herdr `events_lost` (herdr 0.9.2 and later): the `herdr.subscribe` stream ends with
+  `{"closed": true}`, and `serve` subscribes again and reconciles with a fresh snapshot.
+- Self-update: the download URL check parses the URL and refuses encoded dot segments. A version
+  pre-release allows only `[0-9A-Za-z.-]`. `~/.config/herdling` gets mode 0700.
+
 ## [herdlingd 0.1.5] - 2026-11-09
 
 - Pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code can no
