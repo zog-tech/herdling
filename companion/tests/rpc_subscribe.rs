@@ -197,6 +197,31 @@ async fn new_pane_gets_status_subscription() {
 }
 
 #[tokio::test]
+async fn status_resubscribes_after_herdr_closes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let (push, mut reqs) = spawn_fake_with_panes(&sock, &["w1:p1", "w1:p2"]);
+    let mut s = Session::start(sock, dir.path().into());
+    s.subscribe(1, "{}").await;
+    let _lifecycle = reqs.recv().await.unwrap();
+    let _status = reqs.recv().await.unwrap();
+    // herdr closes the status connection, but the panes stay open.
+    push.send(Push::DropStatus).unwrap();
+    let again = tokio::time::timeout(Duration::from_secs(5), reqs.recv())
+        .await
+        .expect("the panes were not subscribed again")
+        .unwrap();
+    assert_eq!(
+        again["params"]["subscriptions"],
+        json!([{"type": "pane.agent_status_changed", "pane_id": "w1:p1"},
+               {"type": "pane.agent_status_changed", "pane_id": "w1:p2"}])
+    );
+    push.send(Push::Event(status_ev("w1:p2", "blocked"))).unwrap();
+    let n = s.recv().await;
+    assert_eq!(n["params"]["data"]["data"]["pane_id"], "w1:p2");
+}
+
+#[tokio::test]
 async fn cancel_stops_status_connections_too() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("herdr.sock");
