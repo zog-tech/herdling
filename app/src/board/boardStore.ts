@@ -11,10 +11,12 @@ type State = {
   firstSeen: Record<string, { status: AgentStatus; at: number }>;
   /** Chip filter. Kept while the app runs, not across launches. */
   filter: Bucket | null;
+  /** Text filter (agent, terminal title, computer, folder). Kept while the app runs, not across launches. */
+  query: string;
 };
 
 /** Board state that lives in memory only. The grouping and the sort are saved in `boardPrefs`. */
-export const useBoard = create<State>(() => ({ previews: {}, firstSeen: {}, filter: null }));
+export const useBoard = create<State>(() => ({ previews: {}, firstSeen: {}, filter: null, query: "" }));
 
 /**
  * Replaces the previews of `hostId`. `statusOf` gives each pane's herdr status now, so a
@@ -41,3 +43,4 @@ export function updateFirstSeen(current: { key: string; status: AgentStatus }[],
 }
 
 export const setFilter = (filter: Bucket | null) => useBoard.setState({ filter });
+export const setQuery = (query: string) => useBoard.setState({ query });

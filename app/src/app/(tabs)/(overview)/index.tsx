@@ -1,8 +1,8 @@
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { ChevronDown, CircleSlash, Ellipsis, ListFilter, Loader, PanelRight, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
-import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { Alert, Platform, Pressable, SectionList, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Alert, Keyboard, Platform, Pressable, SectionList, useWindowDimensions, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,7 +13,8 @@ import { DemoTag } from "@/demo/DemoTag";
 import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
-import { setFilter, updateFirstSeen, useBoard } from "@/board/boardStore";
+import { FilterButton, FilterField, NoMatch } from "@/board/BoardFilter";
+import { setFilter, setQuery, updateFirstSeen, useBoard } from "@/board/boardStore";
 import { BOARD_GROUPS, collapseSections, collapsible, groupItems, groupLabel, sortItems, sortLabel, SORTS } from "@/board/arrange";
 import { BoardTop } from "@/board/BoardTop";
 import { countBuckets, filterBoard, mergeBoard, type BoardItem } from "@/board/buckets";
@@ -21,6 +22,7 @@ import { BrandHeader, HostsButton } from "@/board/Dashboard";
 import { spotlight } from "@/board/spotlight";
 import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
+import { filterByText, queryWords } from "@/board/textFilter";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
@@ -41,6 +43,7 @@ import { SessionDetail } from "@/thread/SessionDetail";
 import { Button } from "@/ui/Button";
 import { GlassButton } from "@/ui/GlassButton";
 import { Divider } from "@/ui/Group";
+import * as haptics from "@/ui/haptics";
 import { useKeyCommand } from "@/ui/keyCommands";
 import { BOARD_COLUMN_WIDTH, selectionFromParams, stepKey, useLayoutClass, type PaneRef } from "@/ui/layout";
 import { showActionSheet } from "@/ui/nativeSheet";
@@ -369,7 +372,15 @@ export default function BoardScreen() {
   const hydrated = useSeenHydrated();
   const online = useOnlineHostIds(hosts);
   const problemHosts = useProblemHosts(hosts, online);
-  const { previews, firstSeen, filter } = useBoard();
+  const { previews, firstSeen, filter, query } = useBoard();
+  /** The text filter: true while the field shows. It also shows while the query has text. */
+  const [filterOpen, setFilterOpen] = useState(false);
+  /** True when the user opened the field just now: the box takes the focus. */
+  const [filterFocus, setFilterFocus] = useState(false);
+  const hasQuery = queryWords(query).length > 0;
+  const showFilter = filterOpen || query.length > 0;
+  const listRef = useRef<SectionList<BoardItem>>(null);
+  const headerHeight = useHeaderHeight();
   const rowStyle = useBoardPrefs((s) => s.rowStyle);
   const homeTop = useBoardPrefs((s) => s.homeTop);
   const groupBy = useBoardPrefs((s) => s.groupBy);
@@ -421,7 +432,10 @@ export default function BoardScreen() {
   const summary = useMemo(() => boardSummary(counts), [counts]);
   useBucketAnnouncements(items, focused);
   // Filter, then sort, then group: each group keeps the sorted order.
-  const grouped = useMemo(() => groupItems(sortItems(filterBoard(items, filter), sortBy), groupBy), [items, filter, sortBy, groupBy]);
+  const grouped = useMemo(
+    () => groupItems(sortItems(filterByText(filterBoard(items, filter), query), sortBy), groupBy),
+    [items, filter, query, sortBy, groupBy],
+  );
   const sections = useMemo(() => collapseSections(grouped, groupBy, collapsedKeys ?? []), [grouped, groupBy, collapsedKeys]);
   const spot = useMemo(() => spotlight(items), [items]);
   // Panes with no agent: a "Terminals" list after the agent groups, whatever the grouping.
@@ -443,6 +457,25 @@ export default function BoardScreen() {
     });
   }, [setSortBy]);
 
+  const openFilter = useCallback(() => {
+    setFilterOpen(true);
+    setFilterFocus(true);
+    // The field is at the top of the list: scroll up so the user sees it. iOS keeps the list under the transparent header.
+    const top = !dashboard && Platform.OS === "ios" ? -headerHeight : 0;
+    listRef.current?.getScrollResponder()?.scrollTo({ y: top, animated: false });
+  }, [dashboard, headerHeight]);
+  const closeFilter = useCallback(() => {
+    setFilterOpen(false);
+    setFilterFocus(false);
+    setQuery("");
+    Keyboard.dismiss();
+  }, []);
+  const toggleFilter = useCallback(() => {
+    haptics.tap();
+    if (showFilter) closeFilter();
+    else openFilter();
+  }, [showFilter, closeFilter, openFilter]);
+
   useLayoutEffect(() => {
     // The Dashboard top draws its own brand header with the group and sort menus under the carousel.
     if (dashboard) {
@@ -451,26 +484,29 @@ export default function BoardScreen() {
     }
     navigation.setOptions({
       headerShown: true,
-      // A plain icon: iOS 26 puts it on Liquid Glass in the header.
+      // Plain icons: iOS 26 puts them on Liquid Glass in the header.
       headerRight: () => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Group by ${groupLabel(groupBy)}`}
-          accessibilityHint="Changes how the agents are grouped"
-          onPress={pickGroup}
-          style={({ pressed }) => ({
-            width: hitTarget,
-            height: hitTarget,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? state.pressedOpacity : 1,
-          })}
-        >
-          <ListFilter size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
-        </Pressable>
+        <View style={{ flexDirection: "row" }}>
+          <FilterButton open={showFilter} onPress={toggleFilter} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Group by ${groupLabel(groupBy)}`}
+            accessibilityHint="Changes how the agents are grouped"
+            onPress={pickGroup}
+            style={({ pressed }) => ({
+              width: hitTarget,
+              height: hitTarget,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? state.pressedOpacity : 1,
+            })}
+          >
+            <ListFilter size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
+          </Pressable>
+        </View>
       ),
     });
-  }, [navigation, groupBy, pickGroup, dashboard]);
+  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter]);
 
   // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
   const openPane = useCallback(
@@ -502,6 +538,8 @@ export default function BoardScreen() {
   useKeyCommand("prevAgent", () => stepSelection(-1), { enabled: focused && regular });
   useKeyCommand("nextAgent", () => stepSelection(1), { enabled: focused && regular });
   useKeyCommand("refresh", () => problemHosts.forEach((h) => retryNow(h.id)), { enabled: focused });
+  // ⌘F filters the board. With a session in the detail column, ⌘F searches that session instead.
+  useKeyCommand("find", openFilter, { enabled: focused && hosts.length > 0 && !selection });
   const onOpenTerminal = useCallback((t: BoardTerminal) => openPane(t.hostId, t.paneId), [openPane]);
   const onPeek = useCallback((i: BoardItem) => router.push(`/peek/${i.hostId}/${i.agent.pane_id}` as never), [router]);
   const onReply = useCallback(
@@ -575,7 +613,14 @@ export default function BoardScreen() {
   const board = (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       {dashboard ? (
-        <BrandHeader right={<HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />} />
+        <BrandHeader
+          right={
+            <>
+              {hosts.length > 0 ? <FilterButton open={showFilter} onPress={toggleFilter} /> : null}
+              <HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />
+            </>
+          }
+        />
       ) : null}
       {hosts.length === 0 ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.lg, padding: space.xl }}>
@@ -591,7 +636,11 @@ export default function BoardScreen() {
         </View>
       ) : (
         <SectionList
+          ref={listRef}
           sections={sections}
+          // A tap on a row works at once while the filter box has the keyboard.
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           keyExtractor={(i) => i.key}
           stickySectionHeadersEnabled
           contentInsetAdjustmentBehavior="automatic"
@@ -650,10 +699,12 @@ export default function BoardScreen() {
                 onNew={newSession}
               />
               <HostStrip hosts={problemHosts} />
+              {showFilter ? <FilterField query={query} onQuery={setQuery} onClose={closeFilter} autoFocus={filterFocus} /> : null}
               {items.length > 0 ? <BoardChips counts={counts} filter={filter} onChange={setFilter} /> : null}
-              {quiet && filter === null ? <Calm text="All quiet. Nothing needs you." /> : null}
+              {quiet && filter === null && !hasQuery ? <Calm text="All quiet. Nothing needs you." /> : null}
               {items.length === 0 && online.size > 0 ? <Calm text="No agents running." /> : null}
-              {items.length > 0 && filter !== null && sections.length === 0 ? (
+              {items.length > 0 && hasQuery && sections.length === 0 ? <NoMatch query={query} onClear={() => setQuery("")} /> : null}
+              {items.length > 0 && filter !== null && !hasQuery && sections.length === 0 ? (
                 <Calm text={`Nothing ${filter === "needs_you" ? "needs you" : `is ${filter}`} right now.`} />
               ) : null}
             </View>
@@ -661,8 +712,8 @@ export default function BoardScreen() {
           ListFooterComponent={
             // Room so the floating button never covers the last host.
             <View style={{ paddingBottom: FAB + space.xl }}>
-              {/* A status filter shows agents only. */}
-              {filter === null ? (
+              {/* A status or text filter shows agents only. */}
+              {filter === null && !hasQuery ? (
                 <TerminalRows terminals={terminals} multiHost={online.size > 1} selectedKey={selectedKey} onOpen={onOpenTerminal} />
               ) : null}
               <Text variant="section" accessibilityRole="header" style={{ paddingHorizontal: space.lg, paddingTop: space.xl, paddingBottom: space.xs }}>
@@ -696,7 +747,7 @@ export default function BoardScreen() {
     // With no native header (the Dashboard top), the screen keeps clear of the status bar itself.
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: dashboard ? insets.top : 0 }}>
       {hosts.map((h) => (
-        <HostWatcher key={h.id} hostId={h.id} focused={focused} terminalsShown={filter === null} />
+        <HostWatcher key={h.id} hostId={h.id} focused={focused} terminalsShown={filter === null && !hasQuery} />
       ))}
       {regular ? (
         // Two columns: the board at a fixed width, the selected session in the rest.
