@@ -5,6 +5,17 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd 0.1.5] - 2026-11-09
+
+- Pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code can no
+  longer open a closed window again or bring back the old code. When the computer cannot save the
+  phone, the pairing window stays open and the same code works again.
+- Pushes: when herdr closes the status stream of a pane, `serve` subscribes it again. Before, that
+  pane sent no more pushes. A failed snapshot after a reconnect no longer loses the first push of
+  each agent. A closed pane no longer stays the focused pane.
+- "Notify me when it finishes": a new watch of the same pane in the same second is no longer
+  removed by the result of the old watch.
+
 ## [herdlingd 0.1.4] - 2026-11-03
 
 - Command finished: `shell.watch`, `shell.unwatch` and `shell.watches`. herdlingd sends one push
@@ -293,14 +304,6 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Fixed
 
-- `herdlingd` pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code
-  can no longer open a closed window again or bring back the old code. When the computer cannot
-  save the phone, the pairing window stays open and the same code works again.
-- `herdlingd` pushes: when herdr closes the status stream of a pane, `serve` subscribes it again.
-  A failed snapshot after a reconnect no longer loses the first push of each agent. A closed pane
-  no longer stays the focused pane.
-- `herdlingd` "Notify me when it finishes": a new watch of the same pane in the same second is no
-  longer removed by the result of the old watch.
 - A prompt sent while the agent works no longer stays "Queued" after Claude Code joins it with
   another prompt.
 - The thread stopped after `/restart` from a symlinked folder, or after Claude Code continued the
