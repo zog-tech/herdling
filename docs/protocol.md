@@ -23,7 +23,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 ## Error codes in use
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
-`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`.
+`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -586,6 +586,96 @@ the phone key fingerprint and asks "Keep this phone?".
 - Else the app tries v2 first. When the host answers 404 (an older herdlingd), the app tells the
   user that pairing is less safe and asks to continue. Only a "Continue" pairs with v1, and the
   user then compares the keys. Any other error stops the pairing; it never falls back.
+
+## Herdr 2 (herdr-core)
+
+Since the herdlingd after 0.1.7. herdlingd joins a running herdr-core (`hc`; checked against
+herdr-core 0.1.19, protocol generation 1). It never starts a core. Old apps see the core entries
+because they come in the herdr 1 shapes.
+
+### The core socket
+
+herdlingd finds the socket with the rules of `hc`: `HC_SOCKET`; else `socket` in
+`$XDG_CONFIG_HOME/herdr-core/config.toml`; else `<session>.sock` in
+`$XDG_RUNTIME_DIR/herdr-core/`, in `/run/user/<uid>/herdr-core/` (when that folder exists) or in
+`$XDG_STATE_HOME/herdr-core/<session>/`. The session is `HC_SESSION`, else `default`. The forced
+SSH command and launchd often have no `XDG_RUNTIME_DIR`, so herdlingd takes the first of these
+folders that has the socket. On macOS the core has no runtime folder: its socket is in
+`~/.local/state/herdr-core/default/`.
+
+### Snapshot entries
+
+`herdr.call {method: "session.snapshot"}` adds the live terminals of this computer to the herdr 1
+lists `workspaces`, `tabs`, `panes` and `agents`. Terminals of other machines (`box/t7`) are left
+out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
+
+| Entry | Id | From |
+|---|---|---|
+| Workspace | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
+| Workspace | `hc:loose` | the terminals that are in no space ("Herdr 2 terminals") |
+| Tab | `hc:tab:<id>`, `hc:loose:tab` | a tab of a space, the one tab of `hc:loose` |
+| Pane | `hc:<address>` (`hc:t7`) | every live terminal |
+| Agent | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
+
+- `agent_status`: 7501 `idle` → `idle`, `working` → `working`, `done` → `done`, `blocked` and
+  `error` → `blocked`, other words → `unknown`.
+- `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
+  app as reported, `name` the terminal name, `state_change_seq` the time of the last status change.
+- Each backend fails on its own. When herdr 1 is down and the core is up, the answer has the core
+  entries only. With no core, the answer is the herdr 1 answer, unchanged.
+
+### Calls on a core id
+
+`herdr.call` with a param `target` or `*_id` that starts with `hc:` goes to the core:
+
+| herdr 1 method | core method |
+|---|---|
+| `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0) |
+| `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
+| `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
+| `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
+| `agent.prompt` | `terminal.send` (the core refuses it while the agent is blocked) |
+| `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes |
+| `pane.close` | `terminal.kill` |
+
+- Every other method gives the error code `unsupported`, also on a core workspace or tab id.
+  A herdlingd that does not reach a core also gives `unsupported`.
+- The core error kinds `not_found` and `finished` become `pane_not_found`. Other kinds are the code.
+- The core waits until nobody types at the computer before it types. A typing call can take up
+  to 75 seconds.
+- `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list` and
+  `ports.list` accept a core `pane_id`. `thread.resolve` gives `session: null`. `shell.watch`
+  gives `unsupported`.
+
+### Events
+
+`herdr.subscribe` with no `events` list also reads the core events. It sends them as herdr 1
+lines with `hc:` ids: a status change as `pane.agent_status_changed`, a cleared status as
+`pane.agent_detected` with `released: true`, `created` as `pane.created`, `finished` and
+`removed` as `pane.closed`. `missed`, `lost` and a change of the herdr-app document give
+`layout.updated` with `backend: "core"`, so the app reads the snapshot again.
+
+- The stream lives while one backend is connected. When one backend stops and the other runs,
+  the stream sends `layout.updated` and tries to connect again every 3 seconds. A new connection
+  sends `layout.updated` again. When the last backend stops, the stream sends `{"closed": true}`.
+  With no core, the stream works as before.
+
+### Pushes
+
+`herdlingd serve` also subscribes to the core events, after `hello` shows generation 1. It sends
+"finished" (working → idle or done) and "needs you" (blocked or error) pushes for core agents,
+with the same debounce and prefs. The title is the terminal name, else the 7501 title, else the
+app. After `missed`, serve compares the snapshot with the known statuses. After a reconnect, the
+snapshot is a new baseline. The core does not report desk activity, so "quiet at the computer"
+does not hold back a core push.
+
+### `hello.backends`
+
+```json
+{"backends": {"herdr": {"version": "0.9.5", "protocol": 22}, "core": {"version": "0.1.19", "generation": 1}}}
+```
+
+A backend that does not answer is missing. `herdr_ok` still tells about herdr 1 only.
 
 ## Compatibility rules
 

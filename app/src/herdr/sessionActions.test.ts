@@ -212,3 +212,21 @@ describe("restart with the conversation and start options", () => {
     expect(await paneSession(failing, "w1:p1", "claude")).toBeUndefined();
   });
 });
+
+describe("Herdr 2 agents", () => {
+  const core = agent({ pane_id: "hc:t1", tab_id: "hc:tab:1", workspace_id: "hc:space:1", backend: "core" });
+
+  it("restart_resume_and_rename_fail_with_unsupported_and_send_nothing", async () => {
+    const rpc = fakeRpc();
+    await expect(restartAgent(rpc, core)).rejects.toMatchObject({ code: "unsupported" });
+    await expect(resumeSession(rpc, core, "s1")).rejects.toMatchObject({ code: "unsupported" });
+    await expect(renameAgent(rpc, "hc:t1", "web")).rejects.toMatchObject({ code: "unsupported" });
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it("close_works_on_a_herdr_2_pane", async () => {
+    const rpc = fakeRpc();
+    await closeAgent(rpc, "hc:t1");
+    expect(rpc.calls).toEqual([{ method: "pane.close", params: { pane_id: "hc:t1" } }]);
+  });
+});

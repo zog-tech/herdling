@@ -71,6 +71,11 @@ pub struct Hello {
     /// When herdlingd starts: at boot or after the user logs in. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boot: Option<Boot>,
+    /// The backends that answer: `{"herdr": {"version", "protocol"}, "core": {"version",
+    /// "generation"}}`. A backend that does not answer is missing. An older herdlingd does not
+    /// send the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backends: Option<Value>,
 }
 
 /// `hello.boot` and the result of `boot.check`.

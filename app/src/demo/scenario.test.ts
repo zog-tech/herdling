@@ -66,9 +66,10 @@ describe("DemoScenario seed", () => {
     s.stop();
   });
 
-  it("has 5 agents in 4 workspaces with mixed kinds and states", () => {
+  it("has 5 herdr 1 agents in 4 workspaces with mixed kinds and states", () => {
     const s = make();
-    const snap = s.snapshot();
+    const all = s.snapshot();
+    const snap = { ...all, workspaces: all.workspaces.filter((w) => !w.backend), agents: all.agents.filter((a) => !a.backend) };
     expect(snap.workspaces).toHaveLength(4);
     expect(snap.agents).toHaveLength(5);
     expect(new Set(snap.agents.map((a) => a.agent))).toEqual(new Set(["claude", "codex", "pi", "opencode"]));
@@ -77,6 +78,24 @@ describe("DemoScenario seed", () => {
     // Idle agents have seq 0, so they never show as unread "Ready".
     expect(snap.agents.find((a) => a.pane_id === "p4")!.state_change_seq).toBe(0);
     expect(snap.agents.find((a) => a.pane_id === "p3")!.state_change_seq).toBeGreaterThan(0);
+    s.stop();
+  });
+
+  it("has a Herdr 2 space with 2 agents and no thread log", () => {
+    const s = make();
+    const snap = s.snapshot();
+    const core = snap.agents.filter((a) => a.backend === "core");
+    expect(core.map((a) => [a.pane_id, a.agent, a.display_agent, a.agent_status])).toEqual([
+      ["hc:t1", "claude", "Claude Code", "done"],
+      ["hc:t2", "codex", "Codex", "idle"],
+    ]);
+    for (const a of core) expect(a).toMatchObject({ workspace_id: "hc:space:1", tab_id: "hc:tab:1" });
+    expect(snap.workspaces.find((w) => w.workspace_id === "hc:space:1")).toMatchObject({ backend: "core", label: "research" });
+    expect(snap.tabs.find((t) => t.tab_id === "hc:tab:1")).toMatchObject({ backend: "core" });
+    expect(snap.panes.filter((p) => p.backend === "core").map((p) => p.pane_id)).toEqual(["hc:t1", "hc:t2"]);
+    // As herdlingd: a Herdr 2 agent has no chat transcript in this slice.
+    expect(s.resolve("hc:t1")).toEqual({ kind: "claude", session: null, log_path: null, cwd: "/home/demo/projects/webapp" });
+    expect(s.screen("hc:t1")).toContain("Claude");
     s.stop();
   });
 

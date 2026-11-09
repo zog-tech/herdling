@@ -1,22 +1,6 @@
-import { View } from "react-native";
+import { Tag } from "@/ui/Tag";
 
-import { colors, denseScale, radius, space } from "@/theme/tokens";
-import { Text } from "@/ui/Text";
-
-/**
- * A small "Demo" label next to the demo host, so nobody takes it for a real computer.
- * A quiet graphite fill, no edge and no gold: it is a label, not a status and not an action.
- */
+/** A small "Demo" label next to the demo host, so nobody takes it for a real computer. */
 export function DemoTag() {
-  return (
-    <View
-      accessible
-      accessibilityLabel="Demo host"
-      style={{ backgroundColor: colors.raised, borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2 }}
-    >
-      <Text variant="caption" muted bold maxFontSizeMultiplier={denseScale.pill}>
-        Demo
-      </Text>
-    </View>
-  );
+  return <Tag label="Demo" accessibilityLabel="Demo host" />;
 }

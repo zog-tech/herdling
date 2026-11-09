@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@herdling/protocol";
+import type { AgentStatus, SnapshotBackend } from "@herdling/protocol";
 
 /** Subset of herdr `session.snapshot` the app uses. Extra fields from herdr are kept as they come. */
 export type AgentInfo = {
@@ -19,6 +19,8 @@ export type AgentInfo = {
   name?: string | null;
   /** Agent kind as herdr shows it, when it differs from `agent`. */
   display_agent?: string | null;
+  /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
+  backend?: SnapshotBackend;
 };
 export type WorkspaceInfo = {
   workspace_id: string;
@@ -28,6 +30,8 @@ export type WorkspaceInfo = {
   tab_count?: number;
   /** herdr 0.9: the worktree group of the workspace (`WorkspaceWorktreeInfo`). Missing or null outside a group. */
   worktree?: { repo_key: string; repo_name?: string; repo_root?: string; checkout_path?: string; is_linked_worktree: boolean } | null;
+  /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
+  backend?: SnapshotBackend;
 };
 export type TabInfo = {
   tab_id: string;
@@ -35,6 +39,8 @@ export type TabInfo = {
   label: string;
   number: number;
   agent_status: AgentStatus;
+  /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
+  backend?: SnapshotBackend;
 };
 export type PaneInfo = {
   pane_id: string;
@@ -49,6 +55,8 @@ export type PaneInfo = {
   foreground_cwd?: string | null;
   /** The terminal title with the status marks removed. */
   terminal_title_stripped?: string | null;
+  /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
+  backend?: SnapshotBackend;
 };
 
 export type Snapshot = {

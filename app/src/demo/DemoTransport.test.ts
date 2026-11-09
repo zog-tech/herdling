@@ -92,6 +92,41 @@ describe("DemoTransport", () => {
     expect(h.boot).toEqual({ starts_at: "boot", how: expect.any(String), reason: "auto_login_on" });
   });
 
+  it("hello advertises herdr 1 and Herdr 2 backends", async () => {
+    const h = await call<Hello>("hello");
+    expect(h.backends).toEqual({ herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } });
+  });
+
+  it("answers the core methods on a Herdr 2 pane and unsupported for the rest", async () => {
+    const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "hc:t1" });
+    expect(read.read.text).toContain("Claude");
+    await herdr("pane.send_keys", { pane_id: "hc:t2", keys: ["enter"] });
+    await herdr("pane.send_input", { pane_id: "hc:t2", text: "", keys: ["enter"] });
+    await herdr("agent.prompt", { target: "hc:t2", text: "List the routes" });
+    expect(await herdr("pane.get", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_info" });
+    expect(await herdr("pane.process_info", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_process_info" });
+    expect(await call<ThreadRef>("thread.resolve", { pane_id: "hc:t1" })).toMatchObject({ kind: "claude", session: null, log_path: null });
+    expect(await call<GitStatus>("git.status", { pane_id: "hc:t1" })).toMatchObject({ root: expect.any(String) });
+    for (const [method, params] of [
+      ["agent.rename", { target: "hc:t1", name: "x" }],
+      ["tab.rename", { tab_id: "hc:tab:1", label: "x" }],
+      ["workspace.rename", { workspace_id: "hc:space:1", label: "x" }],
+      ["tab.create", { workspace_id: "hc:space:1" }],
+      ["tab.close", { tab_id: "hc:tab:1" }],
+      ["workspace.close", { workspace_id: "hc:space:1" }],
+      ["agent.explain", { target: "hc:t1" }],
+      ["agent.start", { pane_id: "hc:t1", kind: "claude" }],
+    ] as const) {
+      expect((await callError("herdr.call", { method, params })).code).toBe("unsupported");
+    }
+    expect((await callError("shell.watch", { pane_id: "hc:t1" })).code).toBe("unsupported");
+    // Pane close works, and the snapshot loses the pane.
+    await herdr("pane.close", { pane_id: "hc:t2" });
+    const snap = parseSnapshot(await herdr("session.snapshot"));
+    expect(snap.panes.some((p) => p.pane_id === "hc:t2")).toBe(false);
+    expect(snap.agents.some((a) => a.pane_id === "hc:t1")).toBe(true);
+  });
+
   it("answers every advertised method with a valid shape (or a proper error)", async () => {
     const answered = new Set<string>();
     const ok = <T>(m: string) => (v: T) => {

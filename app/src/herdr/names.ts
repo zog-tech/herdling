@@ -1,3 +1,4 @@
+import { backendLabel } from "./backend";
 import type { AgentInfo, Snapshot } from "./snapshot";
 
 /**
@@ -42,10 +43,12 @@ export function agentKind(agent: Pick<AgentInfo, "agent" | "display_agent">): st
   return nonEmpty(agent.display_agent) ?? agent.agent ?? "";
 }
 
-/** "<host> · <agent kind>". */
-export function agentSubtitle(hostName: string, agent: Pick<AgentInfo, "agent" | "display_agent">): string {
-  const kind = agentKind(agent);
-  return kind ? `${hostName} · ${kind}` : hostName;
+/** "<host> · <agent kind>", plus " · Herdr 2" for a Herdr 2 agent. */
+export function agentSubtitle(
+  hostName: string,
+  agent: Pick<AgentInfo, "agent" | "display_agent"> & Partial<Pick<AgentInfo, "backend" | "pane_id">>,
+): string {
+  return [hostName, agentKind(agent), backendLabel(agent) ?? ""].filter(Boolean).join(" · ");
 }
 
 /** The terminal title, when it adds something the title does not already say. */

@@ -248,3 +248,28 @@ test("sort_board_puts_an_agent_with_no_seq_after_one_with_a_seq", () => {
   const items = mergeBoard([host("h1", [noSeq, agent("b", "idle", 5)])], {}, null, {});
   expect(sortBoard(items).map((i) => i.key)).toEqual(["h1:b", "h1:a"]);
 });
+
+test("herdr_2_workspaces_get_their_own_section_with_the_tag", () => {
+  const coreAgent: AgentInfo = { ...agent("hc:t1", "idle", 1, "hc:space:1"), tab_id: "hc:tab:1", backend: "core" };
+  const h: BoardHost = {
+    hostId: "a",
+    hostName: "A",
+    agents: [agent("p1", "idle", 1, "w1"), coreAgent],
+    // The Herdr 2 space has the same name as the herdr 1 workspace.
+    workspaces: [
+      { workspace_id: "w1", label: "api" },
+      { workspace_id: "hc:space:1", label: "api", backend: "core" },
+    ],
+  };
+  const items = mergeBoard([h], {}, {}, {});
+  expect(items.find((i) => i.agent.pane_id === "hc:t1")!.subtitle).toBe("A · claude · Herdr 2");
+  // Sections follow their first item; sort by key to compare.
+  const s = groupBoard(items, "workspace").sort((x, y) => x.key.localeCompare(y.key));
+  expect(s.map((x) => [x.key, x.title, x.tag])).toEqual([
+    ["ws:api", "A · api", undefined],
+    ["ws:api|core", "A · api", "Herdr 2"],
+  ]);
+  expect(s[1].workspace).toEqual({ hostId: "a", workspaceId: "hc:space:1" });
+  // Other groupings have no tag: the row subtitle says "Herdr 2".
+  for (const by of ["status", "host", "folder"] as const) expect(groupBoard(items, by).every((x) => x.tag === undefined)).toBe(true);
+});

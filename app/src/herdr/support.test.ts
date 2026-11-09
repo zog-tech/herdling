@@ -49,3 +49,7 @@ describe("callHerdr", () => {
     expect(herdrSupports("h1", "agent.explain")).toBe(true);
   });
 });
+
+test("unsupported_on_a_herdr_2_pane_is_not_a_missing_method", () => {
+  expect(isMissingMethod(new RpcError("unsupported", "tab.rename needs herdr 1; unknown method for Herdr 2 terminals"))).toBe(false);
+});

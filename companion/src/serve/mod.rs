@@ -9,6 +9,7 @@ use anyhow::Result;
 use crate::config;
 
 pub mod bonjour;
+pub mod core_watch;
 pub mod debounce;
 pub mod desk;
 pub mod http;
@@ -25,6 +26,8 @@ pub struct ServeCtx {
     pub pair_port: Option<u16>,
     pub host_key_paths: Vec<PathBuf>,
     pub exe: PathBuf,
+    /// The herdr-core socket. None turns the core watcher off (tests).
+    pub core_socket: Option<crate::core::endpoint::CoreSocket>,
 }
 
 /// Takes the exclusive `serve.lock` next to the config, so a second `serve` (for example a
@@ -75,7 +78,7 @@ pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()
     .ok();
     eprintln!("herdlingd serve: started");
     tokio::select! {
-        _ = watch::watch(&ctx) => {}
+        _ = async { tokio::join!(watch::watch(&ctx), core_watch::watch(&ctx)) } => {}
         _ = pairing => {}
         _ = shutdown => {}
     }

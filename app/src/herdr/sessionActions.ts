@@ -3,6 +3,7 @@ import type { Hello, ThreadRef } from "@herdling/protocol";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
+import { assertAllows } from "./backend";
 import { expectPane } from "./expectedPanes";
 import { isGroupCloseRefusal } from "./groupClose";
 import type { AgentInfo } from "./snapshot";
@@ -63,6 +64,7 @@ export const RESTART_AFTER_CLOSE = "restart_after_close";
  * "Try again" (`startRestarted`) or "Resume older session" brings it back.
  */
 export async function restartAgent(rpc: Rpc, a: AgentInfo, plan: RestartPlan = {}): Promise<{ paneId: string; closeError?: string }> {
+  assertAllows(a, "restart");
   const cwd = cwdOf(a);
   const kind = kindOf(a);
   const args = restartArgs(kind, plan);
@@ -143,6 +145,7 @@ export function canResume(hello: Hello | undefined, kind: string): boolean {
 
 /** Opens an earlier session of the same agent in a new tab. The current pane stays. */
 export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Promise<{ paneId: string }> {
+  assertAllows(a, "resume");
   return resumeInFolder(rpc, { cwd: cwdOf(a), kind: kindOf(a), session, workspaceId: a.workspace_id });
 }
 
@@ -161,6 +164,7 @@ export async function resumeInFolder(
 }
 
 export async function renameAgent(rpc: Rpc, paneId: string, name: string): Promise<void> {
+  assertAllows(paneId, "rename");
   if (!AGENT_NAME_RE.test(name)) {
     throw new RpcError("bad_name", "Use lowercase letters, digits, - or _, starting with a letter (32 max).");
   }

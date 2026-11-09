@@ -1,6 +1,6 @@
 import type { AgentInfo } from "@/herdr/snapshot";
 
-import { CARD_ACTIONS, cardLabel, runCardAction } from "./a11y";
+import { CARD_ACTIONS, cardActionsFor, cardLabel, runCardAction } from "./a11y";
 import type { BoardItem } from "./buckets";
 
 const item = (over: Partial<BoardItem>): BoardItem => ({
@@ -33,4 +33,13 @@ test("voiceover_actions_mirror_tap_peek_and_swipes", () => {
   for (const name of ["activate", "longpress", "markRead", "reply", "restart", "magicTap"]) runCardAction(name, i, h);
   for (const fn of Object.values(h)) expect(fn).toHaveBeenCalledWith(i);
   expect(Object.values(h).every((f) => f.mock.calls.length === 1)).toBe(true);
+});
+
+test("a_herdr_2_card_has_no_restart_action", () => {
+  const core = item({ agent: { ...item({}).agent, pane_id: "hc:t1", workspace_id: "hc:space:1", backend: "core" } });
+  expect(cardActionsFor(core).map((a) => a.name)).toEqual(["activate", "longpress", "markRead", "reply"]);
+  expect(cardActionsFor(item({}))).toBe(CARD_ACTIONS);
+  const h = { onOpen: jest.fn(), onPeek: jest.fn(), onMarkRead: jest.fn(), onReply: jest.fn(), onRestart: jest.fn() };
+  runCardAction("restart", core, h);
+  expect(h.onRestart).not.toHaveBeenCalled();
 });

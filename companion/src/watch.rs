@@ -119,10 +119,24 @@ struct Reader {
     timeout: Duration,
     client: Option<herdr::Client>,
     params: Value,
+    /// Set for a core pane: the core socket and the lines of history. The core gives plain
+    /// text only, so `format: "ansi"` also gives plain text there.
+    core: Option<(crate::core::endpoint::CoreSocket, u64)>,
+    pane_id: String,
 }
 
 impl Reader {
     async fn read(&mut self) -> Result<Screen, HerdrError> {
+        if let Some((sock, lines)) = &self.core {
+            return match crate::core::live::read_text(sock, self.timeout, &self.pane_id, *lines).await {
+                Ok((text, complete)) => Ok(Screen { revision: 0, text, truncated: !complete }),
+                Err(crate::core::client::CoreError::Unavailable(m)) => Err(HerdrError::Unavailable(m)),
+                Err(e) => {
+                    let e = crate::core::live::rpc_err(e);
+                    Err(HerdrError::Remote { code: e.code, message: e.message })
+                }
+            };
+        }
         if let Some(c) = self.client.as_mut() {
             match c.call("pane.read", self.params.clone()).await {
                 Ok(v) => return Ok(screen_of(&v)),
@@ -149,8 +163,22 @@ fn screen_data(s: &Screen) -> Value {
 /// herdr errors (for example `pane_not_found`) as the call error. The first event is that screen.
 pub async fn pane_watch(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
     let p = WatchParams::parse(&params)?;
-    let mut reader =
-        Reader { socket: ctx.herdr_socket.clone(), timeout: ctx.herdr_timeout, client: None, params: p.read_params() };
+    let core = if crate::core::project::is_core_id(&p.pane_id) {
+        let Some(sock) = ctx.core_socket.clone() else {
+            return Err(RpcError { code: crate::core::route::UNSUPPORTED.into(), message: "this herdlingd does not reach herdr-core".into() });
+        };
+        Some((sock, p.lines))
+    } else {
+        None
+    };
+    let mut reader = Reader {
+        socket: ctx.herdr_socket.clone(),
+        timeout: ctx.herdr_timeout,
+        client: None,
+        params: p.read_params(),
+        core,
+        pane_id: p.pane_id.clone(),
+    };
     let first = reader.read().await.map_err(|e| match e {
         HerdrError::Unavailable(m) => RpcError { code: "herdr_unavailable".into(), message: m },
         HerdrError::Remote { code, message } => RpcError { code, message },

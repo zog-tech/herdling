@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { allows } from "@/herdr/backend";
 import { expectPane } from "@/herdr/expectedPanes";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { basename } from "@/herdr/startSession";
@@ -110,7 +111,7 @@ export default function RunCommandScreen() {
   const [target, setTarget] = useState(NEW);
   const [running, setRunning] = useState(false);
   const [notify, setNotify] = useState(false);
-  const canNotify = canWatchShell(hello);
+  const hostCanNotify = canWatchShell(hello);
   const [error, setError] = useState<string>();
   /** Swipe-down is off while the run is in flight: the sheet must stay until the terminal opens. */
   const allowLeave = useDraftGuard(false, { lock: running });
@@ -143,6 +144,8 @@ export default function RunCommandScreen() {
   const fallback = folder ? NEW : terminals[0]?.pane_id;
   const chosen = target === NEW ? fallback : terminals.some((p) => p.pane_id === target) ? target : fallback;
   const text = command.replace(/\s+$/, "");
+  // A Herdr 2 terminal has no "Notify me when it finishes" (`shell.watch` needs herdr 1).
+  const canNotify = hostCanNotify && allows(chosen === NEW ? undefined : chosen, "shellWatch");
   const canRun = online && !running && !!text.trim() && chosen !== undefined;
 
   const run = async () => {

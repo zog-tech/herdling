@@ -71,6 +71,7 @@ async fn start_flaky(prefs: Prefs, reply: Value, snap: Value, capabilities: &[&s
     let (push, reqs, _open) = spawn_fake_flaky(&sock, snap, &[], fail_snapshots);
     let http = MockHttp::start(reply).await;
     let ctx = ServeCtx {
+        core_socket: None,
         home: dir.path().into(),
         herdr_socket: sock.clone(),
         config_path: config.clone(),

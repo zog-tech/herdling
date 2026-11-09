@@ -20,7 +20,27 @@ export type Hello = {
   command_kinds?: string[];
   /** When herdlingd starts on this computer. Missing on an older herdlingd. */
   boot?: Boot;
+  /**
+   * The herdr backends that herdlingd reaches. Missing on an older herdlingd.
+   * `herdr_ok` keeps its meaning: it tells only about herdr 1.
+   */
+  backends?: Backends;
 };
+
+/** herdr 1: the herdr app with its JSON socket API. */
+export type HerdrBackend = { version?: string; protocol?: number };
+
+/** Herdr 2 (herdr-core): the terminal core. `generation` is the protocol generation of the core (1 now). */
+export type CoreBackend = { version: string; generation: number };
+
+/** `hello.backends`: each field is present only when herdlingd reaches that backend. */
+export type Backends = { herdr?: HerdrBackend; core?: CoreBackend };
+
+/**
+ * The backend of a snapshot entry. herdr 1 entries have no `backend` field.
+ * Herdr 2 entries have `backend: "core"` and ids that start with `hc:`.
+ */
+export type SnapshotBackend = "core";
 
 /**
  * When herdlingd starts: `hello.boot` and the result of `boot.check`.
