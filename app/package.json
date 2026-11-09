@@ -7,7 +7,7 @@
     "@herdling/protocol": "workspace:*",
     "@noble/curves": "1.9.7",
     "@noble/hashes": "1.8.0",
-    "@ronradtke/react-native-markdown-display": "8.1.0",
+    "@ronradtke/react-native-markdown-display": "9.0.3",
     "expo": "~58.0.21",
     "expo-audio": "~58.0.10",
     "expo-build-properties": "~58.0.11",
