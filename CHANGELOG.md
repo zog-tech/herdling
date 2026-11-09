@@ -5,6 +5,17 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd unreleased]
+
+- New method `herdr.update`: updates herdr (herdr 1) on this computer from the phone. herdlingd
+  runs exactly `herdr update --handoff`, without a shell. The phone sends no command text.
+  - herdlingd finds `herdr` in `PATH`, `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin` and
+    `/usr/local/bin`. The child gets no herdr session variables (`HERDR_ENV`, `HERDR_SESSION`,
+    `HERDR_PANE_ID` and the others), because `herdr update` refuses to run inside a session.
+  - One update runs at a time (`busy`). The run stops after 180 seconds. A Homebrew, mise or Nix
+    install gives `managed_install`.
+  - The result has the versions before and after, the handoff outcome and the end of the output.
+
 ## [herdlingd 0.1.8] - 2026-11-09
 
 - Herdr 2 (herdr-core) support, first part. `herdlingd` finds the core socket with the rules of
@@ -84,6 +95,11 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- The host screen has a herdr card with the herdr version and **Update herdr**, when the
+  computer runs a herdlingd with `herdr.update`. The confirmation tells that herdr tries to keep
+  the sessions running, and that running commands and agents stop if it cannot. The result says
+  "Sessions kept running" only when herdr reports a complete live handoff. Otherwise it shows the
+  herdr output. A Homebrew, mise or Nix install gets a message to update herdr there.
 - Herdr 2 (herdr-core) agents and terminals show on the board. In the workspace grouping, a Herdr 2
   workspace has its own section with a "Herdr 2" label; other groupings add "Herdr 2" to the row.
   A Herdr 2 agent opens in the terminal view. The app hides the actions that need herdr 1 for

@@ -182,6 +182,12 @@ The app shows **Update available** when a new herdlingd is out: tap **Update her
 host screen. On the computer, `herdlingd update` does the same (`--check` only looks). From
 source, run `git pull`, then `cargo build --release` and `./target/release/herdlingd install`
 again in `companion/`. Your config and paired phones stay.
+
+### Update herdr
+
+When the computer runs a herdlingd with `herdr.update`, the host screen shows the herdr version
+and **Update herdr**. herdlingd runs `herdr update --handoff` on the computer: herdr tries to keep
+your sessions running. If herdr is installed with Homebrew, mise or Nix, update it with that tool.
 The [guide](https://herdling.zog-tech.com/docs) explains every step, the config file and how to uninstall.
 
 ## How it works
