@@ -57,6 +57,14 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- Saved prompts: while the prompt box is empty and has the focus, chips show your quick replies
+  ("Continue", "Yes, go ahead", "Run the tests", "Explain the change", "Commit and push"). A tap
+  puts the text in the box; it does not send. A long press offers "Send now". Settings, "Saved
+  prompts" adds, edits, deletes and moves them. The list stays on the phone.
+- Board filter: the magnifier in the Board header (or ⌘F on a hardware keyboard) shows a filter
+  field. It keeps the agents whose name, agent kind, terminal title, computer or folder contain
+  every word. The status groups stay. When nothing matches, the Board says so and offers Clear.
+- Session search: ⌘F on a hardware keyboard opens the search of the thread or the terminal.
 - Agent integrations (herdr 0.9 and later): the host screen has the row "Agent integrations". It
   lists the herdr integrations of the computer (`integration.list`) as installed, old version, not
   installed or agent not found. Install and Update ask first and say what changes on the computer,

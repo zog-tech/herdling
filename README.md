@@ -45,10 +45,14 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 - **One board for every agent.** The agents of all your computers in one list, grouped by status:
   Needs you, Ready, Working, Background (a shell or subagent still runs) and Idle. The agents that
   need an answer come first. A long press
-  shows the last reply.
+  shows the last reply. A filter field (the magnifier, or ⌘F) finds an agent by name, computer
+  or folder.
 - **A chat view.** Read a session as a clean chat, with formatted replies, tool calls, subagents
   and permission buttons. It works with Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI,
   with session resume and the command lists (`/`, `$` and `@`) of the first four.
+- **Saved prompts and search.** Chips above the empty prompt box hold your quick replies
+  ("Continue", "Run the tests"): a tap puts the text in the box, and a long press sends it. Edit
+  the list in Settings. Search a session (the magnifier, or ⌘F) and jump from match to match.
 - **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, the
   arrow keys and Enter. It works with every agent that herdr runs. The computer pushes each new
   screen, a sent line shows at once, and a badge shows the latency. "Type directly" sends each key
