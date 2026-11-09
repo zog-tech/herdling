@@ -1,12 +1,14 @@
-import { X } from "lucide-react-native";
+import { CircleHelp, X } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { EXPLAIN_LABEL, EXPLAIN_METHOD } from "@/herdr/explain";
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { useHerdrSupports } from "@/herdr/support";
 import { useHosts } from "@/hosts/store";
-import { colors, space } from "@/theme/tokens";
+import { colors, hitTarget, icon, space, state } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { RunHostContext } from "@/thread/LiveToolContext";
@@ -29,7 +31,8 @@ import { PEEK_DETENT_ANDROID } from "./peekDetent";
  * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
  * when blocked, and the composer with hold-to-talk. Closing marks the pane seen.
  * A shell code block in the reply has a Run button; `onRun` opens the run sheet (the route closes
- * the sheet first).
+ * the sheet first). `onExplain` opens "Why this status?" (herdr `agent.explain`); the action hides
+ * when the host's herdr does not know the method.
  */
 export function PeekSheet({
   hostId,
@@ -39,6 +42,7 @@ export function PeekSheet({
   onClose,
   onDraftChange,
   onRun,
+  onExplain,
 }: {
   hostId: string;
   paneId: string;
@@ -49,6 +53,8 @@ export function PeekSheet({
   onDraftChange?: (hasDraft: boolean) => void;
   /** Opens the run sheet for a code block of the reply. Without it, the run sheet opens at once. */
   onRun?: (req: RunRequest) => void;
+  /** Opens "Why this status?" for this agent. */
+  onExplain?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useSheetKeyboardPad(PEEK_DETENT_ANDROID);
@@ -60,6 +66,7 @@ export function PeekSheet({
   const seen = useSeen((s) => s.seen);
   const agent = snapshot?.agents.find((a) => a.pane_id === paneId);
   const thread = useThread(hostId, paneId, agent?.agent_status);
+  const canExplain = useHerdrSupports(hostId, EXPLAIN_METHOD) && !!agent && !!onExplain;
 
   const item = useMemo(() => {
     if (!agent || !snapshot) return undefined;
@@ -116,8 +123,9 @@ export function PeekSheet({
           </Text>
           {/* Own row: the status never squeezes "<host> · <kind>". */}
           {item ? (
-            <View style={{ flexDirection: "row", marginTop: space.xs }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: space.xs, gap: space.sm }}>
               <BucketStatus bucket={item.bucket} />
+              {canExplain ? <ExplainLink onPress={() => onExplain?.()} /> : null}
             </View>
           ) : null}
         </View>
@@ -198,5 +206,30 @@ export function PeekSheet({
     <KeyboardAvoider atScreenBottom style={{ backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
       {body}
     </KeyboardAvoider>
+  );
+}
+
+/** The small secondary action next to the status: a muted icon and "Why this status?". */
+function ExplainLink({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={EXPLAIN_LABEL}
+      accessibilityHint="Shows how herdr found the status of this agent"
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => ({
+        minHeight: hitTarget,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.xs,
+        opacity: pressed ? state.pressedOpacity : 1,
+      })}
+    >
+      <CircleHelp size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+      <Text variant="caption" muted numberOfLines={1}>
+        {EXPLAIN_LABEL}
+      </Text>
+    </Pressable>
   );
 }

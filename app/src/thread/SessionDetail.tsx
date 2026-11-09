@@ -24,10 +24,13 @@ import { markSeen } from "@/herdr/seen";
 import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { useExpectedPane } from "@/herdr/expectedPanes";
+import { EXPLAIN_LABEL, EXPLAIN_METHOD } from "@/herdr/explain";
+import { closeWithGroupIntent } from "@/herdr/groupClose";
 import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
+import { herdrSupports } from "@/herdr/support";
 import { statusLabel, useTerminalStatus } from "@/herdr/terminalStatus";
 import { showsTerminal, terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
 import { useTerminalStatusPolling } from "@/herdr/useTerminalStatusPolling";
@@ -93,8 +96,8 @@ function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: 
 }
 
 /**
- * Restart, Resume (agents with a resume flag), Changes, Preview, the three renames and Close for
- * the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
+ * Restart, Resume (agents with a resume flag), Changes, Preview, "Why this status?" (a herdr with
+ * `agent.explain`), the three renames and Close for the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
  * (a host that lists `shell.watch`), Changes, Preview and Close.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
  * `ports` is undefined when the preview does not show for this host.
@@ -173,6 +176,10 @@ function useSessionMenu(
           setTimeout(() => showPortSheet(hostId, paneId, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
       });
     }
+    // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
+    if (agent && herdrSupports(hostId, EXPLAIN_METHOD)) {
+      items.push({ label: EXPLAIN_LABEL, onPick: () => router.push(`/explain/${hostId}/${paneId}` as never) });
+    }
     if (agent) items.push(...renameItems(rpc, hostId, agent));
     const [what, detail] = agent
       ? ["Close this agent?", "The agent stops and its pane closes."]
@@ -182,11 +189,12 @@ function useSessionMenu(
       destructive: true,
       onPick: async () => {
         const ok = await confirmDestructive(what, detail, "Close");
-        if (ok)
-          run("Closing…", "Can't close", async () => {
-            await closeAgent(rpc, paneId);
-            closed();
-          });
+        if (!ok) return;
+        // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
+        const workspaceId = agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
+        run("Closing…", "Can't close", async () => {
+          if (await closeWithGroupIntent(rpc, workspaceId, () => closeAgent(rpc, paneId))) closed();
+        });
       },
     });
     const options = [...items.map((i) => i.label), "Cancel"];

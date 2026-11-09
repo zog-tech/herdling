@@ -57,6 +57,20 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- Agent integrations (herdr 0.9 and later): the host screen has the row "Agent integrations". It
+  lists the herdr integrations of the computer (`integration.list`) as installed, old version, not
+  installed or agent not found. Install and Update ask first and say what changes on the computer,
+  then run `integration.install`.
+- "Why this status?" (herdr 0.9 and later): the session menu and the peek sheet open herdr's
+  explanation of the agent status (`agent.explain`): the rule that matched, its screen text, a
+  fallback or a kept status. When herdr is not sure and the agent has no current integration, the
+  sheet links to the integrations screen.
+- Worktree groups (herdr 0.9.0 and later): herdr does not close the last pane of a workspace that
+  has open worktree workspaces. Close now asks "Close the workspace and its N worktrees" and then
+  sends `workspace.close` with `close_group`. A restart that keeps the conversation never closes a
+  group; it says to restart with a new conversation.
+- Each of these features hides itself on an older herdr that does not know the method.
+- Demo: the demo host has the integrations, "Why this status?" and a worktree group ("docs-site").
 - New session in a git worktree: when herdr made the worktree workspace, the agent or the shell
   starts in its first pane. No second workspace opens. An older `herdlingd` works as before.
 - Parakeet on iOS (next native build): a new model download uses a fixed Hugging Face commit, not

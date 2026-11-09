@@ -102,6 +102,8 @@ export async function startSession(
     );
   } catch (e) {
     // Do not leave an empty workspace or tab behind; a retry would offer to reuse it.
+    // A plain close is enough: the workspace of a new session has no linked worktrees. Never send
+    // `close_group` here: when herdr refuses, the workspace stays (see `groupClose.ts`).
     const undo = workspaceId && !fresh
       ? created.tab?.tab_id && herdr(rpc, "tab.close", { tab_id: created.tab.tab_id })
       : created.workspace?.workspace_id && herdr(rpc, "workspace.close", { workspace_id: created.workspace.workspace_id });
