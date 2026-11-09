@@ -1064,22 +1064,14 @@ async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let key = crate::pair::parse_public_key(key).map_err(|e| err("bad_request", e.to_string()))?;
     let (keys_path, config_path) = (ctx.authorized_keys.clone(), ctx.config_path.clone());
     tokio::task::spawn_blocking(move || -> Result<Value, RpcError> {
-        let io = |e: anyhow::Error| err("io_error", format!("{e:#}"));
-        let cfg = crate::config::load(&config_path).map_err(io)?;
-        let Some(device) = cfg.devices.iter().find(|d| d.id == id) else {
-            return Err(err("not_found", "pair.revoke: no paired device with this device_id"));
-        };
-        if device.public_key.as_deref() != Some(key.as_str()) {
-            return Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device"));
+        use crate::pair::Unpair;
+        match crate::pair::unpair(&keys_path, &config_path, &id, Some(&key)).map_err(|e| err("io_error", format!("{e:#}")))? {
+            Unpair::NotFound => Err(err("not_found", "pair.revoke: no paired device with this device_id")),
+            Unpair::WrongKey => Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device")),
+            Unpair::Removed { removed_keys, removed_device } => {
+                Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
+            }
         }
-        let removed_keys = crate::pair::remove_herdling_key(&keys_path, &key).map_err(|e| io(e.into()))?;
-        let removed_device = crate::config::update(&config_path, |c| {
-            let before = c.devices.len();
-            c.devices.retain(|d| d.id != id);
-            c.devices.len() != before
-        })
-        .map_err(io)?;
-        Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
     })
     .await
     .map_err(|e| err("internal", e.to_string()))?
