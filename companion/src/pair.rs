@@ -41,6 +41,9 @@ pub enum PairError {
     BadCode,
     #[error("too many wrong codes")]
     TooManyAttempts,
+    /// Pairing v2: the session is not known, was used, or is older than its time limit.
+    #[error("unknown or expired pairing session")]
+    NoSession,
     /// The companion's own path cannot go into a key line: a server fault, not a bad request.
     #[error("companion path cannot be quoted safely")]
     UnsafeExe,
@@ -54,6 +57,7 @@ impl PairError {
             PairError::NoWindow => "no_window",
             PairError::BadCode => "bad_code",
             PairError::TooManyAttempts => "too_many_attempts",
+            PairError::NoSession => "no_session",
             PairError::UnsafeExe => "internal",
         }
     }
@@ -66,6 +70,17 @@ struct Window {
     expires_at: u64,
     #[serde(default)]
     wrong: u32,
+    /// Pairing v2 exchanges that started and did not finish. Each one holds one try of the
+    /// `MAX_WRONG` budget, because each one lets a peer test one code.
+    #[serde(default)]
+    started: u32,
+}
+
+impl Window {
+    /// True when no try of the budget is free: wrong codes plus started v2 exchanges.
+    fn budget_used(&self) -> bool {
+        self.wrong.saturating_add(self.started) >= MAX_WRONG
+    }
 }
 
 pub fn window_path(cfg_dir: &Path) -> PathBuf {
@@ -87,7 +102,8 @@ fn lock_window(cfg_dir: &Path) -> std::io::Result<File> {
 pub fn open_window(cfg_dir: &Path, now: u64) -> anyhow::Result<String> {
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
     let _lock = lock_window(cfg_dir)?;
-    write_window(cfg_dir, &Window { code: code.clone(), expires_at: now + WINDOW.as_secs(), wrong: 0 })?;
+    let _ = fs::remove_file(checked_path(cfg_dir));
+    write_window(cfg_dir, &Window { code: code.clone(), expires_at: now + WINDOW.as_secs(), wrong: 0, started: 0 })?;
     Ok(code)
 }
 
@@ -125,6 +141,7 @@ fn remove_window(cfg_dir: &Path) -> bool {
 
 /// Checks `code` against the open window. On success the window is closed, so a
 /// code works once. A wrong code is counted; at `MAX_WRONG` the window closes.
+/// Started v2 exchanges hold tries too: when no try is free, the answer is `TooManyAttempts`.
 pub fn take_window(cfg_dir: &Path, code: &str, now: u64) -> Result<(), PairError> {
     take_window_with(cfg_dir, code, now, || Ok::<(), std::convert::Infallible>(()))?.map_err(|e| match e {})
 }
@@ -152,6 +169,9 @@ pub fn take_window_with<T, E>(
         remove_window(cfg_dir);
         return Err(PairError::NoWindow);
     }
+    if w.budget_used() {
+        return Err(PairError::TooManyAttempts);
+    }
     if ct_eq(code.as_bytes(), w.code.as_bytes()) {
         let saved = save();
         // Single use: after a save the code must not work again. When the file cannot be
@@ -162,16 +182,129 @@ pub fn take_window_with<T, E>(
         }
         return Ok(saved);
     }
+    Err(count_wrong(cfg_dir, w))
+}
+
+/// Adds one wrong code to `w` and saves it. The caller holds the window lock.
+fn count_wrong(cfg_dir: &Path, mut w: Window) -> PairError {
     w.wrong += 1;
     if w.wrong >= MAX_WRONG {
         remove_window(cfg_dir);
-        return Err(PairError::TooManyAttempts);
+        return PairError::TooManyAttempts;
     }
     // Fail closed: when the counter cannot be saved, the window must not stay open.
     if write_window(cfg_dir, &w).is_err() {
         remove_window(cfg_dir);
     }
-    Err(PairError::BadCode)
+    if w.budget_used() {
+        PairError::TooManyAttempts
+    } else {
+        PairError::BadCode
+    }
+}
+
+/// Reads the window for a v2 step. The caller holds the window lock. A window that is past
+/// its end or out of wrong codes is removed.
+fn read_open_window(cfg_dir: &Path, now: u64) -> Result<Window, PairError> {
+    let Ok(text) = fs::read(window_path(cfg_dir)) else { return Err(PairError::NoWindow) };
+    let Ok(w) = serde_json::from_slice::<Window>(&text) else {
+        remove_window(cfg_dir);
+        return Err(PairError::NoWindow);
+    };
+    if now >= w.expires_at || w.wrong >= MAX_WRONG {
+        remove_window(cfg_dir);
+        return Err(PairError::NoWindow);
+    }
+    Ok(w)
+}
+
+/// Pairing v2, first step: takes one try of the window's budget for a new exchange and returns
+/// the code, the CPace password. The try comes back only when the exchange ends with the
+/// right code (the window then closes). An exchange that never finishes keeps its try.
+pub fn reserve_try(cfg_dir: &Path, now: u64) -> Result<String, PairError> {
+    let Ok(_lock) = lock_window(cfg_dir) else { return Err(PairError::NoWindow) };
+    let mut w = read_open_window(cfg_dir, now)?;
+    if w.budget_used() {
+        return Err(PairError::TooManyAttempts);
+    }
+    w.started += 1;
+    // Fail closed: a try that cannot be counted is not given.
+    if write_window(cfg_dir, &w).is_err() {
+        remove_window(cfg_dir);
+        return Err(PairError::NoWindow);
+    }
+    Ok(w.code)
+}
+
+/// Pairing v2, last step: ends an exchange that [`reserve_try`] started with `code`.
+/// `proof_ok` tells if the phone proved the code (its key-confirmation tag is right).
+/// - Right: runs `save`, then closes the window. When `save` fails, the window stays open and
+///   the try comes back, as with [`take_window_with`].
+/// - Wrong: the try becomes a wrong code. At `MAX_WRONG` wrong codes the window closes.
+///
+/// A window with another code (a new `herdlingd pair`) gives `NoWindow` and is not changed.
+pub fn settle_try<T, E>(
+    cfg_dir: &Path,
+    code: &str,
+    now: u64,
+    proof_ok: bool,
+    save: impl FnOnce() -> Result<T, E>,
+) -> Result<Result<T, E>, PairError> {
+    let Ok(_lock) = lock_window(cfg_dir) else { return Err(PairError::NoWindow) };
+    let mut w = read_open_window(cfg_dir, now)?;
+    if !ct_eq(code.as_bytes(), w.code.as_bytes()) {
+        return Err(PairError::NoWindow);
+    }
+    w.started = w.started.saturating_sub(1);
+    if !proof_ok {
+        return Err(count_wrong(cfg_dir, w));
+    }
+    let saved = save();
+    if saved.is_ok() {
+        if !remove_window(cfg_dir) {
+            w.wrong = MAX_WRONG;
+            let _ = write_window(cfg_dir, &w);
+        }
+    } else if write_window(cfg_dir, &w).is_err() {
+        remove_window(cfg_dir);
+    }
+    Ok(saved)
+}
+
+/// The note that `serve` leaves for `herdlingd pair` after a v2 pairing.
+fn checked_path(cfg_dir: &Path) -> PathBuf {
+    cfg_dir.join("pair-checked.json")
+}
+
+#[derive(Serialize, Deserialize)]
+struct Checked {
+    device_id: String,
+    public_key: String,
+}
+
+/// Notes that the device `device_id` paired with `public_key` through pairing v2: the phone
+/// proved the code over that key. `herdlingd pair` then does not ask the user to compare keys.
+pub fn record_checked(cfg_dir: &Path, device_id: &str, public_key: &str) -> std::io::Result<()> {
+    let body = serde_json::to_vec(&Checked { device_id: device_id.into(), public_key: public_key.into() })?;
+    let tmp = cfg_dir.join(format!("pair-checked.json.{}.tmp", std::process::id()));
+    let res = (|| {
+        let mut f = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
+        f.write_all(&body)?;
+        f.sync_all()?;
+        fs::rename(&tmp, checked_path(cfg_dir))
+    })();
+    if res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    res
+}
+
+/// Reads and deletes the note of [`record_checked`]: the device id and the key, if any.
+pub fn take_checked(cfg_dir: &Path) -> Option<(String, String)> {
+    let text = fs::read(checked_path(cfg_dir)).ok();
+    let _ = fs::remove_file(checked_path(cfg_dir));
+    let c: Checked = serde_json::from_slice(&text?).ok()?;
+    Some((c.device_id, c.public_key))
 }
 
 /// Constant-time byte comparison (time depends only on the lengths).
@@ -585,13 +718,15 @@ fn url_encode(s: &str) -> String {
         .collect()
 }
 
-/// The QR / deep link. `fingerprint` is the host key fingerprint the app must see in the `/pair` answer.
+/// The QR / deep link. `fingerprint` is the host key fingerprint the app must see in the pairing
+/// answer. `v=2` tells the app to use only pairing v2; older apps ignore it.
 pub fn pair_url(addr: &str, port: u16, code: &str, fingerprint: Option<&str>) -> String {
     let mut url = format!("herdling://pair?h={}&p={port}&c={}", url_encode(addr), url_encode(code));
     if let Some(fp) = fingerprint {
         url.push_str("&f=");
         url.push_str(&url_encode(fp));
     }
+    url.push_str("&v=2");
     url
 }
 

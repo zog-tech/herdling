@@ -112,11 +112,17 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 let after = config::load(&config_path)?.devices;
                 let paired = pair::added_devices(&before, &after);
+                let checked = pair::take_checked(&cfg_dir);
                 if paired.is_empty() {
                     println!("Pairing window closed with no new device.");
                 }
                 for d in paired {
-                    confirm_device(home, &config_path, &d).await?;
+                    // Pairing v2: the phone proved the code over this key, so no compare is needed.
+                    if checked.as_ref().is_some_and(|(id, key)| *id == d.id && *key == d.public_key) {
+                        println!("Paired {}  key {} (checked with the code)", d.name, d.fingerprint);
+                    } else {
+                        confirm_device(home, &config_path, &d).await?;
+                    }
                 }
                 return Ok(());
             }
@@ -127,9 +133,9 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
 /// How long `herdlingd pair` waits for the answer to "Keep this phone?".
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Shows the key fingerprint of a phone that just paired. On a terminal, asks the user to keep
-/// it: the pairing code goes over plain HTTP, so a device on the LAN that reads the code can pair
-/// its own key. The phone shows the fingerprint of its own key, and the user compares the two.
+/// Shows the key fingerprint of a phone that just paired with pairing v1 (an older app). On a
+/// terminal, asks the user to keep it: v1 sends the pairing code over plain HTTP, so a device on
+/// the LAN that reads the code can pair its own key. The phone shows the fingerprint of its own key, and the user compares the two.
 /// No, the end of input, Ctrl-C or no answer in `CONFIRM_TIMEOUT` removes the device again.
 async fn confirm_device(home: &std::path::Path, config_path: &std::path::Path, d: &herdlingd::pair::Added) -> Result<()> {
     use herdlingd::pair;
