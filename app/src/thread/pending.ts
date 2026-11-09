@@ -9,8 +9,29 @@ import type { RpcClient } from "@/rpc/RpcClient";
  * In memory only: they survive leaving and opening the session again, not an app restart.
  */
 
-/** `sending`: the call is in flight. `queued`: the agent took it, the log has no copy yet. `failed`: the call failed. */
-export type PendingState = "sending" | "queued" | "failed";
+/**
+ * `sending`: the call is in flight. `queued`: the agent took it, the log has no copy yet.
+ * `unconfirmed`: the call timed out. The host can have sent it to the agent, so a log copy still
+ * removes the bubble. `failed`: the host refused the call or did not get it.
+ */
+export type PendingState = "sending" | "queued" | "unconfirmed" | "failed";
+
+/** The state line under a pending bubble. The two last states take a tap to send again. */
+export function pendingLabel(p: Pick<Pending, "state">): string {
+  switch (p.state) {
+    case "sending":
+      return "Sending…";
+    case "queued":
+      return "Queued";
+    case "unconfirmed":
+      return "No reply · Retry";
+    case "failed":
+      return "Not sent · Retry";
+  }
+}
+
+/** True when a tap on the state line sends the prompt again. */
+export const canRetry = (p: Pick<Pending, "state">) => p.state === "failed" || p.state === "unconfirmed";
 
 export type Pending = {
   id: string;
@@ -123,6 +144,7 @@ export function reconcilePending(hostId: string, paneId: string, items: ThreadIt
         changed = true;
         continue;
       }
+      // A failed call never reached the agent: a log item with the same text is an older prompt.
       if (p.state !== "failed") {
         const before = new Set(p.before);
         const fresh = users.filter((u) => !before.has(u.id));
@@ -148,8 +170,10 @@ export function reconcilePending(hostId: string, paneId: string, items: ThreadIt
 type Rpc = Pick<RpcClient, "call">;
 
 /**
- * Sends `text` to the agent with a pending bubble for it. With `retryId`, sends that failed bubble
- * again instead of adding one. Throws the send error after the bubble shows "Not sent".
+ * Sends `text` to the agent with a pending bubble for it. With `retryId`, sends that failed or
+ * unconfirmed bubble again instead of adding one; a retry of a bubble in another state does
+ * nothing (a double tap). Throws the send error after the bubble shows it. A timeout makes the
+ * bubble `unconfirmed`, not `failed`: the host can have sent the prompt before the reply was lost.
  */
 export async function sendWithPending(
   rpc: Rpc,
@@ -160,8 +184,9 @@ export async function sendWithPending(
 ): Promise<void> {
   let id = retryId;
   if (id) {
-    const known = pendingOf(hostId, paneId).some((p) => p.id === id);
+    const known = pendingOf(hostId, paneId).find((p) => p.id === id);
     if (!known) id = addPending(hostId, paneId, text);
+    else if (!canRetry(known)) return;
     else {
       update(paneKey(hostId, paneId), (list) =>
         list.map((p) => (p.id === id ? { ...p, state: "sending", error: undefined, sentAt: Date.now() } : p)),
@@ -172,7 +197,8 @@ export async function sendWithPending(
     await rpc.call("herdr.call", { method: "agent.prompt", params: { target: paneId, text } });
     setPendingState(hostId, paneId, id, "queued");
   } catch (e) {
-    setPendingState(hostId, paneId, id, "failed", e instanceof Error ? e.message : String(e));
+    const state = (e as { code?: unknown })?.code === "timeout" ? "unconfirmed" : "failed";
+    setPendingState(hostId, paneId, id, state, e instanceof Error ? e.message : String(e));
     throw e;
   }
 }

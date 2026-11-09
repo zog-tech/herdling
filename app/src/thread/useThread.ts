@@ -222,8 +222,8 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   // Pending prompts go away when the log shows them. Only compare against a loaded thread.
   const pending = usePendingList(hostId, paneId);
 
-  // A queued prompt that the log does not show: the agent may write a new log (`/clear`). Look for it.
-  const lastQueued = pending.reduce((t, p) => (p.state === "queued" ? Math.max(t, p.sentAt) : t), 0);
+  // A queued (or unconfirmed) prompt that the log does not show: the agent may write a new log (`/clear`). Look for it.
+  const lastQueued = pending.reduce((t, p) => (p.state === "queued" || p.state === "unconfirmed" ? Math.max(t, p.sentAt) : t), 0);
   useEffect(() => {
     if (!rpc || status !== "live" || lastQueued === 0) return;
     let dead = false;

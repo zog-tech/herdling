@@ -14,7 +14,9 @@ import * as ImagePicker from "expo-image-picker";
 
 import { clearCommandsCache } from "./commands";
 import { pendingOf, usePending } from "./pending";
-import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE } from "./Composer";
+import { RpcError } from "@/rpc/RpcClient";
+
+import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE, UNCONFIRMED_MESSAGE } from "./Composer";
 
 const screen = readFileSync(join(__dirname, "__fixtures__", "claude_bash_permission.txt"), "utf8");
 
@@ -47,9 +49,16 @@ const mockPiCommands = [
 ];
 const mockByKind: Record<string, unknown[]> = { codex: mockCodexCommands, opencode: mockOpencodeCommands, pi: mockPiCommands };
 let mockUploadFails = false;
+/** When set, an `agent.prompt` or `pane.send_keys` call waits for it (and throws what it throws). */
+let mockSendGate: (() => Promise<unknown>) | undefined;
 const mockRpc = {
   call: async (method: string, params: any) => {
     mockRpcCalls.push({ method, params });
+    if (mockSendGate && method === "herdr.call" && (params.method === "agent.prompt" || params.method === "pane.send_keys")) {
+      mockCalls.push(params);
+      await mockSendGate();
+      return {};
+    }
     if (method === "commands.list") return { commands: mockByKind[params.kind] ?? mockCommands };
     if (method === "files.put") {
       if (mockUploadFails) throw new Error("disk full");
@@ -136,6 +145,7 @@ beforeEach(() => {
   mockRpcCalls.length = 0;
   mockHello = undefined;
   mockUploadFails = false;
+  mockSendGate = undefined;
   mockVoicePhase = "idle";
   mockVoiceDispatch.mockClear();
   clearCommandsCache();
@@ -467,6 +477,22 @@ test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
   // The photo and the text stay for a retry.
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
   expect(prompt(tree!).props.value).toBe("look");
+});
+
+test("a_timeout_says_the_prompt_can_still_arrive", async () => {
+  idle();
+  mockSendGate = () => Promise.reject(new RpcError("timeout", "herdr.call timed out after 15000ms"));
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("run the tests"));
+  await press(tree!, "Send");
+  expect(prompts()).toEqual(["run the tests"]);
+  expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["unconfirmed"]);
+  const texts = tree!.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+  expect(texts).toContain("No reply from the computer. The prompt can still arrive.");
+  expect(texts).toContain(UNCONFIRMED_MESSAGE);
+  expect(texts.some((t) => t.startsWith("Not sent"))).toBe(false);
 });
 
 test("a_removed_photo_is_not_uploaded", async () => {
