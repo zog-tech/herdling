@@ -5,6 +5,15 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd unreleased]
+
+- "Notify me when it finishes" (`shell.watch`) is faster. When herdr sends `pane.updated` for a
+  watched pane (for example, the shell sets the terminal title at the start or end of a command),
+  `serve` checks the pane 150 ms later. The push no longer waits up to 3 seconds for the next
+  check. The 3-second check stays for shells that do not set the title and for older herdr.
+- The agent pushes do not change. They already come from herdr events
+  (`pane.agent_status_changed`); the 5-second wait before a push stays.
+
 ## [herdlingd 0.1.7] - 2026-11-09
 
 - 0.1.5 and 0.1.6 did not publish: no macOS build runner was free. This release has all their
