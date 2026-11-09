@@ -214,6 +214,13 @@ herdr (unchanged), through its socket ~/.config/herdr/herdr.sock
   own commands for speech to text, text to speech and summaries. See [docs/voice.md](docs/voice.md).
 - **Updates.** The app gets JavaScript updates over the air with `expo-updates`. An app and a
   computer can run different versions: the protocol only adds methods and fields.
+- **Herdr 2 (herdr-core), first part.** When a herdr-core (`hc`) runs on the computer,
+  `herdlingd` joins it. It never starts a core. Its agents and terminals show on the board next
+  to the herdr 1 ones, in the spaces of the Herdr app, with a "Herdr 2" label. You can read
+  them, type into them, answer a permission menu, close them and get pushes when an agent
+  finishes or needs you. Older app builds see them too. Rename, restart, worktrees, new tabs,
+  the chat view and "Notify me when it finishes" need herdr 1 for now. See "Herdr 2" in
+  [docs/protocol.md](docs/protocol.md).
 
 ## How Herdling compares
 

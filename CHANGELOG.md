@@ -7,6 +7,24 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd unreleased]
 
+- Herdr 2 (herdr-core) support, first part. `herdlingd` finds the core socket with the rules of
+  `hc` (`HC_SOCKET`, the `socket` setting, the runtime folder, then the state folder) and joins a
+  running core. It never starts one.
+  - `session.snapshot` (through `herdr.call`) adds the live core terminals of this computer, placed
+    by the herdr-app layout. Their ids start with `hc:` and each entry has `backend: "core"`.
+    When herdr 1 is down and the core is up, the answer has the core part. With no core, the
+    answer is the same as before.
+  - `herdr.call` on an `hc:` id goes to the core: `pane.read`, `pane.send_input`,
+    `pane.send_text`, `pane.send_keys`, `agent.prompt`, `pane.get`, `pane.process_info` and
+    `pane.close`. Other methods give the new error code `unsupported`.
+  - `herdr.subscribe` also carries core status and lifecycle changes in the herdr 1 event shapes.
+    When one backend stops and the other runs, the stream stays open and sends `layout.updated`.
+  - `pane.watch`, `pane.answer`, `agents.preview`, `thread.resolve` (no session) and the repo,
+    commands and ports methods accept a core `pane_id`. `shell.watch` gives `unsupported`.
+  - `hello` has the new optional field `backends`.
+  - `serve` watches the core events and sends "finished" and "needs you" pushes for core agents.
+    The "quiet at the computer" rule does not hold back core pushes: the core does not report
+    desk activity.
 - "Notify me when it finishes" (`shell.watch`) is faster. When herdr sends `pane.updated` for a
   watched pane (for example, the shell sets the terminal title at the start or end of a command),
   `serve` checks the pane 150 ms later. The push no longer waits up to 3 seconds for the next
@@ -66,6 +84,12 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- Herdr 2 (herdr-core) agents and terminals show on the board. In the workspace grouping, a Herdr 2
+  workspace has its own section with a "Herdr 2" label; other groupings add "Herdr 2" to the row.
+  A Herdr 2 agent opens in the terminal view. The app hides the actions that need herdr 1 for
+  these entries: rename, restart, resume, "Why this status?", the close of a whole tab or
+  workspace, and "Notify me when it finishes". New session offers only herdr 1 workspaces. The
+  demo has two Herdr 2 agents.
 - Saved prompts: while the prompt box is empty and has the focus, chips show your quick replies
   ("Continue", "Yes, go ahead", "Run the tests", "Explain the change", "Commit and push"). A tap
   puts the text in the box; it does not send. A long press offers "Send now". Settings, "Saved

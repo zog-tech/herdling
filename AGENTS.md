@@ -100,6 +100,7 @@ The path alias `@/` points to `app/src/`.
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
 | `git.rs`, `worktree.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (herdr `worktree.create`, or git) |
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
+| `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the snapshot projection (`project.rs`), call routing (`route.rs`), event lines (`events.rs`), the merged subscribe stream (`merge.rs`, `stream.rs`) and the serve tracker (`tracker.rs`). `serve/core_watch.rs` sends its pushes |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |
