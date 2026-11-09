@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { confirmHostKey } from "@/pairing/confirmHostKey";
+import { confirmLegacyPairing } from "@/pairing/confirmLegacy";
 import { type HostKeyCheck, PairFailed, pairWithHost } from "@/pairing/pair";
 import { DEFAULT_PAIR_PORT, FINGERPRINT_RE } from "@/pairing/pairUrl";
 import { PhoneKey, usePhoneKeyFingerprint } from "@/pairing/PhoneKey";
@@ -14,7 +15,8 @@ import { Field } from "@/ui/Field";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 
-type Params = { address?: string; port?: string; code?: string; name?: string; fingerprint?: string };
+/** `v`: "2" when the QR code or the Bonjour advert says that the host has pairing v2. */
+type Params = { address?: string; port?: string; code?: string; name?: string; fingerprint?: string; v?: string };
 
 
 function portOf(text: string | undefined): number {
@@ -39,6 +41,8 @@ export default function PairScreen() {
     params.fingerprint && FINGERPRINT_RE.test(params.fingerprint) && address.trim() === params.address
       ? params.fingerprint
       : undefined;
+  // Pairing v2 only: never fall back to v1, even when the address was edited.
+  const requireV2 = params.v === "2";
 
   // A scan returns here with new params.
   useEffect(() => {
@@ -54,9 +58,18 @@ export default function PairScreen() {
     setError(undefined);
     try {
       const check: HostKeyCheck = qrFingerprint ? { fingerprint: qrFingerprint } : { confirm: confirmHostKey };
-      const host = await pairWithHost({ address: address.trim(), port, code, name: params.name, check });
-      // The phone key did not load: there is nothing to compare, so go on.
-      if (!phoneKey) {
+      const { host, checked } = await pairWithHost({
+        address: address.trim(),
+        port,
+        code,
+        name: params.name,
+        check,
+        requireV2,
+        confirmLegacy: confirmLegacyPairing,
+      });
+      // Pairing v2 proved the code both ways, so the host got this phone's key. With v1, a key
+      // that did not load leaves nothing to compare.
+      if (checked || !phoneKey) {
         router.dismissTo("/");
         return;
       }
@@ -68,8 +81,8 @@ export default function PairScreen() {
     }
   };
 
-  // After pairing: a relay on the network can send the code with its own key. The host shows
-  // the key that it got, so the user compares it with this phone's key.
+  // After pairing v1 (an older herdlingd): a relay on the network can send the code with its own
+  // key. The host shows the key that it got, so the user compares it with this phone's key.
   if (paired) {
     return (
       <Screen>

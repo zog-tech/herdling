@@ -499,11 +499,11 @@ fn host_fingerprint_skips_unreadable() {
 
 #[test]
 fn pair_url_format() {
-    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456", None), "herdling://pair?h=10.0.0.5&p=7790&c=123456");
+    assert_eq!(pair::pair_url("10.0.0.5", 7790, "123456", None), "herdling://pair?h=10.0.0.5&p=7790&c=123456&v=2");
     // `+`, `/` and `:` in the fingerprint are percent-encoded, so the app reads it back exactly.
     assert_eq!(
         pair::pair_url("10.0.0.5", 7790, "123456", Some("SHA256:ab+c/d")),
-        "herdling://pair?h=10.0.0.5&p=7790&c=123456&f=SHA256%3Aab%2Bc%2Fd"
+        "herdling://pair?h=10.0.0.5&p=7790&c=123456&f=SHA256%3Aab%2Bc%2Fd&v=2"
     );
 }
 

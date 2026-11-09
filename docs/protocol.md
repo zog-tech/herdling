@@ -494,6 +494,93 @@ herdlingd reads the Claude log (the last 8 MiB on the first read, then only new 
 - A task ends when it is older than 12 hours, or when it started before the Claude process of the
   pane (the agent started again). A new log (for example after `/clear`) starts with no tasks.
 
+## Pairing: `POST /pair` and pairing v2
+
+`herdlingd serve` has a small HTTP endpoint on the pairing port (default 7790) for the first
+contact. It works only while `herdlingd pair` has a pairing window open (5 minutes, one 6-digit
+code, at most 5 tries). All bodies are JSON. An error is `{"error": "<code>"}` with the codes
+`bad_request` (400), `bad_code` (403), `no_window` (410), `no_session` (410),
+`too_many_attempts` (429) and `internal` (500).
+
+### Pairing v2 (CPace)
+
+Pairing v2 uses the code as the password of a PAKE, so the code never goes over the network.
+A device that sees or relays the traffic cannot test codes offline. It can only guess online,
+and each guess uses one of the 5 tries. The phone proves the code over its public key, so a relay
+cannot enroll its own key. The host proves the code over the host fields, so a fake host fails.
+
+The PAKE is CPace with ristretto255 and SHA-512 (CPACE-RISTR255-SHA512) in the
+initiator-responder setting, as in draft-irtf-cfrg-cpace-21. The phone is party A, the host is
+party B. Code: `companion/src/cpace.rs`, `companion/src/pair_v2.rs`, `app/src/pairing/cpace.ts`
+and `app/src/pairing/pairV2.ts`. Both sides check the vectors in
+`protocol/fixtures/cpace-ristretto255.json`: the draft vectors and one full Herdling exchange.
+
+CPace inputs:
+
+| Input | Value |
+|---|---|
+| PRS | The 6 ASCII digits of the code |
+| CI | `herdling-pair-v2` |
+| sid | `sid`: 16 random bytes from the phone |
+| ADa | The UTF-8 `device_id` |
+| ADb | `session`: 16 random bytes from the host |
+
+The phone sends Ya before it knows any host value, so the host's random value cannot go into
+`sid`. It goes into ADb and so into the key (ISK). Scalars are 32 random bytes with the bits above
+bit 252 cleared (draft section 8.3). Each side aborts when the other message does not decode or
+gives the identity element.
+
+Keys and tags (`lv_cat` is the length-value encoding of the draft, HMAC is HMAC-SHA-512):
+
+```
+ISK     = SHA-512(lv_cat("CPaceRistretto255_ISK", sid, K) || lv_cat(Ya, ADa) || lv_cat(Yb, ADb))
+mac_key = SHA-512("CPaceMac" || sid || ISK)
+tag_a   = HMAC(mac_key, lv_cat("herdling-pair-v2/a", Ya, ADa, device_name, host_id, public_key))
+tag_b   = HMAC(mac_key, lv_cat("herdling-pair-v2/b", Yb, ADb, tag_a, host_name, user,
+                               decimal ssh_port, host_key_fingerprint or ""))
+```
+
+Text values are UTF-8, exactly as they are in the JSON. Binary values on the wire are lower-case hex.
+
+1. `POST /pair/v2/start` `{"device_id", "sid": <16 bytes>, "ya": <32 bytes>}`
+   → `{"session": <16 bytes>, "yb": <32 bytes>}`.
+   The host checks the fields first: a bad request uses no try. Then it takes one try of the
+   window and keeps the exchange in memory for 60 seconds (at most 16 exchanges).
+2. `POST /pair/v2/finish`
+   `{"session", "device_name", "host_id", "public_key", "tag_a": <64 bytes>}`
+   → `{"host_name", "user", "ssh_port", "host_key_fingerprint", "tag_b": <64 bytes>}`.
+   A session works once; an unknown, used or expired session gives `no_session`. A malformed
+   field gives `bad_request` and keeps the session. A wrong `tag_a` gives `bad_code` (or
+   `too_many_attempts`) and counts as a wrong code. A right `tag_a` saves the key line and
+   closes the window. A new `herdlingd pair` (a new code) ends the old exchanges with `no_window`.
+3. The phone checks `tag_b` before it saves the host. A wrong `tag_b` stops the pairing.
+   With a right `tag_b` the host key fingerprint is proved, so the phone does not ask the user to
+   compare it. A QR code fingerprint must still match.
+
+Each started exchange holds one try until it ends. A right finish closes the window. An exchange
+that never finishes keeps its try. `POST /pair` shares the same budget. The tags are compared in
+constant time. herdlingd never logs the code, the scalars or the keys.
+
+After a v2 pairing, `herdlingd pair` prints `Paired <name>  key <fp> (checked with the code)` and
+does not ask "Keep this phone?".
+
+### Pairing v1: `POST /pair`
+
+For older apps. The body is
+`{"code", "device_id", "device_name", "host_id", "public_key", "expo_token"}` and the answer is
+`{"host_name", "user", "ssh_port", "host_key_fingerprint"}`. The code goes in clear text, so a
+device on the LAN that reads it can pair its own key. After a v1 pairing, `herdlingd pair` shows
+the phone key fingerprint and asks "Keep this phone?".
+
+### How the app picks the version
+
+- The QR code and the deep link have `v=2` (`herdling://pair?h=…&p=…&c=…&f=…&v=2`). The Bonjour
+  advert has the TXT record `pv=2`. An older app ignores both.
+- With `v=2` or `pv=2`, the app uses only pairing v2. It never falls back to v1.
+- Else the app tries v2 first. When the host answers 404 (an older herdlingd), the app tells the
+  user that pairing is less safe and asks to continue. Only a "Continue" pairs with v1, and the
+  user then compares the keys. Any other error stops the pairing; it never falls back.
+
 ## Compatibility rules
 
 An app and a host can run different versions. Follow these rules so they do not break each other.

@@ -19,6 +19,14 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   worktree group of its repo in the herdr sidebar. The branch and folder checks stay the same.
   The result adds `via` (`"herdr"` or `"git"`) and, from herdr, `workspace_id`, `tab_id` and
   `pane_id`. An older herdr, or a folder in a linked worktree, uses `git worktree add` as before.
+- Pairing v2: `POST /pair/v2/start` and `POST /pair/v2/finish` pair with CPace (ristretto255,
+  SHA-512). The code never goes over the network, so a device that sees or relays the traffic
+  cannot learn it or enroll its own key. Each started exchange uses one of the 5 tries. See
+  `docs/protocol.md`, "Pairing".
+- After a v2 pairing, `herdlingd pair` prints "Paired <name> key <fp> (checked with the code)" and
+  does not ask "Keep this phone?". A v1 pairing (an older app) still asks.
+- The QR code has `v=2` and the Bonjour advert has `pv=2`. Older apps ignore them. `POST /pair`
+  stays for older apps.
 
 ## [herdlingd 0.1.6] - 2026-11-09
 
@@ -51,6 +59,11 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   text or its URL. A tap opens it like any other link.
 - Pairing: the pair screen and the host screen show this phone's key fingerprint
   (`SHA256:...`). After pairing, check that `herdlingd pair` on the computer shows the same key.
+- Pairing v2 (JavaScript only, ships over the air): the app pairs with CPace, so the code never
+  goes over the network, and it checks that the host knows the code before it saves the host.
+  With a v2 host the key compare is not needed. When the QR code or the Bonjour advert says v2,
+  the app never uses the older pairing. With an older herdlingd, the app asks first: "This
+  computer runs an older herdlingd. Pairing is less safe."
 - Remove a host: when the host is offline, the dialog gives the command `herdlingd unpair <device id>`
   that removes this phone's key and push token on the computer.
 - In-app browser: on iOS it uses its own cookie store that is not saved to disk. On Android it

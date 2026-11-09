@@ -235,6 +235,47 @@ pub struct PairResponse {
     pub host_key_fingerprint: Option<String>,
 }
 
+/// `POST /pair/v2/start` body. Binary values are lower-case hex.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairV2StartRequest {
+    pub device_id: String,
+    /// The phone's 16-byte random nonce: the CPace sid.
+    pub sid: String,
+    /// The phone's CPace message Ya (32 bytes).
+    pub ya: String,
+}
+
+/// `POST /pair/v2/start` answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairV2StartResponse {
+    /// The host's 16-byte random session id: the CPace ADb.
+    pub session: String,
+    /// The host's CPace message Yb (32 bytes).
+    pub yb: String,
+}
+
+/// `POST /pair/v2/finish` body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairV2FinishRequest {
+    pub session: String,
+    pub device_name: String,
+    pub host_id: String,
+    pub public_key: String,
+    /// HMAC-SHA-512 (64 bytes) of the phone: see `pair_v2::tag_a_msg`.
+    pub tag_a: String,
+}
+
+/// `POST /pair/v2/finish` answer: the `PairResponse` fields and the host's tag.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairV2FinishResponse {
+    pub host_name: String,
+    pub user: String,
+    pub ssh_port: u16,
+    pub host_key_fingerprint: Option<String>,
+    /// HMAC-SHA-512 (64 bytes) of the host: see `pair_v2::tag_b_msg`.
+    pub tag_b: String,
+}
+
 /// Input line of `herdlingd enroll` (password setup).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrollRequest {

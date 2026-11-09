@@ -67,8 +67,9 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   permission mode (also "skip permissions"), the model and extra flags of the agent. A restart
   can keep the conversation and change these options.
 - **Meters.** The plan usage of Claude and Codex, and the CPU and memory of each computer.
-- **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The phone gets its own SSH
-  key that can only run `herdlingd rpc`, and the app pins the host key of the computer.
+- **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The code is the password of
+  a PAKE, so it never goes over the network. The phone gets its own SSH key that can only run
+  `herdlingd rpc`, and the app pins the host key of the computer.
 - **No accounts, no servers.** Session traffic goes only between the phone and your computers.
   A push holds only the agent name, the agent kind and the terminal title (for a shell, the
   folder name and the command).
@@ -146,9 +147,14 @@ cargo build --release
 herdlingd pair                       # shows the pairing code and QR code for the app
 ```
 
-After a phone pairs, `herdlingd pair` shows the key fingerprint of the phone and asks
-"Keep this phone?". Compare the fingerprint with the key that the phone shows. If they are not
-the same, or you do not answer in 2 minutes, herdlingd removes the phone again.
+The app pairs with a PAKE (CPace): the code never goes over the network, and the phone and the
+computer each prove that they know it. Then `herdlingd pair` prints
+`Paired <name>  key <fingerprint> (checked with the code)`.
+
+An older app pairs the older way: the code goes over the network in clear text. Then
+`herdlingd pair` shows the key fingerprint of the phone and asks "Keep this phone?". Compare the
+fingerprint with the key that the phone shows. If they are not the same, or you do not answer in
+2 minutes, herdlingd removes the phone again.
 
 ### Paired phones
 

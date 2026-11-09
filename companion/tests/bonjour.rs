@@ -21,13 +21,13 @@ fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
 fn txt_has_all_fields() {
     assert_eq!(
         txt(&info(Some("SHA256:abc"))),
-        pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0"), ("fp", "SHA256:abc")])
+        pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0"), ("pv", "2"), ("fp", "SHA256:abc")])
     );
 }
 
 #[test]
 fn txt_omits_missing_fp() {
-    assert_eq!(txt(&info(None)), pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0")]));
+    assert_eq!(txt(&info(None)), pairs(&[("host", "studio"), ("user", "sam"), ("ssh_port", "22"), ("ver", "0.2.0"), ("pv", "2")]));
 }
 
 fn strs(v: &[&str]) -> Vec<String> {
@@ -40,7 +40,7 @@ fn macos_uses_dns_sd() {
     assert_eq!(prog, "dns-sd");
     assert_eq!(
         args,
-        strs(&["-R", "studio", "_herdling._tcp", "local", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "fp=SHA256:abc"])
+        strs(&["-R", "studio", "_herdling._tcp", "local", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "pv=2", "fp=SHA256:abc"])
     );
 }
 
@@ -64,7 +64,7 @@ fn fp_omitted_when_none() {
 fn linux_with_avahi() {
     let (prog, args) = advert_command("linux", true, &info(None)).unwrap();
     assert_eq!(prog, "avahi-publish-service");
-    assert_eq!(args, strs(&["studio", "_herdling._tcp", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0"]));
+    assert_eq!(args, strs(&["studio", "_herdling._tcp", "7790", "host=studio", "user=sam", "ssh_port=22", "ver=0.2.0", "pv=2"]));
 }
 
 #[test]

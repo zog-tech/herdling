@@ -221,6 +221,24 @@ export type PairResponse = {
   host_key_fingerprint: string | null;
 };
 
+/**
+ * Pairing v2 (CPace, see `docs/protocol.md`). Binary values are lower-case hex.
+ * `POST /pair/v2/start` body: `sid` is the phone's 16-byte nonce, `ya` its CPace message (32 bytes).
+ */
+export type PairV2StartRequest = { device_id: string; sid: string; ya: string };
+/** `POST /pair/v2/start` answer: `session` is the host's 16-byte session id (the CPace ADb), `yb` its message. */
+export type PairV2StartResponse = { session: string; yb: string };
+/** `POST /pair/v2/finish` body. `tag_a` is the phone's HMAC-SHA-512 tag (64 bytes). */
+export type PairV2FinishRequest = {
+  session: string;
+  device_name: string;
+  host_id: string;
+  public_key: string;
+  tag_a: string;
+};
+/** `POST /pair/v2/finish` answer: the `PairResponse` fields and the host's tag `tag_b` (64 bytes). */
+export type PairV2FinishResponse = PairResponse & { tag_b: string };
+
 /** Input line of `herdlingd enroll` (password setup). Sent on stdin, never in the command line. */
 export type EnrollRequest = {
   device_id: string;
