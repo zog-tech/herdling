@@ -57,7 +57,7 @@ function HostRow({ host }: { host: Host }) {
       }
       accessibilityActions={[{ name: "remove", label: demo ? "Remove demo" : `Remove ${host.name}` }]}
       onAccessibilityAction={(e) => {
-        if (e.nativeEvent.actionName === "remove") confirmRemoveHost(host);
+        if (e.nativeEvent.actionName === "remove") void confirmRemoveHost(host);
       }}
       onPress={() => router.push({ pathname: "/hosts/[id]", params: { id: host.id } })}
       title={host.name}

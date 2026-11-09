@@ -45,7 +45,7 @@ export function DemoHostDetail({ host, onRemoved }: { host: Host; onRemoved: () 
           <Row
             accessibilityLabel="Remove demo"
             accessibilityHint="Removes the demo computer and its sample agents"
-            onPress={() => confirmRemoveHost(host, onRemoved)}
+            onPress={() => void confirmRemoveHost(host, onRemoved)}
             leading={<Trash2 size={icon.md} color={colors.danger} strokeWidth={icon.strokeWidth} />}
             title="Remove demo"
             destructive

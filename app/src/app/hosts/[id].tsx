@@ -38,7 +38,7 @@ export default function EditHostScreen() {
               iconOnly
               variant="danger"
               Icon={Trash2}
-              onPress={() => confirmRemoveHost(host, () => router.back())}
+              onPress={() => void confirmRemoveHost(host, () => router.back())}
             />
           ),
         }}
