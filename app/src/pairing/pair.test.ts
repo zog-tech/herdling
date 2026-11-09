@@ -14,7 +14,7 @@ jest.mock("../push/token", () => ({ getExpoToken: () => mockGetExpoToken() }));
 
 import { getDeviceId } from "../device";
 import { useHosts } from "../hosts/store";
-import { PairFailed, pairMessage, pairWithHost } from "./pair";
+import { PairFailed, pairMessage, pairV1 } from "./pair";
 
 const FP = "SHA256:" + "a".repeat(43);
 const FP2 = "SHA256:" + "b".repeat(43);
@@ -26,12 +26,12 @@ function response(status: number, body: unknown): Response {
 
 beforeEach(() => useHosts.setState({ hosts: [] }));
 
-describe("pairWithHost", () => {
+describe("pairV1", () => {
   it("pair_posts_request_and_saves_host", async () => {
     const fetch = jest.fn(async (_url: string, _init?: RequestInit) =>
       response(200, { host_name: "studio", user: "sam", ssh_port: 22, host_key_fingerprint: "SHA256:abc" }),
     );
-    const host = await pairWithHost(
+    const host = await pairV1(
       { address: "10.0.0.5", code: "123456", check: yes },
       { fetch: fetch as unknown as typeof globalThis.fetch },
     );
@@ -68,7 +68,7 @@ describe("pairWithHost", () => {
 
   it("pair_uses_given_name_and_port", async () => {
     const fetch = jest.fn(async () => response(200, { host_name: "studio", user: "sam", ssh_port: 2222, host_key_fingerprint: null }));
-    const host = await pairWithHost(
+    const host = await pairV1(
       { address: "10.0.0.5", port: 7791, code: "123456", name: "Work", check: yes },
       { fetch: fetch as unknown as typeof globalThis.fetch },
     );
@@ -87,7 +87,7 @@ describe("pairWithHost", () => {
     ];
     for (const [status, code] of cases) {
       const fetch = jest.fn(async () => response(status, { error: code }));
-      const err = await pairWithHost(
+      const err = await pairV1(
         { address: "10.0.0.5", code: "123456", check: yes },
         { fetch: fetch as unknown as typeof globalThis.fetch },
       ).catch((e) => e);
@@ -98,7 +98,7 @@ describe("pairWithHost", () => {
     const down = jest.fn(async () => {
       throw new TypeError("Network request failed");
     });
-    const err = await pairWithHost(
+    const err = await pairV1(
       { address: "10.0.0.5", code: "123456", check: yes },
       { fetch: down as unknown as typeof globalThis.fetch },
     ).catch((e) => e);
@@ -111,7 +111,7 @@ describe("pairWithHost", () => {
 
   it("pair_server_error_is_bad_request", async () => {
     const fetch = jest.fn(async () => response(500, { error: "internal" }));
-    const err = await pairWithHost(
+    const err = await pairV1(
       { address: "10.0.0.5", code: "123456", check: yes },
       { fetch: fetch as unknown as typeof globalThis.fetch },
     ).catch((e) => e);
@@ -134,7 +134,7 @@ describe("getDeviceId", () => {
   });
 });
 
-describe("pairWithHost re-pair", () => {
+describe("pairV1 re-pair", () => {
   const ok = (body: object) =>
     jest.fn(async (_url: string, _init?: RequestInit) => response(200, body)) as jest.Mock;
   const bodyOf = (f: jest.Mock) => JSON.parse(String((f.mock.calls[0][1] as RequestInit).body));
@@ -148,7 +148,7 @@ describe("pairWithHost re-pair", () => {
       fingerprint: "SHA256:abc",
     });
     const fetch = ok({ host_name: "studio", user: "sam", ssh_port: 2222, host_key_fingerprint: "SHA256:abc" });
-    const host = await pairWithHost({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
+    const host = await pairV1({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
 
     const saved = useHosts.getState().hosts;
     expect(saved).toHaveLength(1);
@@ -159,7 +159,7 @@ describe("pairWithHost re-pair", () => {
   it("pair_again_same_address_port_user_updates_host", async () => {
     const old = useHosts.getState().addHost({ name: "studio", address: "10.0.0.5", port: 22, user: "sam" });
     const fetch = ok({ host_name: "studio", user: "sam", ssh_port: 22, host_key_fingerprint: "SHA256:abc" });
-    const host = await pairWithHost({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
+    const host = await pairV1({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
 
     expect(bodyOf(fetch).host_id).toBe(old.id);
     const saved = useHosts.getState().hosts;
@@ -171,7 +171,7 @@ describe("pairWithHost re-pair", () => {
   it("pair_same_address_other_user_adds_host_with_unique_id", async () => {
     const other = useHosts.getState().addHost({ name: "root box", address: "10.0.0.5", port: 22, user: "root" });
     const fetch = ok({ host_name: "studio", user: "sam", ssh_port: 22, host_key_fingerprint: null });
-    const host = await pairWithHost({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
+    const host = await pairV1({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: fetch as never });
 
     const saved = useHosts.getState().hosts;
     expect(saved).toHaveLength(2);
@@ -180,24 +180,24 @@ describe("pairWithHost re-pair", () => {
   });
 });
 
-describe("pairWithHost host key", () => {
+describe("pairV1 host key", () => {
   const ok = (fp: string | null) =>
     jest.fn(async () => response(200, { host_name: "studio", user: "sam", ssh_port: 22, host_key_fingerprint: fp }));
 
   it("qr_fingerprint_must_match", async () => {
-    const err = await pairWithHost(
+    const err = await pairV1(
       { address: "10.0.0.5", code: "123456", check: { fingerprint: FP } },
       { fetch: ok(FP2) as never },
     ).catch((e) => e);
     expect((err as PairFailed).code).toBe("host_key_mismatch");
-    const none = await pairWithHost(
+    const none = await pairV1(
       { address: "10.0.0.5", code: "123456", check: { fingerprint: FP } },
       { fetch: ok(null) as never },
     ).catch((e) => e);
     expect((none as PairFailed).code).toBe("host_key_mismatch");
     expect(useHosts.getState().hosts).toHaveLength(0);
 
-    const host = await pairWithHost(
+    const host = await pairV1(
       { address: "10.0.0.5", code: "123456", check: { fingerprint: FP } },
       { fetch: ok(FP) as never },
     );
@@ -206,7 +206,7 @@ describe("pairWithHost host key", () => {
 
   it("manual_entry_asks_to_confirm_the_reported_key", async () => {
     const confirm = jest.fn(async () => false);
-    const err = await pairWithHost({ address: "10.0.0.5", code: "123456", check: { confirm } }, { fetch: ok(FP) as never }).catch(
+    const err = await pairV1({ address: "10.0.0.5", code: "123456", check: { confirm } }, { fetch: ok(FP) as never }).catch(
       (e) => e,
     );
     expect(confirm).toHaveBeenCalledWith(FP);
@@ -214,7 +214,7 @@ describe("pairWithHost host key", () => {
     expect(useHosts.getState().hosts).toHaveLength(0);
 
     const yesConfirm = jest.fn(async () => true);
-    await pairWithHost({ address: "10.0.0.5", code: "123456", check: { confirm: yesConfirm } }, { fetch: ok(null) as never });
+    await pairV1({ address: "10.0.0.5", code: "123456", check: { confirm: yesConfirm } }, { fetch: ok(null) as never });
     expect(yesConfirm).toHaveBeenCalledWith(null);
     expect(useHosts.getState().hosts).toHaveLength(1);
   });
@@ -222,7 +222,7 @@ describe("pairWithHost host key", () => {
   it("repair_never_replaces_a_pinned_key", async () => {
     const old = useHosts.getState().addHost({ name: "Work", address: "10.0.0.5", port: 22, user: "sam", fingerprint: FP });
     const confirm = jest.fn(async () => true);
-    const err = await pairWithHost({ address: "10.0.0.5", code: "123456", check: { confirm } }, { fetch: ok(FP2) as never }).catch(
+    const err = await pairV1({ address: "10.0.0.5", code: "123456", check: { confirm } }, { fetch: ok(FP2) as never }).catch(
       (e) => e,
     );
     expect((err as PairFailed).code).toBe("host_key_changed");
@@ -234,7 +234,7 @@ describe("pairWithHost host key", () => {
 
   it("repair_never_clears_a_pinned_key", async () => {
     const old = useHosts.getState().addHost({ name: "Work", address: "10.0.0.5", port: 22, user: "sam", fingerprint: FP });
-    const err = await pairWithHost({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: ok(null) as never }).catch((e) => e);
+    const err = await pairV1({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: ok(null) as never }).catch((e) => e);
     expect((err as PairFailed).code).toBe("host_key_changed");
     const saved = useHosts.getState().hosts.find((h) => h.id === old.id)!;
     expect(saved.fingerprint).toBe(FP);
@@ -243,7 +243,7 @@ describe("pairWithHost host key", () => {
 
   it("repair_without_key_on_unpinned_host_writes_no_fingerprint_field", async () => {
     const old = useHosts.getState().addHost({ name: "Work", address: "10.0.0.5", port: 22, user: "sam" });
-    await pairWithHost({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: ok(null) as never });
+    await pairV1({ address: "10.0.0.5", code: "123456", check: yes }, { fetch: ok(null) as never });
     const saved = useHosts.getState().hosts.find((h) => h.id === old.id)!;
     expect("fingerprint" in saved).toBe(false);
   });

@@ -67,6 +67,12 @@ test("bad_ssh_port_defaults_to_22", () => {
   expect(applyFound([], { ...STUDIO, txt: {} })[0].sshPort).toBe(22);
 });
 
+test("pair_version_from_txt", () => {
+  expect(applyFound([], { ...STUDIO, txt: { pv: "2" } })[0].pairVersion).toBe(2);
+  expect(applyFound([], STUDIO)[0].pairVersion).toBeUndefined();
+  expect(applyFound([], { ...STUDIO, txt: { pv: "x2" } })[0].pairVersion).toBeUndefined();
+});
+
 test("found_twice_replaces", () => {
   let list = applyFound([], STUDIO);
   list = applyFound(list, { ...STUDIO, name: "box" });

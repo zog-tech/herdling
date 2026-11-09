@@ -24,7 +24,13 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
       ? () =>
           router.push({
             pathname: "/hosts/pair",
-            params: { address: d.address!, port: String(d.pairPort), name: d.name },
+            // `pv=2`: the host has pairing v2, so the pair screen never falls back to v1.
+            params: {
+              address: d.address!,
+              port: String(d.pairPort),
+              name: d.name,
+              ...((d.pairVersion ?? 0) >= 2 ? { v: "2" } : {}),
+            },
           })
       : undefined;
   return (

@@ -3,7 +3,9 @@ import type { PairRequest, PairResponse } from "@herdling/protocol";
 import { ensureKey } from "../../modules/ssh";
 import { deviceName, getDeviceId } from "../device";
 import { newHostId, useHosts, type Host } from "../hosts/store";
+import { exchangeV2, V2Failed } from "./pairV2";
 import { DEFAULT_PAIR_PORT } from "./pairUrl";
+import { randomBytes } from "./random";
 
 export type PairFailCode =
   | "bad_code"
@@ -13,7 +15,11 @@ export type PairFailCode =
   | "bad_request"
   | "host_key_mismatch"
   | "host_key_changed"
-  | "not_confirmed";
+  | "not_confirmed"
+  | "no_session"
+  | "host_not_verified"
+  | "v2_required"
+  | "legacy_declined";
 
 const TIMEOUT_MS = 10_000;
 
@@ -48,6 +54,14 @@ export function pairMessage(code: PairFailCode, target?: { address: string; port
       return "The host key is different from the saved one. Nothing was changed. To trust the new key, remove the host and pair again.";
     case "not_confirmed":
       return "Pairing stopped: the host key was not confirmed. Nothing was saved.";
+    case "no_session":
+      return "The pairing took too long. Try again.";
+    case "host_not_verified":
+      return "The host did not prove that it knows the code. Someone on the network may be intercepting the pairing. Nothing was saved.";
+    case "v2_required":
+      return "The host at this address does not do safe pairing, but this host must do it. Someone on the network may be intercepting the pairing. Nothing was saved.";
+    case "legacy_declined":
+      return "Pairing stopped. Update herdlingd on the computer, then pair again.";
   }
 }
 
@@ -68,27 +82,105 @@ function isPairResponse(v: unknown): v is PairResponse {
 }
 
 /**
- * How the app checks the host key in the `/pair` answer, which comes over plain HTTP:
+ * How the app checks the host key in the pairing answer:
  * - `fingerprint`: the key from the QR code. A different key (or none) stops pairing.
  * - `confirm`: manual entry. The user compares the key with the one `herdlingd pair` prints;
- *   `false` stops pairing. It gets `null` when the host reports no key.
+ *   `false` stops pairing. It gets `null` when the host reports no key. With pairing v2 the
+ *   host's tag proves the key, so `confirm` runs only when the host reports no key.
  */
 export type HostKeyCheck = { fingerprint: string } | { confirm: (fingerprint: string | null) => Promise<boolean> };
 
+type Target = { address: string; port?: number; code: string; name?: string; check: HostKeyCheck };
+
+export type PairOptions = Target & {
+  /** The QR code or the Bonjour advert says that the host has pairing v2: never use v1. */
+  requireV2?: boolean;
+  /** Asks the user to continue with v1 when the host has no v2 (an older herdlingd). */
+  confirmLegacy?: () => Promise<boolean>;
+};
+
+/** A paired host. `checked`: pairing v2 proved the code both ways, so no key compare is needed. */
+export type Paired = { host: Host; checked: boolean };
+
+type Fetch = typeof fetch;
+
+/** POSTs JSON to the pairing endpoint with a time limit. A network failure gives `null`. */
+async function postJson(
+  doFetch: Fetch,
+  base: string,
+  path: string,
+  body: unknown,
+): Promise<{ status: number; ok: boolean; json: unknown } | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  try {
+    const res = await doFetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    });
+    const json: unknown = await res.json().catch(() => undefined);
+    return { status: res.status, ok: res.ok, json };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The id of the host to pair: a saved host with this address keeps its id, so the companion's host_id matches. */
+function hostIdFor(address: string): string {
+  return useHosts.getState().hosts.find((h) => h.address === address)?.id ?? newHostId();
+}
+
 /**
- * Pairs with `herdlingd serve` at `address:port` using the code it shows, then saves the host
- * with the user, SSH port and host key the companion reports. Throws `PairFailed`; nothing is saved then.
+ * Pairs with `herdlingd serve` at `address:port` using the code it shows, then saves the host.
+ * It uses pairing v2 (CPace): the code never goes over the network, and both sides prove it.
+ * When the host has no v2 (an older herdlingd), it uses v1 only when `requireV2` is not set and
+ * `confirmLegacy` says yes. It never falls back without asking. Throws `PairFailed`; nothing is saved then.
  * The push token is not sent here: it goes only over the pinned SSH session (`push.register`).
  */
-export async function pairWithHost(
-  o: { address: string; port?: number; code: string; name?: string; check: HostKeyCheck },
-  deps?: { fetch?: typeof fetch },
-): Promise<Host> {
+export async function pairWithHost(o: PairOptions, deps?: { fetch?: Fetch; random?: (n: number) => Uint8Array }): Promise<Paired> {
   const doFetch = deps?.fetch ?? fetch;
   const address = o.address.trim();
   const port = o.port ?? DEFAULT_PAIR_PORT;
-  // Re-pairing a saved host keeps its id, so the companion's host_id matches.
-  const id = useHosts.getState().hosts.find((h) => h.address === address)?.id ?? newHostId();
+  const id = hostIdFor(address);
+  const [deviceId, key] = await Promise.all([getDeviceId(), ensureKey()]);
+  const base = `http://${address}:${port}`;
+  try {
+    const answer = await exchangeV2(
+      { code: o.code, deviceId, deviceName: deviceName(), hostId: id, publicKey: key.publicKey },
+      {
+        post: async (path, body) => {
+          const r = await postJson(doFetch, base, path, body);
+          if (!r) throw new V2Failed("unreachable");
+          return r;
+        },
+        random: deps?.random ?? randomBytes,
+      },
+    );
+    return { host: await checkAndSave(answer, { ...o, address }, id, true), checked: true };
+  } catch (e) {
+    if (!(e instanceof V2Failed)) throw e;
+    if (e.code === "unreachable") throw new PairFailed("unreachable", pairMessage("unreachable", { address, port }));
+    if (e.code !== "not_supported") throw new PairFailed(e.code);
+    if (o.requireV2) throw new PairFailed("v2_required");
+    if (!o.confirmLegacy || !(await o.confirmLegacy())) throw new PairFailed("legacy_declined");
+  }
+  return { host: await pairV1(o, deps), checked: false };
+}
+
+/**
+ * Pairing v1 (`POST /pair`), for an older herdlingd: the code goes in clear JSON over plain HTTP.
+ * Use it only through `pairWithHost`, after the user agreed. The user checks the host key
+ * (`confirm`) and the phone key on the host (`herdlingd pair` asks).
+ */
+export async function pairV1(o: Target, deps?: { fetch?: Fetch }): Promise<Host> {
+  const doFetch = deps?.fetch ?? fetch;
+  const address = o.address.trim();
+  const port = o.port ?? DEFAULT_PAIR_PORT;
+  const id = hostIdFor(address);
   const [deviceId, key] = await Promise.all([getDeviceId(), ensureKey()]);
   const body: PairRequest = {
     code: o.code,
@@ -98,46 +190,36 @@ export async function pairWithHost(
     public_key: key.publicKey,
     expo_token: null,
   };
-
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
-  let res: Response;
-  let json: unknown;
-  try {
-    res = await doFetch(`http://${address}:${port}/pair`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: abort.signal,
-    });
-    json = await res.json().catch(() => undefined);
-  } catch {
-    throw new PairFailed("unreachable", pairMessage("unreachable", { address, port }));
-  } finally {
-    clearTimeout(timer);
-  }
-
+  const res = await postJson(doFetch, `http://${address}:${port}`, "/pair", body);
+  if (!res) throw new PairFailed("unreachable", pairMessage("unreachable", { address, port }));
   if (!res.ok) {
-    const code = (json as { error?: unknown } | undefined)?.error;
+    const code = (res.json as { error?: unknown } | undefined)?.error;
     throw new PairFailed(SERVER_CODES.includes(code as PairFailCode) ? (code as PairFailCode) : "bad_request");
   }
-  if (!isPairResponse(json)) throw new PairFailed("bad_request");
+  if (!isPairResponse(res.json)) throw new PairFailed("bad_request");
+  return checkAndSave(res.json, { ...o, address }, id, false);
+}
 
-  const reported = json.host_key_fingerprint;
+/**
+ * Checks the host key of `answer` and saves the host. `verified`: the host's v2 tag proves the
+ * answer, so the user does not have to compare a reported key.
+ */
+async function checkAndSave(answer: PairResponse, o: Target, id: string, verified: boolean): Promise<Host> {
+  const reported = answer.host_key_fingerprint;
   const values: { address: string; port: number; user: string; fingerprint?: string } = {
-    address,
-    port: json.ssh_port,
-    user: json.user,
+    address: o.address,
+    port: answer.ssh_port,
+    user: answer.user,
   };
   // Never write `fingerprint: undefined`: that would unpin a saved host.
   if (reported) values.fingerprint = reported;
   const saved = savedHostFor(values);
   if ("fingerprint" in o.check) {
     if (reported !== o.check.fingerprint) throw new PairFailed("host_key_mismatch");
-  } else if (!(await o.check.confirm(reported))) {
+  } else if ((!verified || reported === null) && !(await o.check.confirm(reported))) {
     throw new PairFailed("not_confirmed");
   }
-  return saveHost(saved, { id, name: o.name?.trim() || json.host_name }, values);
+  return saveHost(saved, { id, name: o.name?.trim() || answer.host_name }, values);
 }
 
 /** Address, port, user and the host key (when known) of a host being paired or enrolled. */
