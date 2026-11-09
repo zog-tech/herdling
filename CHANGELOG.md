@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd unreleased]
+## [herdlingd 0.1.8] - 2026-11-09
 
 - Herdr 2 (herdr-core) support, first part. `herdlingd` finds the core socket with the rules of
   `hc` (`HC_SOCKET`, the `socket` setting, the runtime folder, then the state folder) and joins a
