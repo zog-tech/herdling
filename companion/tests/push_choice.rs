@@ -23,6 +23,7 @@ fn choice() -> PushChoice {
         yes: PushOption { key: "1".into(), label: "Yes".into() },
         no: PushOption { key: "2".into(), label: "No".into() },
         revision: 0,
+        question: None,
     }
 }
 

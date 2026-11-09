@@ -1,7 +1,7 @@
 //! `choices.rs`: the same cases as `app/src/thread/choices.test.ts`, on the same fixture files,
 //! so the app and herdlingd find the same menu.
 
-use herdlingd::choices::{label_matches, parse_choices, short_label, yes_no, Choice, PushChoice, PushOption};
+use herdlingd::choices::{label_matches, menu_question, parse_choices, short_label, yes_no, Choice, PushChoice, PushOption};
 
 /// A fixture of the app's test, read from `app/src/thread/__fixtures__` (one copy for both sides).
 fn fixture(name: &str) -> String {
@@ -141,6 +141,7 @@ fn yes_no_takes_the_first_and_the_last_option() {
             yes: PushOption { key: "1".into(), label: "Yes".into() },
             no: PushOption { key: "3".into(), label: "No, and tell Claude what to do differently (esc)".into() },
             revision: 7,
+            question: None,
         }
     );
     // The JSON shape of `data.choice`.
@@ -185,4 +186,40 @@ fn label_matches_the_full_or_the_cut_label() {
     assert!(label_matches("Yes", "Yes"));
     assert!(!label_matches("Yes", "No"));
     assert!(!label_matches("Yes, and don't ask again", "Yes"));
+}
+
+const BASH_A: &str = "Bash command\n  git status\n  Show the status\nDo you want to proceed?\n\u{276f} 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
+const BASH_B: &str = "Bash command\n  rm -rf build\n  Delete the build\nDo you want to proceed?\n\u{276f} 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
+
+#[test]
+fn menu_question_tells_two_prompts_with_the_same_labels_apart() {
+    let (a, b) = (menu_question(BASH_A).unwrap(), menu_question(BASH_B).unwrap());
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 16);
+    assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+    // The digest does not hold the question text.
+    assert!(!a.contains("git"));
+    assert_eq!(menu_question(BASH_A), Some(a));
+}
+
+#[test]
+fn menu_question_ignores_the_marker_box_and_spacing() {
+    let a = menu_question(BASH_A).unwrap();
+    // The user moved the selection with the arrow keys.
+    let moved = BASH_A.replace("\u{276f} 1. Yes", "  1. Yes").replace("  2. Yes,", "\u{276f} 2. Yes,");
+    assert_eq!(menu_question(&moved), Some(a.clone()));
+    // A wider box and other inner spacing.
+    let boxed: String = BASH_A.lines().map(|l| format!("\u{2502} {l}      \u{2502}\n")).collect();
+    assert_eq!(menu_question(&boxed), Some(a.clone()));
+    let spaced = BASH_A.replace("git status", "git   status");
+    assert_eq!(menu_question(&spaced), Some(a));
+    // A footer below the menu does not count.
+    assert_eq!(menu_question(&format!("{BASH_A}\nEsc to cancel")), menu_question(BASH_A));
+}
+
+#[test]
+fn menu_question_needs_a_menu() {
+    assert_eq!(menu_question("just text\n> "), None);
+    assert_eq!(menu_question(""), None);
+    assert!(menu_question(&fixture("claude_bash_permission")).is_some());
 }

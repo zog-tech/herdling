@@ -587,11 +587,18 @@ fn stale(message: &str) -> RpcError {
 
 /// `pane.answer`: answers a permission menu with one digit, after a check on the computer.
 /// The pane must still wait for the user, and the option at `key` must still have
-/// `expect_label` (or its cut form from a push). Otherwise the error is `stale` and no key is sent.
+/// `expect_label` (or its cut form from a push). With `expect_question` (from the push), the
+/// question of the menu must also be the same (see [`crate::choices::menu_question`]). Otherwise
+/// the error is `stale` and no key is sent. An older app sends no `expect_question`.
 async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = str_param(&params, "pane_id", "pane.answer")?;
     let key = str_param(&params, "key", "pane.answer")?;
     let expect = str_param(&params, "expect_label", "pane.answer")?;
+    let expect_question = match params.get("expect_question") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(q)) => Some(q.as_str()),
+        Some(_) => return Err(err("bad_request", "pane.answer: expect_question must be a string")),
+    };
     if pane.is_empty() {
         return Err(err("bad_request", "pane.answer requires pane_id"));
     }
@@ -617,6 +624,9 @@ async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     };
     if !crate::choices::label_matches(&choice.label, expect) {
         return Err(stale("the menu changed"));
+    }
+    if expect_question.is_some_and(|q| crate::choices::menu_question(text).as_deref() != Some(q)) {
+        return Err(stale("the question changed"));
     }
     // Mark phone input before herdr gets it, as `herdr.call` does.
     let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());

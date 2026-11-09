@@ -235,7 +235,8 @@ async fn choice_of(ctx: &ServeCtx, pane: &str) -> Option<crate::choices::PushCho
     let read = r.get("read").unwrap_or(&r);
     let text = read.get("text").and_then(Value::as_str)?;
     let revision = read.get("revision").and_then(Value::as_u64).unwrap_or(0);
-    crate::choices::yes_no(&crate::choices::parse_choices(text), revision)
+    let choice = crate::choices::yes_no(&crate::choices::parse_choices(text), revision)?;
+    Some(crate::choices::PushChoice { question: crate::choices::menu_question(text), ..choice })
 }
 
 /// The inner `snapshot` object of `session.snapshot`. One connection per call.

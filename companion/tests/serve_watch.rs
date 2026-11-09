@@ -244,7 +244,8 @@ async fn needs_you_push_has_choice_buttons_for_a_capable_device() {
                 "data": {"hostId": "h_1", "paneId": "w1:p1",
                          "choice": {"yes": {"key": "1", "label": "Yes"},
                                     "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
-                                    "revision": 3}}}])
+                                    "revision": 3,
+                                    "question": herdlingd::choices::menu_question(MENU).unwrap()}}}])
     );
     // The question text never leaves the computer.
     assert!(!body.to_string().contains("proceed"));

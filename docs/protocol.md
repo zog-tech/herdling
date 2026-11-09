@@ -77,7 +77,7 @@ The app types through `herdr.call`. One line costs one call:
 Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes and No buttons.
 
 ```json
-{"id": 9, "method": "pane.answer", "params": {"pane_id": "w1:p2", "key": "1", "expect_label": "Yes"}}
+{"id": 9, "method": "pane.answer", "params": {"pane_id": "w1:p2", "key": "1", "expect_label": "Yes", "expect_question": "3f9a0c4e1b2d7a65"}}
 → {"id": 9, "result": {"answered": true}}
 → {"id": 9, "error": {"code": "stale", "message": "the menu changed"}}
 ```
@@ -88,6 +88,11 @@ Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes an
   (`agent_status` `blocked`) and the option at `key` still has `expect_label`. A label cut for a
   push (60 characters, ends with "…") also matches. Otherwise the error is `stale` and no key is sent.
   A closed pane also gives `stale`.
+- `expect_question` is optional: the `choice.question` of the push. When it is set, the question of
+  the menu on the screen must also give the same digest, else the error is `stale` ("the question
+  changed"). So a stale push cannot answer a later prompt that has the same labels. A value that is
+  not a string gives `bad_request`. An app that sends no `expect_question` gets the label check only.
+  An older herdlingd ignores the field.
 - `key` must be one digit from 1 to 9, else `bad_request`. The answer is phone input, and it keeps
   the order of the other typing calls to the pane.
 - `push.register` takes an optional `capabilities: string[]` (at most 16 strings of at most 64
@@ -98,10 +103,15 @@ Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes an
 
   ```json
   {"hostId": "h_1", "paneId": "w1:p2",
-   "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"}, "revision": 0}}
+   "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
+              "revision": 0, "question": "3f9a0c4e1b2d7a65"}}
   ```
 
   Labels have at most 60 characters. The push has no question text: it passes Expo and Apple or Google.
+  `question` (newer herdlingd) is 16 hex characters: the first 8 bytes of a SHA-256 of up to 8 non-empty
+  lines above the menu and the menu lines, with box edges, the selection marker and extra white space
+  removed (`menu_question` in `companion/src/choices.rs`). It is not the text. The app sends it back as
+  `expect_question`. A screen change above the menu can give a false `stale`; that is safe.
   The push body adds a line with the two labels ("Yes · No, and tell Claude…"). Other devices get the push as before.
 - The app registers the category `herdling_choice` with the actions `choice_yes` ("Yes") and
   `choice_no` ("No", destructive). Both open the app and need Face ID or the passcode on a locked

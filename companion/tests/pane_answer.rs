@@ -169,3 +169,48 @@ async fn rejects_bad_params() {
 fn pane_answer_is_listed() {
     assert!(rpc::METHODS.contains(&"pane.answer"));
 }
+
+const OTHER_MENU: &str = "╭────────────────────────────────╮\n\
+                          │ Bash command                   │\n\
+                          │   rm -rf build                 │\n\
+                          │ Do you want to proceed?        │\n\
+                          │ ❯ 1. Yes                       │\n\
+                          │   2. Yes, and don't ask again  │\n\
+                          │   3. No, and tell Claude what to do differently (esc) │\n\
+                          ╰────────────────────────────────╯";
+
+#[tokio::test]
+async fn answers_when_the_question_is_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let sent = fake(&sock, "blocked", MENU);
+    let q = herdlingd::choices::menu_question(MENU).unwrap();
+    let r = call(&sock, dir.path(), json!({"pane_id": "w1:p1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
+    assert_eq!(r["result"], json!({"answered": true}), "{r}");
+    assert_eq!(keys_sent(&sent).len(), 1);
+}
+
+#[tokio::test]
+async fn stale_when_a_later_prompt_has_the_same_labels() {
+    // The push was for MENU. The agent now asks OTHER_MENU, with the same labels.
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let sent = fake(&sock, "blocked", OTHER_MENU);
+    let q = herdlingd::choices::menu_question(MENU).unwrap();
+    let r = call(&sock, dir.path(), json!({"pane_id": "w1:p1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
+    assert_eq!(r["error"]["code"], "stale", "{r}");
+    assert!(keys_sent(&sent).is_empty());
+    // An older app sends no question: the label check alone decides, as before.
+    let r = call(&sock, dir.path(), json!({"pane_id": "w1:p1", "key": "1", "expect_label": "Yes"})).await;
+    assert_eq!(r["result"], json!({"answered": true}), "{r}");
+}
+
+#[tokio::test]
+async fn rejects_a_question_that_is_not_a_string() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("herdr.sock");
+    let sent = fake(&sock, "blocked", MENU);
+    let r = call(&sock, dir.path(), json!({"pane_id": "w1:p1", "key": "1", "expect_label": "Yes", "expect_question": 5})).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    assert!(keys_sent(&sent).is_empty());
+}
