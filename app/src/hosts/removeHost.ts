@@ -1,6 +1,7 @@
-import { Alert } from "react-native";
+import { Alert, type AlertButton } from "react-native";
 
 import { ensureKey } from "../../modules/ssh";
+import { copyIfAvailable, hasClipboard } from "../ui/clipboard";
 import { isDemoHost } from "../demo/demoHost";
 import { getDeviceId } from "../device";
 import type { RpcClient } from "../rpc/RpcClient";
@@ -39,8 +40,32 @@ export async function removeHostEverywhere(
   return { revoked };
 }
 
+/** The command that removes this phone's key and push token on the host. */
+export function unpairCommand(deviceId: string): string {
+  return `herdlingd unpair ${deviceId}`;
+}
+
+/**
+ * The text of the remove dialog. An offline host cannot get `pair.revoke`: it keeps this phone's
+ * key line and push token, so the text gives the command that removes them on the host.
+ */
+export function removeMessage(online: boolean, deviceId: string | undefined): string {
+  const base = "The host and its pinned key are deleted from this phone.";
+  if (online) return `${base} The host also forgets this phone's key.`;
+  const kept = `${base} The host is offline, so it keeps this phone's key and push token.`;
+  return deviceId ? `${kept} To remove them, run this on the host:\n\n${unpairCommand(deviceId)}` : kept;
+}
+
+/** After a remove with no revoke: the command to run on the host, with a Copy button. */
+function showUnpairCommand(deviceId: string): void {
+  const command = unpairCommand(deviceId);
+  const buttons: AlertButton[] = [{ text: "OK", style: "cancel" }];
+  if (hasClipboard()) buttons.unshift({ text: "Copy command", onPress: () => void copyIfAvailable(command) });
+  Alert.alert("Run this on the host", `${command}\n\nThe host keeps this phone's key and push token until you run this command.`, buttons);
+}
+
 /** Asks before removing; `onRemoved` runs after the host is gone. */
-export function confirmRemoveHost(host: Host, onRemoved?: () => void): void {
+export async function confirmRemoveHost(host: Host, onRemoved?: () => void): Promise<void> {
   if (isDemoHost(host)) {
     Alert.alert("Remove the demo?", "The demo computer and its sample agents go away. You can start the demo again at any time.", [
       { text: "Cancel", style: "cancel" },
@@ -48,18 +73,19 @@ export function confirmRemoveHost(host: Host, onRemoved?: () => void): void {
     ]);
     return;
   }
-  Alert.alert(
-    `Remove ${host.name}?`,
-    "The host and its pinned key are deleted from this phone. When the host is online, it also forgets this phone's key.",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          void removeHostEverywhere(host.id).then(() => onRemoved?.());
-        },
+  const online = getHostConn(host.id).status === "online";
+  // The device id is in the Keychain. Without it, the text has no command and the remove still works.
+  const deviceId = await getDeviceId().catch(() => undefined);
+  Alert.alert(`Remove ${host.name}?`, removeMessage(online, deviceId), [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Remove",
+      style: "destructive",
+      onPress: async () => {
+        const { revoked } = await removeHostEverywhere(host.id);
+        onRemoved?.();
+        if (!revoked && deviceId !== undefined) showUnpairCommand(deviceId);
       },
-    ],
-  );
+    },
+  ]);
 }

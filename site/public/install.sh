@@ -102,6 +102,26 @@ fail() {
   exit 1
 }
 
+# loopback_http <url>: true when the URL is plain HTTP to 127.0.0.1 or localhost, with an optional
+# port of digits only, then the end or a "/". Only tests use such a URL. A prefix match is not
+# enough: http://127.0.0.1.example.net and http://localhost:1@example.net go to another host.
+loopback_http() {
+  lh_rest=${1#http://}
+  [ "$lh_rest" != "$1" ] || return 1
+  lh_hostport=${lh_rest%%/*}
+  case "$lh_hostport" in
+    127.0.0.1 | localhost) return 0 ;;
+    127.0.0.1:* | localhost:*)
+      lh_port=${lh_hostport#*:}
+      case "$lh_port" in
+        "" | *[!0-9]*) return 1 ;;
+        *) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
 case "$VERSION" in
   "" | [0-9]*.[0-9]*.[0-9]*) ;;
   *) fail download_failed "The version must look like 1.2.3, not $VERSION." ;;
@@ -150,11 +170,14 @@ install_herdr() {
   step herdr "Installing herdr with its official installer ($HERDR_INSTALL_URL)..."
   command -v curl >/dev/null 2>&1 ||
     fail no_downloader "The herdr installer needs curl. Install curl, then run this again."
-  case "$HERDR_INSTALL_URL" in
-    https://*) hs=$(curl -fsSL --proto '=https' --tlsv1.2 --retry 2 "$HERDR_INSTALL_URL") || hs="" ;;
-    http://127.0.0.1* | http://localhost*) hs=$(curl -fsSL --retry 2 "$HERDR_INSTALL_URL") || hs="" ;;
-    *) fail herdr_install_failed "The herdr installer URL must use HTTPS." ;;
-  esac
+  if loopback_http "$HERDR_INSTALL_URL"; then
+    hs=$(curl -fsSL --retry 2 "$HERDR_INSTALL_URL") || hs=""
+  else
+    case "$HERDR_INSTALL_URL" in
+      https://*) hs=$(curl -fsSL --proto '=https' --tlsv1.2 --retry 2 "$HERDR_INSTALL_URL") || hs="" ;;
+      *) fail herdr_install_failed "The herdr installer URL must use HTTPS." ;;
+    esac
+  fi
   # A failed download gives an empty text: never run an empty or half script.
   [ -n "$hs" ] || fail herdr_install_failed "Cannot download the herdr installer from $HERDR_INSTALL_URL."
   if [ "$QUIET" = 1 ]; then
@@ -176,9 +199,9 @@ fi
 if command -v curl >/dev/null 2>&1; then
   dl() { curl -fsSL --proto '=https' --tlsv1.2 --retry 2 -o "$2" "$1"; }
   # A test base on localhost uses plain HTTP.
-  case "$BASE" in
-    http://127.0.0.1* | http://localhost*) dl() { curl -fsSL --retry 2 -o "$2" "$1"; } ;;
-  esac
+  if loopback_http "$BASE"; then
+    dl() { curl -fsSL --retry 2 -o "$2" "$1"; }
+  fi
 elif command -v wget >/dev/null 2>&1; then
   dl() { wget -q -O "$2" "$1"; }
 else

@@ -9,11 +9,19 @@ import { colors, hitTarget, icon, radius, space, state, themed, type } from "@/t
 import * as haptics from "@/ui/haptics";
 import { HScrollView } from "../HScrollView";
 import { ThreadLink } from "../LinkText";
-import { findLinks, replyMarkdownIt } from "../links";
+import { findLinks, linkTarget, replyMarkdownIt } from "../links";
 import { RunHostContext, ThreadPaneContext, type RunHost } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
 import { copyText, type MenuTarget } from "../rowMenu";
 import { runAt, runnableCommand } from "../runCommand";
+
+// The package reads these two props (src/index.js) but its types leave them out.
+declare module "@ronradtke/react-native-markdown-display" {
+  interface MarkdownProps {
+    allowedImageHandlers?: string[];
+    defaultImageHandler?: string | null;
+  }
+}
 
 const BODY = type.size.body;
 const LINE = Math.round(BODY * type.lineHeight.body);
@@ -27,6 +35,9 @@ const BTN_SLOP = (hitTarget - BTN_BOX) / 2;
 const BTN_GAP = BTN_SLOP * 2;
 /** How long the Copy button shows its check mark after a copy. */
 const COPIED_MS = 1500;
+
+/** No image source loads: see the `image` rule. */
+const NO_IMAGE_HANDLERS: string[] = [];
 
 /** The reply parser: it also links bare URLs that have a scheme (see `links.ts`). */
 const markdownit = replyMarkdownIt();
@@ -139,6 +150,27 @@ const rules: RenderRules = {
       {children}
     </ThreadLink>
   ),
+  // An image never loads by itself: a fetch on view tells the image host the phone's address and
+  // the view time. It shows as a link with its alt text (or its URL), and a tap opens it as a link.
+  // A source that the app does not open (data:, javascript: or no scheme) shows as plain text.
+  image: (node, _children, _parent, s) => {
+    const src = String(node.attributes.src ?? "");
+    const alt = String(node.attributes.alt ?? "").trim();
+    if (linkTarget(src) === null) {
+      return (
+        <Text key={node.key} style={s.text}>
+          {alt || "Image"}
+        </Text>
+      );
+    }
+    return (
+      <Text key={node.key}>
+        <ThreadLink style={s.link} url={src}>
+          {alt || src}
+        </ThreadLink>
+      </Text>
+    );
+  },
   // Inline code that is one URL is a link too: agents often put a dev server URL in backticks.
   code_inline: (node, _children, _parent, s, inherited = {}) => {
     const url = codeUrl(node.content);
@@ -228,7 +260,14 @@ export const AssistantMessage = memo(function AssistantMessage({ markdown, id }:
   return (
     <ReplyMenu.Provider value={menu}>
       <MenuPressable menu={menu} feedback="dim">
-        <Markdown style={mdStyles()} rules={rules} markdownit={markdownit}>
+        <Markdown
+          style={mdStyles()}
+          rules={rules}
+          markdownit={markdownit}
+          // Defense in depth: if the image rule goes away, the default rule loads nothing.
+          allowedImageHandlers={NO_IMAGE_HANDLERS}
+          defaultImageHandler={null}
+        >
           {markdown}
         </Markdown>
       </MenuPressable>

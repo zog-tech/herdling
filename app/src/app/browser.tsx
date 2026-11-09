@@ -75,7 +75,14 @@ export default function BrowserScreen() {
           setSupportMultipleWindows={false}
           allowsBackForwardNavigationGestures
           allowsInlineMediaPlayback
-          sharedCookiesEnabled
+          // The browser preview puts its gate cookie in the shared web view cookie store. A remote
+          // page must not send that cookie to the phone's preview listener on localhost.
+          // iOS: incognito gives this web view its own store that is not saved to disk.
+          // Android: incognito deletes every cookie of the app (CookieManager.removeAllCookies),
+          // which stops an open preview. So no incognito there; this web view does not accept
+          // third-party cookies, so a remote page cannot use the cookie in a subresource or frame.
+          incognito={Platform.OS === "ios"}
+          thirdPartyCookiesEnabled={false}
           webviewDebuggingEnabled={__DEV__}
           onShouldStartLoadWithRequest={(req) => {
             if (loadsInPlace(req.url)) return true;

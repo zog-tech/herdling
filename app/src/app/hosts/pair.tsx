@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Link2, QrCode } from "lucide-react-native";
+import { Check, Link2, QrCode } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { confirmHostKey } from "@/pairing/confirmHostKey";
 import { type HostKeyCheck, PairFailed, pairWithHost } from "@/pairing/pair";
 import { DEFAULT_PAIR_PORT, FINGERPRINT_RE } from "@/pairing/pairUrl";
+import { PhoneKey, usePhoneKeyFingerprint } from "@/pairing/PhoneKey";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -29,6 +30,9 @@ export default function PairScreen() {
   const [code, setCode] = useState(params.code ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  /** The name of the paired host. The screen then shows the phone key to check on the host. */
+  const [paired, setPaired] = useState<string>();
+  const phoneKey = usePhoneKeyFingerprint();
   const port = portOf(params.port);
   // The QR key belongs to the scanned address only: an edited address falls back to manual confirmation.
   const qrFingerprint =
@@ -50,13 +54,36 @@ export default function PairScreen() {
     setError(undefined);
     try {
       const check: HostKeyCheck = qrFingerprint ? { fingerprint: qrFingerprint } : { confirm: confirmHostKey };
-      await pairWithHost({ address: address.trim(), port, code, name: params.name, check });
-      router.dismissTo("/");
+      const host = await pairWithHost({ address: address.trim(), port, code, name: params.name, check });
+      // The phone key did not load: there is nothing to compare, so go on.
+      if (!phoneKey) {
+        router.dismissTo("/");
+        return;
+      }
+      setPaired(host.name);
+      setBusy(false);
     } catch (e) {
       setError(e instanceof PairFailed ? e.message : e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   };
+
+  // After pairing: a relay on the network can send the code with its own key. The host shows
+  // the key that it got, so the user compares it with this phone's key.
+  if (paired) {
+    return (
+      <Screen>
+        <Card>
+          <Text variant="title">Paired with {paired}</Text>
+          <PhoneKey fingerprint={phoneKey} />
+          <Text variant="small" muted>
+            Check that herdlingd pair on the host shows the same phone key. If the key is different, do not keep it on the host.
+          </Text>
+        </Card>
+        <Button label="Done" Icon={Check} onPress={() => router.dismissTo("/")} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -95,6 +122,7 @@ export default function PairScreen() {
             Host key {qrFingerprint}
           </Text>
         ) : null}
+        <PhoneKey fingerprint={phoneKey} />
         {error ? (
           <Text color={colors.danger} accessibilityLiveRegion="polite">
             {error}

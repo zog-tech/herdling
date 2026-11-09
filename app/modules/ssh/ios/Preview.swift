@@ -56,6 +56,8 @@ enum PreviewCookie {
   }()
 
   /// Puts the cookie for `localhost` in the cookie store that `react-native-webview` uses.
+  /// SameSite=Strict: the web view sends the cookie only to a request that a localhost page
+  /// starts, never to a request that a remote page starts.
   @MainActor
   static func install() async {
     let props: [HTTPCookiePropertyKey: Any] = [
@@ -64,6 +66,8 @@ enum PreviewCookie {
       .name: PreviewGate.cookieName,
       .value: value,
       HTTPCookiePropertyKey("HttpOnly"): "TRUE",
+      // The raw string ("strict"), as the other property values are strings.
+      .sameSitePolicy: HTTPCookieStringPolicy.sameSiteStrict.rawValue,
     ]
     guard let cookie = HTTPCookie(properties: props) else { return }
     await WKWebsiteDataStore.default().httpCookieStore.setCookie(cookie)

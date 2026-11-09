@@ -5,8 +5,9 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd unreleased]
+## [herdlingd 0.1.6] - 2026-11-09
 
+- This release also carries the fixes of 0.1.5. The 0.1.5 build did not publish.
 - Pairing: after a phone pairs, `herdlingd pair` shows the key fingerprint of the phone. On a
   terminal it asks "Keep this phone?". No, no answer in 2 minutes or the end of input removes the
   phone again. Compare the fingerprint with the key that the phone shows.
@@ -24,6 +25,19 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `{"closed": true}`, and `serve` subscribes again and reconciles with a fresh snapshot.
 - Self-update: the download URL check parses the URL and refuses encoded dot segments. A version
   pre-release allows only `[0-9A-Za-z.-]`. `~/.config/herdling` gets mode 0700.
+## [Unreleased app]
+
+- Thread: an image in an agent reply no longer loads by itself. It shows as a link with its alt
+  text or its URL. A tap opens it like any other link.
+- Pairing: the pair screen and the host screen show this phone's key fingerprint
+  (`SHA256:...`). After pairing, check that `herdlingd pair` on the computer shows the same key.
+- Remove a host: when the host is offline, the dialog gives the command `herdlingd unpair <device id>`
+  that removes this phone's key and push token on the computer.
+- In-app browser: on iOS it uses its own cookie store that is not saved to disk. On Android it
+  does not accept third-party cookies. Remote pages no longer share the browser preview cookie.
+  Pages in the in-app browser do not keep logins between visits on iOS.
+- Browser preview (next native build): the preview cookie is `SameSite=Strict`.
+- "Install and pair": curl downloads the installer over HTTPS only, also after a redirect.
 
 ## [herdlingd 0.1.5] - 2026-11-09
 
