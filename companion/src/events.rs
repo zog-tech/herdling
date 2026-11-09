@@ -1,5 +1,9 @@
 //! herdr event subscription: lifecycle events on one connection plus
 //! `pane.agent_status_changed` per pane (herdr needs a pane id for that type).
+//!
+//! herdr 0.9.2 and later send an `events_lost` error and close a connection whose reader fell
+//! behind. The events in between are gone, so the whole stream ends ([`EventStream::lost`] is
+//! true) and the caller subscribes again and reads a fresh `session.snapshot`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -35,11 +39,21 @@ pub struct EventStream {
     with_status: bool,
     socket: PathBuf,
     timeout: Duration,
+    lost: bool,
 }
 
 impl EventStream {
-    /// The next event line. `None` when herdr closed the lifecycle connection.
+    /// True when the stream ended because herdr reported `events_lost`.
+    pub fn lost(&self) -> bool {
+        self.lost
+    }
+
+    /// The next event line. `None` when herdr closed the lifecycle connection, or reported
+    /// `events_lost` on any connection of the stream (then [`EventStream::lost`] is true).
     pub async fn next(&mut self) -> Option<Value> {
+        if self.lost {
+            return None;
+        }
         loop {
             let retry_at = self.status.retry_at;
             let retry = async {
@@ -51,6 +65,10 @@ impl EventStream {
             tokio::select! {
                 ev = self.lifecycle.next_event() => {
                     let ev = ev.ok().flatten()?;
+                    if herdr::is_events_lost(&ev) {
+                        self.lost = true;
+                        return None;
+                    }
                     if self.with_status {
                         if let Some(pane) = new_pane_id(&ev) {
                             if !self.status.covers(pane) {
@@ -68,6 +86,10 @@ impl EventStream {
                 // The stream holds a sender, so the channel never closes.
                 Some(ev) = self.status_rx.recv() => return Some(ev),
                 Some(id) = self.status.ended_rx.recv() => self.status.reader_ended(id, tokio::time::Instant::now()),
+                Some(()) = self.status.lost_rx.recv() => {
+                    self.lost = true;
+                    return None;
+                }
                 _ = retry => {
                     let panes = self.status.take_lost();
                     for (sc, served) in open_status_connections(&self.socket, self.timeout, &panes).await {
@@ -99,7 +121,7 @@ pub async fn subscribe(socket: &Path, timeout: Duration, events: Option<Vec<Stri
             status.add(sc, served, status_tx.clone());
         }
     }
-    Ok(EventStream { lifecycle, status, status_tx, status_rx, with_status, socket: socket.into(), timeout })
+    Ok(EventStream { lifecycle, status, status_tx, status_rx, with_status, socket: socket.into(), timeout, lost: false })
 }
 
 /// Opens a herdr connection that streams `pane.agent_status_changed` for `panes`.
@@ -185,6 +207,9 @@ struct StatusConns {
     /// A reader sends its connection id here when herdr closes the connection.
     ended_tx: mpsc::UnboundedSender<u64>,
     ended_rx: mpsc::UnboundedReceiver<u64>,
+    /// A reader sends here when herdr reports `events_lost` on its connection.
+    lost_tx: mpsc::UnboundedSender<()>,
+    lost_rx: mpsc::UnboundedReceiver<()>,
     /// Open panes whose connection herdr closed. They are subscribed again at `retry_at`.
     lost: HashSet<String>,
     retry_at: Option<tokio::time::Instant>,
@@ -193,6 +218,7 @@ struct StatusConns {
 impl Default for StatusConns {
     fn default() -> Self {
         let (ended_tx, ended_rx) = mpsc::unbounded_channel();
+        let (lost_tx, lost_rx) = mpsc::unbounded_channel();
         StatusConns {
             readers: JoinSet::new(),
             conns: HashMap::new(),
@@ -200,6 +226,8 @@ impl Default for StatusConns {
             next: 0,
             ended_tx,
             ended_rx,
+            lost_tx,
+            lost_rx,
             lost: HashSet::new(),
             retry_at: None,
         }
@@ -215,9 +243,13 @@ impl StatusConns {
     fn add(&mut self, mut c: herdr::Client, panes: Vec<String>, tx: mpsc::Sender<Value>) {
         while self.readers.try_join_next().is_some() {}
         self.next += 1;
-        let (id, ended) = (self.next, self.ended_tx.clone());
+        let (id, ended, lost) = (self.next, self.ended_tx.clone(), self.lost_tx.clone());
         let handle = self.readers.spawn(async move {
             while let Ok(Some(ev)) = c.next_event().await {
+                if herdr::is_events_lost(&ev) {
+                    let _ = lost.send(());
+                    return;
+                }
                 if tx.send(ev).await.is_err() {
                     return;
                 }

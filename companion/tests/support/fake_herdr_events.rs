@@ -3,7 +3,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -18,6 +18,13 @@ pub enum Push {
     Drop,
     /// Closes every other subscription connection (the status ones), as herdr can do.
     DropStatus,
+    /// The lifecycle subscriber fell behind (herdr 0.9.2+): herdr sends an `events_lost` error
+    /// with the id of the `events.subscribe` request, then closes that connection.
+    Lost,
+    /// Like [`Push::Lost`], for the status connections.
+    LostStatus,
+    /// Replaces the `session.snapshot` result for the next calls.
+    Snapshot(Value),
 }
 
 /// What the test asks of every open connection.
@@ -26,6 +33,8 @@ enum Bus {
     Event(Value),
     DropMain,
     DropStatus,
+    LostMain,
+    LostStatus,
 }
 
 fn event_name(v: &Value) -> String {
@@ -88,12 +97,20 @@ pub fn spawn_fake_flaky(
     let (req_tx, req_rx) = mpsc::unbounded_channel::<Value>();
     let (bus, _) = tokio::sync::broadcast::channel::<Bus>(64);
     let bus2 = bus.clone();
+    let snapshot = Arc::new(Mutex::new(snapshot));
+    let snapshot2 = snapshot.clone();
     tokio::spawn(async move {
         while let Some(p) = push_rx.recv().await {
             let _ = bus2.send(match p {
                 Push::Event(v) => Bus::Event(v),
                 Push::Drop => Bus::DropMain,
                 Push::DropStatus => Bus::DropStatus,
+                Push::Lost => Bus::LostMain,
+                Push::LostStatus => Bus::LostStatus,
+                Push::Snapshot(v) => {
+                    *snapshot2.lock().unwrap() = v;
+                    continue;
+                }
             });
         }
     });
@@ -114,6 +131,7 @@ pub fn spawn_fake_flaky(
                 let (r, mut w) = stream.into_split();
                 let mut lines = BufReader::new(r).lines();
                 let mut subs: Vec<Value> = vec![];
+                let mut sub_id = Value::Null;
                 let mut main = false;
                 loop {
                     tokio::select! {
@@ -136,12 +154,14 @@ pub fn spawn_fake_flaky(
                                 if w.write_all(format!("{e}\n").as_bytes()).await.is_err() { return; }
                                 continue;
                             }
+                            let snap = snapshot.lock().unwrap().clone();
                             let result = match req["method"].as_str().unwrap() {
-                                "session.snapshot" => snapshot.clone(),
+                                "session.snapshot" => snap,
                                 // A test can give the visible screen of every pane as `screen` next to `snapshot`.
-                                "pane.read" if snapshot.get("screen").is_some() => json!({"read": {"revision": 3, "text": snapshot["screen"]}}),
+                                "pane.read" if snap.get("screen").is_some() => json!({"read": {"revision": 3, "text": snap["screen"]}}),
                                 "events.subscribe" => {
                                     subs = req["params"]["subscriptions"].as_array().unwrap().clone();
+                                    sub_id = req["id"].clone();
                                     main = is_first;
                                     let _ = req_tx.send(req.clone());
                                     json!({"type": "subscription_started"})
@@ -164,6 +184,14 @@ pub fn spawn_fake_flaky(
                                 }
                                 Ok(Bus::DropMain) => { if main { return; } }
                                 Ok(Bus::DropStatus) => { if !main && !subs.is_empty() { return; } }
+                                Ok(Bus::LostMain | Bus::LostStatus) => {
+                                    let mine = if matches!(ev, Ok(Bus::LostMain)) { main } else { !main && !subs.is_empty() };
+                                    if mine {
+                                        let e = json!({"id": sub_id, "error": {"code": "events_lost", "message": "subscriber fell behind"}});
+                                        let _ = w.write_all(format!("{e}\n").as_bytes()).await;
+                                        return;
+                                    }
+                                }
                                 Err(_) => return,
                             }
                         }

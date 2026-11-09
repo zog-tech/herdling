@@ -55,6 +55,20 @@ Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` po
   stops when the channel closes.
 - An app that finds no `pane.watch` in `hello.methods` polls `pane.read` as before.
 
+## herdr events: `herdr.subscribe` and `events_lost`
+
+`herdr.subscribe` streams the herdr event lines (`{"event": "...", "data": {...}}`). When herdr
+closes the subscription, the stream sends `{"closed": true}` and ends. The app then subscribes
+again and reads `session.snapshot`.
+
+- herdr 0.9.2 and later send an `events_lost` error and close a subscription whose reader fell
+  behind. herdlingd does not forward that error line. It ends the stream with `{"closed": true}`,
+  also when only a status connection of the stream lost events. So an app of any version reloads
+  the snapshot and subscribes again.
+- `herdlingd serve` subscribes again at once and reads a fresh `session.snapshot`. It compares the
+  snapshot with the statuses it knew, so a status change in the lost events still gives its push.
+  Pending pushes stay. An older herdr never sends `events_lost`, so nothing changes there.
+
 ## Typing into a pane: `pane.send_input` and the order of calls
 
 The app types through `herdr.call`. One line costs one call:

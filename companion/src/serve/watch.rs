@@ -23,6 +23,8 @@ const BACKOFF: [u64; 6] = [1, 2, 4, 8, 16, 30];
 const PUSH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Events queued between the herdr stream and the watcher loop.
 const QUEUE: usize = 1024;
+/// Wait before a new subscription after herdr reported `events_lost`.
+const LOST_DELAY: Duration = Duration::from_millis(200);
 
 /// Runs forever. Reconnects to herdr with backoff when it closes or is not there.
 pub async fn watch(ctx: &ServeCtx) {
@@ -30,11 +32,18 @@ pub async fn watch(ctx: &ServeCtx) {
     let mut failures = 0usize;
     // Kept across reconnects: a herdr restart does not end the time at the desk.
     let mut desk = Desk::default();
+    // After `events_lost`, the statuses and pending notices go to the next connection.
+    let mut carried: Option<Debouncer> = None;
     loop {
-        match connect(ctx, &mut desk).await {
+        match connect(ctx, &mut desk, carried.take()).await {
             Ok((stream, debouncer)) => {
                 failures = 0;
-                run_stream(ctx, &client, stream, debouncer, &mut desk).await;
+                if let Some(debouncer) = run_stream(ctx, &client, stream, debouncer, &mut desk).await {
+                    eprintln!("herdlingd serve: herdr dropped events (events_lost), subscribing again");
+                    carried = Some(debouncer);
+                    tokio::time::sleep(LOST_DELAY).await;
+                    continue;
+                }
                 eprintln!("herdlingd serve: herdr closed the event stream, reconnecting");
             }
             Err(e) => eprintln!("herdlingd serve: herdr: {e}"),
@@ -51,12 +60,21 @@ pub async fn watch(ctx: &ServeCtx) {
 /// The snapshot also gives the focused pane to `desk`. With no snapshot, the first
 /// change of each pane would only set its baseline and its push would be lost, so the
 /// snapshot is tried `SEED_TRIES` times and then the connection fails.
-async fn connect(ctx: &ServeCtx, desk: &mut Desk) -> Result<(EventStream, Debouncer), HerdrError> {
+///
+/// After `events_lost`, `carried` is the debouncer of the last connection: herdr is the same,
+/// so the snapshot reconciles it. A status that changed while the events were lost gives its
+/// notice, and pending notices stay. Panes that are not in the snapshot are forgotten.
+async fn connect(ctx: &ServeCtx, desk: &mut Desk, carried: Option<Debouncer>) -> Result<(EventStream, Debouncer), HerdrError> {
     let stream = events::subscribe(&ctx.herdr_socket, HERDR_TIMEOUT, None).await?;
-    let mut debouncer = Debouncer::new(ctx.debounce);
+    let reconcile = carried.is_some();
+    let mut debouncer = carried.unwrap_or_else(|| Debouncer::new(ctx.debounce));
     let snap = seed_snapshot(ctx).await?;
     let now = Instant::now();
     desk.set_focused(str_field(&snap, "focused_pane_id"));
+    if let Some(panes) = snap.get("panes").and_then(Value::as_array).filter(|_| reconcile) {
+        let open: Vec<&str> = panes.iter().filter_map(|p| str_field(p, "pane_id")).collect();
+        debouncer.retain(|pane| open.contains(&pane));
+    }
     for agent in agents(&snap) {
         if let (Some(pane), Some(status)) = (str_field(agent, "pane_id"), status_field(agent)) {
             debouncer.observe(pane, status, now);
@@ -85,16 +103,25 @@ async fn seed_snapshot(ctx: &ServeCtx) -> Result<Value, HerdrError> {
     }
 }
 
-async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventStream, mut debouncer: Debouncer, desk: &mut Desk) {
+/// Reads the stream until it ends. Returns the debouncer when herdr reported `events_lost`,
+/// so the next connection can reconcile it; `None` for any other end.
+async fn run_stream(
+    ctx: &ServeCtx,
+    client: &reqwest::Client,
+    mut stream: EventStream,
+    mut debouncer: Debouncer,
+    desk: &mut Desk,
+) -> Option<Debouncer> {
     // `EventStream::next` is not safe to cancel, so a task reads it and the loop
     // below selects on the channel instead.
     let (tx, mut rx) = mpsc::channel::<Value>(QUEUE);
-    let reader = tokio::spawn(async move {
+    let mut reader = tokio::spawn(async move {
         while let Some(ev) = stream.next().await {
             if tx.send(ev).await.is_err() {
-                return;
+                return false;
             }
         }
+        stream.lost()
     });
     // Checks the shell panes that the phone watches ("Notify me when it finishes").
     let mut shell_tick = tokio::time::interval(crate::shell_watch::POLL);
@@ -127,7 +154,10 @@ async fn run_stream(ctx: &ServeCtx, client: &reqwest::Client, mut stream: EventS
             send_notice(ctx, client, &pane, notice, desk.active(now)).await;
         }
     }
+    // The channel closed, so the reader is done.
+    let lost = (&mut reader).await.unwrap_or(false);
     reader.abort();
+    lost.then_some(debouncer)
 }
 
 /// Feeds `ev` to the debouncer and the desk. Returns true when the focused pane may have
