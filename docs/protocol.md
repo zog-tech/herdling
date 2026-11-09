@@ -454,9 +454,15 @@ Run sheet). The app shows the option only when `hello.methods` has `shell.watch`
 - `serve` asks herdr for `pane.process_info` of each watched pane every 3 seconds. The pane is busy
   when `foreground_process_group_id` is not `shell_pid`, and idle when it is the same.
   `busy: true` means that `serve` saw the pane busy.
+- herdr has no event for a foreground process change. Many shells set the terminal title when a
+  command starts and ends, and herdr then sends `pane.updated`. For a watched pane, `serve` also
+  checks 150 ms after that event (at most one check in 500 ms). The push then comes at once,
+  not up to 3 seconds later. A shell that does not set the title gets the 3-second checks only.
 - When a pane goes from busy to idle, `serve` removes the watch and sends one push. A pane that is
-  idle and was never seen busy keeps its watch. A command that ends in less than 3 seconds can
-  end before the first check and then sends no push.
+  idle and was never seen busy keeps its watch. A command that ends before the first check that
+  sees it busy sends no push. With the 3-second checks only, this can occur for a command
+  shorter than 3 seconds. A new watch is known to the early check only after the next 3-second
+  check.
 - herdr `pane_not_found` removes the watch with no push. Other herdr errors keep the watch.
 - The push title is `<folder tail>: command finished` (the pane's `cwd` in the snapshot, else the
   folder of the process, else `Terminal`). The body is the command line of the foreground

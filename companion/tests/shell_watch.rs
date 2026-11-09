@@ -1,6 +1,7 @@
 //! The rules and the state file of "Notify me when it finishes" (`shell.watch`).
 
 use std::fs;
+use std::time::{Duration, Instant};
 
 use herdlingd::shell_watch::*;
 use serde_json::json;
@@ -146,4 +147,45 @@ fn apply_skips_a_watch_replaced_in_the_same_second() {
     assert_eq!(step(&read, &Probe::Idle, 100), Step::Finished { command: "make".into(), cwd: None });
     assert_eq!(apply(&p, 100, &[(read, None)]).unwrap(), vec![false], "the old result removed the new watch");
     assert_eq!(list(&p, 100).unwrap(), vec![new]);
+}
+
+#[test]
+fn nudge_only_for_a_watched_pane() {
+    let t0 = Instant::now();
+    let mut n = Nudge::default();
+    n.pane_updated("w1:p2", t0);
+    assert_eq!(n.due(), None, "no watches known yet");
+    n.set_watched(["w1:p2".to_string()]);
+    n.pane_updated("w1:p9", t0);
+    assert_eq!(n.due(), None, "another pane costs nothing");
+    n.pane_updated("w1:p2", t0);
+    assert_eq!(n.due(), Some(t0 + NUDGE_DELAY));
+    assert!(!n.ready(t0));
+    assert!(n.ready(t0 + NUDGE_DELAY));
+}
+
+#[test]
+fn nudge_keeps_the_first_due_time_and_the_gap() {
+    let t0 = Instant::now();
+    let mut n = Nudge::default();
+    n.set_watched(["p".to_string()]);
+    n.pane_updated("p", t0);
+    n.pane_updated("p", t0 + Duration::from_millis(100));
+    assert_eq!(n.due(), Some(t0 + NUDGE_DELAY), "a second event does not move the check");
+    n.checked(t0 + NUDGE_DELAY);
+    assert_eq!(n.due(), None);
+    // A new event just after a check waits for the gap.
+    n.pane_updated("p", t0 + NUDGE_DELAY + Duration::from_millis(10));
+    assert_eq!(n.due(), Some(t0 + NUDGE_DELAY + NUDGE_GAP));
+}
+
+#[test]
+fn an_early_poll_does_not_end_a_later_nudge() {
+    let t0 = Instant::now();
+    let mut n = Nudge::default();
+    n.set_watched(["p".to_string()]);
+    n.pane_updated("p", t0);
+    // The regular poll runs before the command takes the foreground.
+    n.checked(t0 + Duration::from_millis(10));
+    assert_eq!(n.due(), Some(t0 + NUDGE_DELAY));
 }
