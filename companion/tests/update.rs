@@ -275,13 +275,26 @@ async fn same_version_is_a_no_op() {
     assert!(!c.update_available);
 }
 
+/// `update::apply`, tried again for a short time while it gives `update_in_progress`. Other
+/// tests in this process start `tar` at the same time. A child process holds a copy of every
+/// open file until it starts `tar`, so for a moment it can also hold the lock of this test.
+async fn apply_when_unlocked(ctx: &UpdateCtx, version: Option<&str>, allow_downgrade: bool) -> herdlingd::types::UpdateApply {
+    for _ in 0..50 {
+        match update::apply(ctx, version, allow_downgrade).await {
+            Err(e) if e.code == "update_in_progress" => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
+            r => return r.unwrap(),
+        }
+    }
+    panic!("the update lock stayed taken");
+}
+
 #[tokio::test]
 async fn downgrade_needs_permission() {
     let f = fixture("0.2.0", "0.3.0", None, None).await;
     let e = update::apply(&f.ctx, None, false).await.unwrap_err();
     assert_eq!(e.code, "downgrade");
     assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
-    let r = update::apply(&f.ctx, Some("0.2.0"), true).await.unwrap();
+    let r = apply_when_unlocked(&f.ctx, Some("0.2.0"), true).await;
     assert_eq!(r.status, "updated");
     assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), NEW);
 }
