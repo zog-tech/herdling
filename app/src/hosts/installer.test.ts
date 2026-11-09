@@ -18,10 +18,14 @@ function exec(result: Partial<PasswordExecResult> | { error: object }) {
 describe("INSTALL_COMMAND", () => {
   it("is the exact shell command (checked in zsh and bash against a local script)", () => {
     expect(INSTALL_COMMAND).toBe(
-      String.raw`sh -c 'U=https://herdling.zog-tech.com/install.sh; if command -v curl >/dev/null 2>&1; then S=$(curl -fsSL "$U") || S=; elif command -v wget >/dev/null 2>&1; then S=$(wget -qO- "$U") || S=; else echo "HERDLINGD_ERROR no_downloader curl and wget are not installed"; exit 1; fi; [ -n "$S" ] || { echo "HERDLINGD_ERROR download_failed cannot download $U"; exit 1; }; printf "%s\n" "$S" | sh -s -- --quiet'`,
+      String.raw`sh -c 'U=https://herdling.zog-tech.com/install.sh; if command -v curl >/dev/null 2>&1; then S=$(curl -fsSL --proto =https --proto-redir =https "$U") || S=; elif command -v wget >/dev/null 2>&1; then S=$(wget -qO- "$U") || S=; else echo "HERDLINGD_ERROR no_downloader curl and wget are not installed"; exit 1; fi; [ -n "$S" ] || { echo "HERDLINGD_ERROR download_failed cannot download $U"; exit 1; }; printf "%s\n" "$S" | sh -s -- --quiet'`,
     );
     // The login shell gets one single-quoted word: no single quote may appear inside it.
     expect(INSTALL_COMMAND.slice(7, -1)).not.toContain("'");
+  });
+
+  it("lets curl use only HTTPS, also after a redirect", () => {
+    expect(INSTALL_COMMAND).toContain("curl -fsSL --proto =https --proto-redir =https ");
   });
 });
 
