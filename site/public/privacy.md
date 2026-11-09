@@ -43,6 +43,11 @@ Each notification contains:
 - a short text with the kind of agent (for example, "Claude Code") and the agent's terminal title, which can describe the current task;
 - internal IDs of the computer and the pane, so that a tap opens the right session.
 
+Some notifications contain more:
+
+- When an agent asks you to choose, the notification can contain the labels of the menu options (for example "Yes" and "No"), at most 60 characters each, so that you can answer from the notification.
+- When you ask Herdling to tell you when a terminal command finishes, the notification contains the name of the folder where the command runs and the start of the command line, at most 80 characters.
+
 Expo, Apple and Google handle these messages to deliver them, under their own privacy policies. Zog Tech does not receive them. Notifications do not include the agent's replies or your prompts. You can turn notifications off in Herdling's Settings or in your phone's settings. When you remove a computer from the app, that computer forgets your phone's key.
 
 ## Voice input
