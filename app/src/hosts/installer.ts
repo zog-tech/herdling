@@ -15,12 +15,14 @@ export const INSTALL_URL = "https://herdling.zog-tech.com/install.sh";
 /**
  * Downloads the script into a variable first (with curl, else wget), so a failed download does not
  * run an empty or half script. The login shell runs it, so the body has no single quotes.
+ * curl uses only HTTPS, also after a redirect. wget has no such option for one download
+ * (`--https-only` is for recursive downloads only), so the wget path relies on the HTTPS URL.
  * `withHerdr` adds `--with-herdr`: the script first runs the official herdr installer when herdr is missing.
  */
 export function installCommand(withHerdr = false): string {
   return (
     `sh -c 'U=${INSTALL_URL}; ` +
-    `if command -v curl >/dev/null 2>&1; then S=$(curl -fsSL "$U") || S=; ` +
+    `if command -v curl >/dev/null 2>&1; then S=$(curl -fsSL --proto =https --proto-redir =https "$U") || S=; ` +
     `elif command -v wget >/dev/null 2>&1; then S=$(wget -qO- "$U") || S=; ` +
     `else echo "HERDLINGD_ERROR no_downloader curl and wget are not installed"; exit 1; fi; ` +
     `[ -n "$S" ] || { echo "HERDLINGD_ERROR download_failed cannot download $U"; exit 1; }; ` +

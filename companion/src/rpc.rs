@@ -587,11 +587,18 @@ fn stale(message: &str) -> RpcError {
 
 /// `pane.answer`: answers a permission menu with one digit, after a check on the computer.
 /// The pane must still wait for the user, and the option at `key` must still have
-/// `expect_label` (or its cut form from a push). Otherwise the error is `stale` and no key is sent.
+/// `expect_label` (or its cut form from a push). With `expect_question` (from the push), the
+/// question of the menu must also be the same (see [`crate::choices::menu_question`]). Otherwise
+/// the error is `stale` and no key is sent. An older app sends no `expect_question`.
 async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = str_param(&params, "pane_id", "pane.answer")?;
     let key = str_param(&params, "key", "pane.answer")?;
     let expect = str_param(&params, "expect_label", "pane.answer")?;
+    let expect_question = match params.get("expect_question") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(q)) => Some(q.as_str()),
+        Some(_) => return Err(err("bad_request", "pane.answer: expect_question must be a string")),
+    };
     if pane.is_empty() {
         return Err(err("bad_request", "pane.answer requires pane_id"));
     }
@@ -617,6 +624,9 @@ async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     };
     if !crate::choices::label_matches(&choice.label, expect) {
         return Err(stale("the menu changed"));
+    }
+    if expect_question.is_some_and(|q| crate::choices::menu_question(text).as_deref() != Some(q)) {
+        return Err(stale("the question changed"));
     }
     // Mark phone input before herdr gets it, as `herdr.call` does.
     let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
@@ -1064,22 +1074,14 @@ async fn pair_revoke(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let key = crate::pair::parse_public_key(key).map_err(|e| err("bad_request", e.to_string()))?;
     let (keys_path, config_path) = (ctx.authorized_keys.clone(), ctx.config_path.clone());
     tokio::task::spawn_blocking(move || -> Result<Value, RpcError> {
-        let io = |e: anyhow::Error| err("io_error", format!("{e:#}"));
-        let cfg = crate::config::load(&config_path).map_err(io)?;
-        let Some(device) = cfg.devices.iter().find(|d| d.id == id) else {
-            return Err(err("not_found", "pair.revoke: no paired device with this device_id"));
-        };
-        if device.public_key.as_deref() != Some(key.as_str()) {
-            return Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device"));
+        use crate::pair::Unpair;
+        match crate::pair::unpair(&keys_path, &config_path, &id, Some(&key)).map_err(|e| err("io_error", format!("{e:#}")))? {
+            Unpair::NotFound => Err(err("not_found", "pair.revoke: no paired device with this device_id")),
+            Unpair::WrongKey => Err(err("bad_request", "pair.revoke: public_key is not the key saved for this device")),
+            Unpair::Removed { removed_keys, removed_device } => {
+                Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
+            }
         }
-        let removed_keys = crate::pair::remove_herdling_key(&keys_path, &key).map_err(|e| io(e.into()))?;
-        let removed_device = crate::config::update(&config_path, |c| {
-            let before = c.devices.len();
-            c.devices.retain(|d| d.id != id);
-            c.devices.len() != before
-        })
-        .map_err(io)?;
-        Ok(json!({ "removed_keys": removed_keys, "removed_device": removed_device }))
     })
     .await
     .map_err(|e| err("internal", e.to_string()))?
@@ -1134,12 +1136,16 @@ async fn preview_open(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     }
     let (cache, home) = (ctx.ports_cache.clone(), ctx.home.clone());
     tokio::task::spawn_blocking(move || {
-        use crate::ports::{host_listeners, is_listening};
+        use crate::ports::host_listeners;
+        use crate::proxy::select_target;
         // A dev server that started after the last list is not in the cache: look again once.
-        if !is_listening(&cache.get(host_listeners), port) && !is_listening(&cache.refresh(host_listeners), port) {
+        // The grant records the address of the listener, so the proxy connects only there.
+        let Some(addr) = select_target(&cache.get(host_listeners), port, None)
+            .or_else(|| select_target(&cache.refresh(host_listeners), port, None))
+        else {
             return Err(err("port_not_listening", format!("nothing of this user listens on port {port} on loopback")));
-        }
-        let g = crate::proxy::issue(&crate::proxy::grants_path(&home), port, crate::proxy::now_secs())
+        };
+        let g = crate::proxy::issue(&crate::proxy::grants_path(&home), port, Some(addr), crate::proxy::now_secs())
             .map_err(|e| err("io_error", format!("preview.open: {e}")))?;
         Ok(json!({ "grant": g.grant, "port": g.port, "expires_at": g.expires }))
     })

@@ -161,11 +161,14 @@ async fn methods_find_a_listener_and_issue_a_grant() {
     assert!(proxy::valid_grant(&grant));
     assert_eq!(open["result"]["port"], port);
     let path = proxy::grants_path(home.path());
-    assert_eq!(proxy::check(&path, port, &grant, 7790, proxy::now_secs()), Ok(()));
+    // The grant holds the address of the listener, and the proxy checks it again.
+    let here = [herdlingd::ports::Listener { port, addr: "127.0.0.1".parse().unwrap(), pid: None }];
+    assert_eq!(proxy::check(&path, port, &grant, 7790, proxy::now_secs(), &here), Ok("127.0.0.1".parse().unwrap()));
+    assert!(std::fs::read_to_string(&path).unwrap().contains("\"addr\":\"127.0.0.1\""));
 
     let close = call(home.path(), "preview.close", json!({"grant": grant})).await;
     assert_eq!(close["result"]["closed"], true);
-    assert!(proxy::check(&path, port, &grant, 7790, proxy::now_secs()).is_err());
+    assert!(proxy::check(&path, port, &grant, 7790, proxy::now_secs(), &here).is_err());
     drop(listener);
 }
 

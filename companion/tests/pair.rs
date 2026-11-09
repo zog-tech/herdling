@@ -112,7 +112,7 @@ async fn pairs_with_right_code() {
     assert!(resp["user"].is_string());
 
     let expected = format!(
-        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:Sam-iPhone\n"
+        "restrict,command=\"{EXE} rpc\" ssh-ed25519 {blob} herdling:Sam-iPhone\n"
     );
     assert_eq!(s.keys(), expected);
 
@@ -260,7 +260,7 @@ async fn pair_rejects_injection() {
     assert_eq!(keys.lines().count(), 1);
     let line = keys.lines().next().unwrap();
     assert!(line.ends_with(&format!("ssh-ed25519 {blob} herdling:abcd")), "{line}");
-    assert!(line.starts_with("command=\""));
+    assert!(line.starts_with(&format!("restrict,command=\"{EXE} rpc\" ")), "{line}");
 }
 
 #[tokio::test]
@@ -451,6 +451,27 @@ fn append_and_remove_key_helpers() {
     assert_eq!(pair::remove_key(&dir.path().join("missing"), &format!("ssh-ed25519 {blob}")).unwrap(), 0);
 }
 
+/// The key line format before `restrict`. Lines of this form stay in place after an update.
+fn legacy_line(blob: &str, name: &str) -> String {
+    format!("command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:{name}")
+}
+
+#[test]
+fn legacy_key_lines_are_still_found_and_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = dir.path().join(".ssh/authorized_keys");
+    std::fs::create_dir_all(keys.parent().unwrap()).unwrap();
+    let blob = ed25519_blob(5);
+    std::fs::write(&keys, format!("{}\n", legacy_line(&blob, "Sam-iPhone"))).unwrap();
+    // A new line for the same key is a duplicate.
+    let line = pair::key_line(Path::new(EXE), &format!("ssh-ed25519 {blob}"), "Sam iPhone").unwrap();
+    assert!(line.starts_with("restrict,command="), "{line}");
+    assert!(!pair::append_key(&keys, &line).unwrap());
+    // Revoke and re-pair remove the old line.
+    assert_eq!(pair::remove_herdling_key(&keys, &format!("ssh-ed25519 {blob}")).unwrap(), 1);
+    assert_eq!(std::fs::read_to_string(&keys).unwrap(), "");
+}
+
 #[test]
 fn key_line_rejects_unsafe_exe() {
     let key = format!("ssh-ed25519 {}", ed25519_blob(1));
@@ -611,4 +632,72 @@ async fn failed_save_keeps_the_window_open() {
     assert_eq!(status, 200);
     assert!(!s.pair_json().exists());
     assert_eq!(config::load(&s.config_path()).unwrap().devices.len(), 1);
+}
+
+#[test]
+fn unpair_removes_the_herdling_line_and_the_device() {
+    let (dir, phone, laptop) = revoke_home(Some(format!("ssh-ed25519 {}", ed25519_blob(1))));
+    let keys = dir.path().join(".ssh/authorized_keys");
+    let cfg = config::default_path(dir.path());
+    // A lost phone: the computer removes it with no call from the phone.
+    let got = pair::unpair(&keys, &cfg, "d1", None).unwrap();
+    assert_eq!(got, pair::Unpair::Removed { removed_keys: 1, removed_device: true });
+    assert_eq!(std::fs::read_to_string(&keys).unwrap(), format!("ssh-ed25519 {phone} sam@laptop\nssh-ed25519 {laptop} sam@laptop\n"));
+    assert!(config::load(&cfg).unwrap().devices.is_empty());
+    assert_eq!(pair::unpair(&keys, &cfg, "d1", None).unwrap(), pair::Unpair::NotFound);
+}
+
+#[test]
+fn unpair_with_an_expected_key_needs_that_key() {
+    let (dir, _phone, laptop) = revoke_home(Some(format!("ssh-ed25519 {}", ed25519_blob(1))));
+    let keys = dir.path().join(".ssh/authorized_keys");
+    let cfg = config::default_path(dir.path());
+    let before = std::fs::read_to_string(&keys).unwrap();
+    let got = pair::unpair(&keys, &cfg, "d1", Some(&format!("ssh-ed25519 {laptop}"))).unwrap();
+    assert_eq!(got, pair::Unpair::WrongKey);
+    assert_eq!(std::fs::read_to_string(&keys).unwrap(), before);
+    assert_eq!(config::load(&cfg).unwrap().devices.len(), 1);
+}
+
+#[tokio::test]
+async fn a_rejected_pairing_removes_the_relayed_key() {
+    // A relay on the LAN sends the right code with its own key. The user sees a fingerprint
+    // that the phone does not show, answers no, and the relay key must go.
+    let s = start().await;
+    let code = s.open();
+    let attacker = format!("ssh-ed25519 {}", ed25519_blob(9));
+    let (status, _) = post(&s, &body(&code, &attacker, "Sam iPhone")).await;
+    assert_eq!(status, 200);
+    assert!(s.keys().contains(&ed25519_blob(9)));
+    let added = pair::added_devices(&[], &config::load(&s.config_path()).unwrap().devices);
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].fingerprint, pair::key_fingerprint(&attacker).unwrap());
+    assert!(!pair::keep_answer(Some("\n")));
+    let got = pair::unpair(&s.keys_path(), &s.config_path(), &added[0].id, Some(&added[0].public_key)).unwrap();
+    assert_eq!(got, pair::Unpair::Removed { removed_keys: 1, removed_device: true });
+    assert_eq!(s.keys(), "");
+    assert!(config::load(&s.config_path()).unwrap().devices.is_empty());
+}
+
+#[test]
+fn keep_answer_is_yes_only() {
+    for yes in ["y", "Y\n", "yes\n", " YES \r\n"] {
+        assert!(pair::keep_answer(Some(yes)), "{yes:?}");
+    }
+    for no in ["", "\n", "n", "no", "yep", "y y"] {
+        assert!(!pair::keep_answer(Some(no)), "{no:?}");
+    }
+    // End of input or a timeout.
+    assert!(!pair::keep_answer(None));
+}
+
+#[test]
+fn device_list_shows_fingerprints_not_keys() {
+    let k1 = format!("ssh-ed25519 {}", ed25519_blob(1));
+    let devices = vec![device("d1", "Sam-iPhone", Some(k1.clone())), device("d2", "Old", None)];
+    let text = pair::format_devices(&devices);
+    assert!(text.contains("d1") && text.contains("Sam-iPhone") && text.contains(&pair::key_fingerprint(&k1).unwrap()), "{text}");
+    assert!(text.contains("d2") && text.contains("(no key)"), "{text}");
+    assert!(!text.contains(&ed25519_blob(1)), "{text}");
+    assert_eq!(pair::format_devices(&[]), "No paired devices.\n");
 }

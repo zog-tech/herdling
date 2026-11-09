@@ -89,4 +89,10 @@ impl Debouncer {
     pub fn forget(&mut self, pane: &str) {
         self.panes.remove(pane);
     }
+
+    /// Forgets every pane for which `keep` is false (for example, panes that closed while
+    /// herdr dropped events).
+    pub fn retain(&mut self, keep: impl Fn(&str) -> bool) {
+        self.panes.retain(|pane, _| keep(pane));
+    }
 }

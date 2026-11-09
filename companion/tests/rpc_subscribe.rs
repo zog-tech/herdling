@@ -323,3 +323,23 @@ async fn idle_exit_closes_every_herdr_connection() {
     let eof = tokio::time::timeout(Duration::from_secs(2), s.rx.next_line()).await.unwrap().unwrap();
     assert!(eof.is_none(), "output still open: {eof:?}");
 }
+
+#[tokio::test]
+async fn events_lost_ends_the_stream_so_the_app_reloads() {
+    // herdr 0.9.2+ sends `events_lost` when a subscriber falls behind. The stream ends with
+    // `closed`, and the app subscribes again and reads a fresh snapshot.
+    for push_lost in [Push::Lost, Push::LostStatus] {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("herdr.sock");
+        let (push, mut reqs) = spawn_fake_with_panes(&sock, &["w1:p1"]);
+        let mut s = Session::start(sock, dir.path().into());
+        let stream = s.subscribe(1, "{}").await;
+        let _lifecycle = reqs.recv().await.unwrap();
+        let _status = reqs.recv().await.unwrap();
+        push.send(push_lost).unwrap();
+        let n = s.recv().await;
+        assert_eq!(n["params"]["stream"], stream.as_str());
+        // The error line of herdr is not an event.
+        assert_eq!(n["params"]["data"], json!({"closed": true}), "{n}");
+    }
+}

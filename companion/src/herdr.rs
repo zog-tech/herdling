@@ -16,6 +16,13 @@ pub enum HerdrError {
     Remote { code: String, message: String },
 }
 
+/// True for the `events_lost` error line of herdr 0.9.2 and later: a subscriber fell behind
+/// and herdr closes its connection. The client subscribes again and reads a fresh
+/// `session.snapshot`. An older herdr never sends it.
+pub fn is_events_lost(line: &Value) -> bool {
+    line.get("error").and_then(|e| e.get("code")).and_then(Value::as_str) == Some("events_lost")
+}
+
 pub struct Client {
     reader: BufReader<OwnedReadHalf>,
     writer: OwnedWriteHalf,

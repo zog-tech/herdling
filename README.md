@@ -146,6 +146,17 @@ cargo build --release
 herdlingd pair                       # shows the pairing code and QR code for the app
 ```
 
+After a phone pairs, `herdlingd pair` shows the key fingerprint of the phone and asks
+"Keep this phone?". Compare the fingerprint with the key that the phone shows. If they are not
+the same, or you do not answer in 2 minutes, herdlingd removes the phone again.
+
+### Paired phones
+
+`herdlingd devices` lists the paired phones: the device id, the name and the key fingerprint.
+`herdlingd unpair <device_id>` removes a phone, for example a lost phone. It removes the key line
+of the phone from `~/.ssh/authorized_keys` and the phone from the config, so the phone cannot
+connect and gets no more pushes.
+
 `herdlingd install` registers a launchd agent (`com.zogtech.herdlingd`) on macOS or a systemd
 user service (`herdlingd.service`) on Linux. The service runs as your user, not as root.
 `herdlingd install --dry-run` shows what it would do. If `herdlingd` is not found, add

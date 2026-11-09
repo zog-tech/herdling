@@ -1,18 +1,25 @@
 //! Browser preview: grants (`preview.open`, `preview.close`) and the proxy mode.
 //!
-//! The phone key cannot forward ports (`no-port-forwarding` stays). For each TCP connection of
+//! The phone key cannot forward ports (`restrict` in its key line). For each TCP connection of
 //! the preview, the app opens a new exec channel with the command `herdlingd proxy <port> <grant>`.
 //! The forced command still runs `herdlingd rpc`; it reads that command from
-//! `SSH_ORIGINAL_COMMAND` and becomes the proxy. The proxy connects only to `127.0.0.1` or `::1`,
+//! `SSH_ORIGINAL_COMMAND` and becomes the proxy. The proxy connects only to a loopback address,
 //! only with a live grant for the same port, and copies bytes both ways.
+//!
+//! Another user of the computer can listen on the same port on another loopback address (for
+//! example `127.0.0.1` while the dev server of this user listens only on `::1`), or take the port
+//! after the dev server stops. So `preview.open` records the address of the listener of this user
+//! in the grant, and each proxy run checks again that a listener of this user is on that port and
+//! address. The proxy connects only to that address. A grant with no listener is not renewed.
 //!
 //! The proxy runs in a new process, so grants go through a file (mode 0600, atomic rename).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -36,6 +43,10 @@ pub struct Grant {
     pub grant: String,
     pub port: u16,
     pub expires: u64,
+    /// The loopback address to connect to, from the listener that `preview.open` found. A grant
+    /// file of an older herdlingd has none: the first proxy run picks one and records it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub addr: Option<IpAddr>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -61,6 +72,8 @@ pub enum Refusal {
     Io(String),
     #[error("nothing listens on the port on loopback: {0}")]
     Connect(String),
+    #[error("no listener of this user is on the port and address of the grant")]
+    ListenerGone,
 }
 
 /// `~/.local/state/herdling/preview-grants.json`.
@@ -100,23 +113,58 @@ pub fn parse_original_command(s: &str) -> Option<(u16, String)> {
     valid_grant(grant).then(|| (port, (*grant).to_string()))
 }
 
-/// The only addresses the proxy connects to, in order.
+/// The loopback addresses that a listener can have, IPv4 first.
 pub fn targets(port: u16) -> [SocketAddr; 2] {
     [SocketAddr::from((Ipv4Addr::LOCALHOST, port)), SocketAddr::from((Ipv6Addr::LOCALHOST, port))]
 }
 
-/// Connects to `127.0.0.1:port`, then to `[::1]:port`.
-pub async fn connect_loopback(port: u16, timeout: Duration) -> std::io::Result<TcpStream> {
-    let mut last = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "no loopback address answered");
-    for addr in targets(port) {
-        debug_assert!(addr.ip().is_loopback());
-        match tokio::time::timeout(timeout, TcpStream::connect(addr)).await {
-            Ok(Ok(s)) => return Ok(s),
-            Ok(Err(e)) => last = e,
-            Err(_) => last = std::io::Error::new(std::io::ErrorKind::TimedOut, "connect timed out"),
+/// The loopback address that reaches a listener on `addr`: the address itself for loopback,
+/// `127.0.0.1` for `0.0.0.0` and `::1` for `::`. An IPv4-mapped address counts as its IPv4
+/// address. `None` for any other address.
+pub fn connect_addr(addr: &IpAddr) -> Option<IpAddr> {
+    let v4 = |a: Ipv4Addr| {
+        if a.is_loopback() {
+            Some(IpAddr::V4(a))
+        } else if a.is_unspecified() {
+            Some(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        } else {
+            None
+        }
+    };
+    match addr {
+        IpAddr::V4(a) => v4(*a),
+        IpAddr::V6(a) => match a.to_ipv4_mapped() {
+            Some(m) => v4(m),
+            None if a.is_loopback() || a.is_unspecified() => Some(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            None => None,
+        },
+    }
+}
+
+/// The address to connect to for `port`, from the listeners of this user (`listeners` must hold
+/// only listeners of this user). With `recorded`, a listener must still reach that address, else
+/// `None`. Without it (a grant of an older herdlingd), the first listener on the port decides,
+/// IPv4 first. Pure: the caller reads the listeners.
+pub fn select_target(listeners: &[crate::ports::Listener], port: u16, recorded: Option<IpAddr>) -> Option<IpAddr> {
+    let mut found: Vec<IpAddr> = listeners.iter().filter(|l| l.port == port).filter_map(|l| connect_addr(&l.addr)).collect();
+    match recorded {
+        Some(r) => found.contains(&r).then_some(r),
+        None => {
+            found.sort_by_key(IpAddr::is_ipv6);
+            found.first().copied()
         }
     }
-    Err(last)
+}
+
+/// Connects to `addr`, which must be a loopback address.
+pub async fn connect_to(addr: SocketAddr, timeout: Duration) -> std::io::Result<TcpStream> {
+    if !addr.ip().is_loopback() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a loopback address"));
+    }
+    match tokio::time::timeout(timeout, TcpStream::connect(addr)).await {
+        Ok(r) => r,
+        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "connect timed out")),
+    }
 }
 
 fn open_private(path: &Path, truncate: bool) -> std::io::Result<File> {
@@ -148,9 +196,10 @@ fn with_grants<T>(path: &Path, now: u64, f: impl FnOnce(&mut Vec<Grant>) -> (T, 
     Ok(out)
 }
 
-/// Writes a new grant for `port`. Drops the oldest grants above [`MAX_GRANTS`].
-pub fn issue(path: &Path, port: u16, now: u64) -> std::io::Result<Grant> {
-    let g = Grant { grant: new_grant(), port, expires: now + GRANT_TTL.as_secs() };
+/// Writes a new grant for `port` and the connect address `addr` (see [`select_target`]).
+/// Drops the oldest grants above [`MAX_GRANTS`].
+pub fn issue(path: &Path, port: u16, addr: Option<IpAddr>, now: u64) -> std::io::Result<Grant> {
+    let g = Grant { grant: new_grant(), port, expires: now + GRANT_TTL.as_secs(), addr };
     with_grants(path, now, |grants| {
         grants.push(g.clone());
         grants.sort_by_key(|x| x.expires);
@@ -171,8 +220,17 @@ pub fn revoke(path: &Path, grant: &str, now: u64) -> std::io::Result<bool> {
     })
 }
 
-/// Checks a proxy request and extends the grant's life. `reserved` is the pairing port.
-pub fn check(path: &Path, port: u16, grant: &str, reserved: u16, now: u64) -> Result<(), Refusal> {
+/// Checks a proxy request against the grant file and the listeners of this user. Returns the
+/// address to connect to and extends the grant's life. When no listener of this user reaches
+/// the address of the grant, the grant is not renewed. `reserved` is the pairing port.
+pub fn check(
+    path: &Path,
+    port: u16,
+    grant: &str,
+    reserved: u16,
+    now: u64,
+    listeners: &[crate::ports::Listener],
+) -> Result<IpAddr, Refusal> {
     if !valid_grant(grant) {
         return Err(Refusal::BadGrant);
     }
@@ -185,10 +243,14 @@ pub fn check(path: &Path, port: u16, grant: &str, reserved: u16, now: u64) -> Re
     with_grants(path, now, |grants| match grants.iter_mut().find(|g| same(&g.grant, grant)) {
         None => (Err(Refusal::NoGrant), false),
         Some(g) if g.port != port => (Err(Refusal::WrongPort), false),
-        Some(g) => {
-            g.expires = now + GRANT_TTL.as_secs();
-            (Ok(()), true)
-        }
+        Some(g) => match select_target(listeners, port, g.addr) {
+            None => (Err(Refusal::ListenerGone), false),
+            Some(addr) => {
+                g.expires = now + GRANT_TTL.as_secs();
+                g.addr = Some(addr);
+                (Ok(addr), true)
+            }
+        },
     })
     .map_err(|e| Refusal::Io(e.to_string()))?
 }
@@ -198,18 +260,27 @@ fn same(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// Reads the listeners of this user. Production: [`crate::ports::host_listeners`].
+pub type ListenerSource = Arc<dyn Fn() -> Vec<crate::ports::Listener> + Send + Sync>;
+
 /// Settings of one proxy run.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProxyCtx {
     pub grants_path: PathBuf,
     /// The pairing port of `serve`. It is never proxied.
     pub reserved: u16,
     pub connect_timeout: Duration,
+    pub listeners: ListenerSource,
 }
 
 impl ProxyCtx {
     pub fn new(home: &Path, reserved: u16) -> ProxyCtx {
-        ProxyCtx { grants_path: grants_path(home), reserved, connect_timeout: CONNECT_TIMEOUT }
+        ProxyCtx {
+            grants_path: grants_path(home),
+            reserved,
+            connect_timeout: CONNECT_TIMEOUT,
+            listeners: Arc::new(crate::ports::host_listeners),
+        }
     }
 }
 
@@ -218,18 +289,24 @@ pub fn now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// Checks the grant, connects to the dev server on loopback and copies bytes between `input`/`output`
-/// (the SSH channel) and the TCP connection until one side ends.
+/// Checks the grant and the listener, connects to the address of the grant and copies bytes
+/// between `input`/`output` (the SSH channel) and the TCP connection until one side ends.
 pub async fn run<R, W>(input: R, output: W, port: u16, grant: &str, ctx: &ProxyCtx) -> Result<(), Refusal>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let (path, reserved, g) = (ctx.grants_path.clone(), ctx.reserved, grant.to_string());
-    tokio::task::spawn_blocking(move || check(&path, port, &g, reserved, now_secs()))
-        .await
-        .map_err(|e| Refusal::Io(e.to_string()))??;
-    let tcp = connect_loopback(port, ctx.connect_timeout).await.map_err(|e| Refusal::Connect(e.to_string()))?;
+    let (path, reserved, g, source) = (ctx.grants_path.clone(), ctx.reserved, grant.to_string(), ctx.listeners.clone());
+    let addr = tokio::task::spawn_blocking(move || {
+        // Check the request first: a bad request must not cost a listener read.
+        if !valid_grant(&g) {
+            return Err(Refusal::BadGrant);
+        }
+        check(&path, port, &g, reserved, now_secs(), &source())
+    })
+    .await
+    .map_err(|e| Refusal::Io(e.to_string()))??;
+    let tcp = connect_to(SocketAddr::new(addr, port), ctx.connect_timeout).await.map_err(|e| Refusal::Connect(e.to_string()))?;
     let _ = tcp.set_nodelay(true);
     pipe(input, output, tcp).await;
     Ok(())

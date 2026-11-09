@@ -25,7 +25,11 @@ pub const MAX_NAME: usize = 40;
 pub const MAX_ID: usize = 128;
 
 const KEY_TYPE: &str = "ssh-ed25519";
-const KEY_OPTIONS: &str = "no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty";
+/// OpenSSH `restrict` (OpenSSH 7.2 and later) turns off port, agent and X11 forwarding, the
+/// PTY and `~/.ssh/rc`, and every restriction that a later OpenSSH adds. Older herdlingd versions
+/// wrote `no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty`; such lines keep working,
+/// because the dedupe and remove code compares only the key blob and the `herdling:` comment.
+const KEY_OPTIONS: &str = "restrict";
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum PairError {
@@ -249,7 +253,7 @@ pub fn key_line(exe: &Path, public_key: &str, device_name: &str) -> Result<Strin
         // sshd runs the command through the user's shell, so allow only plain path characters.
         .filter(|s| s.starts_with('/') && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._+@-".contains(&b)))
         .ok_or_else(|| PairError::BadRequest("companion path cannot be quoted safely".into()))?;
-    Ok(format!("command=\"{exe} rpc\",{KEY_OPTIONS} {key} herdling:{}", sanitize_name(device_name)))
+    Ok(format!("{KEY_OPTIONS},command=\"{exe} rpc\" {key} herdling:{}", sanitize_name(device_name)))
 }
 
 /// Splits off the first field of an `authorized_keys` line. Whitespace inside double
@@ -482,13 +486,92 @@ pub fn window_state(cfg_dir: &Path, now: u64) -> WindowState {
     }
 }
 
-/// Devices in `after` that are new or have a new key compared to `before`, as
-/// `(name, key fingerprint)`. Used to print what a pairing window added.
-pub fn new_devices(before: &[crate::config::Device], after: &[crate::config::Device]) -> Vec<(String, String)> {
+/// A device that a pairing window added, or that came back with a new key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Added {
+    pub id: String,
+    pub name: String,
+    /// `ssh-ed25519 <blob>`.
+    pub public_key: String,
+    /// See [`key_fingerprint`].
+    pub fingerprint: String,
+}
+
+/// Devices in `after` that are new or have a new key compared to `before`.
+pub fn added_devices(before: &[crate::config::Device], after: &[crate::config::Device]) -> Vec<Added> {
     after
         .iter()
         .filter(|d| !before.iter().any(|b| b.id == d.id && b.public_key == d.public_key))
-        .filter_map(|d| Some((d.name.clone(), key_fingerprint(d.public_key.as_deref()?)?)))
+        .filter_map(|d| {
+            let public_key = d.public_key.clone()?;
+            let fingerprint = key_fingerprint(&public_key)?;
+            Some(Added { id: d.id.clone(), name: d.name.clone(), public_key, fingerprint })
+        })
+        .collect()
+}
+
+/// Like [`added_devices`], as `(name, key fingerprint)`. Used to print what a pairing window added.
+pub fn new_devices(before: &[crate::config::Device], after: &[crate::config::Device]) -> Vec<(String, String)> {
+    added_devices(before, after).into_iter().map(|a| (a.name, a.fingerprint)).collect()
+}
+
+/// True when the answer to "Keep this phone?" is `y` or `yes` (any case). Anything else,
+/// the end of input or a timeout (`None`) is no.
+pub fn keep_answer(line: Option<&str>) -> bool {
+    line.map(str::trim).is_some_and(|a| a.eq_ignore_ascii_case("y") || a.eq_ignore_ascii_case("yes"))
+}
+
+/// The result of [`unpair`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unpair {
+    /// No device has this id.
+    NotFound,
+    /// The device has another key than the expected key (or no key). Nothing changed.
+    WrongKey,
+    Removed { removed_keys: usize, removed_device: bool },
+}
+
+/// Removes device `id`: its `herdling:` key line from `authorized_keys` and its config entry.
+/// With `expect_key`, the saved key of the device must be that key, else nothing changes.
+/// Without it (`herdlingd unpair`), the saved key is removed, if the device has one.
+/// Lines that the user added for the same key stay (see [`remove_herdling_key`]).
+pub fn unpair(authorized_keys: &Path, config_path: &Path, id: &str, expect_key: Option<&str>) -> anyhow::Result<Unpair> {
+    let cfg = crate::config::load(config_path)?;
+    let Some(device) = cfg.devices.iter().find(|d| d.id == id) else { return Ok(Unpair::NotFound) };
+    if expect_key.is_some() && device.public_key.as_deref() != expect_key {
+        return Ok(Unpair::WrongKey);
+    }
+    let removed_keys = match &device.public_key {
+        Some(key) => remove_herdling_key(authorized_keys, key)?,
+        None => 0,
+    };
+    let removed_device = crate::config::update(config_path, |c| {
+        let before = c.devices.len();
+        c.devices.retain(|d| d.id != id);
+        c.devices.len() != before
+    })?;
+    Ok(Unpair::Removed { removed_keys, removed_device })
+}
+
+/// The text of `herdlingd devices`: one line per device with its id, name and key fingerprint.
+/// It never shows the key itself or the push token.
+pub fn format_devices(devices: &[crate::config::Device]) -> String {
+    if devices.is_empty() {
+        return "No paired devices.\n".into();
+    }
+    let rows: Vec<[String; 3]> = devices
+        .iter()
+        .map(|d| {
+            let fp = d.public_key.as_deref().and_then(key_fingerprint).unwrap_or_else(|| "(no key)".into());
+            [d.id.clone(), d.name.clone(), fp]
+        })
+        .collect();
+    let header = ["ID".to_string(), "NAME".to_string(), "KEY".to_string()];
+    let width = |i: usize| rows.iter().chain(std::iter::once(&header)).map(|r| r[i].chars().count()).max().unwrap_or(0);
+    let (w0, w1) = (width(0), width(1));
+    std::iter::once(&header)
+        .chain(rows.iter())
+        .map(|r| format!("{:w0$}  {:w1$}  {}\n", r[0], r[1], r[2]))
         .collect()
 }
 

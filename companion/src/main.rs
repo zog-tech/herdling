@@ -111,16 +111,70 @@ async fn pair_cmd(home: &std::path::Path) -> Result<()> {
                 // Give serve a moment to save the device after it took the window.
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 let after = config::load(&config_path)?.devices;
-                let paired = pair::new_devices(&before, &after);
+                let paired = pair::added_devices(&before, &after);
                 if paired.is_empty() {
                     println!("Pairing window closed with no new device.");
                 }
-                for (name, fp) in paired {
-                    println!("Paired {name}  key {fp}");
+                for d in paired {
+                    confirm_device(home, &config_path, &d).await?;
                 }
                 return Ok(());
             }
         }
+    }
+}
+
+/// How long `herdlingd pair` waits for the answer to "Keep this phone?".
+const CONFIRM_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Shows the key fingerprint of a phone that just paired. On a terminal, asks the user to keep
+/// it: the pairing code goes over plain HTTP, so a device on the LAN that reads the code can pair
+/// its own key. The phone shows the fingerprint of its own key, and the user compares the two.
+/// No, the end of input, Ctrl-C or no answer in `CONFIRM_TIMEOUT` removes the device again.
+async fn confirm_device(home: &std::path::Path, config_path: &std::path::Path, d: &herdlingd::pair::Added) -> Result<()> {
+    use herdlingd::pair;
+    use std::io::Write;
+    println!("Paired {}  key {}", d.name, d.fingerprint);
+    // SAFETY: isatty has no preconditions.
+    if unsafe { libc::isatty(0) } != 1 {
+        return Ok(());
+    }
+    println!("\nDevice name: {}\nPhone key:   {}", d.name, d.fingerprint);
+    println!("Newer versions of Herdling show the phone key after pairing.");
+    print!("Keep this phone? Check that the phone shows the same key. [y/N] ");
+    std::io::stdout().flush()?;
+    let read = tokio::task::spawn_blocking(|| {
+        let mut line = String::new();
+        match std::io::stdin().read_line(&mut line) {
+            Ok(n) if n > 0 => Some(line),
+            _ => None,
+        }
+    });
+    let answer = tokio::select! {
+        r = tokio::time::timeout(CONFIRM_TIMEOUT, read) => r.ok().and_then(Result::ok).flatten(),
+        _ = tokio::signal::ctrl_c() => None,
+    };
+    if pair::keep_answer(answer.as_deref()) {
+        println!("Kept {}.", d.name);
+        return Ok(());
+    }
+    let keys = home.join(".ssh/authorized_keys");
+    match pair::unpair(&keys, config_path, &d.id, Some(&d.public_key))? {
+        pair::Unpair::Removed { .. } => println!("\nRemoved {}. The phone cannot connect with this key.", d.name),
+        _ => println!("\nThe device changed after pairing. Nothing removed. Check it with: herdlingd devices"),
+    }
+    Ok(())
+}
+
+/// `herdlingd unpair <device_id>`: removes a paired device, for example a lost phone.
+fn unpair_cmd(home: &std::path::Path, id: &str) -> Result<()> {
+    use herdlingd::pair;
+    match pair::unpair(&home.join(".ssh/authorized_keys"), &config::default_path(home), id, None)? {
+        pair::Unpair::Removed { removed_keys, .. } => {
+            println!("Removed device {id} and {removed_keys} key line(s).");
+            Ok(())
+        }
+        _ => bail!("no paired device has the id {id}. Run herdlingd devices to see the ids."),
     }
 }
 
@@ -183,6 +237,7 @@ async fn update_cmd(ctx: update::UpdateCtx, usage: &str) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run] | version\n       \
+                         herdlingd devices | unpair <device_id>\n       \
                          herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]\n       \
                          herdlingd proxy <port> <grant>";
     if matches!(std::env::args().nth(1).as_deref(), Some("version" | "--version" | "-V")) {
@@ -239,7 +294,23 @@ async fn main() -> Result<()> {
         }
         Some("pair") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-            pair_cmd(&home).await
+            let result = pair_cmd(&home).await;
+            // Exit at once: a stdin read that timed out stays on a blocking thread.
+            if let Err(e) = &result {
+                eprintln!("Error: {e:#}");
+            }
+            std::process::exit(i32::from(result.is_err()))
+        }
+        Some("devices") => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            print!("{}", herdlingd::pair::format_devices(&config::load(&config::default_path(&home))?.devices));
+            Ok(())
+        }
+        Some("unpair") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let [id] = args.as_slice() else { bail!("{USAGE}") };
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            unpair_cmd(&home, id)
         }
         Some("enroll") => {
             // Reads one JSON request on stdin, prints one JSON line. The restricted rpc key

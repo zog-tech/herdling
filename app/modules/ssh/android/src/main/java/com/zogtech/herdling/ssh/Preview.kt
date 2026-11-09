@@ -67,11 +67,17 @@ object PreviewCookie {
     bytes.joinToString("") { "%02x".format(it) }
   }
 
+  /**
+   * The `Set-Cookie` text of the cookie. SameSite=Strict: the web view sends the cookie only to a
+   * request that a localhost page starts, never to a request that a remote page starts.
+   */
+  fun setCookieText(cookie: String): String = "${PreviewGate.COOKIE_NAME}=$cookie; Path=/; HttpOnly; SameSite=Strict"
+
   /** Puts the cookie for `localhost` in the cookie store of the web view. Call on the main thread. */
   fun install() {
     try {
       val cm = android.webkit.CookieManager.getInstance()
-      cm.setCookie("http://localhost", "${PreviewGate.COOKIE_NAME}=$value; Path=/; HttpOnly")
+      cm.setCookie("http://localhost", setCookieText(value))
       cm.flush()
     } catch (_: Exception) {
       // No web view on this device: the preview screen does not load anyway.

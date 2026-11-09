@@ -11,8 +11,10 @@ jest.mock("expo-secure-store", () => {
   };
 });
 
+import { Alert } from "react-native";
+
 import { getDeviceId } from "../device";
-import { removeHostEverywhere } from "./removeHost";
+import { confirmRemoveHost, removeHostEverywhere, removeMessage, unpairCommand } from "./removeHost";
 import { useHosts } from "./store";
 
 function seed(): string {
@@ -55,5 +57,34 @@ describe("removeHostEverywhere", () => {
     const res = await removeHostEverywhere(id);
     expect(res).toEqual({ revoked: false });
     expect(useHosts.getState().hosts).toHaveLength(0);
+  });
+});
+
+describe("the remove text", () => {
+  it("online_says_the_host_forgets_the_key", () => {
+    expect(removeMessage(true, "d_abc")).not.toContain("herdlingd unpair");
+  });
+
+  it("offline_gives_the_unpair_command_with_the_device_id", () => {
+    expect(unpairCommand("d_abc")).toBe("herdlingd unpair d_abc");
+    const text = removeMessage(false, "d_abc");
+    expect(text).toContain("keeps this phone's key and push token");
+    expect(text).toContain("herdlingd unpair d_abc");
+  });
+
+  it("an_offline_remove_shows_the_command_with_this_device_id", async () => {
+    const id = seed();
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    await confirmRemoveHost(useHosts.getState().hosts[0]);
+    const [title, message, buttons] = alert.mock.calls[0];
+    expect(title).toBe("Remove studio?");
+    expect(message).toContain(`herdlingd unpair ${await getDeviceId()}`);
+    // Remove, then the second alert with the command.
+    await buttons?.find((b) => b.text === "Remove")?.onPress?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useHosts.getState().hosts.find((h) => h.id === id)).toBeUndefined();
+    expect(alert.mock.calls[1][0]).toBe("Run this on the host");
+    expect(alert.mock.calls[1][1]).toContain(`herdlingd unpair ${await getDeviceId()}`);
+    alert.mockRestore();
   });
 });

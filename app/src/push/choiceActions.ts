@@ -43,8 +43,14 @@ export async function registerChoiceCategory(): Promise<void> {
   }
 }
 
-/** What a tap on a choice button asks for. `answer` is the button: "Yes" or "No". */
-export type ChoiceTap = { hostId: string; paneId: string; key: string; label: string; answer: "Yes" | "No" };
+/**
+ * What a tap on a choice button asks for. `answer` is the button: "Yes" or "No". `question` is the digest
+ * of the question from the push (a newer herdlingd sends it), so a stale push cannot answer a later prompt.
+ */
+export type ChoiceTap = { hostId: string; paneId: string; key: string; label: string; answer: "Yes" | "No"; question?: string };
+
+/** Longest accepted question digest. herdlingd sends 16 hex characters. */
+const MAX_QUESTION = 64;
 
 const isOption = (v: unknown): v is { key: string; label: string } =>
   typeof v === "object" && v !== null && typeof (v as { key?: unknown }).key === "string" && typeof (v as { label?: unknown }).label === "string";
@@ -58,7 +64,10 @@ export function choiceTap(actionIdentifier: string, data: unknown): ChoiceTap | 
   if (typeof choice !== "object" || choice === null) return null;
   const option = (choice as { yes?: unknown; no?: unknown })[answer === "Yes" ? "yes" : "no"];
   if (!isOption(option) || !/^[1-9]$/.test(option.key)) return null;
-  return { hostId, paneId, key: option.key, label: option.label, answer };
+  const question = (choice as { question?: unknown }).question;
+  const tap: ChoiceTap = { hostId, paneId, key: option.key, label: option.label, answer };
+  if (typeof question === "string" && question.length > 0 && question.length <= MAX_QUESTION) tap.question = question;
+  return tap;
 }
 
 export type AnswerResult = "answered" | "stale" | "failed";
@@ -102,6 +111,7 @@ export async function answerChoiceTap(tap: ChoiceTap, deps: AnswerDeps = default
     return "failed";
   }
   const params: PaneAnswerParams = { pane_id: tap.paneId, key: tap.key, expect_label: tap.label };
+  if (tap.question) params.expect_question = tap.question;
   try {
     await rpc.call<PaneAnswer>("pane.answer", params, ANSWER_MS);
     deps.notice(`Answered ${tap.answer}`);

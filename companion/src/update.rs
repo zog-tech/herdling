@@ -102,11 +102,17 @@ pub struct Version {
     pub pre: Option<String>,
 }
 
+/// A pre-release text: not empty, only `[0-9A-Za-z.-]`, and no `..`.
+fn valid_pre(p: &str) -> bool {
+    !p.is_empty() && !p.contains("..") && p.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
 pub fn parse_version(s: &str) -> Option<Version> {
     let s = s.trim();
     let s = s.strip_prefix('v').unwrap_or(s);
     let (core, pre) = match s.split_once('-') {
-        Some((c, p)) if !p.is_empty() => (c, Some(p.to_string())),
+        // The pre-release goes into a URL path: allow only `[0-9A-Za-z.-]` and no `..`.
+        Some((c, p)) if valid_pre(p) => (c, Some(p.to_string())),
         Some(_) => return None,
         None => (s, None),
     };
@@ -157,9 +163,34 @@ pub fn manifest_url(base: &str, version: Option<&str>) -> String {
 }
 
 /// True when `url` is a release download of `base`. Other URLs are refused.
+///
+/// Both URLs are parsed. The scheme, the host and the port must be equal, the URL must have no
+/// user, query or fragment, and its path must be `<base path>/download/` and then segments of
+/// `[A-Za-z0-9._-]` only. A segment `.` or `..` and any percent sign are refused, so an encoded
+/// dot segment (`%2e%2e`) cannot move the download out of the release folder.
 pub fn url_allowed(base: &str, url: &str) -> bool {
-    let prefix = format!("{base}/download/");
-    url.starts_with(&prefix) && !url[prefix.len()..].contains("..") && !url.contains(['?', '#', '\\'])
+    use reqwest::Url;
+    // The parser removes dot segments, so check the raw text first.
+    if url.contains(['%', '\\', '?', '#']) || url.split('/').any(|s| s == "." || s == "..") {
+        return false;
+    }
+    let (Ok(b), Ok(u)) = (Url::parse(base), Url::parse(url)) else { return false };
+    if u.scheme() != b.scheme()
+        || u.host_str() != b.host_str()
+        || u.port_or_known_default() != b.port_or_known_default()
+        || !u.username().is_empty()
+        || u.password().is_some()
+        || u.query().is_some()
+        || u.fragment().is_some()
+    {
+        return false;
+    }
+    let prefix = format!("{}/download/", b.path().trim_end_matches('/'));
+    let Some(rest) = u.path().strip_prefix(&prefix) else { return false };
+    !rest.is_empty()
+        && rest.split('/').all(|seg| {
+            !seg.is_empty() && seg != "." && seg != ".." && seg.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        })
 }
 
 fn client(timeout: Duration) -> Result<reqwest::Client, RpcError> {
@@ -243,8 +274,14 @@ struct UpdateLock(#[allow(dead_code)] fs::File);
 fn take_lock(home: &Path) -> Result<UpdateLock, RpcError> {
     let dir = crate::config::default_path(home).parent().map(Path::to_path_buf).unwrap_or_else(|| home.join(".config/herdling"));
     let io = |e: std::io::Error| err("io_error", format!("update lock: {e}"));
-    fs::create_dir_all(&dir).map_err(io)?;
-    let file = fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("update.lock")).map_err(io)?;
+    // The folder holds the config and the pairing window: only this user may list it.
+    std::os::unix::fs::DirBuilderExt::mode(fs::DirBuilder::new().recursive(true), 0o700).create(&dir).map_err(io)?;
+    let file = std::os::unix::fs::OpenOptionsExt::mode(
+        fs::OpenOptions::new().create(true).truncate(false).write(true),
+        0o600,
+    )
+    .open(dir.join("update.lock"))
+    .map_err(io)?;
     match fs4::fs_std::FileExt::try_lock_exclusive(&file) {
         Ok(true) => Ok(UpdateLock(file)),
         Ok(false) => Err(err("update_in_progress", "another update is running")),

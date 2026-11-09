@@ -1,9 +1,15 @@
 //! Git views for the app: `git.status` (branch and changed files) and `git.diff` (the unified
 //! diff of the changes), and `git.worktree_add`, which makes a worktree for a new session.
 //!
-//! The views run only read-only git commands. Each command has a timeout, a cap on its output,
-//! optional locks off (`GIT_OPTIONAL_LOCKS=0`), and no external diff, text conversion or
-//! fsmonitor program, so a view never changes the repo and never runs a program from its config.
+//! The views run only read-only git commands. Each command has a timeout, a cap on its output and
+//! optional locks off (`GIT_OPTIONAL_LOCKS=0`), so a view never changes the repo. The views turn
+//! off three kinds of config program: the fsmonitor hook (`core.fsmonitor=false`), the external
+//! diff (`--no-ext-diff`) and text conversion (`--no-textconv`).
+//!
+//! The views do not turn off the clean and process filters (`filter.<name>.clean`, `.process`).
+//! When git reads a changed work tree file, a filter from the repo config can still run, as in
+//! a `git status` that the user types. Only the user, or a program that already runs as the
+//! user, can write that config, so the filter adds no access.
 
 use std::collections::HashMap;
 use std::io;

@@ -55,6 +55,20 @@ Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` po
   stops when the channel closes.
 - An app that finds no `pane.watch` in `hello.methods` polls `pane.read` as before.
 
+## herdr events: `herdr.subscribe` and `events_lost`
+
+`herdr.subscribe` streams the herdr event lines (`{"event": "...", "data": {...}}`). When herdr
+closes the subscription, the stream sends `{"closed": true}` and ends. The app then subscribes
+again and reads `session.snapshot`.
+
+- herdr 0.9.2 and later send an `events_lost` error and close a subscription whose reader fell
+  behind. herdlingd does not forward that error line. It ends the stream with `{"closed": true}`,
+  also when only a status connection of the stream lost events. So an app of any version reloads
+  the snapshot and subscribes again.
+- `herdlingd serve` subscribes again at once and reads a fresh `session.snapshot`. It compares the
+  snapshot with the statuses it knew, so a status change in the lost events still gives its push.
+  Pending pushes stay. An older herdr never sends `events_lost`, so nothing changes there.
+
 ## Typing into a pane: `pane.send_input` and the order of calls
 
 The app types through `herdr.call`. One line costs one call:
@@ -77,7 +91,7 @@ The app types through `herdr.call`. One line costs one call:
 Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes and No buttons.
 
 ```json
-{"id": 9, "method": "pane.answer", "params": {"pane_id": "w1:p2", "key": "1", "expect_label": "Yes"}}
+{"id": 9, "method": "pane.answer", "params": {"pane_id": "w1:p2", "key": "1", "expect_label": "Yes", "expect_question": "3f9a0c4e1b2d7a65"}}
 → {"id": 9, "result": {"answered": true}}
 → {"id": 9, "error": {"code": "stale", "message": "the menu changed"}}
 ```
@@ -88,6 +102,11 @@ Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes an
   (`agent_status` `blocked`) and the option at `key` still has `expect_label`. A label cut for a
   push (60 characters, ends with "…") also matches. Otherwise the error is `stale` and no key is sent.
   A closed pane also gives `stale`.
+- `expect_question` is optional: the `choice.question` of the push. When it is set, the question of
+  the menu on the screen must also give the same digest, else the error is `stale` ("the question
+  changed"). So a stale push cannot answer a later prompt that has the same labels. A value that is
+  not a string gives `bad_request`. An app that sends no `expect_question` gets the label check only.
+  An older herdlingd ignores the field.
 - `key` must be one digit from 1 to 9, else `bad_request`. The answer is phone input, and it keeps
   the order of the other typing calls to the pane.
 - `push.register` takes an optional `capabilities: string[]` (at most 16 strings of at most 64
@@ -98,10 +117,15 @@ Since the herdlingd that lists `pane.answer`. A "needs you" push can have Yes an
 
   ```json
   {"hostId": "h_1", "paneId": "w1:p2",
-   "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"}, "revision": 0}}
+   "choice": {"yes": {"key": "1", "label": "Yes"}, "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
+              "revision": 0, "question": "3f9a0c4e1b2d7a65"}}
   ```
 
   Labels have at most 60 characters. The push has no question text: it passes Expo and Apple or Google.
+  `question` (newer herdlingd) is 16 hex characters: the first 8 bytes of a SHA-256 of up to 8 non-empty
+  lines above the menu and the menu lines, with box edges, the selection marker and extra white space
+  removed (`menu_question` in `companion/src/choices.rs`). It is not the text. The app sends it back as
+  `expect_question`. A screen change above the menu can give a false `stale`; that is safe.
   The push body adds a line with the two labels ("Yes · No, and tell Claude…"). Other devices get the push as before.
 - The app registers the category `herdling_choice` with the actions `choice_yes` ("Yes") and
   `choice_no` ("No", destructive). Both open the app and need Face ID or the passcode on a locked
@@ -322,7 +346,8 @@ Result:
 ## Browser preview: `ports.list`, `preview.open`, `preview.close` and the proxy channel
 
 The app opens a dev server of the computer (for example `localhost:5173`) in a web view. The
-phone key keeps `no-port-forwarding`, so the app does not use SSH port forwarding. The app
+phone key line has `restrict` (older herdlingd versions wrote `no-port-forwarding`), so the app
+does not use SSH port forwarding. The app
 checks `hello.methods` for `preview.open` before it shows "Preview".
 
 `ports.list` params: `{"pane_id"?: "w1:p2"}`. Result:
@@ -345,6 +370,10 @@ checks `hello.methods` for `preview.open` before it shows "Preview".
   addresses. If not, the error is `port_not_listening`. The pairing port gives `bad_request`.
 - The grant goes to `~/.local/state/herdling/preview-grants.json` (folder 0700, file 0600, atomic
   rename). It expires 30 minutes after the last proxy connection. At most 16 grants are live.
+- The grant also records the loopback address of the listener that herdlingd found (field `addr`
+  in the grant file): the address itself, `127.0.0.1` for `0.0.0.0` or `::1` for `::`. When the
+  user listens on both families, IPv4 comes first. A grant file of an older herdlingd has no
+  `addr`; the first proxy connection picks the address from the listeners of the user and records it.
 
 `preview.close` params: `{"grant": "<32 hex>"}`. Result: `{"closed": true}`, or `false` when the
 grant was not live. A grant that is not 32 lowercase hex characters gives `grant_invalid`.
@@ -360,9 +389,13 @@ The proxy channel:
   other text starts the normal RPC loop. herdlingd never gives the text to a shell.
 - A host without a forced command runs the same command in the user's shell: `herdlingd proxy`
   is also a subcommand. Both paths run the same code.
-- The proxy checks the grant and the port, then connects to `127.0.0.1:<port>`, then to
-  `[::1]:<port>`. It never connects to another address. Then it copies bytes both ways until one
-  side closes. A refusal writes one line to stderr and ends the channel with exit code 2.
+- The proxy checks the grant and the port. Then it reads the listeners of the same user again and
+  checks that one of them is on the port and reaches the address of the grant. If not (the dev
+  server stopped, or only another user listens there), it refuses and does not extend the grant.
+  Then it connects only to the address of the grant, never to another address. Another user on the
+  same computer can bind `127.0.0.1:<port>` while the dev server listens only on `[::1]:<port>`, so
+  the proxy does not try the other family. Then it copies bytes both ways until one side closes.
+  A refusal writes one line to stderr and ends the channel with exit code 2.
 - Each accepted connection extends the grant by 30 minutes.
 - An older herdlingd does not know the proxy request and starts the RPC loop. The app does not
   send it unless `hello.methods` has `preview.open`.
@@ -370,7 +403,10 @@ The proxy channel:
 On the phone, the native ssh module listens on `127.0.0.1` only, while the preview screen is
 open. It first tries the same port number as on the computer, so the page origin is the same as
 at the desk. Each connection must send the cookie `herdling_preview=<random 128-bit value>`; the
-app puts it in the web view cookie store. A connection without it gets `403`. At most 6 proxy
+app puts it in the web view cookie store with `SameSite=Strict` (newer native builds), so a
+request that a remote page starts does not carry it. The in-app browser for remote pages does
+not share the cookie: on iOS it uses a separate store that is not saved to disk, and on Android it
+does not accept third-party cookies. A connection without the cookie gets `403`. At most 6 proxy
 channels run at once per host; more connections wait. When a channel does not open on the
 first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
 for the preview.

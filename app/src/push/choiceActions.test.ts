@@ -42,6 +42,22 @@ describe("choiceTap", () => {
     });
   });
 
+  it("keeps the question digest of a newer herdlingd", () => {
+    const withQ = { ...data, choice: { ...data.choice, question: "0123456789abcdef" } };
+    expect(choiceTap("choice_yes", withQ)).toEqual({
+      hostId: "h_1",
+      paneId: "w1:p1",
+      key: "1",
+      label: "Yes",
+      answer: "Yes",
+      question: "0123456789abcdef",
+    });
+    // An older herdlingd sends no question; a bad value is left out.
+    expect(choiceTap("choice_yes", data)).not.toHaveProperty("question");
+    expect(choiceTap("choice_yes", { ...data, choice: { ...data.choice, question: 5 } })).not.toHaveProperty("question");
+    expect(choiceTap("choice_yes", { ...data, choice: { ...data.choice, question: "x".repeat(65) } })).not.toHaveProperty("question");
+  });
+
   it("is null for a plain tap or bad data", () => {
     expect(choiceTap("expo.modules.notifications.actions.DEFAULT", data)).toBeNull();
     expect(choiceTap("choice_yes", { hostId: "h_1", paneId: "w1:p1" })).toBeNull();
@@ -88,6 +104,21 @@ describe("answerChoiceTap", () => {
       { method: "pane.answer", params: { pane_id: "w1:p1", key: "1", expect_label: "Yes" } },
     ]);
     expect(s.notices).toEqual([{ text: "Answered Yes", failed: undefined }]);
+  });
+
+  it("sends the question digest back when the push has it", async () => {
+    const s = setup();
+    await expect(answerChoiceTap({ ...tap, question: "0123456789abcdef" }, s.deps)).resolves.toBe("answered");
+    expect(s.calls[1]).toEqual({
+      method: "pane.answer",
+      params: { pane_id: "w1:p1", key: "1", expect_label: "Yes", expect_question: "0123456789abcdef" },
+    });
+  });
+
+  it("sends no question for a push without one", async () => {
+    const s = setup();
+    await answerChoiceTap(tap, s.deps);
+    expect(s.calls[1].params).not.toHaveProperty("expect_question");
   });
 
   it("shows The question changed on stale", async () => {

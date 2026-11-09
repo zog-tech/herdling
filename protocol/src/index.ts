@@ -188,15 +188,20 @@ export type PushChoiceOption = { key: string; label: string };
 /**
  * `data` of a push. `choice` is on a "needs you" push with `categoryId: "herdling_choice"`, only for
  * a device that registered `"choice_actions"`. It has the first ("Yes…") and the last ("No…") option, no question text.
+ * `question` is a short digest of the question (16 hex characters, not the text), from a newer herdlingd.
  */
 export type PushData = {
   hostId: string;
   paneId: string;
-  choice?: { yes: PushChoiceOption; no: PushChoiceOption; revision: number };
+  choice?: { yes: PushChoiceOption; no: PushChoiceOption; revision: number; question?: string };
 };
 
-/** Params of `pane.answer`: answers a permission menu with `key` when the option still has `expect_label`. */
-export type PaneAnswerParams = { pane_id: string; key: string; expect_label: string };
+/**
+ * Params of `pane.answer`: answers a permission menu with `key` when the option still has `expect_label`.
+ * `expect_question` is the `choice.question` of the push: when set, the question must also be the same.
+ * An older herdlingd ignores it.
+ */
+export type PaneAnswerParams = { pane_id: string; key: string; expect_label: string; expect_question?: string };
 
 /** Result of `pane.answer`. A changed or gone menu gives the error code `stale`, and no key is sent. */
 export type PaneAnswer = { answered: true };

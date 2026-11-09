@@ -244,7 +244,8 @@ async fn needs_you_push_has_choice_buttons_for_a_capable_device() {
                 "data": {"hostId": "h_1", "paneId": "w1:p1",
                          "choice": {"yes": {"key": "1", "label": "Yes"},
                                     "no": {"key": "3", "label": "No, and tell Claude what to do differently (esc)"},
-                                    "revision": 3}}}])
+                                    "revision": 3,
+                                    "question": herdlingd::choices::menu_question(MENU).unwrap()}}}])
     );
     // The question text never leaves the computer.
     assert!(!body.to_string().contains("proceed"));
@@ -272,4 +273,31 @@ async fn needs_you_push_has_no_buttons_without_a_yes_no_menu() {
     assert_eq!(body[0]["body"], "claude · api");
     assert!(body[0].get("categoryId").is_none());
     assert!(body[0]["data"].get("choice").is_none());
+}
+
+#[tokio::test]
+async fn events_lost_reconciles_with_a_fresh_snapshot() {
+    let mut s = start(Prefs::default(), ok_reply()).await;
+    // The agent finished while herdr dropped the events of the watcher.
+    let mut done = snapshot();
+    done["snapshot"]["agents"][0]["agent_status"] = json!("done");
+    s.push.send(Push::Snapshot(done)).unwrap();
+    s.push.send(Push::Lost).unwrap();
+    // The watcher subscribes again, reads the snapshot and sees the change it missed.
+    s.wait_subscribed().await;
+    let body = s.next_body().await;
+    assert_eq!(body[0]["title"], "herdling finished");
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    s.assert_no_body(Duration::from_millis(300)).await;
+}
+
+#[tokio::test]
+async fn events_lost_on_a_status_connection_also_reconciles() {
+    let mut s = start(Prefs::default(), ok_reply()).await;
+    let mut blocked = snapshot();
+    blocked["snapshot"]["agents"][0]["agent_status"] = json!("blocked");
+    s.push.send(Push::Snapshot(blocked)).unwrap();
+    s.push.send(Push::LostStatus).unwrap();
+    s.wait_subscribed().await;
+    assert_eq!(s.next_body().await[0]["title"], "herdling needs you");
 }

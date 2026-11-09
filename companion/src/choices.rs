@@ -4,6 +4,7 @@
 //! "needs you" push, and `pane.answer` uses it to check the menu before it sends a key.
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 /// Only the last non-empty lines of the screen can hold the menu.
 const SCAN_LINES: usize = 20;
@@ -51,8 +52,20 @@ fn choice_line(text: &str) -> Option<(char, &str, bool)> {
 /// A line indented deeper than the digit of the choice above it is a wrapped part of that label.
 /// The block counts only when it runs 1..n (n ≥ 2) and exactly one line has the selection marker.
 pub fn parse_choices(screen: &str) -> Vec<Choice> {
+    find_menu(screen).map(|m| m.choices).unwrap_or_default()
+}
+
+/// The menu of a screen: its choices, and the non-empty screen lines (box edges removed) with the
+/// range of the menu block in them.
+struct Menu<'a> {
+    choices: Vec<Choice>,
+    lines: Vec<&'a str>,
+    block: std::ops::Range<usize>,
+}
+
+fn find_menu(screen: &str) -> Option<Menu<'_>> {
     // Box edges are removed, but the indent (box characters count as indent) is kept for wrap detection.
-    let lines: Vec<(usize, &str)> = screen
+    let all: Vec<(usize, &str)> = screen
         .split('\n')
         .map(|raw| {
             let l = raw.strip_suffix('\r').unwrap_or(raw).trim_end_matches(is_box);
@@ -61,13 +74,18 @@ pub fn parse_choices(screen: &str) -> Vec<Choice> {
         })
         .filter(|(_, text)| !text.is_empty())
         .collect();
-    let lines = &lines[lines.len().saturating_sub(SCAN_LINES)..];
+    let first = all.len().saturating_sub(SCAN_LINES);
 
     let mut block: Vec<Choice> = vec![];
+    let mut range = 0..0;
     let mut current: Vec<Choice> = vec![];
+    let mut start = 0;
     let mut digit_col = 0;
-    for &(indent, text) in lines {
+    for (i, &(indent, text)) in all.iter().enumerate().skip(first) {
         if let Some((digit, label, selected)) = choice_line(text) {
+            if current.is_empty() {
+                start = i;
+            }
             current.push(Choice { key: digit.to_string(), label: label.to_string(), selected });
             digit_col = indent + text.chars().take_while(|c| *c != digit).count();
         } else if !current.is_empty() && indent > digit_col {
@@ -75,19 +93,47 @@ pub fn parse_choices(screen: &str) -> Vec<Choice> {
             last.label = format!("{} {text}", last.label);
         } else if !current.is_empty() {
             block = std::mem::take(&mut current);
+            range = start..i;
         }
     }
     if !current.is_empty() {
         block = current;
+        range = start..all.len();
     }
 
     if block.len() < 2
         || !block.iter().enumerate().all(|(i, c)| c.key == (i + 1).to_string())
         || block.iter().filter(|c| c.selected).count() != 1
     {
-        return vec![];
+        return None;
     }
-    block
+    Some(Menu { choices: block, lines: all.into_iter().map(|(_, t)| t).collect(), block: range })
+}
+
+/// Non-empty lines above the menu that [`menu_question`] reads: the question and the command.
+const QUESTION_LINES: usize = 8;
+
+/// A short digest (16 hex characters) of the question of the menu on the screen: up to
+/// `QUESTION_LINES` non-empty lines above the menu and the menu lines. Box edges, the selection
+/// marker and runs of white space do not count, so a moved selection or a wider box gives the
+/// same digest. `None` when the screen has no menu. A push carries the digest, not the text, and
+/// `pane.answer` compares it, so a stale push cannot answer a later prompt with the same labels.
+/// A changed screen above the menu can give a false `stale`, which is safe.
+pub fn menu_question(screen: &str) -> Option<String> {
+    let m = find_menu(screen)?;
+    let from = m.block.start.saturating_sub(QUESTION_LINES);
+    let mut text = String::new();
+    for (i, line) in m.lines[from..m.block.end].iter().enumerate() {
+        let line = if from + i >= m.block.start {
+            line.trim_start().trim_start_matches(['❯', '›', '>'])
+        } else {
+            line
+        };
+        text.push_str(&line.split_whitespace().collect::<Vec<_>>().join(" "));
+        text.push('\n');
+    }
+    let digest = Sha256::digest(text.as_bytes());
+    Some(digest.iter().take(8).map(|b| format!("{b:02x}")).collect())
 }
 
 /// True when `label` starts with the word `word` ("No" matches "No, and…" but not "None").
@@ -120,6 +166,9 @@ pub struct PushChoice {
     pub no: PushOption,
     /// The herdr `pane.read` revision of the screen.
     pub revision: u64,
+    /// [`menu_question`] of the screen. The app sends it back as `expect_question`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
 }
 
 /// The Yes and No options of `choices`, when the first label starts with "Yes" and the last
@@ -130,7 +179,7 @@ pub fn yes_no(choices: &[Choice], revision: u64) -> Option<PushChoice> {
         return None;
     }
     let opt = |c: &Choice| PushOption { key: c.key.clone(), label: short_label(&c.label) };
-    Some(PushChoice { yes: opt(first), no: opt(last), revision })
+    Some(PushChoice { yes: opt(first), no: opt(last), revision, question: None })
 }
 
 /// True when the option label on screen is `expected`. The app can send the label of a push,
