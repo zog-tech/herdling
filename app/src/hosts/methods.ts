@@ -28,6 +28,7 @@ export const APP_METHODS = [
   "stt.make",
   "update.check",
   "update.apply",
+  "herdr.update",
   "boot.check",
   "mac.open_settings",
   "git.status",
