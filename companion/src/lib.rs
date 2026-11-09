@@ -5,6 +5,7 @@ pub mod choices;
 pub mod claude;
 pub mod commands;
 pub mod config;
+pub mod core;
 pub mod cpace;
 pub mod enroll;
 pub mod events;
