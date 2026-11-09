@@ -86,6 +86,24 @@ describe("startSession", () => {
     expect(calls.at(-1)).toEqual({ method: "workspace.close", params: { workspace_id: "w7" } });
   });
 
+  it("undo_never_sends_close_group_and_keeps_the_start_error_when_herdr_refuses", async () => {
+    const calls: { method: string; params: any }[] = [];
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        calls.push(p);
+        if (p.method === "workspace.create") return { workspace: { workspace_id: "w7" }, root_pane: { pane_id: "w7:p1" } };
+        if (p.method === "agent.start") throw new Error("boom");
+        if (p.method === "workspace.close") {
+          throw Object.assign(new Error("workspace has linked worktree workspaces"), { code: "workspace_group_close_required" });
+        }
+        return {};
+      },
+    } as any;
+    await expect(startSession(rpc, { cwd: "/a/b", kind: "claude" })).rejects.toThrow("boom");
+    const closes = calls.filter((c) => c.method === "workspace.close");
+    expect(closes).toEqual([{ method: "workspace.close", params: { workspace_id: "w7" } }]);
+  });
+
   it("retries_the_prompt_until_the_agent_is_ready", async () => {
     jest.useFakeTimers();
     let n = 0;

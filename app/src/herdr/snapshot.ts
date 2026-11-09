@@ -26,6 +26,8 @@ export type WorkspaceInfo = {
   number: number;
   agent_status: AgentStatus;
   tab_count?: number;
+  /** herdr 0.9: the worktree group of the workspace (`WorkspaceWorktreeInfo`). Missing or null outside a group. */
+  worktree?: { repo_key: string; repo_name?: string; repo_root?: string; checkout_path?: string; is_linked_worktree: boolean } | null;
 };
 export type TabInfo = {
   tab_id: string;

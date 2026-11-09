@@ -3,6 +3,7 @@ import { RpcError } from "@/rpc/RpcClient";
 import {
   canResume,
   closeAgent,
+  GROUP_RESTART,
   keepsConversation,
   openResumedSession,
   paneSession,
@@ -182,6 +183,15 @@ describe("restart with the conversation and start options", () => {
   it("a kept conversation starts nothing when the old pane does not close", async () => {
     const rpc = fakeRpc("pane.close");
     await expect(restartAgent(rpc, agent({ agent: "claude" }), { session: "s1" })).rejects.toThrow("pane.close failed");
+    expect(methods(rpc)).toEqual(["pane.close"]);
+  });
+
+  it("a kept conversation never closes a worktree group", async () => {
+    const rpc = fakeRpc("pane.close", new RpcError("confirmation_required", "closing this pane would close a worktree group"));
+    await expect(restartAgent(rpc, agent({ agent: "claude" }), { session: "s1" })).rejects.toMatchObject({
+      code: GROUP_RESTART,
+      message: expect.stringContaining("Restart with a new conversation instead."),
+    });
     expect(methods(rpc)).toEqual(["pane.close"]);
   });
 

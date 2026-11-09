@@ -24,6 +24,7 @@ import { markSeen } from "@/herdr/seen";
 import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { useExpectedPane } from "@/herdr/expectedPanes";
+import { closeWithGroupIntent } from "@/herdr/groupClose";
 import { renameItems } from "@/herdr/rename";
 import { canResume, closeAgent } from "@/herdr/sessionActions";
 import type { AgentInfo } from "@/herdr/snapshot";
@@ -182,11 +183,12 @@ function useSessionMenu(
       destructive: true,
       onPick: async () => {
         const ok = await confirmDestructive(what, detail, "Close");
-        if (ok)
-          run("Closing…", "Can't close", async () => {
-            await closeAgent(rpc, paneId);
-            closed();
-          });
+        if (!ok) return;
+        // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
+        const workspaceId = agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
+        run("Closing…", "Can't close", async () => {
+          if (await closeWithGroupIntent(rpc, workspaceId, () => closeAgent(rpc, paneId))) closed();
+        });
       },
     });
     const options = [...items.map((i) => i.label), "Cancel"];
