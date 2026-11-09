@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import { connLabel, ConnStatus } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
+import { IntegrationsRow } from "@/hosts/IntegrationsRow";
 import { confirmRemoveHost } from "@/hosts/removeHost";
 import type { Host } from "@/hosts/store";
 import { colors, icon, space } from "@/theme/tokens";
@@ -38,6 +39,11 @@ export function DemoHostDetail({ host, onRemoved }: { host: Host; onRemoved: () 
             title="What is not real"
             detail="The replies are scripted and no files change. The demo starts again each time you open the app. To use your own agents, add a computer that runs herdlingd."
           />
+        </Group>
+      </Section>
+      <Section title="herdr">
+        <Group>
+          <IntegrationsRow hostId={host.id} />
         </Group>
       </Section>
       <Section>

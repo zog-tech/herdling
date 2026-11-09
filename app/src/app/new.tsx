@@ -6,11 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } 
 import { Alert, Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { branchError, defaultBranch, worktreeSlug } from "@/changes/worktree";
+import { branchError, defaultBranch, worktreePane, worktreeSlug } from "@/changes/worktree";
 import { agentLabel } from "@/herdr/agentKinds";
 import { expectPane } from "@/herdr/expectedPanes";
 import { canResume, resumeInFolder } from "@/herdr/sessionActions";
-import { startSession, startShell, workspaceExists } from "@/herdr/startSession";
+import { startSession, startShell, workspaceExists, type FreshPane } from "@/herdr/startSession";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
@@ -378,11 +378,13 @@ export default function NewSessionScreen() {
       }
     }
     let folder = cwd;
+    let fresh: FreshPane | undefined;
     if (inWorktree) {
       setProgress("Creating worktree…");
       try {
         const w = await rpc.call<GitWorktree>("git.worktree_add", { cwd, branch: branch.trim() }, 90_000);
         folder = w.path;
+        fresh = worktreePane(w);
       } catch (e) {
         haptics.fail();
         setError(`Can't create the worktree: ${message(e)}`);
@@ -390,14 +392,15 @@ export default function NewSessionScreen() {
         return;
       }
     }
-    setProgress("Creating workspace…");
+    if (!fresh) setProgress("Creating workspace…");
     try {
       // The snapshot can lag: fall back to a new workspace when the old one is gone.
-      // A new worktree is a new folder: it always gets a new workspace.
+      // A new worktree is a new folder: it always gets a new workspace. When herdr made the
+      // worktree, herdr also made its workspace (`fresh`): the session starts in its pane.
       const reuse = !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
       const workspaceId = reuse && existing ? existing.workspace_id : undefined;
       if (shell) {
-        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, onProgress: setProgress });
+        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, fresh, onProgress: setProgress });
         if (!commandError) rememberCommand(hostId, prompt);
         allowLeave();
         // The mark carries the hint into the detail column of regular width too.
@@ -413,6 +416,7 @@ export default function NewSessionScreen() {
         kind,
         prompt: firstPrompt,
         workspaceId,
+        fresh,
         args: buildArgs(kind, choice),
         onProgress: setProgress,
       });

@@ -1,0 +1,10 @@
+# Build images for `cross` (release workflow, cross 0.2.5). Each image is pinned by the digest
+# of its multi-platform index, so a changed image in the registry cannot change a release build.
+# To update: read the digest of the new tag from ghcr.io (the Docker-Content-Digest header of
+# /v2/cross-rs/<target>/manifests/<tag>) and replace the tag and the digest together.
+
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5@sha256:77db671d8356a64ae72a3e1415e63f547f26d374fbe3c4762c1cd36c7eac7b99"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5@sha256:702154f52b2d8091671aa2c84d5582d849f949977228c735ff8462f93cc0e1e4"

@@ -26,6 +26,7 @@ import type { LineTransport } from "@/rpc/transport";
 import { labelMatches, parseChoices } from "@/thread/parseChoices";
 
 import { demoGitDiff, demoGitStatus, demoWorktreeAdd } from "./demoGit";
+import { demoExplain, DemoIntegrations } from "./demoHerdr";
 import { DEMO_HOST_NAME } from "./demoHost";
 import { demoPorts, demoPreviewOpen } from "./demoPreview";
 import { CHAT_KINDS, DemoError, DemoScenario, type DemoNotice } from "./scenario";
@@ -96,6 +97,7 @@ export class DemoTransport implements LineTransport {
   private nextStream = 1;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private automations: Automation[] = makeAutomations();
+  private readonly integrations = new DemoIntegrations();
   /** Shell panes with "Notify me when it finishes": pane id to the watch. The demo sends no push. */
   private shellWatches = new Map<string, ShellWatch>();
   private readonly runs: AutomationRun[] = makeRuns();
@@ -444,8 +446,21 @@ export class DemoTransport implements LineTransport {
         s.closeTab(need(p, "tab_id", m));
         return {};
       case "workspace.close":
-        s.closeWorkspace(need(p, "workspace_id", m));
+        s.closeWorkspace(need(p, "workspace_id", m), p.close_group === true);
         return {};
+      case "workspace.list":
+        return { type: "workspace_list", workspaces: s.snapshot().workspaces };
+      case "integration.list":
+        return this.integrations.listResult();
+      case "integration.install":
+        return this.integrations.install(need(p, "target", m));
+      case "agent.explain": {
+        const target = need(p, "target", m);
+        return demoExplain(
+          s.snapshot().agents.find((a) => a.pane_id === target || a.name === target),
+          target,
+        );
+      }
       default:
         throw new DemoError("unknown_method", `unknown method: ${method}`);
     }

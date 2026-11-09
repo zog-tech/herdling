@@ -33,6 +33,7 @@ export default function ScanScreen() {
         port: String(target.port),
         code: target.code,
         ...(target.fingerprint ? { fingerprint: target.fingerprint } : {}),
+        ...(target.requireV2 ? { v: "2" } : {}),
       },
     });
   };

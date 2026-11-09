@@ -31,6 +31,9 @@ import type {
 } from "@herdling/protocol";
 
 import { parseDiff } from "@/changes/diff";
+import { explainView, parseExplain } from "@/herdr/explain";
+import { isGroupCloseRefusal, linkedWorktreeCount } from "@/herdr/groupClose";
+import { parseIntegrations } from "@/herdr/integrations";
 import { parseSnapshot, type HerdrEvent } from "@/herdr/snapshot";
 import { terminalStatus, type ProcessInfo } from "@/herdr/terminalStatus";
 import { APP_METHODS } from "@/hosts/methods";
@@ -384,5 +387,42 @@ describe("DemoTransport", () => {
     expect(transport.isClosed).toBe(true);
     expect(jest.getTimerCount()).toBe(0);
     expect(() => transport.send("{}")).toThrow();
+  });
+});
+
+describe("DemoTransport herdr 0.9 features", () => {
+  it("lists the integrations and installs a missing one", async () => {
+    const list = parseIntegrations(await herdr("integration.list"));
+    expect(list.find((i) => i.target === "codex")).toMatchObject({ state: "not_installed", available: true });
+    expect(list.find((i) => i.target === "opencode")?.state).toBe("outdated");
+    const r = await herdr<{ type: string; details: { messages: string[] } }>("integration.install", { target: "codex" });
+    expect(r.type).toBe("integration_install");
+    expect(r.details.messages[0]).toContain("no file changed");
+    expect(parseIntegrations(await herdr("integration.list")).find((i) => i.target === "codex")?.state).toBe("current");
+    expect((await callError("herdr.call", { method: "integration.install", params: { target: "nope" } })).code).toBe("invalid_request");
+  });
+
+  it("explains the status of an agent", async () => {
+    const v = explainView(parseExplain(await herdr("agent.explain", { target: "p1" })));
+    expect(v.summary).toBe("herdr shows this agent as working.");
+    expect(v.matched[0].id).toBe("osc_title_working");
+    const blocked = explainView(parseExplain(await herdr("agent.explain", { target: "p2" })));
+    expect(blocked.summary).toBe("herdr shows this agent as needs you.");
+    expect((await callError("herdr.call", { method: "agent.explain", params: { target: "p6" } })).code).toBe("agent_not_found");
+  });
+
+  it("refuses to close the last pane of a worktree group, and closes the group with close_group", async () => {
+    const ws = await herdr<{ workspaces: unknown[] }>("workspace.list");
+    expect(linkedWorktreeCount(ws, "w3")).toBe(1);
+    const refusal = await callError("herdr.call", { method: "pane.close", params: { pane_id: "p8" } });
+    expect(isGroupCloseRefusal(refusal)).toBe(true);
+    expect((await callError("herdr.call", { method: "workspace.close", params: { workspace_id: "w3" } })).code).toBe(
+      "workspace_group_close_required",
+    );
+    expect(transport.scenario.snapshot().workspaces.map((w) => w.workspace_id)).toContain("w4");
+    await herdr("workspace.close", { workspace_id: "w3", close_group: true });
+    const ids = transport.scenario.snapshot().workspaces.map((w) => w.workspace_id);
+    expect(ids).not.toContain("w3");
+    expect(ids).not.toContain("w4");
   });
 });

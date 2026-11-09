@@ -62,3 +62,14 @@ it("parse_pair_url_rejects_bad_fingerprint", () => {
   // An unencoded `+` reads as a space, so the value is not a fingerprint.
   expect(parsePairUrl("herdling://pair?h=10.0.0.5&c=123456&f=SHA256:" + "a+b/".repeat(10) + "xyz")).toBeNull();
 });
+
+it("parse_pair_url_reads_v2", () => {
+  expect(parsePairUrl("herdling://pair?h=10.0.0.5&p=7790&c=123456&v=2")).toEqual({
+    address: "10.0.0.5",
+    port: 7790,
+    code: "123456",
+    requireV2: true,
+  });
+  // Other versions and unknown parameters are ignored, as older apps ignore `v`.
+  expect(parsePairUrl("herdling://pair?h=10.0.0.5&c=123456&v=9&x=1")).toEqual({ address: "10.0.0.5", port: 7790, code: "123456" });
+});

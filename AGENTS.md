@@ -98,7 +98,7 @@ The path alias `@/` points to `app/src/`.
 | `serve/` | The user service: herdr watch, push debounce, desk activity ("quiet at the computer"), Bonjour, the pairing HTTP endpoint |
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
-| `git.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` |
+| `git.rs`, `worktree.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (herdr `worktree.create`, or git) |
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `push.rs` | Expo push messages. Never log push tokens |

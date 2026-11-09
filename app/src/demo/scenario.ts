@@ -70,6 +70,8 @@ const ESCAPE_SEQUENCE = /\x1b\[[0-9;<]*[~A-Za-z]/g;
 const HOME = "/home/demo";
 const WEBAPP = `${HOME}/projects/webapp`;
 const API = `${HOME}/projects/api-server`;
+const DOCS = `${HOME}/projects/docs-site`;
+const DOCS_LINKS = `${HOME}/projects/docs-site-fix-links`;
 
 /** Folder tree for `fs.dirs`. A folder not in the map has no subfolders. */
 const DIRS: Record<string, string[]> = {
@@ -137,9 +139,9 @@ export class DemoScenario {
   private herdrListeners = new Set<(e: HerdrEvent) => void>();
   private followers = new Map<string, Set<(d: FollowData) => void>>();
   private nextId = 1;
-  private nextWs = 3;
-  private nextTab = 8;
-  private nextPane = 8;
+  private nextWs = 5;
+  private nextTab = 10;
+  private nextPane = 10;
   /** `state_change_seq` grows from the launch time, so an agent that finished is "Ready" again after a relaunch. */
   private seq: number;
   private stopped = false;
@@ -480,9 +482,22 @@ export class DemoScenario {
     }
   }
 
+  /** The open linked worktree workspaces of `workspaceId`, when it is the primary workspace of a group. */
+  linkedWorktrees(workspaceId: string): WorkspaceInfo[] {
+    const ws = this.workspaces.find((w) => w.workspace_id === workspaceId);
+    const key = ws?.worktree && !ws.worktree.is_linked_worktree ? ws.worktree.repo_key : undefined;
+    if (!key) return [];
+    return this.workspaces.filter((w) => w.workspace_id !== workspaceId && w.worktree?.is_linked_worktree && w.worktree.repo_key === key);
+  }
+
   closePane(paneId: string): void {
     const pane = this.panes.find((p) => p.pane_id === paneId);
     if (!pane) throw new DemoError("not_found", `pane ${paneId} not found`);
+    // As herdr 0.9: the last pane of a group's primary workspace does not close alone.
+    const last = !this.panes.some((p) => p.pane_id !== paneId && p.workspace_id === pane.workspace_id);
+    if (last && this.linkedWorktrees(pane.workspace_id).length > 0) {
+      throw new DemoError("confirmation_required", "closing this pane would close a worktree group");
+    }
     this.dropPanes((p) => p.pane_id === paneId);
     this.emit({ event: "pane_closed", data: { pane_id: paneId } });
     // herdr closes a tab with its last pane.
@@ -492,14 +507,29 @@ export class DemoScenario {
   closeTab(tabId: string): void {
     const tab = this.tabs.find((t) => t.tab_id === tabId);
     if (!tab) throw new DemoError("not_found", `tab ${tabId} not found`);
+    const lastTab = !this.tabs.some((t) => t.tab_id !== tabId && t.workspace_id === tab.workspace_id);
+    if (lastTab && this.linkedWorktrees(tab.workspace_id).length > 0) {
+      throw new DemoError("confirmation_required", "closing this tab would close a worktree group");
+    }
     this.dropPanes((p) => p.tab_id === tabId);
     this.tabs = this.tabs.filter((t) => t.tab_id !== tabId);
     this.emit({ event: "tab_closed", data: { tab_id: tabId } });
     if (!this.tabs.some((t) => t.workspace_id === tab.workspace_id)) this.closeWorkspace(tab.workspace_id);
   }
 
-  closeWorkspace(workspaceId: string): void {
+  /** `workspace.close`. The primary workspace of a group closes only with `closeGroup`, and then with its worktrees. */
+  closeWorkspace(workspaceId: string, closeGroup = false): void {
     this.workspaceExists(workspaceId);
+    const linked = this.linkedWorktrees(workspaceId);
+    if (linked.length > 0) {
+      if (!closeGroup) {
+        throw new DemoError(
+          "workspace_group_close_required",
+          "workspace has linked worktree workspaces; use --group (close_group=true in the API) to close the group",
+        );
+      }
+      for (const w of linked) this.closeWorkspace(w.workspace_id);
+    }
     this.dropPanes((p) => p.workspace_id === workspaceId);
     this.tabs = this.tabs.filter((t) => t.workspace_id !== workspaceId);
     this.workspaces = this.workspaces.filter((w) => w.workspace_id !== workspaceId);
@@ -806,13 +836,29 @@ export class DemoScenario {
     return a;
   }
 
-  /** The starting state: 2 workspaces, 7 tabs, 5 agents and 2 shells (one runs a dev server). */
+  /** The starting state: 4 workspaces (two of them a worktree group), 9 tabs, 5 agents and 4 shells (one runs a dev server). */
   private seed(): void {
     const now = Date.now();
     const min = 60_000;
     this.workspaces = [
       { workspace_id: "w1", label: "webapp", number: 1, agent_status: "unknown" },
       { workspace_id: "w2", label: "api-server", number: 2, agent_status: "unknown" },
+      // A worktree group (herdr 0.9): the docs site and one linked worktree. Closing the last
+      // pane of "docs-site" asks to close the group.
+      {
+        workspace_id: "w3",
+        label: "docs-site",
+        number: 3,
+        agent_status: "unknown",
+        worktree: { repo_key: DOCS, repo_name: "docs-site", repo_root: DOCS, checkout_path: DOCS, is_linked_worktree: false },
+      },
+      {
+        workspace_id: "w4",
+        label: "docs-site · fix-links",
+        number: 4,
+        agent_status: "unknown",
+        worktree: { repo_key: DOCS, repo_name: "docs-site", repo_root: DOCS, checkout_path: DOCS_LINKS, is_linked_worktree: true },
+      },
     ];
     const tab = (tab_id: string, workspace_id: string, label: string, number: number): TabInfo => ({
       tab_id,
@@ -829,6 +875,8 @@ export class DemoScenario {
       tab("t5", "w2", "docs", 2),
       tab("t6", "w1", "shell", 4),
       tab("t7", "w2", "dev server", 3),
+      tab("t8", "w3", "shell", 1),
+      tab("t9", "w4", "shell", 1),
     ];
     const pane = (n: number, tabId: string, ws: string): PaneInfo => ({ pane_id: `p${n}`, tab_id: tabId, workspace_id: ws, label: null });
     this.panes = [pane(1, "t1", "w1"), pane(2, "t4", "w2"), pane(3, "t2", "w1"), pane(4, "t5", "w2"), pane(5, "t3", "w1")];
@@ -845,6 +893,14 @@ export class DemoScenario {
       input: "",
       running: { pid: 5150, name: "node", argv: ["pnpm", "dev"] },
     });
+    // 8 and 9. Shells in the worktree group: the docs site and its "fix-links" worktree.
+    this.panes.push({ ...pane(8, "t8", "w3"), cwd: DOCS });
+    this.shells.set("p8", {
+      lines: ["$ git worktree list", `${DOCS}             a1c3e5f [main]`, `${DOCS_LINKS}  7b9d2e4 [fix-links]`],
+      input: "",
+    });
+    this.panes.push({ ...pane(9, "t9", "w4"), cwd: DOCS_LINKS });
+    this.shells.set("p9", { lines: ["$ git status --short", " M content/guide/install.md"], input: "" });
 
     // 1. Claude, working: fixes the login form, with a running subagent.
     const p1 = this.addAgent({

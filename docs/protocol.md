@@ -22,7 +22,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`.
 
 A `herdr.call` error can also carry a code from herdr itself.
@@ -176,7 +176,9 @@ Result:
 ```
 
 - `status` is `"updated"` or `"up_to_date"`. With `up_to_date` nothing changes.
-- The method downloads the tarball for this computer, checks its SHA-256 against the release
+- The method downloads `latest.json` and `latest.json.sig` of the release and checks the Ed25519
+  signature of the release key over the exact bytes of `latest.json` (from herdlingd 0.1.7).
+  Then it downloads the tarball for this computer, checks its SHA-256 against the release
   manifest, and replaces the running executable with one rename. Then it restarts the user
   service (launchd or systemd), if it is installed. `service_restarted` is false when there is no
   service or the restart failed.
@@ -189,9 +191,10 @@ Error codes:
 | Code | Meaning |
 |---|---|
 | `update_unavailable` | The release or the manifest could not be read, a download URL is not a release URL of the project, or updates are off in this process |
+| `bad_signature` | `latest.json.sig` is missing, or it is not a valid signature of a release key over `latest.json`. Nothing changed. `update.check` gives it too. From herdlingd 0.1.7 |
 | `unsupported_target` | No release build for this OS and CPU |
 | `checksum_mismatch` | The download does not match the SHA-256 of the release. Nothing changed |
-| `downgrade` | The release is older than the running version and `allow_downgrade` is not true |
+| `downgrade` | The release is older than the running version and `allow_downgrade` is not true. An old release keeps its valid signature, so `allow_downgrade` is the choice of the user |
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
@@ -297,18 +300,34 @@ The app checks `hello.methods` before it calls this method. It is the only git m
 Params: the folder (`cwd` or `pane_id`, as above) and `"branch": "herdling/ab12cd"`. Result:
 
 ```json
-{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app"}
+{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app",
+ "via": "herdr", "workspace_id": "w7", "tab_id": "w7:t1", "pane_id": "w7:p1"}
 ```
 
-- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`, then runs
-  `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`. The slug is the branch name with
-  `/` as `-` and other unusual chars as `_`.
+- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`. The branch and the
+  folder `<root>/.worktrees/<slug>` must not exist. The slug is the branch name with `/` as `-`
+  and other unusual chars as `_`.
+- When herdr has `worktree.create` (herdr 0.9 and later), herdlingd sends it only the checked
+  values: `{"cwd": <root>, "branch", "path": <root>/.worktrees/<slug>, "base": "HEAD", "focus": false}`.
+  herdr makes the worktree and opens it as a new workspace in the worktree group of the repo.
+  The result then has `"via": "herdr"` and the ids of that workspace, its tab and its root pane.
+- Otherwise herdlingd runs `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`, and the
+  result has `"via": "git"` and no ids. This happens when herdr does not run, when herdr does not
+  know `worktree.create` (`invalid_request` "unknown variant" or `unknown_method`), or when herdr
+  refuses the folder as a source (`linked_worktree_source`, `not_git_worktree`: for example a
+  folder in a linked worktree). herdlingd keeps the "unknown method" answer for the life of the
+  `rpc` process. Other herdr errors come back as they are, and herdlingd does not try git.
+- An older herdlingd sends only `path`, `branch` and `root`.
 - It adds `/.worktrees/` to `info/exclude` of the repo once, so the main work tree does not show the folder.
 - The new branch starts at HEAD. Uncommitted changes stay in the main work tree.
-- Then the app starts the agent with the normal `agent.start` path, in a new workspace with
-  `cwd` set to `path`. `agent.start` does not change.
+- With `pane_id` in the result, the app starts the agent (or the shell) in that pane: no second
+  workspace opens. Without it, the app starts the agent with the normal `agent.start` path, in a
+  new workspace with `cwd` set to `path`. `agent.start` does not change.
 - Errors: `bad_request` (not a valid branch name), `not_a_repo`, `already_exists` (the branch
-  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s).
+  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s
+  for git), `herdr_unavailable` (no herdr answer in 75 s), or a herdr error code.
+- herdr lists the worktrees of a repo with its own `worktree.list`. The app can call it through
+  `herdr.call`, so herdlingd has no separate method for it.
 
 ## New session: `fs.dirs` and `agents.installed`
 
@@ -474,6 +493,93 @@ herdlingd reads the Claude log (the last 8 MiB on the first read, then only new 
   a `queued_command` attachment or a user line), or with a successful `TaskStop` (older: `KillShell`).
 - A task ends when it is older than 12 hours, or when it started before the Claude process of the
   pane (the agent started again). A new log (for example after `/clear`) starts with no tasks.
+
+## Pairing: `POST /pair` and pairing v2
+
+`herdlingd serve` has a small HTTP endpoint on the pairing port (default 7790) for the first
+contact. It works only while `herdlingd pair` has a pairing window open (5 minutes, one 6-digit
+code, at most 5 tries). All bodies are JSON. An error is `{"error": "<code>"}` with the codes
+`bad_request` (400), `bad_code` (403), `no_window` (410), `no_session` (410),
+`too_many_attempts` (429) and `internal` (500).
+
+### Pairing v2 (CPace)
+
+Pairing v2 uses the code as the password of a PAKE, so the code never goes over the network.
+A device that sees or relays the traffic cannot test codes offline. It can only guess online,
+and each guess uses one of the 5 tries. The phone proves the code over its public key, so a relay
+cannot enroll its own key. The host proves the code over the host fields, so a fake host fails.
+
+The PAKE is CPace with ristretto255 and SHA-512 (CPACE-RISTR255-SHA512) in the
+initiator-responder setting, as in draft-irtf-cfrg-cpace-21. The phone is party A, the host is
+party B. Code: `companion/src/cpace.rs`, `companion/src/pair_v2.rs`, `app/src/pairing/cpace.ts`
+and `app/src/pairing/pairV2.ts`. Both sides check the vectors in
+`protocol/fixtures/cpace-ristretto255.json`: the draft vectors and one full Herdling exchange.
+
+CPace inputs:
+
+| Input | Value |
+|---|---|
+| PRS | The 6 ASCII digits of the code |
+| CI | `herdling-pair-v2` |
+| sid | `sid`: 16 random bytes from the phone |
+| ADa | The UTF-8 `device_id` |
+| ADb | `session`: 16 random bytes from the host |
+
+The phone sends Ya before it knows any host value, so the host's random value cannot go into
+`sid`. It goes into ADb and so into the key (ISK). Scalars are 32 random bytes with the bits above
+bit 252 cleared (draft section 8.3). Each side aborts when the other message does not decode or
+gives the identity element.
+
+Keys and tags (`lv_cat` is the length-value encoding of the draft, HMAC is HMAC-SHA-512):
+
+```
+ISK     = SHA-512(lv_cat("CPaceRistretto255_ISK", sid, K) || lv_cat(Ya, ADa) || lv_cat(Yb, ADb))
+mac_key = SHA-512("CPaceMac" || sid || ISK)
+tag_a   = HMAC(mac_key, lv_cat("herdling-pair-v2/a", Ya, ADa, device_name, host_id, public_key))
+tag_b   = HMAC(mac_key, lv_cat("herdling-pair-v2/b", Yb, ADb, tag_a, host_name, user,
+                               decimal ssh_port, host_key_fingerprint or ""))
+```
+
+Text values are UTF-8, exactly as they are in the JSON. Binary values on the wire are lower-case hex.
+
+1. `POST /pair/v2/start` `{"device_id", "sid": <16 bytes>, "ya": <32 bytes>}`
+   → `{"session": <16 bytes>, "yb": <32 bytes>}`.
+   The host checks the fields first: a bad request uses no try. Then it takes one try of the
+   window and keeps the exchange in memory for 60 seconds (at most 16 exchanges).
+2. `POST /pair/v2/finish`
+   `{"session", "device_name", "host_id", "public_key", "tag_a": <64 bytes>}`
+   → `{"host_name", "user", "ssh_port", "host_key_fingerprint", "tag_b": <64 bytes>}`.
+   A session works once; an unknown, used or expired session gives `no_session`. A malformed
+   field gives `bad_request` and keeps the session. A wrong `tag_a` gives `bad_code` (or
+   `too_many_attempts`) and counts as a wrong code. A right `tag_a` saves the key line and
+   closes the window. A new `herdlingd pair` (a new code) ends the old exchanges with `no_window`.
+3. The phone checks `tag_b` before it saves the host. A wrong `tag_b` stops the pairing.
+   With a right `tag_b` the host key fingerprint is proved, so the phone does not ask the user to
+   compare it. A QR code fingerprint must still match.
+
+Each started exchange holds one try until it ends. A right finish closes the window. An exchange
+that never finishes keeps its try. `POST /pair` shares the same budget. The tags are compared in
+constant time. herdlingd never logs the code, the scalars or the keys.
+
+After a v2 pairing, `herdlingd pair` prints `Paired <name>  key <fp> (checked with the code)` and
+does not ask "Keep this phone?".
+
+### Pairing v1: `POST /pair`
+
+For older apps. The body is
+`{"code", "device_id", "device_name", "host_id", "public_key", "expo_token"}` and the answer is
+`{"host_name", "user", "ssh_port", "host_key_fingerprint"}`. The code goes in clear text, so a
+device on the LAN that reads it can pair its own key. After a v1 pairing, `herdlingd pair` shows
+the phone key fingerprint and asks "Keep this phone?".
+
+### How the app picks the version
+
+- The QR code and the deep link have `v=2` (`herdling://pair?h=…&p=…&c=…&f=…&v=2`). The Bonjour
+  advert has the TXT record `pv=2`. An older app ignores both.
+- With `v=2` or `pv=2`, the app uses only pairing v2. It never falls back to v1.
+- Else the app tries v2 first. When the host answers 404 (an older herdlingd), the app tells the
+  user that pairing is less safe and asks to continue. Only a "Continue" pairs with v1, and the
+  user then compares the keys. Any other error stops the pairing; it never falls back.
 
 ## Compatibility rules
 

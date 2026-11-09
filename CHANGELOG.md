@@ -5,9 +5,30 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd 0.1.6] - 2026-11-09
+## [herdlingd 0.1.7] - 2026-11-09
 
-- This release also carries the fixes of 0.1.5. The 0.1.5 build did not publish.
+- 0.1.5 and 0.1.6 did not publish: no macOS build runner was free. This release has all their
+  changes.
+- Signed updates: the release workflow signs `latest.json` and `SHA256SUMS` with an Ed25519
+  release key (new assets `latest.json.sig` and `SHA256SUMS.sig`). `update.check`,
+  `update.apply` and `herdlingd update` check the signature of `latest.json` before they read it.
+  A missing or bad signature stops the update with the new error `bad_signature`. Releases before
+  this version have no signature, so this version cannot install them.
+- The installer script checks `SHA256SUMS.sig` when `openssl` can check Ed25519 signatures.
+- Release builds: the `cross` images are pinned by digest (`companion/Cross.toml`). The Intel
+  macOS build runs on an Intel runner (`macos-15-intel`), and its smoke test runs natively.
+- `git.worktree_add` uses herdr `worktree.create` when herdr has it. The new worktree joins the
+  worktree group of its repo in the herdr sidebar. The branch and folder checks stay the same.
+  The result adds `via` (`"herdr"` or `"git"`) and, from herdr, `workspace_id`, `tab_id` and
+  `pane_id`. An older herdr, or a folder in a linked worktree, uses `git worktree add` as before.
+- Pairing v2: `POST /pair/v2/start` and `POST /pair/v2/finish` pair with CPace (ristretto255,
+  SHA-512). The code never goes over the network, so a device that sees or relays the traffic
+  cannot learn it or enroll its own key. Each started exchange uses one of the 5 tries. See
+  `docs/protocol.md`, "Pairing".
+- After a v2 pairing, `herdlingd pair` prints "Paired <name> key <fp> (checked with the code)" and
+  does not ask "Keep this phone?". A v1 pairing (an older app) still asks.
+- The QR code has `v=2` and the Bonjour advert has `pv=2`. Older apps ignore them. `POST /pair`
+  stays for older apps.
 - Pairing: after a phone pairs, `herdlingd pair` shows the key fingerprint of the phone. On a
   terminal it asks "Keep this phone?". No, no answer in 2 minutes or the end of input removes the
   phone again. Compare the fingerprint with the key that the phone shows.
@@ -25,22 +46,6 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `{"closed": true}`, and `serve` subscribes again and reconciles with a fresh snapshot.
 - Self-update: the download URL check parses the URL and refuses encoded dot segments. A version
   pre-release allows only `[0-9A-Za-z.-]`. `~/.config/herdling` gets mode 0700.
-## [Unreleased app]
-
-- Thread: an image in an agent reply no longer loads by itself. It shows as a link with its alt
-  text or its URL. A tap opens it like any other link.
-- Pairing: the pair screen and the host screen show this phone's key fingerprint
-  (`SHA256:...`). After pairing, check that `herdlingd pair` on the computer shows the same key.
-- Remove a host: when the host is offline, the dialog gives the command `herdlingd unpair <device id>`
-  that removes this phone's key and push token on the computer.
-- In-app browser: on iOS it uses its own cookie store that is not saved to disk. On Android it
-  does not accept third-party cookies. Remote pages no longer share the browser preview cookie.
-  Pages in the in-app browser do not keep logins between visits on iOS.
-- Browser preview (next native build): the preview cookie is `SameSite=Strict`.
-- "Install and pair": curl downloads the installer over HTTPS only, also after a redirect.
-
-## [herdlingd 0.1.5] - 2026-11-09
-
 - Pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code can no
   longer open a closed window again or bring back the old code. When the computer cannot save the
   phone, the pairing window stays open and the same code works again.
@@ -49,6 +54,43 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   each agent. A closed pane no longer stays the focused pane.
 - "Notify me when it finishes": a new watch of the same pane in the same second is no longer
   removed by the result of the old watch.
+
+## [Unreleased app]
+
+- Agent integrations (herdr 0.9 and later): the host screen has the row "Agent integrations". It
+  lists the herdr integrations of the computer (`integration.list`) as installed, old version, not
+  installed or agent not found. Install and Update ask first and say what changes on the computer,
+  then run `integration.install`.
+- "Why this status?" (herdr 0.9 and later): the session menu and the peek sheet open herdr's
+  explanation of the agent status (`agent.explain`): the rule that matched, its screen text, a
+  fallback or a kept status. When herdr is not sure and the agent has no current integration, the
+  sheet links to the integrations screen.
+- Worktree groups (herdr 0.9.0 and later): herdr does not close the last pane of a workspace that
+  has open worktree workspaces. Close now asks "Close the workspace and its N worktrees" and then
+  sends `workspace.close` with `close_group`. A restart that keeps the conversation never closes a
+  group; it says to restart with a new conversation.
+- Each of these features hides itself on an older herdr that does not know the method.
+- Demo: the demo host has the integrations, "Why this status?" and a worktree group ("docs-site").
+- New session in a git worktree: when herdr made the worktree workspace, the agent or the shell
+  starts in its first pane. No second workspace opens. An older `herdlingd` works as before.
+- Parakeet on iOS (next native build): a new model download uses a fixed Hugging Face commit, not
+  the `main` branch. A model that is already on the phone stays as it is.
+- Thread: an image in an agent reply no longer loads by itself. It shows as a link with its alt
+  text or its URL. A tap opens it like any other link.
+- Pairing: the pair screen and the host screen show this phone's key fingerprint
+  (`SHA256:...`). After pairing, check that `herdlingd pair` on the computer shows the same key.
+- Pairing v2 (JavaScript only, ships over the air): the app pairs with CPace, so the code never
+  goes over the network, and it checks that the host knows the code before it saves the host.
+  With a v2 host the key compare is not needed. When the QR code or the Bonjour advert says v2,
+  the app never uses the older pairing. With an older herdlingd, the app asks first: "This
+  computer runs an older herdlingd. Pairing is less safe."
+- Remove a host: when the host is offline, the dialog gives the command `herdlingd unpair <device id>`
+  that removes this phone's key and push token on the computer.
+- In-app browser: on iOS it uses its own cookie store that is not saved to disk. On Android it
+  does not accept third-party cookies. Remote pages no longer share the browser preview cookie.
+  Pages in the in-app browser do not keep logins between visits on iOS.
+- Browser preview (next native build): the preview cookie is `SameSite=Strict`.
+- "Install and pair": curl downloads the installer over HTTPS only, also after a redirect.
 
 ## [herdlingd 0.1.4] - 2026-11-03
 

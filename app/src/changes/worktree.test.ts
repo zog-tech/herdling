@@ -1,4 +1,4 @@
-import { BRANCH_PREFIX, branchError, defaultBranch, worktreePath } from "./worktree";
+import { BRANCH_PREFIX, branchError, defaultBranch, worktreePane, worktreePath } from "./worktree";
 
 describe("defaultBranch", () => {
   it("is herdling/ and 6 letters or digits", () => {
@@ -46,5 +46,20 @@ describe("worktreePath", () => {
   it("matches the folder herdlingd makes", () => {
     expect(worktreePath("/home/sam/app", "herdling/ab12")).toBe("/home/sam/app/.worktrees/herdling-ab12");
     expect(worktreePath("/home/sam/app/", "feat/ü x")).toBe("/home/sam/app/.worktrees/feat-__x");
+  });
+});
+
+describe("worktreePane", () => {
+  const base = { path: "/home/sam/app/.worktrees/herdling-ab12", branch: "herdling/ab12", root: "/home/sam/app" };
+  it("gives the workspace that herdr made", () => {
+    expect(worktreePane({ ...base, via: "herdr", workspace_id: "w7", tab_id: "w7:t1", pane_id: "w7:p1" })).toEqual({
+      workspaceId: "w7",
+      paneId: "w7:p1",
+    });
+  });
+  it("gives nothing for git or an older herdlingd", () => {
+    expect(worktreePane(base)).toBeUndefined();
+    expect(worktreePane({ ...base, via: "git" })).toBeUndefined();
+    expect(worktreePane({ ...base, via: "herdr", workspace_id: "w7" })).toBeUndefined();
   });
 });

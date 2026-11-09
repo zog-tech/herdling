@@ -2,18 +2,20 @@
 export const DEFAULT_PAIR_PORT = 7790;
 
 /**
- * Where to pair. `fingerprint` is the host key fingerprint from the QR code: the `/pair`
- * answer must report the same key, or pairing stops.
+ * Where to pair. `fingerprint` is the host key fingerprint from the QR code: the pairing
+ * answer must report the same key, or pairing stops. `requireV2`: the QR code says `v=2`, so
+ * the app uses only pairing v2 and never the older v1.
  */
-export type PairTarget = { address: string; port: number; code: string; fingerprint?: string };
+export type PairTarget = { address: string; port: number; code: string; fingerprint?: string; requireV2?: true };
 
 /** `SHA256:` and the unpadded base64 of a 32-byte digest, as `ssh-keygen -lf` prints it. */
 export const FINGERPRINT_RE = /^SHA256:[A-Za-z0-9+/]{43}$/;
 
 /**
- * Reads a pairing QR / deep link: `herdling://pair?h=<host>&p=<port>&c=<code>&f=<fingerprint>`.
+ * Reads a pairing QR / deep link: `herdling://pair?h=<host>&p=<port>&c=<code>&f=<fingerprint>&v=2`.
  * `p` is optional (default 7790). `f` is optional, but when present it must be a valid
- * fingerprint. Returns null for any other URL or a bad value.
+ * fingerprint. `v=2` sets `requireV2`; other `v` values and unknown parameters are ignored.
+ * Returns null for any other URL or a bad value.
  * Parsed by hand: React Native's `URL` has no working `searchParams`.
  */
 export function parsePairUrl(url: string): PairTarget | null {
@@ -40,8 +42,12 @@ export function parsePairUrl(url: string): PairTarget | null {
     port = Number(portText);
     if (port < 1 || port > 65535) return null;
   }
+  const target: PairTarget = { address, port, code };
   const fingerprint = params.get("f");
-  if (fingerprint === undefined) return { address, port, code };
-  if (!FINGERPRINT_RE.test(fingerprint)) return null;
-  return { address, port, code, fingerprint };
+  if (fingerprint !== undefined) {
+    if (!FINGERPRINT_RE.test(fingerprint)) return null;
+    target.fingerprint = fingerprint;
+  }
+  if (params.get("v") === "2") target.requireV2 = true;
+  return target;
 }

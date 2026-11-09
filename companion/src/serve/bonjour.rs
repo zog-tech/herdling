@@ -22,6 +22,9 @@ pub fn short_host(host: &str) -> &str {
     host.split('.').next().filter(|s| !s.is_empty()).unwrap_or(host)
 }
 
+/// The pairing version in the TXT record (`pv`): this herdlingd has pairing v2.
+pub const PAIR_VERSION: &str = "2";
+
 /// TXT records of the advert. `fp` is left out when there is no fingerprint.
 pub fn txt(info: &AdvertInfo) -> Vec<(String, String)> {
     let mut out = vec![
@@ -29,6 +32,7 @@ pub fn txt(info: &AdvertInfo) -> Vec<(String, String)> {
         ("user".to_string(), info.user.clone()),
         ("ssh_port".to_string(), info.ssh_port.to_string()),
         ("ver".to_string(), info.version.clone()),
+        ("pv".to_string(), PAIR_VERSION.to_string()),
     ];
     if let Some(fp) = &info.fingerprint {
         out.push(("fp".to_string(), fp.clone()));

@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { router as appRouter, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PeekSheet } from "@/board/PeekSheet";
@@ -23,9 +23,13 @@ export default function PeekScreen() {
   // A screen pushed while the form sheet is up shows inside it, and so does the terminal that the
   // run sheet opens after the run. A draft asks first, the same as every other way out.
   const pendingRun = useRef<RunRequest | null>(null);
+  // "Why this status?" opens the same way: after the sheet is gone, so it is not inside the sheet.
+  const pendingExplain = useRef<string | null>(null);
   useEffect(
     () => () => {
       if (pendingRun.current) openRunSheet(pendingRun.current);
+      const explain = pendingExplain.current;
+      if (explain) setTimeout(() => appRouter.push(explain as never), 0);
     },
     [],
   );
@@ -39,6 +43,13 @@ export default function PeekScreen() {
     [draft, allowLeave, router],
   );
   const onRun = useCallback((req: RunRequest) => void run(req), [run]);
+  const explain = useCallback(async () => {
+    if (draft && !(await confirmDiscard())) return;
+    pendingExplain.current = `/explain/${hostId}/${paneId}`;
+    allowLeave();
+    router.dismiss();
+  }, [draft, allowLeave, router, hostId, paneId]);
+  const onExplain = useCallback(() => void explain(), [explain]);
 
   return (
     <PeekSheet
@@ -49,6 +60,7 @@ export default function PeekScreen() {
       onClose={close}
       onDraftChange={setDraft}
       onRun={onRun}
+      onExplain={onExplain}
     />
   );
 }

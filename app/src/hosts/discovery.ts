@@ -13,6 +13,8 @@ export type Discovered = {
   sshPort: number;
   fingerprint?: string;
   version?: string;
+  /** The pairing version from the TXT record `pv`: 2 when the host has pairing v2. */
+  pairVersion?: number;
 };
 
 const DEFAULT_SSH_PORT = 22;
@@ -38,6 +40,7 @@ function toDiscovered(s: FoundService): Discovered {
     sshPort: parsePort(s.txt.ssh_port),
     fingerprint: field(s.txt, "fp"),
     version: field(s.txt, "ver"),
+    pairVersion: /^\d{1,3}$/.test(s.txt.pv ?? "") ? Number(s.txt.pv) : undefined,
   };
 }
 

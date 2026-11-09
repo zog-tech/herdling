@@ -1,6 +1,6 @@
 [package]
 name = "herdlingd"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 license = "MPL-2.0"
 
@@ -21,7 +21,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 axum = "0.8"
 rand = "0.9"
 sha2 = "0.10"
+# CPace (PAKE) for pairing: ristretto255 and HMAC-SHA-512. See src/cpace.rs.
+curve25519-dalek = "=4.1.3"
+hmac = "=0.12.1"
 base64 = "0.22"
+# Ed25519 check of the release manifest. ring is already in the tree through rustls.
+ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
 if-addrs = "0.13"
 mdns-sd = "0.13"

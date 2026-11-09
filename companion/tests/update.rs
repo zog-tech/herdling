@@ -12,6 +12,9 @@ use axum::routing::get;
 use axum::Router;
 use herdlingd::install::Runner;
 use herdlingd::update::{self, UpdateCtx};
+use base64::Engine as _;
+use ring::rand::SystemRandom;
+use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::json;
 
 /// Answers GET `/releases/<path>` from a map of path to body.
@@ -53,9 +56,41 @@ const TARGET: &str = "x86_64-unknown-linux-musl";
 const OLD: &str = "#!/bin/sh\necho old\n";
 const NEW: &str = "#!/bin/sh\necho new\n";
 
+/// How the fake release signs `latest.json`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Sig {
+    /// A good signature of the test key.
+    Good,
+    /// No `latest.json.sig` file.
+    Missing,
+    /// A signature of the same bytes by another key.
+    OtherKey,
+    /// A signature by the test key of other bytes.
+    OtherBytes,
+    /// Text that is not a signature.
+    Garbage,
+}
+
+/// A throwaway Ed25519 key pair for one test.
+fn test_key() -> Ed25519KeyPair {
+    let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+    Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap()
+}
+
+/// The text of a `.sig` file: the base64 of the raw 64-byte signature, then a line end.
+fn sig_file(key: &Ed25519KeyPair, data: &[u8]) -> Vec<u8> {
+    format!("{}\n", base64::engine::general_purpose::STANDARD.encode(key.sign(data).as_ref())).into_bytes()
+}
+
 /// A release server with `version` whose asset has `sha` (None: the real checksum) and `url_base`
-/// (None: the server). The running version is `current`.
+/// (None: the server). The running version is `current`. The manifest has a good signature.
 async fn fixture(version: &str, current: &str, sha: Option<&str>, url_base: Option<&str>) -> Fixture {
+    fixture_signed(version, current, sha, url_base, Sig::Good).await
+}
+
+async fn fixture_signed(version: &str, current: &str, sha: Option<&str>, url_base: Option<&str>, sig: Sig) -> Fixture {
+    let key = test_key();
+    let other = test_key();
     let dir = tempfile::tempdir().unwrap();
     let tar = tarball(dir.path(), NEW);
     let real_sha = update::sha256_hex(&tar);
@@ -75,8 +110,20 @@ async fn fixture(version: &str, current: &str, sha: Option<&str>, url_base: Opti
     // Bind first: the manifest URLs need the address of the server.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/releases", listener.local_addr().unwrap());
-    files.insert("latest/download/latest.json".into(), manifest(&base));
-    files.insert(format!("download/herdlingd-v{version}/latest.json"), manifest(&base));
+    let body = manifest(&base);
+    let sig_body = match sig {
+        Sig::Good => Some(sig_file(&key, &body)),
+        Sig::Missing => None,
+        Sig::OtherKey => Some(sig_file(&other, &body)),
+        Sig::OtherBytes => Some(sig_file(&key, b"{\"version\":\"9.9.9\",\"assets\":{}}")),
+        Sig::Garbage => Some(b"not a signature\n".to_vec()),
+    };
+    for folder in ["latest/download".to_string(), format!("download/herdlingd-v{version}")] {
+        files.insert(format!("{folder}/latest.json"), body.clone());
+        if let Some(s) = &sig_body {
+            files.insert(format!("{folder}/latest.json.sig"), s.clone());
+        }
+    }
     let app = Router::new().route("/releases/{*path}", get(file)).with_state(Arc::new(files));
     tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
@@ -97,6 +144,7 @@ async fn fixture(version: &str, current: &str, sha: Option<&str>, url_base: Opti
         arch: "x86_64".into(),
         current: current.into(),
         runner: runner.clone(),
+        release_keys: vec![key.public_key().as_ref().to_vec()],
     };
     Fixture { _dir: dir, ctx, runner, exe }
 }
@@ -331,4 +379,66 @@ async fn rpc_without_update_settings_downloads_nothing() {
     tx.write_all(b"{\"id\":1,\"method\":\"update.apply\",\"params\":{}}\n").await.unwrap();
     let r: serde_json::Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
     assert_eq!(r["error"]["code"], "update_unavailable");
+}
+
+#[test]
+fn embedded_release_keys_are_valid() {
+    let keys = update::release_keys();
+    assert!(!keys.is_empty());
+    assert_eq!(keys.len(), update::RELEASE_KEYS.len(), "every embedded key is 32 bytes of base64");
+}
+
+#[test]
+fn verify_manifest_checks_the_exact_bytes() {
+    let key = test_key();
+    let keys = vec![key.public_key().as_ref().to_vec()];
+    let body = br#"{"version":"0.2.0","assets":{}}"#;
+    update::verify_manifest(body, &sig_file(&key, body), &keys).unwrap();
+    // One more byte, a changed byte, and a signature of other bytes are all refused.
+    let mut longer = body.to_vec();
+    longer.push(b'\n');
+    assert_eq!(update::verify_manifest(&longer, &sig_file(&key, body), &keys).unwrap_err().code, "bad_signature");
+    let changed = br#"{"version":"0.3.0","assets":{}}"#;
+    assert_eq!(update::verify_manifest(changed, &sig_file(&key, body), &keys).unwrap_err().code, "bad_signature");
+    // Bad texts and an empty key list.
+    for bad in [&b""[..], b"AAAA", b"\xff\xfe", b"not base64!"] {
+        assert_eq!(update::verify_manifest(body, bad, &keys).unwrap_err().code, "bad_signature");
+    }
+    assert_eq!(update::verify_manifest(body, &sig_file(&key, body), &[]).unwrap_err().code, "bad_signature");
+    // The production keys do not accept the test key.
+    let prod = update::release_keys();
+    assert_eq!(update::verify_manifest(body, &sig_file(&key, body), &prod).unwrap_err().code, "bad_signature");
+}
+
+#[test]
+fn verify_manifest_accepts_any_listed_key() {
+    let old = test_key();
+    let new = test_key();
+    let keys = vec![old.public_key().as_ref().to_vec(), new.public_key().as_ref().to_vec()];
+    let body = b"{}";
+    update::verify_manifest(body, &sig_file(&old, body), &keys).unwrap();
+    update::verify_manifest(body, &sig_file(&new, body), &keys).unwrap();
+    assert_eq!(update::verify_manifest(body, &sig_file(&new, body), &keys[..1]).unwrap_err().code, "bad_signature");
+}
+
+#[tokio::test]
+async fn unsigned_or_badly_signed_release_is_refused() {
+    for sig in [Sig::Missing, Sig::OtherKey, Sig::OtherBytes, Sig::Garbage] {
+        let f = fixture_signed("0.2.0", "0.1.0", None, None, sig).await;
+        assert_eq!(update::check(&f.ctx, None).await.unwrap_err().code, "bad_signature", "{sig:?}");
+        assert_eq!(update::check(&f.ctx, Some("0.2.0")).await.unwrap_err().code, "bad_signature", "{sig:?}");
+        let e = update::apply(&f.ctx, None, false).await.unwrap_err();
+        assert_eq!(e.code, "bad_signature", "{sig:?}: {}", e.message);
+        assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
+        assert_eq!(bin_entries(&f), vec!["herdlingd".to_string()]);
+        assert!(f.runner.calls.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn production_keys_refuse_a_release_of_another_key() {
+    let mut f = fixture("0.2.0", "0.1.0", None, None).await;
+    f.ctx.release_keys = update::release_keys();
+    assert_eq!(update::apply(&f.ctx, None, false).await.unwrap_err().code, "bad_signature");
+    assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
 }

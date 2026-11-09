@@ -9,7 +9,8 @@
 #   1. Finds the OS and the CPU. macOS and Linux only.
 #   2. Checks that herdr is installed. It installs herdr only with --with-herdr.
 #   3. Downloads the herdlingd release from github.com/zog-tech/herdling over HTTPS.
-#   4. Compares the SHA-256 of the download with SHA256SUMS of the same release.
+#   4. Compares the SHA-256 of the download with SHA256SUMS of the same release. When openssl can
+#      check Ed25519 signatures, it also checks SHA256SUMS.sig with the Herdling release key.
 #   5. Runs "herdlingd install": copies the binary to ~/.local/bin and starts a user service.
 #   6. Tells when the service starts: at boot, or only after the user logs in.
 # It never uses sudo. Run it again to update or repair herdlingd.
@@ -218,6 +219,33 @@ fi
 
 command -v tar >/dev/null 2>&1 || fail install_failed "tar is not installed."
 
+# The Ed25519 public keys of the release key (raw 32 bytes, base64), separated by spaces.
+# Keep this list the same as RELEASE_KEYS in companion/src/update.rs.
+RELEASE_KEYS="dCt5YDC59zFw70uSbhTMjsU6rPFgSPVh/XS/rkeb3YE="
+
+# can_check_sig: true when openssl can check an Ed25519 signature over raw data (-rawin).
+can_check_sig() {
+  command -v openssl >/dev/null 2>&1 || return 1
+  openssl pkeyutl -help 2>&1 | grep -q -- '-rawin' || return 1
+  openssl list -public-key-algorithms 2>/dev/null | grep -qi ed25519
+}
+
+# check_sig <file> <sig file>: true when <sig file> (base64 of a raw 64-byte signature) is a valid
+# signature of a key in RELEASE_KEYS over the exact bytes of <file>.
+check_sig() {
+  openssl base64 -d -A -in "$2" -out "$TMP/sig.bin" 2>/dev/null || return 1
+  [ "$(wc -c < "$TMP/sig.bin" | tr -d ' ')" = 64 ] || return 1
+  for k in $RELEASE_KEYS; do
+    # The SubjectPublicKeyInfo of an Ed25519 key: a fixed 12-byte prefix, then the raw key.
+    printf '%s%s' MCowBQYDK2VwAyEA "$k" | openssl base64 -d -A -out "$TMP/pub.der" 2>/dev/null || continue
+    if openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey "$TMP/pub.der" \
+      -in "$1" -sigfile "$TMP/sig.bin" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [ -n "$VERSION" ]; then
   url="$BASE/download/herdlingd-v$VERSION"
   what="herdlingd $VERSION"
@@ -240,6 +268,21 @@ dl "$url/$file" "$TMP/$file" || fail download_failed "Cannot download $url/$file
 dl "$url/SHA256SUMS" "$TMP/SHA256SUMS" || fail download_failed "Cannot download $url/SHA256SUMS."
 
 step verify "Checking the SHA-256..."
+# The signature of SHA256SUMS (releases from herdlingd 0.1.7). The script checks it only when
+# openssl can check Ed25519 signatures (OpenSSL 1.1.1 or later). LibreSSL, the openssl of macOS,
+# cannot, so the check is skipped there. Without the check, HTTPS is the trust root.
+if dl "$url/SHA256SUMS.sig" "$TMP/SHA256SUMS.sig" 2>/dev/null && [ -s "$TMP/SHA256SUMS.sig" ]; then
+  if can_check_sig; then
+    check_sig "$TMP/SHA256SUMS" "$TMP/SHA256SUMS.sig" ||
+      fail checksum_mismatch "SHA256SUMS does not have a valid signature of the Herdling release key. Nothing was installed."
+    say "The signature of SHA256SUMS is valid."
+  else
+    say "Note: this openssl cannot check Ed25519 signatures. The script checks only the SHA-256."
+  fi
+else
+  rm -f "$TMP/SHA256SUMS.sig"
+  say "Note: this release has no SHA256SUMS.sig. The script checks only the SHA-256."
+fi
 expected=$(awk -v f="$file" '$2 == f || $2 == "*" f { print $1; exit }' "$TMP/SHA256SUMS")
 [ -n "$expected" ] || fail checksum_mismatch "SHA256SUMS has no line for $file."
 actual=$(sha256 "$TMP/$file")

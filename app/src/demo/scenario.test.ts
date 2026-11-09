@@ -66,10 +66,10 @@ describe("DemoScenario seed", () => {
     s.stop();
   });
 
-  it("has 5 agents in 2 workspaces with mixed kinds and states", () => {
+  it("has 5 agents in 4 workspaces with mixed kinds and states", () => {
     const s = make();
     const snap = s.snapshot();
-    expect(snap.workspaces).toHaveLength(2);
+    expect(snap.workspaces).toHaveLength(4);
     expect(snap.agents).toHaveLength(5);
     expect(new Set(snap.agents.map((a) => a.agent))).toEqual(new Set(["claude", "codex", "pi", "opencode"]));
     const status = Object.fromEntries(snap.agents.map((a) => [a.pane_id, a.agent_status]));
@@ -84,7 +84,7 @@ describe("DemoScenario seed", () => {
     const s = make();
     const snap = s.snapshot();
     const shells = snap.panes.filter((p) => !snap.agents.some((a) => a.pane_id === p.pane_id));
-    expect(shells.map((p) => p.pane_id)).toEqual(["p6", "p7"]);
+    expect(shells.map((p) => p.pane_id)).toEqual(["p6", "p7", "p8", "p9"]);
     expect(shells[0].cwd).toBe("/home/demo/projects/webapp");
     expect(s.resolve("p6").log_path).toBeNull();
     s.sendText("p6", "pwd");
