@@ -159,6 +159,11 @@ pub fn spawn_fake_flaky(
                                 "session.snapshot" => snap,
                                 // A test can give the visible screen of every pane as `screen` next to `snapshot`.
                                 "pane.read" if snap.get("screen").is_some() => json!({"read": {"revision": 3, "text": snap["screen"]}}),
+                                // A test can give `pane.process_info` per pane as `process_info` next to `snapshot`.
+                                "pane.process_info" if snap.get("process_info").is_some() => {
+                                    let pane = req["params"]["pane_id"].as_str().unwrap_or("");
+                                    json!({"type": "pane_process_info", "process_info": snap["process_info"][pane]})
+                                }
                                 "events.subscribe" => {
                                     subs = req["params"]["subscriptions"].as_array().unwrap().clone();
                                     sub_id = req["id"].clone();

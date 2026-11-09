@@ -123,20 +123,21 @@ async fn run_stream(
         }
         stream.lost()
     });
-    // Checks the shell panes that the phone watches ("Notify me when it finishes").
+    // Checks the shell panes that the phone watches ("Notify me when it finishes"): every
+    // `POLL`, and early after a `pane.updated` of a watched pane (see `shell_watch::Nudge`).
     let mut shell_tick = tokio::time::interval(crate::shell_watch::POLL);
     shell_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut nudge = crate::shell_watch::Nudge::default();
     loop {
-        let deadline = debouncer.next_deadline();
-        let wait = async {
-            match deadline {
-                Some(at) => tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await,
-                None => std::future::pending().await,
-            }
-        };
+        let wait = sleep_until(debouncer.next_deadline());
+        let nudge_wait = sleep_until(nudge.due());
+        let mut shell_check = false;
         tokio::select! {
             ev = rx.recv() => match ev {
                 Some(ev) => {
+                    if let Some(pane) = events::updated_pane_id(&ev) {
+                        nudge.pane_updated(pane, Instant::now());
+                    }
                     if observe(&ctx.home, &mut debouncer, desk, &ev) {
                         // A tab or workspace focus names no pane: ask herdr which pane has the focus now.
                         if let Ok(snap) = snapshot(ctx).await {
@@ -147,7 +148,16 @@ async fn run_stream(
                 None => break,
             },
             _ = wait => {}
-            _ = shell_tick.tick() => super::shells::poll(ctx, client, desk.active(Instant::now())).await,
+            _ = nudge_wait => {}
+            _ = shell_tick.tick() => shell_check = true,
+        }
+        if shell_check || nudge.ready(Instant::now()) {
+            if let Some(panes) = super::shells::poll(ctx, client, desk.active(Instant::now())).await {
+                nudge.set_watched(panes);
+            }
+            nudge.checked(Instant::now());
+            // The next poll comes one full interval after this check.
+            shell_tick.reset();
         }
         let now = Instant::now();
         for (pane, notice) in debouncer.due(now) {
@@ -158,6 +168,14 @@ async fn run_stream(
     let lost = (&mut reader).await.unwrap_or(false);
     reader.abort();
     lost.then_some(debouncer)
+}
+
+/// Sleeps until `at`, or forever when it is `None`.
+async fn sleep_until(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Feeds `ev` to the debouncer and the desk. Returns true when the focused pane may have

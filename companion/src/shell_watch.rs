@@ -3,15 +3,21 @@
 //! pane goes from busy (another process in the foreground) to idle (the shell in the foreground),
 //! `serve` sends one push and removes the watch.
 //!
+//! herdr has no event for a foreground process change (0.9.5). Many shells set the terminal
+//! title when a command starts and ends, and herdr reports a title change as `pane.updated`.
+//! [`Nudge`] turns that event into an early check, so the push goes out without the poll wait.
+//! The poll stays: it is the only signal for a shell that does not set the title.
+//!
 //! Each SSH connection runs its own `rpc` process, so the watches go through a file
 //! (folder 0700, file 0600, a lock file and an atomic rename). The rules here are pure: the
 //! caller passes the time and the process info.
 
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,6 +26,12 @@ use serde_json::Value;
 pub const WATCH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// `serve` checks the watched panes at this interval.
 pub const POLL: Duration = Duration::from_secs(3);
+/// Wait after a `pane.updated` of a watched pane before the early check. A shell can set the
+/// title just before the command takes the foreground.
+pub const NUDGE_DELAY: Duration = Duration::from_millis(150);
+/// At least this time between a check and an early check, so a title that changes often
+/// cannot cause a check on each change.
+pub const NUDGE_GAP: Duration = Duration::from_millis(500);
 /// At most this many watches. A new watch drops the oldest one.
 pub const MAX_WATCHES: usize = 32;
 /// The push body shows at most this many characters of the command.
@@ -86,6 +98,53 @@ pub enum Step {
     Drop,
     /// The command finished: send one push and remove the watch.
     Finished { command: String, cwd: Option<String> },
+}
+
+/// When to check the watched panes before the next poll. Pure: the caller passes the time.
+/// It holds the panes that the last check found, so an event of another pane costs nothing.
+/// A new watch is known only after the next poll.
+#[derive(Debug, Default)]
+pub struct Nudge {
+    watched: HashSet<String>,
+    due: Option<Instant>,
+    last_check: Option<Instant>,
+}
+
+impl Nudge {
+    /// Sets the watched panes, from the last check.
+    pub fn set_watched(&mut self, panes: impl IntoIterator<Item = String>) {
+        self.watched = panes.into_iter().collect();
+    }
+
+    /// herdr reported `pane.updated` for `pane` at `now`. For a watched pane, an early check
+    /// becomes due after [`NUDGE_DELAY`], and not before [`NUDGE_GAP`] after the last check.
+    /// A check that is already due stays as it is.
+    pub fn pane_updated(&mut self, pane: &str, now: Instant) {
+        if self.due.is_some() || !self.watched.contains(pane) {
+            return;
+        }
+        let at = now + NUDGE_DELAY;
+        self.due = Some(self.last_check.map_or(at, |last| at.max(last + NUDGE_GAP)));
+    }
+
+    /// The time of the early check, if one is due.
+    pub fn due(&self) -> Option<Instant> {
+        self.due
+    }
+
+    /// True when the early check is due at `now`.
+    pub fn ready(&self, now: Instant) -> bool {
+        self.due.is_some_and(|at| at <= now)
+    }
+
+    /// A check ran at `now`. It ends an early check that was due, but not a later one: a poll
+    /// just after the event can run before the command takes the foreground.
+    pub fn checked(&mut self, now: Instant) {
+        self.last_check = Some(now);
+        if self.ready(now) {
+            self.due = None;
+        }
+    }
 }
 
 /// `~/.local/state/herdling/shell-watches.json`.

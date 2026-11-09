@@ -15,17 +15,24 @@ use crate::shell_watch::{self, Probe, Step, Watch};
 
 /// One round: checks every live watch, saves the changes and sends the pushes of the finished
 /// commands. A missing watch file costs one `stat`. While the user is `at_desk`, devices with
-/// `quiet_at_desk` get nothing.
-pub async fn poll(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool) {
+/// `quiet_at_desk` get nothing. Returns the panes of the watches that the round read, for
+/// [`shell_watch::Nudge`]. `None` when the watch file cannot be read.
+pub async fn poll(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool) -> Option<Vec<String>> {
     let path = shell_watch::path(&ctx.home);
     if !path.exists() {
-        return;
+        return Some(Vec::new());
     }
     let now = crate::proxy::now_secs();
-    let watches = match blocking(path.clone(), move |p| shell_watch::list(&p, now)).await {
-        Some(w) if !w.is_empty() => w,
-        _ => return,
-    };
+    let watches = blocking(path.clone(), move |p| shell_watch::list(&p, now)).await?;
+    let panes: Vec<String> = watches.iter().map(|w| w.pane_id.clone()).collect();
+    if !watches.is_empty() {
+        check(ctx, client, at_desk, path, now, watches).await;
+    }
+    Some(panes)
+}
+
+/// Checks `watches` once and sends the pushes of the finished commands.
+async fn check(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool, path: PathBuf, now: u64, watches: Vec<Watch>) {
     // herdr not there: try again next round. Expired watches still go.
     let mut herdr = herdr::Client::connect(&ctx.herdr_socket, HERDR_TIMEOUT).await.ok();
     let mut results: Vec<(Watch, Option<Watch>)> = Vec::new();

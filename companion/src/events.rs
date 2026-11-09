@@ -159,6 +159,14 @@ fn new_pane_id(ev: &Value) -> Option<&str> {
     }
 }
 
+/// Pane id of a `pane_updated` event line, if it is one.
+pub fn updated_pane_id(ev: &Value) -> Option<&str> {
+    if event_name(ev)? != "pane_updated" {
+        return None;
+    }
+    ev.get("data")?.get("pane")?.get("pane_id").and_then(Value::as_str)
+}
+
 /// Pane id of a `pane_closed` event line, if it is one.
 pub fn closed_pane_id(ev: &Value) -> Option<&str> {
     if event_name(ev)? != "pane_closed" {
