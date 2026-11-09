@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd unreleased]
+## [herdlingd 0.1.9] - 2026-11-09
 
 - New method `herdr.update`: updates herdr (herdr 1) on this computer from the phone. herdlingd
   runs exactly `herdr update --handoff`, without a shell. The phone sends no command text.
