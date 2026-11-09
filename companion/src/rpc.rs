@@ -1126,12 +1126,16 @@ async fn preview_open(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     }
     let (cache, home) = (ctx.ports_cache.clone(), ctx.home.clone());
     tokio::task::spawn_blocking(move || {
-        use crate::ports::{host_listeners, is_listening};
+        use crate::ports::host_listeners;
+        use crate::proxy::select_target;
         // A dev server that started after the last list is not in the cache: look again once.
-        if !is_listening(&cache.get(host_listeners), port) && !is_listening(&cache.refresh(host_listeners), port) {
+        // The grant records the address of the listener, so the proxy connects only there.
+        let Some(addr) = select_target(&cache.get(host_listeners), port, None)
+            .or_else(|| select_target(&cache.refresh(host_listeners), port, None))
+        else {
             return Err(err("port_not_listening", format!("nothing of this user listens on port {port} on loopback")));
-        }
-        let g = crate::proxy::issue(&crate::proxy::grants_path(&home), port, crate::proxy::now_secs())
+        };
+        let g = crate::proxy::issue(&crate::proxy::grants_path(&home), port, Some(addr), crate::proxy::now_secs())
             .map_err(|e| err("io_error", format!("preview.open: {e}")))?;
         Ok(json!({ "grant": g.grant, "port": g.port, "expires_at": g.expires }))
     })

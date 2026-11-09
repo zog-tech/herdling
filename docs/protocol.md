@@ -346,6 +346,10 @@ checks `hello.methods` for `preview.open` before it shows "Preview".
   addresses. If not, the error is `port_not_listening`. The pairing port gives `bad_request`.
 - The grant goes to `~/.local/state/herdling/preview-grants.json` (folder 0700, file 0600, atomic
   rename). It expires 30 minutes after the last proxy connection. At most 16 grants are live.
+- The grant also records the loopback address of the listener that herdlingd found (field `addr`
+  in the grant file): the address itself, `127.0.0.1` for `0.0.0.0` or `::1` for `::`. When the
+  user listens on both families, IPv4 comes first. A grant file of an older herdlingd has no
+  `addr`; the first proxy connection picks the address from the listeners of the user and records it.
 
 `preview.close` params: `{"grant": "<32 hex>"}`. Result: `{"closed": true}`, or `false` when the
 grant was not live. A grant that is not 32 lowercase hex characters gives `grant_invalid`.
@@ -361,9 +365,13 @@ The proxy channel:
   other text starts the normal RPC loop. herdlingd never gives the text to a shell.
 - A host without a forced command runs the same command in the user's shell: `herdlingd proxy`
   is also a subcommand. Both paths run the same code.
-- The proxy checks the grant and the port, then connects to `127.0.0.1:<port>`, then to
-  `[::1]:<port>`. It never connects to another address. Then it copies bytes both ways until one
-  side closes. A refusal writes one line to stderr and ends the channel with exit code 2.
+- The proxy checks the grant and the port. Then it reads the listeners of the same user again and
+  checks that one of them is on the port and reaches the address of the grant. If not (the dev
+  server stopped, or only another user listens there), it refuses and does not extend the grant.
+  Then it connects only to the address of the grant, never to another address. Another user on the
+  same computer can bind `127.0.0.1:<port>` while the dev server listens only on `[::1]:<port>`, so
+  the proxy does not try the other family. Then it copies bytes both ways until one side closes.
+  A refusal writes one line to stderr and ends the channel with exit code 2.
 - Each accepted connection extends the grant by 30 minutes.
 - An older herdlingd does not know the proxy request and starts the RPC loop. The app does not
   send it unless `hello.methods` has `preview.open`.
