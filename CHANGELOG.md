@@ -15,6 +15,10 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 - The installer script checks `SHA256SUMS.sig` when `openssl` can check Ed25519 signatures.
 - Release builds: the `cross` images are pinned by digest (`companion/Cross.toml`). The Intel
   macOS build runs on an Intel runner (`macos-15-intel`), and its smoke test runs natively.
+- `git.worktree_add` uses herdr `worktree.create` when herdr has it. The new worktree joins the
+  worktree group of its repo in the herdr sidebar. The branch and folder checks stay the same.
+  The result adds `via` (`"herdr"` or `"git"`) and, from herdr, `workspace_id`, `tab_id` and
+  `pane_id`. An older herdr, or a folder in a linked worktree, uses `git worktree add` as before.
 
 ## [herdlingd 0.1.6] - 2026-11-09
 
@@ -36,8 +40,13 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `{"closed": true}`, and `serve` subscribes again and reconciles with a fresh snapshot.
 - Self-update: the download URL check parses the URL and refuses encoded dot segments. A version
   pre-release allows only `[0-9A-Za-z.-]`. `~/.config/herdling` gets mode 0700.
+
 ## [Unreleased app]
 
+- New session in a git worktree: when herdr made the worktree workspace, the agent or the shell
+  starts in its first pane. No second workspace opens. An older `herdlingd` works as before.
+- Parakeet on iOS (next native build): a new model download uses a fixed Hugging Face commit, not
+  the `main` branch. A model that is already on the phone stays as it is.
 - Thread: an image in an agent reply no longer loads by itself. It shows as a link with its alt
   text or its URL. A tap opens it like any other link.
 - Pairing: the pair screen and the host screen show this phone's key fingerprint

@@ -372,8 +372,21 @@ export type GitDiff = { diff: string; truncated: boolean; root: string };
 /** Params of `git.worktree_add`: the repo folder (or a pane in it) and the new branch name. */
 export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & { branch: string };
 
-/** Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`. */
-export type GitWorktree = { path: string; branch: string; root: string };
+/**
+ * Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`.
+ * A newer herdlingd makes the worktree with herdr `worktree.create` when herdr has it. Then `via` is
+ * `"herdr"`, and herdr opened the worktree as a new workspace: `workspace_id`, `tab_id` and its root
+ * pane `pane_id`. With `via: "git"` or an older herdlingd, these fields are missing.
+ */
+export type GitWorktree = {
+  path: string;
+  branch: string;
+  root: string;
+  via?: "herdr" | "git";
+  workspace_id?: string;
+  tab_id?: string;
+  pane_id?: string;
+};
 
 /** `pane.watch` params. herdlingd clamps `interval_ms` to 50–1000 (default 80) and `lines` to 1–1000 (default 200). */
 export type PaneWatchParams = {

@@ -991,11 +991,17 @@ async fn git_diff(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     serde_json::to_value(d).map_err(|e| err("internal", e.to_string()))
 }
 
-/// A new branch and worktree for a new session. See [`crate::git::worktree_add`].
+/// A new branch and worktree for a new session. herdr makes it when it can, so the worktree
+/// joins the group of the repo in the herdr sidebar; otherwise git makes it. Both use the same
+/// checks. See [`crate::git::worktree_plan`] and [`crate::worktree::create`].
 async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let cwd = git_cwd(ctx, &params, "git.worktree_add").await?;
     let branch = str_param(&params, "branch", "git.worktree_add")?;
-    let w = crate::git::worktree_add(&cwd, branch).await?;
+    let plan = crate::git::worktree_plan(&cwd, branch).await?;
+    let w = match crate::worktree::create(&ctx.herdr_socket, &plan).await.map_err(herdr_err)? {
+        Some(w) => w,
+        None => crate::git::worktree_add_git(&plan).await?,
+    };
     serde_json::to_value(w).map_err(|e| err("internal", e.to_string()))
 }
 

@@ -33,3 +33,4 @@ pub mod update;
 pub mod uploads;
 pub mod usage;
 pub mod watch;
+pub mod worktree;

@@ -18,6 +18,23 @@ actor Parakeet {
     /// The folder that holds this model's files.
     var dir: URL { AsrModels.defaultCacheDirectory(for: version) }
     var installed: Bool { AsrModels.modelsExist(at: dir, version: version) }
+
+    /// The Hugging Face commit of the model repo that a new download uses. FluidAudio 0.17.7
+    /// downloads these repos at the mutable `main` ref, so a change on the Hub could change the
+    /// model that a released app gets. A fixed commit keeps the files that we tested.
+    /// To update: read `sha` from https://huggingface.co/api/models/<repo>, try the model on a
+    /// device, then change the value here. It ships with a native build only.
+    var revision: String {
+      switch self {
+      case .v2: return "ee09c569f73759e6d44c9bd16766f477b2b36d39"  // main on 2026-11-09
+      case .v3: return "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe"  // main on 2026-11-09
+      }
+    }
+
+    /// True when FluidAudio downloaded the files at a pinned revision. FluidAudio then writes
+    /// this marker file with the commit (`ModelCache.revisionMarkerName` in FluidAudio 0.17.7).
+    /// Check the name again when FluidAudio changes.
+    var pinned: Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent(".fluidaudio-revision").path) }
   }
 
   typealias ProgressHandler = @Sendable (_ model: String, _ fraction: Double) -> Void
@@ -56,6 +73,7 @@ actor Parakeet {
     }
 
     let parent = model.dir.deletingLastPathComponent()
+    Self.applyRevisionPins()
     let task = Task {
       try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
       Self.excludeFromBackup(parent.deletingLastPathComponent())
@@ -136,6 +154,7 @@ actor Parakeet {
   private func load(_ model: Model) async throws -> AsrManager {
     if let manager, loaded == model { return manager }
     unload()
+    Self.applyRevisionPins()
     let models = try await AsrModels.load(from: model.dir, version: model.version)
     let asr = AsrManager(config: .default)
     try await asr.loadModels(models)
@@ -155,6 +174,23 @@ actor Parakeet {
       }
       monitor.start(queue: .global(qos: .utility))
     }
+  }
+
+  /// Sets FluidAudio's `ModelRegistry.revisionOverrides`, so a new download uses the fixed
+  /// `Model.revision` and not `main`. Call it before each FluidAudio download or load: the load
+  /// checks the cache against the same revision.
+  ///
+  /// A model that an older app build downloaded at `main` has no revision marker. FluidAudio
+  /// accepts such a cache only for `main`. With a pin, the next load would list the repo again
+  /// and check every file (it needs the network, and it can download on cellular). So such a
+  /// model keeps `main`, as before. A new download, or a download after "Delete", gets the pin.
+  /// A cache with a marker always gets the pin: with `main`, FluidAudio would delete it.
+  private static func applyRevisionPins() {
+    var pins: [String: String] = [:]
+    for m in [Model.v2, .v3] where !m.installed || m.pinned {
+      pins[m.repo.remotePath] = m.revision
+    }
+    if ModelRegistry.revisionOverrides != pins { ModelRegistry.revisionOverrides = pins }
   }
 
   private static func excludeFromBackup(_ url: URL) {

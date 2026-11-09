@@ -3,6 +3,10 @@
  * rules of `git check-ref-format`. herdlingd checks the name again with git itself.
  */
 
+import type { GitWorktree } from "@herdling/protocol";
+
+import type { FreshPane } from "@/herdr/startSession";
+
 /** The prefix of the default branch name. */
 export const BRANCH_PREFIX = "herdling/";
 
@@ -41,6 +45,17 @@ export function worktreeSlug(branch: string): string {
     .replace(/\//g, "-")
     .replace(/[^A-Za-z0-9._-]/g, "_")
     .replace(/^[.-]+/, "");
+}
+
+/**
+ * The workspace that herdr made for a new worktree, or undefined. A newer herdlingd makes the
+ * worktree with herdr `worktree.create`, and herdr opens it as a workspace with one pane. The
+ * session starts in that pane, so no second workspace opens. An older herdlingd, or a worktree
+ * that git made, gives no ids: the app then makes a workspace.
+ */
+export function worktreePane(w: GitWorktree): FreshPane | undefined {
+  if (w.via !== "herdr" || !w.workspace_id || !w.pane_id) return undefined;
+  return { workspaceId: w.workspace_id, paneId: w.pane_id };
 }
 
 /** The folder herdlingd makes for `branch` in `root`: `<root>/.worktrees/<slug>`. */

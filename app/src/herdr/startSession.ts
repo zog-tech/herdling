@@ -7,6 +7,8 @@ export type StartOptions = {
   prompt?: string;
   /** Existing workspace: add a tab to it instead of creating a workspace. */
   workspaceId?: string;
+  /** A new workspace that herdr already made (herdr `worktree.create`): use its root pane. */
+  fresh?: FreshPane;
   /** Native agent arguments, for example `["--resume", id]`. */
   args?: string[];
   /** Called before each step with a short progress label. */
@@ -31,6 +33,9 @@ export function agentName(cwd: string, paneId: string): string {
 }
 
 export const basename = (path: string): string => path.replace(/\/+$/, "").split("/").pop() || path;
+
+/** The root pane of a workspace that herdr made for the session, for example for a worktree. */
+export type FreshPane = { workspaceId: string; paneId: string };
 
 type Created = {
   workspace?: { workspace_id?: string };
@@ -62,19 +67,30 @@ const herdr = <T>(rpc: Pick<RpcClient, "call">, method: string, params: object, 
   rpc.call<T>("herdr.call", { method, params }, timeoutMs);
 
 /**
+ * The pane for a new session: the root pane of a `fresh` workspace, a new tab of `workspaceId`,
+ * or a new workspace. A `fresh` workspace is new, so a failed start closes it.
+ */
+async function paneFor(
+  rpc: Pick<RpcClient, "call">,
+  { cwd, workspaceId, fresh, onProgress }: { cwd: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void },
+): Promise<Created> {
+  if (fresh) return { workspace: { workspace_id: fresh.workspaceId }, root_pane: { pane_id: fresh.paneId } };
+  onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
+  return workspaceId
+    ? await herdr<Created>(rpc, "tab.create", { workspace_id: workspaceId, cwd, focus: false })
+    : await herdr<Created>(rpc, "workspace.create", { cwd, label: basename(cwd), focus: false });
+}
+
+/**
  * Creates a workspace (or a tab), starts the agent in its first pane, then sends the prompt.
  * Once the agent runs, a failed prompt does not throw: it comes back as `promptError`, so the
  * caller opens the session instead of offering a second Start (a duplicate agent).
  */
 export async function startSession(
   rpc: Pick<RpcClient, "call">,
-  { cwd, kind, prompt, workspaceId, args, onProgress }: StartOptions,
+  { cwd, kind, prompt, workspaceId, fresh, args, onProgress }: StartOptions,
 ): Promise<{ paneId: string; promptError?: string }> {
-  const label = basename(cwd);
-  onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
-  const created = workspaceId
-    ? await herdr<Created>(rpc, "tab.create", { workspace_id: workspaceId, cwd, focus: false })
-    : await herdr<Created>(rpc, "workspace.create", { cwd, label, focus: false });
+  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");
 
@@ -86,7 +102,7 @@ export async function startSession(
     );
   } catch (e) {
     // Do not leave an empty workspace or tab behind; a retry would offer to reuse it.
-    const undo = workspaceId
+    const undo = workspaceId && !fresh
       ? created.tab?.tab_id && herdr(rpc, "tab.close", { tab_id: created.tab.tab_id })
       : created.workspace?.workspace_id && herdr(rpc, "workspace.close", { workspace_id: created.workspace.workspace_id });
     await Promise.resolve(undo).catch(() => {});
@@ -136,12 +152,15 @@ async function waitForShell(rpc: Pick<RpcClient, "call">, paneId: string): Promi
  */
 export async function startShell(
   rpc: Pick<RpcClient, "call">,
-  { cwd, command, workspaceId, onProgress }: { cwd: string; command?: string; workspaceId?: string; onProgress?: (label: string) => void },
+  {
+    cwd,
+    command,
+    workspaceId,
+    fresh,
+    onProgress,
+  }: { cwd: string; command?: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void },
 ): Promise<{ paneId: string; commandError?: string }> {
-  onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
-  const created = workspaceId
-    ? await herdr<Created>(rpc, "tab.create", { workspace_id: workspaceId, cwd, focus: false })
-    : await herdr<Created>(rpc, "workspace.create", { cwd, label: basename(cwd), focus: false });
+  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");
 

@@ -280,6 +280,59 @@ test("offers the new git worktree option in a repo", async () => {
   expect(has(t, "In a new git worktree")).toBe(true);
 });
 
+describe("start in a new git worktree", () => {
+  const herdrCalls = (spy: jest.SpyInstance) =>
+    spy.mock.calls.filter(([m]) => m === "herdr.call").map(([, p]) => (p as { method: string; params: Record<string, unknown> }));
+
+  async function startInWorktree() {
+    const t = await render();
+    await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
+    await settle();
+    const toggle = t.root.find((n) => n.props.accessibilityLabel === "In a new git worktree" && typeof n.props.onValueChange === "function");
+    act(() => toggle.props.onValueChange(true));
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    return t;
+  }
+
+  test("an older herdlingd: the app makes a workspace in the worktree folder", async () => {
+    const call = jest.spyOn(mockConn.rpc!, "call");
+    await startInWorktree();
+    const worktree = call.mock.calls.find(([m]) => m === "git.worktree_add");
+    expect(worktree).toBeDefined();
+    const created = herdrCalls(call).find((c) => c.method === "workspace.create");
+    expect(created?.params.cwd).toMatch(/\/\.worktrees\/herdling-/);
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\//));
+  });
+
+  test("herdr made the worktree workspace: the agent starts in its pane, with no second workspace", async () => {
+    const rpc = mockConn.rpc!;
+    const real = rpc.call.bind(rpc) as (...a: unknown[]) => Promise<unknown>;
+    const call = jest.spyOn(rpc, "call").mockImplementation(((method: string, params: { method?: string }, ...rest: unknown[]) => {
+      if (method === "git.worktree_add")
+        return Promise.resolve({
+          path: "/home/demo/projects/webapp/.worktrees/herdling-x",
+          branch: "herdling/x",
+          root: "/home/demo/projects/webapp",
+          via: "herdr",
+          workspace_id: "w42",
+          tab_id: "w42:t1",
+          pane_id: "w42:p1",
+        });
+      if (method === "herdr.call" && (params.method === "agent.start" || params.method === "agent.prompt")) return Promise.resolve({ type: "ok" });
+      return real(method, params, ...rest);
+    }) as never);
+    await startInWorktree();
+    const methods = herdrCalls(call).map((c) => c.method);
+    expect(methods).not.toContain("workspace.create");
+    expect(methods).not.toContain("tab.create");
+    expect(herdrCalls(call).find((c) => c.method === "agent.start")?.params.pane_id).toBe("w42:p1");
+    expect(mockReplace).toHaveBeenCalledWith("/session/h1/w42:p1");
+  });
+});
+
 test("resumes a recent session through the resume path", async () => {
   const t = await render();
   const [card] = t.root.findAll(
