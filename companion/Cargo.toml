@@ -24,7 +24,7 @@ sha2 = "0.10"
 # CPace (PAKE) for pairing: ristretto255 and HMAC-SHA-512. See src/cpace.rs.
 curve25519-dalek = "=4.1.3"
 hmac = "=0.12.1"
-base64 = "0.22"
+base64 = "0.23"
 # Ed25519 check of the release manifest. ring is already in the tree through rustls.
 ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
