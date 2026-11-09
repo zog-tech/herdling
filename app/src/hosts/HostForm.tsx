@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { ensureKey } from "../../modules/ssh";
+import { publicKeyFingerprint } from "@/pairing/keyFingerprint";
+import { PhoneKey } from "@/pairing/PhoneKey";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -154,6 +156,7 @@ export function HostForm({ host }: { host?: Host }) {
           <>
             <CopyBlock title="Command" text={authorizedKeysCommand(publicKey, command)} />
             <CopyBlock title="Public key" text={publicKey} />
+            <PhoneKey fingerprint={publicKeyFingerprint(publicKey) ?? undefined} />
           </>
         ) : keyError ? (
           <Text color={colors.danger}>{keyError}</Text>
