@@ -6,7 +6,7 @@ mod mock_http;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use fake_herdr_events::{spawn_fake_snapshot, status_ev, Push};
+use fake_herdr_events::{spawn_fake_flaky, spawn_fake_snapshot, status_ev, Push};
 use mock_http::MockHttp;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -59,11 +59,16 @@ async fn start(prefs: Prefs, reply: Value) -> Setup {
 
 /// Like [`start`], with the herdr snapshot (and screen) and the device capabilities.
 async fn start_with(prefs: Prefs, reply: Value, snap: Value, capabilities: &[&str]) -> Setup {
+    start_flaky(prefs, reply, snap, capabilities, &[]).await
+}
+
+/// Like [`start_with`], and the `session.snapshot` calls numbered in `fail_snapshots` fail.
+async fn start_flaky(prefs: Prefs, reply: Value, snap: Value, capabilities: &[&str], fail_snapshots: &[usize]) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("herdr.sock");
     let config = config::default_path(dir.path());
     write_device(&config, prefs, capabilities);
-    let (push, reqs, _open) = spawn_fake_snapshot(&sock, snap, &[]);
+    let (push, reqs, _open) = spawn_fake_flaky(&sock, snap, &[], fail_snapshots);
     let http = MockHttp::start(reply).await;
     let ctx = ServeCtx {
         home: dir.path().into(),
@@ -182,7 +187,42 @@ async fn reconnects_after_herdr_restart() {
     s.assert_no_body(Duration::from_millis(300)).await;
 }
 
-const MENU: &str = "Bash command\n  git status\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again for git status commands\n  3. No, and tell Claude what to do differently (esc)";
+#[tokio::test]
+async fn failed_seed_snapshot_does_not_lose_the_first_push() {
+    // Call 1 is the pane list of the subscription, call 2 the seed of the statuses.
+    let mut s = start_flaky(Prefs::default(), ok_reply(), snapshot(), &[], &[2]).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    // The snapshot says "working", so this is the end of the work.
+    s.push.send(Push::Event(status_ev("w1:p1", "idle"))).unwrap();
+    assert_eq!(s.next_body().await[0]["title"], "herdling finished");
+}
+
+fn pane_ev(kind: &str, pane: &str) -> Value {
+    let data = match kind {
+        "pane.created" => json!({"type": "pane_created", "pane": {"pane_id": pane}, "workspace_id": "w1"}),
+        _ => json!({"type": "pane_closed", "pane_id": pane, "workspace_id": "w1"}),
+    };
+    json!({"event": kind, "data": data})
+}
+
+#[tokio::test]
+async fn closed_focused_pane_is_not_focused_any_more() {
+    let mut snap = snapshot();
+    snap["snapshot"]["focused_pane_id"] = json!("w1:p1");
+    let mut s = start_with(Prefs::default(), ok_reply(), snap, &[]).await;
+    s.push.send(Push::Event(pane_ev("pane.closed", "w1:p1"))).unwrap();
+    // herdr gives the same pane id to a new pane that nobody focused.
+    s.push.send(Push::Event(pane_ev("pane.created", "w1:p1"))).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), s.reqs.recv()).await.expect("new pane not subscribed").unwrap();
+    for status in ["idle", "working", "done"] {
+        s.push.send(Push::Event(status_ev("w1:p1", status))).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // Work that starts in a pane without focus is no desk activity, so the push goes out.
+    assert_eq!(s.next_body().await[0]["title"], "herdling finished");
+}
+
+const MENU: &str ="Bash command\n  git status\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again for git status commands\n  3. No, and tell Claude what to do differently (esc)";
 
 fn snapshot_with_screen(screen: &str) -> Value {
     let mut s = snapshot();
