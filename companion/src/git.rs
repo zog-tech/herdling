@@ -498,6 +498,44 @@ pub struct Worktree {
     pub branch: String,
     /// The root of the repo the worktree came from.
     pub root: String,
+    /// What made the worktree: `"herdr"` (herdr `worktree.create`) or `"git"`. An older
+    /// `herdlingd` does not send it.
+    pub via: &'static str,
+    /// The herdr workspace of the worktree, when herdr made it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// The first tab of that workspace, when herdr made it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    /// The root pane of that workspace, when herdr made it. The app starts the agent in it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<String>,
+}
+
+/// A checked request for a new worktree: the values that [`worktree_plan`] validated.
+#[derive(Debug, Clone)]
+pub struct WorktreePlan {
+    /// The root of the repo.
+    pub root: PathBuf,
+    /// The new branch name. It passed `git check-ref-format` and does not exist yet.
+    pub branch: String,
+    /// `<root>/.worktrees/<slug>`. The folder does not exist yet.
+    pub path: PathBuf,
+}
+
+impl WorktreePlan {
+    /// The result for a worktree that git made.
+    pub fn git_result(&self) -> Worktree {
+        Worktree {
+            path: self.path.to_string_lossy().into_owned(),
+            branch: self.branch.clone(),
+            root: self.root.to_string_lossy().into_owned(),
+            via: "git",
+            workspace_id: None,
+            tab_id: None,
+            pane_id: None,
+        }
+    }
 }
 
 /// The folder name of a worktree for `branch`: `/` becomes `-`, other unusual chars become `_`.
@@ -517,6 +555,13 @@ pub fn worktree_slug(branch: &str) -> String {
 /// Makes a new branch from HEAD and checks it out in `<root>/.worktrees/<slug>`. Adds
 /// `/.worktrees/` to the repo's `info/exclude`, so the main work tree does not show it.
 pub async fn worktree_add(cwd: &Path, branch: &str) -> Result<Worktree, RpcError> {
+    let plan = worktree_plan(cwd, branch).await?;
+    worktree_add_git(&plan).await
+}
+
+/// Checks a request for a new worktree and finds its folder. Runs only read-only git commands.
+/// Both the git path and the herdr path (`worktree.create`) use these checks.
+pub async fn worktree_plan(cwd: &Path, branch: &str) -> Result<WorktreePlan, RpcError> {
     let branch = branch.trim();
     if branch.is_empty() || branch.starts_with('-') || branch.len() > 200 || branch == "@" || branch == "HEAD" {
         return Err(err("bad_request", format!("\"{branch}\" is not a valid branch name")));
@@ -542,18 +587,23 @@ pub async fn worktree_add(cwd: &Path, branch: &str) -> Result<Worktree, RpcError
     if path.exists() {
         return Err(err("already_exists", format!("the folder {} already exists", path.display())));
     }
-    let path_s = path.to_string_lossy().into_owned();
-    let out = git(&root, &["worktree", "add", "-b", branch, "--", &path_s, "HEAD"], 64 * 1024, WORKTREE_TIMEOUT).await?;
+    Ok(WorktreePlan { root, branch: branch.to_string(), path })
+}
+
+/// Makes the worktree of a checked plan with `git worktree add`.
+pub async fn worktree_add_git(plan: &WorktreePlan) -> Result<Worktree, RpcError> {
+    let path_s = plan.path.to_string_lossy().into_owned();
+    let out = git(&plan.root, &["worktree", "add", "-b", &plan.branch, "--", &path_s, "HEAD"], 64 * 1024, WORKTREE_TIMEOUT).await?;
     if out.code != Some(0) {
         return Err(out.failed("git worktree add"));
     }
-    exclude_worktrees(&root).await;
-    Ok(Worktree { path: path_s, branch: branch.to_string(), root: root.to_string_lossy().into_owned() })
+    exclude_worktrees(&plan.root).await;
+    Ok(plan.git_result())
 }
 
 /// Adds `/.worktrees/` to `info/exclude` of the repo. Best effort: a failure only makes the
 /// folder show as untracked in the main work tree.
-async fn exclude_worktrees(root: &Path) {
+pub async fn exclude_worktrees(root: &Path) {
     let Ok(out) = git(root, &["rev-parse", "--git-common-dir"], 64 * 1024, TIMEOUT).await else { return };
     if out.code != Some(0) {
         return;

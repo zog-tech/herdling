@@ -51,6 +51,15 @@ pub fn spawn_fn<F>(path: &Path, respond: F)
 where
     F: Fn(&str, &Value) -> Option<Value> + Send + Sync + 'static,
 {
+    spawn_result(path, move |m, p| respond(m, p).ok_or_else(|| ("unknown_method".to_string(), m.to_string())))
+}
+
+/// Like `spawn_fn`, but `respond` can also give an error: `Err((code, message))`.
+#[allow(dead_code)]
+pub fn spawn_result<F>(path: &Path, respond: F)
+where
+    F: Fn(&str, &Value) -> Result<Value, (String, String)> + Send + Sync + 'static,
+{
     let respond = std::sync::Arc::new(respond);
     let listener = UnixListener::bind(path).unwrap();
     tokio::spawn(async move {
@@ -64,8 +73,8 @@ where
                     let req: Value = serde_json::from_str(&line).unwrap();
                     let method = req["method"].as_str().unwrap_or("");
                     let resp = match respond(method, &req["params"]) {
-                        Some(res) => json!({"id": req["id"], "result": res}),
-                        None => json!({"id": req["id"], "error": {"code": "unknown_method", "message": method}}),
+                        Ok(res) => json!({"id": req["id"], "result": res}),
+                        Err((code, message)) => json!({"id": req["id"], "error": {"code": code, "message": message}}),
                     };
                     let _ = w.write_all(format!("{resp}\n").as_bytes()).await;
                 }

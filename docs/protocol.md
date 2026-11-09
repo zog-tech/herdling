@@ -297,18 +297,34 @@ The app checks `hello.methods` before it calls this method. It is the only git m
 Params: the folder (`cwd` or `pane_id`, as above) and `"branch": "herdling/ab12cd"`. Result:
 
 ```json
-{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app"}
+{"path": "/home/sam/app/.worktrees/herdling-ab12cd", "branch": "herdling/ab12cd", "root": "/home/sam/app",
+ "via": "herdr", "workspace_id": "w7", "tab_id": "w7:t1", "pane_id": "w7:p1"}
 ```
 
-- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`, then runs
-  `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`. The slug is the branch name with
-  `/` as `-` and other unusual chars as `_`.
+- herdlingd checks the name with `git check-ref-format refs/heads/<branch>`. The branch and the
+  folder `<root>/.worktrees/<slug>` must not exist. The slug is the branch name with `/` as `-`
+  and other unusual chars as `_`.
+- When herdr has `worktree.create` (herdr 0.9 and later), herdlingd sends it only the checked
+  values: `{"cwd": <root>, "branch", "path": <root>/.worktrees/<slug>, "base": "HEAD", "focus": false}`.
+  herdr makes the worktree and opens it as a new workspace in the worktree group of the repo.
+  The result then has `"via": "herdr"` and the ids of that workspace, its tab and its root pane.
+- Otherwise herdlingd runs `git worktree add -b <branch> <root>/.worktrees/<slug> HEAD`, and the
+  result has `"via": "git"` and no ids. This happens when herdr does not run, when herdr does not
+  know `worktree.create` (`invalid_request` "unknown variant" or `unknown_method`), or when herdr
+  refuses the folder as a source (`linked_worktree_source`, `not_git_worktree`: for example a
+  folder in a linked worktree). herdlingd keeps the "unknown method" answer for the life of the
+  `rpc` process. Other herdr errors come back as they are, and herdlingd does not try git.
+- An older herdlingd sends only `path`, `branch` and `root`.
 - It adds `/.worktrees/` to `info/exclude` of the repo once, so the main work tree does not show the folder.
 - The new branch starts at HEAD. Uncommitted changes stay in the main work tree.
-- Then the app starts the agent with the normal `agent.start` path, in a new workspace with
-  `cwd` set to `path`. `agent.start` does not change.
+- With `pane_id` in the result, the app starts the agent (or the shell) in that pane: no second
+  workspace opens. Without it, the app starts the agent with the normal `agent.start` path, in a
+  new workspace with `cwd` set to `path`. `agent.start` does not change.
 - Errors: `bad_request` (not a valid branch name), `not_a_repo`, `already_exists` (the branch
-  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s).
+  or the folder exists), `command_failed` (for example, a repo with no commits), `timeout` (60 s
+  for git), `herdr_unavailable` (no herdr answer in 75 s), or a herdr error code.
+- herdr lists the worktrees of a repo with its own `worktree.list`. The app can call it through
+  `herdr.call`, so herdlingd has no separate method for it.
 
 ## New session: `fs.dirs` and `agents.installed`
 
