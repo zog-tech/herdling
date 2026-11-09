@@ -293,6 +293,14 @@ from the first commit to today. It describes app 1.0.0 and `herdlingd` 0.1.0.
 
 ### Fixed
 
+- `herdlingd` pairing: `herdlingd pair` and `serve` lock `pair.json` for each change. A wrong code
+  can no longer open a closed window again or bring back the old code. When the computer cannot
+  save the phone, the pairing window stays open and the same code works again.
+- `herdlingd` pushes: when herdr closes the status stream of a pane, `serve` subscribes it again.
+  A failed snapshot after a reconnect no longer loses the first push of each agent. A closed pane
+  no longer stays the focused pane.
+- `herdlingd` "Notify me when it finishes": a new watch of the same pane in the same second is no
+  longer removed by the result of the old watch.
 - A prompt sent while the agent works no longer stays "Queued" after Claude Code joins it with
   another prompt.
 - The thread stopped after `/restart` from a symlinked folder, or after Claude Code continued the

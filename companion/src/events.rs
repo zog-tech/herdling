@@ -40,25 +40,41 @@ pub struct EventStream {
 impl EventStream {
     /// The next event line. `None` when herdr closed the lifecycle connection.
     pub async fn next(&mut self) -> Option<Value> {
-        tokio::select! {
-            ev = self.lifecycle.next_event() => {
-                let ev = ev.ok().flatten()?;
-                if self.with_status {
-                    if let Some(pane) = new_pane_id(&ev) {
-                        if !self.status.covers(pane) {
-                            let pane = pane.to_string();
-                            if let Ok(sc) = status_connection(&self.socket, self.timeout, std::slice::from_ref(&pane)).await {
-                                self.status.add(sc, vec![pane], self.status_tx.clone());
+        loop {
+            let retry_at = self.status.retry_at;
+            let retry = async {
+                match retry_at {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                ev = self.lifecycle.next_event() => {
+                    let ev = ev.ok().flatten()?;
+                    if self.with_status {
+                        if let Some(pane) = new_pane_id(&ev) {
+                            if !self.status.covers(pane) {
+                                let pane = pane.to_string();
+                                if let Ok(sc) = status_connection(&self.socket, self.timeout, std::slice::from_ref(&pane)).await {
+                                    self.status.add(sc, vec![pane], self.status_tx.clone());
+                                }
                             }
+                        } else if let Some(pane) = closed_pane_id(&ev) {
+                            self.status.pane_closed(pane);
                         }
-                    } else if let Some(pane) = closed_pane_id(&ev) {
-                        self.status.pane_closed(pane);
+                    }
+                    return Some(ev);
+                }
+                // The stream holds a sender, so the channel never closes.
+                Some(ev) = self.status_rx.recv() => return Some(ev),
+                Some(id) = self.status.ended_rx.recv() => self.status.reader_ended(id, tokio::time::Instant::now()),
+                _ = retry => {
+                    let panes = self.status.take_lost();
+                    for (sc, served) in open_status_connections(&self.socket, self.timeout, &panes).await {
+                        self.status.add(sc, served, self.status_tx.clone());
                     }
                 }
-                Some(ev)
             }
-            // The stream holds a sender, so the channel never closes.
-            Some(ev) = self.status_rx.recv() => Some(ev),
         }
     }
 }
@@ -155,14 +171,39 @@ async fn open_status_connections(socket: &Path, timeout: Duration, panes: &[Stri
     out
 }
 
+/// Wait before the panes of a status connection that herdr closed are subscribed again.
+/// It also limits the retries when herdr closes the new connection at once.
+const RESUBSCRIBE_DELAY: Duration = Duration::from_secs(1);
+
 /// The status connections of one stream. Dropping it aborts all of them.
-#[derive(Default)]
 struct StatusConns {
     readers: JoinSet<()>,
     /// Connection id to its reader and the panes it still serves.
     conns: HashMap<u64, (AbortHandle, HashSet<String>)>,
     by_pane: HashMap<String, u64>,
     next: u64,
+    /// A reader sends its connection id here when herdr closes the connection.
+    ended_tx: mpsc::UnboundedSender<u64>,
+    ended_rx: mpsc::UnboundedReceiver<u64>,
+    /// Open panes whose connection herdr closed. They are subscribed again at `retry_at`.
+    lost: HashSet<String>,
+    retry_at: Option<tokio::time::Instant>,
+}
+
+impl Default for StatusConns {
+    fn default() -> Self {
+        let (ended_tx, ended_rx) = mpsc::unbounded_channel();
+        StatusConns {
+            readers: JoinSet::new(),
+            conns: HashMap::new(),
+            by_pane: HashMap::new(),
+            next: 0,
+            ended_tx,
+            ended_rx,
+            lost: HashSet::new(),
+            retry_at: None,
+        }
+    }
 }
 
 impl StatusConns {
@@ -173,22 +214,26 @@ impl StatusConns {
     /// Forwards the events of `c` into `tx` until herdr closes it.
     fn add(&mut self, mut c: herdr::Client, panes: Vec<String>, tx: mpsc::Sender<Value>) {
         while self.readers.try_join_next().is_some() {}
+        self.next += 1;
+        let (id, ended) = (self.next, self.ended_tx.clone());
         let handle = self.readers.spawn(async move {
             while let Ok(Some(ev)) = c.next_event().await {
                 if tx.send(ev).await.is_err() {
                     return;
                 }
             }
+            let _ = ended.send(id);
         });
-        self.next += 1;
         for p in &panes {
-            self.by_pane.insert(p.clone(), self.next);
+            self.lost.remove(p);
+            self.by_pane.insert(p.clone(), id);
         }
-        self.conns.insert(self.next, (handle, panes.into_iter().collect()));
+        self.conns.insert(id, (handle, panes.into_iter().collect()));
     }
 
     /// Forgets `pane`. A connection that serves no open pane any more is closed.
     fn pane_closed(&mut self, pane: &str) {
+        self.lost.remove(pane);
         let Some(id) = self.by_pane.remove(pane) else { return };
         let Some((handle, panes)) = self.conns.get_mut(&id) else { return };
         panes.remove(pane);
@@ -196,5 +241,27 @@ impl StatusConns {
             handle.abort();
             self.conns.remove(&id);
         }
+    }
+
+    /// herdr closed connection `id`. Its panes are no longer covered, and they are
+    /// subscribed again after `RESUBSCRIBE_DELAY`.
+    fn reader_ended(&mut self, id: u64, now: tokio::time::Instant) {
+        let Some((_, panes)) = self.conns.remove(&id) else { return };
+        for p in panes {
+            self.by_pane.remove(&p);
+            self.lost.insert(p);
+        }
+        if !self.lost.is_empty() && self.retry_at.is_none() {
+            self.retry_at = Some(now + RESUBSCRIBE_DELAY);
+        }
+    }
+
+    /// The lost panes that no new connection covers yet, in a stable order. Ends the wait.
+    /// A pane whose new connection fails is left out until herdr reports it again.
+    fn take_lost(&mut self) -> Vec<String> {
+        self.retry_at = None;
+        let mut panes: Vec<String> = self.lost.drain().filter(|p| !self.by_pane.contains_key(p)).collect();
+        panes.sort();
+        panes
     }
 }

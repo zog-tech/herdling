@@ -16,6 +16,16 @@ pub enum Push {
     Event(Value),
     /// Closes the first subscription connection (the lifecycle one).
     Drop,
+    /// Closes every other subscription connection (the status ones), as herdr can do.
+    DropStatus,
+}
+
+/// What the test asks of every open connection.
+#[derive(Clone)]
+enum Bus {
+    Event(Value),
+    DropMain,
+    DropStatus,
 }
 
 fn event_name(v: &Value) -> String {
@@ -57,24 +67,34 @@ pub fn spawn_fake_snapshot(
     snapshot: Value,
     reject: &[&str],
 ) -> (mpsc::UnboundedSender<Push>, mpsc::UnboundedReceiver<Value>, Arc<AtomicUsize>) {
+    spawn_fake_flaky(path, snapshot, reject, &[])
+}
+
+/// Like [`spawn_fake_snapshot`], but the `session.snapshot` calls with a number in
+/// `fail_snapshots` (the first call is 1, counted over all connections) fail.
+pub fn spawn_fake_flaky(
+    path: &Path,
+    snapshot: Value,
+    reject: &[&str],
+    fail_snapshots: &[usize],
+) -> (mpsc::UnboundedSender<Push>, mpsc::UnboundedReceiver<Value>, Arc<AtomicUsize>) {
     let open = Arc::new(AtomicUsize::new(0));
     let open2 = open.clone();
+    let snapshots = Arc::new(AtomicUsize::new(0));
+    let fail_snapshots: Arc<Vec<usize>> = Arc::new(fail_snapshots.to_vec());
     let reject: Vec<String> = reject.iter().map(|s| s.to_string()).collect();
     let listener = UnixListener::bind(path).unwrap();
     let (push_tx, mut push_rx) = mpsc::unbounded_channel::<Push>();
     let (req_tx, req_rx) = mpsc::unbounded_channel::<Value>();
-    let (bus, _) = tokio::sync::broadcast::channel::<Option<Value>>(64);
+    let (bus, _) = tokio::sync::broadcast::channel::<Bus>(64);
     let bus2 = bus.clone();
     tokio::spawn(async move {
         while let Some(p) = push_rx.recv().await {
-            match p {
-                Push::Event(v) => {
-                    let _ = bus2.send(Some(v));
-                }
-                Push::Drop => {
-                    let _ = bus2.send(None);
-                }
-            }
+            let _ = bus2.send(match p {
+                Push::Event(v) => Bus::Event(v),
+                Push::Drop => Bus::DropMain,
+                Push::DropStatus => Bus::DropStatus,
+            });
         }
     });
     tokio::spawn(async move {
@@ -88,6 +108,7 @@ pub fn spawn_fake_snapshot(
             open2.fetch_add(1, Ordering::SeqCst);
             let guard = OpenGuard(open2.clone());
             let reject = reject.clone();
+            let (snapshots, fail_snapshots) = (snapshots.clone(), fail_snapshots.clone());
             tokio::spawn(async move {
                 let _guard = guard;
                 let (r, mut w) = stream.into_split();
@@ -108,6 +129,13 @@ pub fn spawn_fake_snapshot(
                                 if w.write_all(format!("{e}\n").as_bytes()).await.is_err() { return; }
                                 continue;
                             }
+                            if req["method"] == "session.snapshot"
+                                && fail_snapshots.contains(&(snapshots.fetch_add(1, Ordering::SeqCst) + 1))
+                            {
+                                let e = json!({"id": req["id"], "error": {"code": "internal", "message": "snapshot failed"}});
+                                if w.write_all(format!("{e}\n").as_bytes()).await.is_err() { return; }
+                                continue;
+                            }
                             let result = match req["method"].as_str().unwrap() {
                                 "session.snapshot" => snapshot.clone(),
                                 // A test can give the visible screen of every pane as `screen` next to `snapshot`.
@@ -125,7 +153,7 @@ pub fn spawn_fake_snapshot(
                         }
                         ev = bus_rx.recv() => {
                             match ev {
-                                Ok(Some(v)) => {
+                                Ok(Bus::Event(v)) => {
                                     let name = event_name(&v);
                                     let pane = v["data"]["pane_id"].as_str();
                                     let hit = subs.iter().any(|s| {
@@ -134,7 +162,8 @@ pub fn spawn_fake_snapshot(
                                     });
                                     if hit && w.write_all(format!("{v}\n").as_bytes()).await.is_err() { return; }
                                 }
-                                Ok(None) => { if main { return; } }
+                                Ok(Bus::DropMain) => { if main { return; } }
+                                Ok(Bus::DropStatus) => { if !main && !subs.is_empty() { return; } }
                                 Err(_) => return,
                             }
                         }

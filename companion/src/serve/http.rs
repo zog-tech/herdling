@@ -130,9 +130,11 @@ fn pair_blocking(state: &State, req: PairRequest, now: u64) -> Result<PairRespon
     let key_fp = pair::key_fingerprint(&device.public_key).unwrap_or_default();
 
     let _guard = state.lock.lock().unwrap_or_else(|p| p.into_inner());
-    pair::take_window(&state.cfg_dir, &req.code, now)?;
-    let ssh_port =
-        pair::save_device(&state.authorized_keys, &state.config_path, device, req.expo_token).map_err(Failure::Internal)?;
+    // Save first, then close the window: a failed save keeps the code for a retry.
+    let ssh_port = pair::take_window_with(&state.cfg_dir, &req.code, now, || {
+        pair::save_device(&state.authorized_keys, &state.config_path, device, req.expo_token)
+    })?
+    .map_err(Failure::Internal)?;
     eprintln!("herdlingd serve: paired device {name}  key {key_fp}");
     Ok(PairResponse {
         host_name: state.host_name.clone(),

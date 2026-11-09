@@ -39,6 +39,14 @@ impl Desk {
         self.touch(now);
     }
 
+    /// `pane` closed. When it had the focus, no pane has it until herdr reports one: a new
+    /// pane with the same id must not count as focused.
+    pub fn pane_closed(&mut self, pane: &str) {
+        if self.focused() == Some(pane) {
+            self.focused_pane = None;
+        }
+    }
+
     pub fn focused(&self) -> Option<&str> {
         self.focused_pane.as_deref()
     }
