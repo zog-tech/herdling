@@ -145,6 +145,55 @@ fn urls() {
     assert!(!update::url_allowed(base, &format!("{base}/latest/download/x")));
 }
 
+#[test]
+fn url_check_refuses_encoded_dot_segments_and_other_hosts() {
+    let base = "https://github.com/zog-tech/herdling/releases";
+    for bad in [
+        format!("{base}/download/%2e%2e/%2e%2e/evil/x.tar.gz"),
+        format!("{base}/download/%2E%2E/x.tar.gz"),
+        format!("{base}/download/.%2e/x.tar.gz"),
+        format!("{base}/download/herdlingd-v1.0.0/%2e/x.tar.gz"),
+        format!("{base}/download/a/./x.tar.gz"),
+        format!("{base}/download/a%2fb/x.tar.gz"),
+        format!("{base}/download/a%5cb/x.tar.gz"),
+        format!("{base}/download/"),
+        "http://github.com/zog-tech/herdling/releases/download/v/x.tar.gz".to_string(),
+        "https://github.com:8443/zog-tech/herdling/releases/download/v/x.tar.gz".to_string(),
+        "https://user@github.com/zog-tech/herdling/releases/download/v/x.tar.gz".to_string(),
+        "https://github.com.evil.test/zog-tech/herdling/releases/download/v/x.tar.gz".to_string(),
+        "https://GITHUB.com/zog-tech/herdling/releases/download/../../x".to_string(),
+        format!("{base}/download/v/x.tar.gz?x=1"),
+        format!("{base}/download/v/x.tar.gz#f"),
+        "not a url".to_string(),
+    ] {
+        assert!(!update::url_allowed(base, &bad), "{bad}");
+    }
+    // A host name in upper case is the same host.
+    assert!(update::url_allowed(base, "https://GitHub.com/zog-tech/herdling/releases/download/herdlingd-v0.2.0/x.tar.gz"));
+    // A local test base with a port.
+    let local = "http://127.0.0.1:4100/releases";
+    assert!(update::url_allowed(local, "http://127.0.0.1:4100/releases/download/herdlingd-v0.2.0/x.tar.gz"));
+    assert!(!update::url_allowed(local, "http://127.0.0.1:4101/releases/download/herdlingd-v0.2.0/x.tar.gz"));
+}
+
+#[test]
+fn version_pre_release_is_limited() {
+    assert!(update::parse_version("1.0.0-rc.1").is_some());
+    assert!(update::parse_version("1.0.0-beta-2").is_some());
+    for bad in ["1.0.0-x/../../..", "1.0.0-..", "1.0.0-a..b", "1.0.0-a%2f", "1.0.0-a b", "1.0.0-a?b", "1.0.0-a#b", "1.0.0-é"] {
+        assert_eq!(update::parse_version(bad), None, "{bad}");
+    }
+}
+
+#[tokio::test]
+async fn update_lock_folder_is_private() {
+    let f = fixture("0.2.0", "0.2.0", None, None).await;
+    let dir = f.ctx.home.join(".config/herdling");
+    assert!(!dir.exists());
+    update::apply(&f.ctx, None, false).await.unwrap();
+    assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+}
+
 #[tokio::test]
 async fn check_reports_newer_release() {
     let f = fixture("0.2.0", "0.1.0", None, None).await;
