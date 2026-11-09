@@ -125,6 +125,7 @@ function ThemedRoot() {
         <Stack.Screen name="hosts/update" options={{ ...hostHeader, title: "Update herdlingd" }} />
         <Stack.Screen name="hosts/ssh-help" options={{ ...hostHeader, title: "Turn on SSH" }} />
         <Stack.Screen name="hosts/boot-help" options={{ ...hostHeader, title: "Start at boot" }} />
+        <Stack.Screen name="hosts/integrations" options={{ ...hostHeader, title: "Agent integrations" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />

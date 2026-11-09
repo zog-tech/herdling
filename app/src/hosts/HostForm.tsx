@@ -17,6 +17,7 @@ import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
 import { LOGIN_HINT, startsAtLogin } from "./boot";
 import { herdrNotRunningText, HostNotices } from "./HostNotices";
+import { IntegrationsRow } from "./IntegrationsRow";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
 import { UpdateCard } from "./UpdateCard";
@@ -132,6 +133,7 @@ export function HostForm({ host }: { host?: Host }) {
     <Screen>
       {host ? <UpdateCard hostId={host.id} /> : null}
       {host ? <HostNotices hostId={host.id} /> : null}
+      {host ? <IntegrationsRow hostId={host.id} card /> : null}
       <Card>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
         <Field
