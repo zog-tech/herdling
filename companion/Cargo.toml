@@ -28,7 +28,7 @@ base64 = "0.22"
 # Ed25519 check of the release manifest. ring is already in the tree through rustls.
 ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
-if-addrs = "0.13"
+if-addrs = "0.15"
 mdns-sd = "0.13"
 libc = "0.2"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
