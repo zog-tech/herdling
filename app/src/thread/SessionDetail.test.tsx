@@ -70,6 +70,13 @@ jest.mock("@/voice/useSpeakReplies", () => ({
 }));
 jest.mock("../../modules/ssh", () => ({ hasNativePreview: () => false }));
 jest.mock("../../modules/paste", () => ({ hasNativePaste: false, addPasteImageListener: () => () => {} }));
+/** The newest enabled handler of each hardware keyboard shortcut. */
+const mockKeys: Record<string, () => void> = {};
+jest.mock("@/ui/keyCommands", () => ({
+  useKeyCommand: (id: string, run: () => void, o?: { enabled?: boolean }) => {
+    if (o?.enabled !== false) mockKeys[id] = run;
+  },
+}));
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -268,4 +275,14 @@ test("a_failed_first_prompt_from_new_session_shows_in_the_composer", async () =>
   setHostSnapshot("h", fresh([noKind]));
   const t = await open({ prompt: "Fix the build", promptError: "agent_not_ready" });
   expect(texts(t)).toContain("Prompt not sent: agent_not_ready");
+});
+
+test("command_f_opens_the_search_of_the_thread", async () => {
+  setHostSnapshot("h", fresh([{ ...noKind, agent: "claude", agent_status: "idle" }]));
+  const t = await open();
+  expect(hasLabel(t, "Close search")).toBe(false);
+  act(() => mockKeys.find());
+  await flush();
+  expect(hasLabel(t, "Close search")).toBe(true);
+  expect(t.root.findAll((n) => n.props.placeholder === "Search the thread").length).toBeGreaterThan(0);
 });
