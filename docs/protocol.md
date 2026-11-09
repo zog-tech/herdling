@@ -322,7 +322,8 @@ Result:
 ## Browser preview: `ports.list`, `preview.open`, `preview.close` and the proxy channel
 
 The app opens a dev server of the computer (for example `localhost:5173`) in a web view. The
-phone key keeps `no-port-forwarding`, so the app does not use SSH port forwarding. The app
+phone key line has `restrict` (older herdlingd versions wrote `no-port-forwarding`), so the app
+does not use SSH port forwarding. The app
 checks `hello.methods` for `preview.open` before it shows "Preview".
 
 `ports.list` params: `{"pane_id"?: "w1:p2"}`. Result:

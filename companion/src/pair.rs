@@ -25,7 +25,11 @@ pub const MAX_NAME: usize = 40;
 pub const MAX_ID: usize = 128;
 
 const KEY_TYPE: &str = "ssh-ed25519";
-const KEY_OPTIONS: &str = "no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty";
+/// OpenSSH `restrict` (OpenSSH 7.2 and later) turns off port, agent and X11 forwarding, the
+/// PTY and `~/.ssh/rc`, and every restriction that a later OpenSSH adds. Older herdlingd versions
+/// wrote `no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty`; such lines keep working,
+/// because the dedupe and remove code compares only the key blob and the `herdling:` comment.
+const KEY_OPTIONS: &str = "restrict";
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum PairError {
@@ -249,7 +253,7 @@ pub fn key_line(exe: &Path, public_key: &str, device_name: &str) -> Result<Strin
         // sshd runs the command through the user's shell, so allow only plain path characters.
         .filter(|s| s.starts_with('/') && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._+@-".contains(&b)))
         .ok_or_else(|| PairError::BadRequest("companion path cannot be quoted safely".into()))?;
-    Ok(format!("command=\"{exe} rpc\",{KEY_OPTIONS} {key} herdling:{}", sanitize_name(device_name)))
+    Ok(format!("{KEY_OPTIONS},command=\"{exe} rpc\" {key} herdling:{}", sanitize_name(device_name)))
 }
 
 /// Splits off the first field of an `authorized_keys` line. Whitespace inside double

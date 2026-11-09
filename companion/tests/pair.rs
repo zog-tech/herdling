@@ -112,7 +112,7 @@ async fn pairs_with_right_code() {
     assert!(resp["user"].is_string());
 
     let expected = format!(
-        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:Sam-iPhone\n"
+        "restrict,command=\"{EXE} rpc\" ssh-ed25519 {blob} herdling:Sam-iPhone\n"
     );
     assert_eq!(s.keys(), expected);
 
@@ -260,7 +260,7 @@ async fn pair_rejects_injection() {
     assert_eq!(keys.lines().count(), 1);
     let line = keys.lines().next().unwrap();
     assert!(line.ends_with(&format!("ssh-ed25519 {blob} herdling:abcd")), "{line}");
-    assert!(line.starts_with("command=\""));
+    assert!(line.starts_with(&format!("restrict,command=\"{EXE} rpc\" ")), "{line}");
 }
 
 #[tokio::test]
@@ -451,6 +451,27 @@ fn append_and_remove_key_helpers() {
     assert_eq!(pair::remove_key(&dir.path().join("missing"), &format!("ssh-ed25519 {blob}")).unwrap(), 0);
 }
 
+/// The key line format before `restrict`. Lines of this form stay in place after an update.
+fn legacy_line(blob: &str, name: &str) -> String {
+    format!("command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:{name}")
+}
+
+#[test]
+fn legacy_key_lines_are_still_found_and_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = dir.path().join(".ssh/authorized_keys");
+    std::fs::create_dir_all(keys.parent().unwrap()).unwrap();
+    let blob = ed25519_blob(5);
+    std::fs::write(&keys, format!("{}\n", legacy_line(&blob, "Sam-iPhone"))).unwrap();
+    // A new line for the same key is a duplicate.
+    let line = pair::key_line(Path::new(EXE), &format!("ssh-ed25519 {blob}"), "Sam iPhone").unwrap();
+    assert!(line.starts_with("restrict,command="), "{line}");
+    assert!(!pair::append_key(&keys, &line).unwrap());
+    // Revoke and re-pair remove the old line.
+    assert_eq!(pair::remove_herdling_key(&keys, &format!("ssh-ed25519 {blob}")).unwrap(), 1);
+    assert_eq!(std::fs::read_to_string(&keys).unwrap(), "");
+}
+
 #[test]
 fn key_line_rejects_unsafe_exe() {
     let key = format!("ssh-ed25519 {}", ed25519_blob(1));
@@ -612,3 +633,4 @@ async fn failed_save_keeps_the_window_open() {
     assert!(!s.pair_json().exists());
     assert_eq!(config::load(&s.config_path()).unwrap().devices.len(), 1);
 }
+

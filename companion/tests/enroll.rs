@@ -66,7 +66,7 @@ fn setup() -> Setup {
 
 fn expected_line(blob: &str, name: &str) -> String {
     format!(
-        "command=\"{EXE} rpc\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 {blob} herdling:{name}\n"
+        "restrict,command=\"{EXE} rpc\" ssh-ed25519 {blob} herdling:{name}\n"
     )
 }
 

@@ -1,6 +1,6 @@
 //! Browser preview: grants (`preview.open`, `preview.close`) and the proxy mode.
 //!
-//! The phone key cannot forward ports (`no-port-forwarding` stays). For each TCP connection of
+//! The phone key cannot forward ports (`restrict` in its key line). For each TCP connection of
 //! the preview, the app opens a new exec channel with the command `herdlingd proxy <port> <grant>`.
 //! The forced command still runs `herdlingd rpc`; it reads that command from
 //! `SSH_ORIGINAL_COMMAND` and becomes the proxy. The proxy connects only to `127.0.0.1` or `::1`,
