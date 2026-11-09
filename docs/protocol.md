@@ -22,7 +22,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 ## Error codes in use
 
-`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `not_a_repo`, `already_exists`,
+`bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`.
 
 A `herdr.call` error can also carry a code from herdr itself.
@@ -198,6 +198,51 @@ Error codes:
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
+
+## Update herdr: `herdr.update`
+
+From the next herdlingd release, the app can update herdr (herdr 1) on the computer. The app
+checks `hello.methods` for `herdr.update` before it shows the action. `hello.herdr_version` is the
+version of the running herdr server.
+
+`herdr.update` has no params. The phone sends no command text. herdlingd runs exactly
+`<herdr> update --handoff`, without a shell:
+
+- herdlingd finds `herdr` in each `PATH` entry, then in `~/.local/bin`, `~/.cargo/bin`,
+  `/opt/homebrew/bin` and `/usr/local/bin`. sshd gives a forced command a short `PATH`.
+- `herdr update` refuses to run inside a herdr session. The child thus gets no `HERDR_*`
+  variable, except the install settings `HERDR_HOME`, `HERDR_CONFIG_PATH`, `HERDR_INSTALL_DIR`
+  and `HERDR_CHANNEL`. This removes `HERDR_ENV`, `HERDR_SESSION`, `HERDR_PANE_ID`,
+  `HERDR_SOCKET_PATH` and the other session markers.
+- `--handoff` makes herdr try a live handoff: the new server takes the panes and their processes
+  keep running. If the handoff fails before its commit step, herdr keeps the old server.
+- One update runs at a time (the lock file `herdr-update.lock` in the herdlingd config folder).
+  The run stops after 180 seconds. The app waits 3 minutes.
+
+Result:
+
+```json
+{"from": "0.9.5", "to": "0.9.6", "status": "updated", "handoff": "complete", "output": "..."}
+```
+
+- `from` and `to` come from `herdr --version` before and after the update. Each can be `null`.
+- `status` is `"up_to_date"` when herdr says so or when `from` equals `to`. Otherwise `"updated"`.
+- `handoff` is `"complete"` only when herdr prints "live handoff complete". It is `"failed"` when
+  herdr prints that the handoff failed, and `"none"` when herdr prints no handoff line. Only
+  `"complete"` tells that the sessions kept running.
+- `output` is stdout and then stderr of `herdr update`, at most the last 16 KiB.
+- After the update the app reconnects, so `hello.herdr_version` shows the running server.
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `not_installed` | No `herdr` binary in the searched folders |
+| `busy` | Another herdr update runs now |
+| `managed_install` | herdr says that Homebrew, mise or Nix owns the install. Update it with that tool |
+| `command_failed` | `herdr update` did not start or exited with an error. The message has the end of its output |
+| `timeout` | `herdr update` ran longer than 180 seconds and herdlingd stopped it |
+| `update_unavailable` | herdr updates are off in this process |
 
 ## Start at boot: `hello.boot`, `boot.check` and `mac.open_settings`
 
