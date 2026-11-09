@@ -73,6 +73,7 @@ async fn start() -> Setup {
     let (push, reqs, _open) = spawn_fake_snapshot(&sock, herdr_state(busy()), &[]);
     let http = MockHttp::start(json!({"data": [{"status": "ok", "id": "r1"}]})).await;
     let ctx = ServeCtx {
+        core_socket: None,
         home: dir.path().into(),
         herdr_socket: sock,
         config_path,

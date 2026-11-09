@@ -60,6 +60,7 @@ async fn start() -> Setup {
     let host_key = dir.path().join("ssh_host_ed25519_key.pub");
     std::fs::write(&host_key, format!("{} root@host\n", ed25519_key(7))).unwrap();
     let ctx = ServeCtx {
+        core_socket: None,
         home: dir.path().into(),
         herdr_socket: dir.path().join("herdr.sock"),
         config_path: config::default_path(dir.path()),

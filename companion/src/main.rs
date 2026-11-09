@@ -269,6 +269,7 @@ async fn main() -> Result<()> {
                 proxy_cmd(&home, port, &grant).await;
             }
             let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
+            ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }
@@ -287,6 +288,7 @@ async fn main() -> Result<()> {
         Some("serve") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             let ctx = serve::ServeCtx {
+                core_socket: herdlingd::core::endpoint::from_env(&home),
                 herdr_socket: herdr_socket(&home),
                 config_path: config::default_path(&home),
                 home,
