@@ -495,6 +495,71 @@ test("a_timeout_says_the_prompt_can_still_arrive", async () => {
   expect(texts.some((t) => t.startsWith("Not sent"))).toBe(false);
 });
 
+describe("one send or pick at a time", () => {
+  /** Holds the gated calls until `open()`. */
+  const gate = () => {
+    let open!: () => void;
+    const p = new Promise<void>((r) => (open = r));
+    mockSendGate = () => p;
+    return () => act(async () => open());
+  };
+
+  test("a tap and a key press in the same moment send the prompt once", async () => {
+    idle();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await act(async () => prompt(tree!).props.onChangeText("deploy"));
+    // Both land before a re-render (for example ⌘↩ and a tap on Send).
+    await act(async () => {
+      const send = byLabel(tree!, "Send")[0];
+      send.props.onPress();
+      send.props.onPress();
+    });
+    await flush();
+    expect(prompts()).toEqual(["deploy"]);
+    expect(pendingOf("host-1", "w1:p1")).toHaveLength(1);
+  });
+
+  test("a choice tap while a prompt is in flight sends no digit", async () => {
+    const release = gate();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+    await act(async () => prompt(tree!).props.onChangeText("wait"));
+    await act(async () => byLabel(tree!, "Send")[0].props.onPress());
+    await flush();
+    expect(prompts()).toEqual(["wait"]);
+    await act(async () => choiceButtons(tree!)[0].props.onPress());
+    await flush();
+    expect(sends()).toEqual([]);
+    await release();
+    await flush();
+    expect(sends()).toEqual([]);
+  });
+
+  test("a send while a choice is in flight sends no prompt", async () => {
+    const release = gate();
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+    });
+    await flush();
+    await act(async () => prompt(tree!).props.onChangeText("also this"));
+    await act(async () => choiceButtons(tree!)[0].props.onPress());
+    await flush();
+    expect(sends()).toHaveLength(1);
+    await act(async () => byLabel(tree!, "Send")[0].props.onPress());
+    await flush();
+    expect(prompts()).toEqual([]);
+    // The text stays in the box for a send after the pick.
+    expect(prompt(tree!).props.value).toBe("also this");
+    await release();
+    await flush();
+    expect(prompts()).toEqual([]);
+  });
+});
+
 test("a_removed_photo_is_not_uploaded", async () => {
   idle();
   await act(async () => {

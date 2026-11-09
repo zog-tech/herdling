@@ -7,6 +7,7 @@ import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
+import type { RpcClient } from "@/rpc/RpcClient";
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
 import { colors, denseScale, hitTarget, motion, radius, space, state, type } from "@/theme/tokens";
@@ -117,6 +118,12 @@ export const Composer = memo(function Composer({
   const inputScale = Math.min(useWindowDimensions().fontScale, denseScale.row);
   const [text, setText] = useState(initialText ?? "");
   const [sending, setSending] = useState(false);
+  const [picking, setPicking] = useState(false);
+  /**
+   * One prompt send or one menu pick at a time, until its call ends. A ref, not state: a tap and
+   * ⌘↩ (or two taps) can land before `sending` re-renders, and choice digits must not land inside a prompt.
+   */
+  const busy = useRef(false);
   const [error, setError] = useState<string | undefined>(initialError);
   /** Bumped after a send: a remount resets the grown multiline height (iOS keeps it otherwise). */
   const [inputKey, setInputKey] = useState(0);
@@ -186,7 +193,7 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!visible) voiceDispatch({ type: "cancel", force: true });
   }, [visible, voiceDispatch]);
-  const canSend = online && !sending && !voiceActive && (text.trim().length > 0 || photos.length > 0 || pastes.length > 0);
+  const canSend = online && !sending && !picking && !voiceActive && (text.trim().length > 0 || photos.length > 0 || pastes.length > 0);
   const hasDraft = text.trim().length > 0 || photos.length > 0 || pastes.length > 0;
   useEffect(() => {
     onDraftChange?.(hasDraft);
@@ -212,9 +219,6 @@ export const Composer = memo(function Composer({
     if (!blocked) setFreeformPane(undefined);
   }, [blocked]);
   const showChoices = blocked && online && !freeform && choices.length > 0 && choices !== answered;
-  const [picking, setPicking] = useState(false);
-  /** Lock against a double tap: two taps can land before `picking` re-renders. */
-  const pickLock = useRef(false);
   const agentKind = useSnapshots((s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent) ?? undefined;
   const typed = commandQuery(text, commandTriggers(agentKind));
   const slash = useCommands(hostId, paneId, visible && online && (typed !== undefined || sheetOpen));
@@ -270,8 +274,8 @@ export const Composer = memo(function Composer({
    * The screen is re-read first; a menu that changed or is gone gets no keys.
    */
   const pick = async (c: Choice) => {
-    if (!rpc || !online || pickLock.current) return;
-    pickLock.current = true;
+    if (!rpc || !online || busy.current) return;
+    busy.current = true;
     setPicking(true);
     setError(undefined);
     const shown = choices;
@@ -286,18 +290,29 @@ export const Composer = memo(function Composer({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      pickLock.current = false;
+      busy.current = false;
       setPicking(false);
     }
   };
 
   /**
    * Uploads the attached photos, then sends `prompt` with their paths at the end. `fromInput`: it is
-   * the typed text, so clear the box after. When an upload fails, nothing is sent.
+   * the typed text, so clear the box after. When an upload fails, nothing is sent. Holds `busy`
+   * until the send call ends.
    */
   const sendPrompt = async (prompt: string, fromInput: boolean) => {
-    if (!rpc || !online || sending) return;
+    if (!rpc || !online || busy.current) return;
+    busy.current = true;
     setSending(true);
+    try {
+      await sendPromptNow(rpc, prompt, fromInput);
+    } finally {
+      busy.current = false;
+      setSending(false);
+    }
+  };
+  /** The body of `sendPrompt`, under the lock. */
+  const sendPromptNow = async (rpc: RpcClient, prompt: string, fromInput: boolean) => {
     setError(undefined);
     setPlusOpen(false);
     const sent = photos;
@@ -312,7 +327,6 @@ export const Composer = memo(function Composer({
         setError(`Upload failed, nothing sent: ${uploadErrorText(e)}`);
         if (!fromInput && !latest.current.trim()) putText(prompt);
         setUploaded(undefined);
-        setSending(false);
         return;
       }
       setUploaded(undefined);
@@ -328,7 +342,6 @@ export const Composer = memo(function Composer({
       setFocused(false);
       setInputKey((k) => k + 1);
     }
-    setSending(false);
     const stillBlocked =
       useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked";
     if (freeform && stillBlocked) {
@@ -433,7 +446,7 @@ export const Composer = memo(function Composer({
           agent={agentKind}
           onPick={(c) => void pick(c)}
           onType={() => inputRef.current?.focus()}
-          disabled={picking}
+          disabled={picking || sending}
         />
       ) : null}
       {error && !(showChoices && error === BLOCKED_MESSAGE) ? (
