@@ -547,3 +547,68 @@ async fn repair_without_token_keeps_saved_token_and_prefs() {
     assert_eq!(c.devices[0].expo_token.as_deref(), Some("ExponentPushToken[test]"));
     assert!(!c.devices[0].prefs.finished);
 }
+
+/// Runs `take_window` with a wrong code (as `serve` does) and `other` (as `herdlingd pair`
+/// does) at the same time, many times. Returns the result of `other` and the window file
+/// after each round.
+fn race_rounds(rounds: usize, other: impl Fn(&Path) -> Option<String> + Sync) -> Vec<(Option<String>, Option<Value>)> {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path();
+    (0..rounds)
+        .map(|_| {
+            let code = pair::open_window(cfg, now()).unwrap();
+            let gate = std::sync::Barrier::new(2);
+            let other_out = std::thread::scope(|sc| {
+                sc.spawn(|| {
+                    gate.wait();
+                    let _ = pair::take_window(cfg, &wrong(&code), now());
+                });
+                let h = sc.spawn(|| {
+                    gate.wait();
+                    other(cfg)
+                });
+                h.join().unwrap()
+            });
+            let file = std::fs::read(pair::window_path(cfg)).ok().map(|b| serde_json::from_slice(&b).unwrap());
+            (other_out, file)
+        })
+        .collect()
+}
+
+#[test]
+fn closed_window_stays_closed_under_a_wrong_code() {
+    // The CLI closes the window (Ctrl-C) while serve counts a wrong code.
+    for (_, file) in race_rounds(400, |cfg| {
+        pair::close_window(cfg);
+        None
+    }) {
+        assert!(file.is_none(), "a closed window opened again: {file:?}");
+    }
+}
+
+#[test]
+fn new_window_is_not_replaced_by_the_old_one() {
+    // The CLI opens a new window while serve counts a wrong code of the old one.
+    for (new_code, file) in race_rounds(400, |cfg| Some(pair::open_window(cfg, now()).unwrap())) {
+        let file = file.expect("the new window is gone");
+        assert_eq!(file["code"].as_str(), new_code.as_deref(), "the old code came back");
+    }
+}
+
+#[tokio::test]
+async fn failed_save_keeps_the_window_open() {
+    let s = start().await;
+    let code = s.open();
+    // `.ssh` is a file, so the key line cannot be saved.
+    std::fs::write(s.home().join(".ssh"), "").unwrap();
+    let key = format!("ssh-ed25519 {}", ed25519_blob(1));
+    let (status, resp) = post(&s, &body(&code, &key, "Sam")).await;
+    assert_eq!((status, resp), (500, json!({"error": "internal"})));
+    assert!(matches!(pair::window_state(&s.cfg_dir(), now()), pair::WindowState::Open(_)));
+    // The phone can try again with the same code when the problem is gone.
+    std::fs::remove_file(s.home().join(".ssh")).unwrap();
+    let (status, _) = post(&s, &body(&code, &key, "Sam")).await;
+    assert_eq!(status, 200);
+    assert!(!s.pair_json().exists());
+    assert_eq!(config::load(&s.config_path()).unwrap().devices.len(), 1);
+}

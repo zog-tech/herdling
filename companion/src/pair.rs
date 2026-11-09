@@ -68,14 +68,26 @@ pub fn window_path(cfg_dir: &Path) -> PathBuf {
     cfg_dir.join("pair.json")
 }
 
+/// Takes the exclusive lock `pair.json.lock`. `herdlingd pair` and `serve` both change
+/// `pair.json`, so every change holds this lock. The lock goes when the file is dropped.
+fn lock_window(cfg_dir: &Path) -> std::io::Result<File> {
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(cfg_dir)?;
+    let lock =
+        OpenOptions::new().create(true).write(true).truncate(false).mode(0o600).open(cfg_dir.join("pair.json.lock"))?;
+    fs4::fs_std::FileExt::lock_exclusive(&lock)?;
+    Ok(lock)
+}
+
 /// Opens a new pairing window that ends `WINDOW` after `now` and returns its 6-digit code.
 /// Replaces any open window.
 pub fn open_window(cfg_dir: &Path, now: u64) -> anyhow::Result<String> {
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
+    let _lock = lock_window(cfg_dir)?;
     write_window(cfg_dir, &Window { code: code.clone(), expires_at: now + WINDOW.as_secs(), wrong: 0 })?;
     Ok(code)
 }
 
+/// Writes `pair.json` with an atomic rename. The caller holds the window lock.
 fn write_window(cfg_dir: &Path, w: &Window) -> std::io::Result<()> {
     fs::DirBuilder::new().recursive(true).mode(0o700).create(cfg_dir)?;
     let path = window_path(cfg_dir);
@@ -94,6 +106,13 @@ fn write_window(cfg_dir: &Path, w: &Window) -> std::io::Result<()> {
 
 /// Deletes `pair.json`. True when the file is gone afterwards.
 pub fn close_window(cfg_dir: &Path) -> bool {
+    // Fail closed: when the lock cannot be taken, delete the file all the same.
+    let _lock = lock_window(cfg_dir).ok();
+    remove_window(cfg_dir)
+}
+
+/// Deletes `pair.json`. The caller holds the window lock.
+fn remove_window(cfg_dir: &Path) -> bool {
     match fs::remove_file(window_path(cfg_dir)) {
         Ok(()) => true,
         Err(e) => e.kind() == std::io::ErrorKind::NotFound,
@@ -102,33 +121,51 @@ pub fn close_window(cfg_dir: &Path) -> bool {
 
 /// Checks `code` against the open window. On success the window is closed, so a
 /// code works once. A wrong code is counted; at `MAX_WRONG` the window closes.
-/// The caller must serialize calls (one pairing at a time).
 pub fn take_window(cfg_dir: &Path, code: &str, now: u64) -> Result<(), PairError> {
-    let path = window_path(cfg_dir);
-    let Ok(text) = fs::read(&path) else { return Err(PairError::NoWindow) };
+    take_window_with(cfg_dir, code, now, || Ok::<(), std::convert::Infallible>(()))?.map_err(|e| match e {})
+}
+
+/// Like [`take_window`], but runs `save` when the code is right, before the window closes.
+/// When `save` fails, the window stays open and the attempt does not count, so the phone can
+/// try again with the same code. The call holds the window lock from the read to the last
+/// write, so a close or a new window from `herdlingd pair` is never overwritten.
+pub fn take_window_with<T, E>(
+    cfg_dir: &Path,
+    code: &str,
+    now: u64,
+    save: impl FnOnce() -> Result<T, E>,
+) -> Result<Result<T, E>, PairError> {
+    let Ok(_lock) = lock_window(cfg_dir) else { return Err(PairError::NoWindow) };
+    let Ok(text) = fs::read(window_path(cfg_dir)) else { return Err(PairError::NoWindow) };
     let mut w: Window = match serde_json::from_slice(&text) {
         Ok(w) => w,
         Err(_) => {
-            close_window(cfg_dir);
+            remove_window(cfg_dir);
             return Err(PairError::NoWindow);
         }
     };
     if now >= w.expires_at || w.wrong >= MAX_WRONG {
-        close_window(cfg_dir);
+        remove_window(cfg_dir);
         return Err(PairError::NoWindow);
     }
     if ct_eq(code.as_bytes(), w.code.as_bytes()) {
-        // Single use: when the window cannot be closed, the code must not work.
-        return if close_window(cfg_dir) { Ok(()) } else { Err(PairError::NoWindow) };
+        let saved = save();
+        // Single use: after a save the code must not work again. When the file cannot be
+        // deleted, mark the window as out of attempts.
+        if saved.is_ok() && !remove_window(cfg_dir) {
+            w.wrong = MAX_WRONG;
+            let _ = write_window(cfg_dir, &w);
+        }
+        return Ok(saved);
     }
     w.wrong += 1;
     if w.wrong >= MAX_WRONG {
-        close_window(cfg_dir);
+        remove_window(cfg_dir);
         return Err(PairError::TooManyAttempts);
     }
     // Fail closed: when the counter cannot be saved, the window must not stay open.
     if write_window(cfg_dir, &w).is_err() {
-        close_window(cfg_dir);
+        remove_window(cfg_dir);
     }
     Err(PairError::BadCode)
 }
