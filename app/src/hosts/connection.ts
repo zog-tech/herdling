@@ -10,22 +10,19 @@ import { samePrefs, useNotifPrefs } from "../push/prefs";
 import { registerPush } from "../push/register";
 import { RpcClient } from "../rpc/RpcClient";
 import type { LineTransport } from "../rpc/transport";
+import {
+  connectionReducer,
+  initialConnState,
+  toHostConn,
+  type ConnEffect,
+  type ConnEvent,
+  type ConnState,
+  type HostConn,
+} from "./connectionMachine";
 import { useHosts, type Host } from "./store";
 
-export type HostConn = {
-  status: "offline" | "connecting" | "online";
-  lastSeen?: number;
-  rpc?: RpcClient;
-  hello?: Hello;
-  error?: string;
-  /** Code of the native error of the last failed attempt (for example "connect_failed"), when it had one. */
-  errorCode?: string;
-  /** Number of connection attempts started for this host. A caller that wants a fresh result compares it. */
-  attempt: number;
-};
+export type { HostConn } from "./connectionMachine";
 
-/** Seconds to wait before retry number n (1-based); the last value repeats. */
-const BACKOFF_S = [1, 2, 4, 8, 16, 30];
 /** While in the foreground and online, ping this often; a ping that takes longer than the timeout counts as a drop. */
 const PING_EVERY_MS = 15_000;
 const PING_TIMEOUT_MS = 5_000;
@@ -160,26 +157,26 @@ export function getHostConn(hostId: string): HostConn {
   return useConns.getState().conns[hostId] ?? OFFLINE;
 }
 
-/** One saved host: connects, opens the rpc channel, says hello and retries with backoff. */
+/** What an effect needs from the event that caused it: the channel that just opened. */
+type EffectContext = { transport?: LineTransport; demo?: DemoTransport };
+
+/**
+ * One saved host: the I/O shell of `connectionReducer`. It sends events in and runs the effects
+ * (native calls, the rpc channel, timers, pings). The rules live in connectionMachine.ts.
+ */
 class HostConnection {
-  private generation = 0;
-  private attemptNo = 0;
-  private failures = 0;
+  private state: ConnState;
   private timer?: ReturnType<typeof setTimeout>;
+  private pingTimer?: ReturnType<typeof setInterval>;
   private rpc?: RpcClient;
   /** The in-app transport of the demo host; undefined for a real host. */
   private demo?: DemoTransport;
-  private pingTimer?: ReturnType<typeof setInterval>;
-  private foreground: boolean;
-  /** Set on a host key mismatch: no retries until the host entry changes. */
-  private blocked = false;
-  private stopped = false;
 
   constructor(
     private host: Host,
     foreground: boolean,
   ) {
-    this.foreground = foreground;
+    this.state = initialConnState(foreground);
   }
 
   get id(): string {
@@ -196,73 +193,102 @@ class HostConnection {
       old.user === host.user &&
       old.command === host.command &&
       (old.fingerprint === host.fingerprint || old.fingerprint === undefined);
-    if (same) return;
-    this.blocked = false;
-    this.failures = 0;
-    this.connectNow();
+    if (!same) this.dispatch({ type: "retry" });
   }
 
   /** Connect now unless online, connecting or blocked. */
   wake(): void {
-    const status = getHostConn(this.id).status;
-    if (this.blocked || this.stopped || status !== "offline") return;
-    this.failures = 0;
-    this.connectNow();
+    this.dispatch({ type: "wake" });
   }
 
   /** The app came to the foreground or left it. */
   setForeground(active: boolean): void {
-    this.foreground = active;
-    // The demo scripts stop while the app is in the background.
-    this.demo?.setActive(active);
-    if (!active) {
-      this.stopPings();
-      return;
-    }
-    if (getHostConn(this.id).status === "online") {
-      this.ping();
-      this.startPings();
-    } else {
-      this.wake();
-    }
+    this.dispatch({ type: "foreground", active });
   }
 
-  /** The SSH connection dropped. */
-  dropped(reason: string): void {
-    if (getHostConn(this.id).status === "offline") return;
-    this.teardown();
-    this.fail(reason);
+  /** The native SSH connection dropped. */
+  disconnected(reason: string): void {
+    this.dispatch({ type: "disconnected", reason });
   }
 
   stop(): void {
-    this.stopped = true;
-    this.teardown();
-    if (!isDemoHost(this.host)) ssh.disconnect(this.id).catch(() => {});
-    useConns.setState((s) => {
-      const { [this.id]: _, ...rest } = s.conns;
-      return { conns: rest };
-    });
+    this.dispatch({ type: "stop" });
   }
 
   /** Reset backoff and the key-mismatch latch, then reconnect now. Returns the new attempt number. */
   retryNow(): number {
-    this.blocked = false;
-    this.failures = 0;
-    this.connectNow();
-    return this.attemptNo;
+    this.dispatch({ type: "retry" });
+    return this.state.attempt;
   }
 
   connectNow(): void {
-    if (this.stopped) return;
-    this.teardown();
-    void this.attempt(++this.generation);
+    this.dispatch({ type: "connect" });
   }
 
-  private async attempt(gen: number): Promise<void> {
-    if (isDemoHost(this.host)) return this.attemptDemo(gen);
+  /** Applies an event: stores the new state, publishes its view, then runs the effects in order. */
+  private dispatch(e: ConnEvent, ctx: EffectContext = {}): void {
+    const prev = this.state;
+    const { state, effects } = connectionReducer(prev, e);
+    this.state = state;
+    if (state !== prev) {
+      const view = toHostConn(state, this.rpc);
+      if (view) setConn(this.id, view);
+    }
+    for (const fx of effects) this.run(fx, ctx);
+  }
+
+  private run(fx: ConnEffect, ctx: EffectContext): void {
+    switch (fx.type) {
+      case "teardown":
+        return this.teardown();
+      case "connect":
+        if (isDemoHost(this.host)) return this.openDemo(fx.gen);
+        return void this.handshake(fx.gen);
+      case "disconnect":
+        if (!isDemoHost(this.host)) ssh.disconnect(this.id).catch(() => {});
+        return;
+      case "pin":
+        if (this.host.fingerprint) return;
+        this.host = { ...this.host, fingerprint: fx.fingerprint };
+        useHosts.getState().updateHost(this.id, { fingerprint: fx.fingerprint });
+        return;
+      case "openChannel":
+        return void this.openChannel(fx.gen);
+      case "useChannel":
+        return this.useChannel(fx.gen, ctx);
+      case "dropChannel":
+        ctx.transport?.close();
+        return;
+      case "schedule":
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.dispatch({ type: "timer", gen: fx.gen }), fx.ms);
+        return;
+      case "startPings":
+        this.stopPings();
+        this.pingTimer = setInterval(() => this.ping(this.state.gen), PING_EVERY_MS);
+        return;
+      case "stopPings":
+        return this.stopPings();
+      case "ping":
+        return this.ping(fx.gen);
+      case "registerPush":
+        if (!isDemoHost(this.host) && this.rpc) void registerPush(this.rpc, this.id, { hello: this.state.hello });
+        return;
+      case "setDemoActive":
+        // The demo scripts stop while the app is in the background.
+        this.demo?.setActive(fx.active);
+        return;
+      case "forget":
+        useConns.setState((s) => {
+          const { [this.id]: _, ...rest } = s.conns;
+          return { conns: rest };
+        });
+        return;
+    }
+  }
+
+  private async handshake(gen: number): Promise<void> {
     const host = this.host;
-    const prev = getHostConn(host.id);
-    setConn(host.id, { status: "connecting", lastSeen: prev.lastSeen, hello: prev.hello, attempt: ++this.attemptNo });
     try {
       const { fingerprint } = await ssh.connect(host.id, {
         host: host.address,
@@ -270,44 +296,18 @@ class HostConnection {
         user: host.user,
         fingerprint: host.fingerprint,
       });
-      if (this.stopped) {
-        // stop() ran during the handshake: make sure no connection stays open.
-        ssh.disconnect(host.id).catch(() => {});
-        return;
-      }
-      // A newer attempt supersedes this one natively (its connect replaces this client).
-      if (gen !== this.generation) return;
-      if (!host.fingerprint && fingerprint) {
-        this.host = { ...this.host, fingerprint };
-        useHosts.getState().updateHost(host.id, { fingerprint });
-      }
-      const transport = await ExecTransport.open(host.id, host.command);
-      if (gen !== this.generation) {
-        transport.close();
-        return;
-      }
-      const rpc = new RpcClient(transport);
-      this.rpc = rpc;
-      transport.onClose((reason) => {
-        if (gen === this.generation) this.dropped(`channel closed: ${reason}`);
-      });
-      const hello = await rpc.call<Hello>("hello");
-      if (gen !== this.generation) return;
-      this.failures = 0;
-      setConn(host.id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
-      if (this.foreground) this.startPings();
-      void registerPush(rpc, host.id, { hello });
+      this.dispatch({ type: "connected", gen, fingerprint: fingerprint || undefined });
     } catch (e) {
-      if (gen !== this.generation) return;
-      this.teardown();
-      const code = (e as { code?: unknown })?.code;
-      const message = errorText(e);
-      if (code === "host_key_mismatch") {
-        this.blocked = true;
-        setConn(host.id, { status: "offline", error: `Host key changed: ${message}`, attempt: this.attemptNo });
-        return;
-      }
-      this.fail(message, typeof code === "string" ? code : undefined);
+      this.fail(gen, e);
+    }
+  }
+
+  private async openChannel(gen: number): Promise<void> {
+    try {
+      const transport = await ExecTransport.open(this.host.id, this.host.command);
+      this.dispatch({ type: "channelOpened", gen }, { transport });
+    } catch (e) {
+      this.fail(gen, e);
     }
   }
 
@@ -315,40 +315,28 @@ class HostConnection {
    * The demo host: an in-process transport. No SSH, no host key, no push registration.
    * Its agents start again with each new transport (each launch).
    */
-  private async attemptDemo(gen: number): Promise<void> {
-    const id = this.host.id;
-    setConn(id, { status: "connecting", attempt: ++this.attemptNo });
-    const transport = new DemoTransport({ onNotice: (n) => void showDemoNotice(n), active: this.foreground });
+  private openDemo(gen: number): void {
+    const demo = new DemoTransport({ onNotice: (n) => void showDemoNotice(n), active: this.state.foreground });
+    this.dispatch({ type: "channelOpened", gen }, { transport: demo, demo });
+  }
+
+  private useChannel(gen: number, ctx: EffectContext): void {
+    const transport = ctx.transport;
+    if (!transport) return;
     const rpc = new RpcClient(transport);
     this.rpc = rpc;
-    this.demo = transport;
-    transport.onClose((reason) => {
-      if (gen === this.generation) this.dropped(`demo closed: ${reason}`);
-    });
-    try {
-      const hello = await rpc.call<Hello>("hello");
-      if (gen !== this.generation) return;
-      this.failures = 0;
-      setConn(id, { status: "online", lastSeen: Date.now(), rpc, hello, attempt: this.attemptNo });
-      if (this.foreground) this.startPings();
-    } catch (e) {
-      if (gen !== this.generation) return;
-      this.teardown();
-      this.fail(errorText(e));
-    }
+    this.demo = ctx.demo;
+    const label = ctx.demo ? "demo closed" : "channel closed";
+    transport.onClose((reason) => this.dispatch({ type: "dropped", gen, reason: `${label}: ${reason}` }));
+    rpc.call<Hello>("hello").then(
+      (hello) => this.dispatch({ type: "hello", gen, hello, at: Date.now() }),
+      (e: unknown) => this.fail(gen, e),
+    );
   }
 
-  private fail(error: string, errorCode?: string): void {
-    const prev = getHostConn(this.id);
-    setConn(this.id, { status: "offline", lastSeen: prev.lastSeen, hello: prev.hello, error, errorCode, attempt: this.attemptNo });
-    const delay = BACKOFF_S[Math.min(this.failures, BACKOFF_S.length - 1)];
-    this.failures++;
-    this.timer = setTimeout(() => this.connectNow(), delay * 1000);
-  }
-
-  private startPings(): void {
-    this.stopPings();
-    this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
+  private fail(gen: number, e: unknown): void {
+    const code = (e as { code?: unknown })?.code;
+    this.dispatch({ type: "failed", gen, error: errorText(e), code: typeof code === "string" ? code : undefined });
   }
 
   private stopPings(): void {
@@ -356,23 +344,16 @@ class HostConnection {
     this.pingTimer = undefined;
   }
 
-  private ping(): void {
+  private ping(gen: number): void {
     const rpc = this.rpc;
     if (!rpc) return;
-    const gen = this.generation;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error("ping timed out")), PING_TIMEOUT_MS);
     });
     Promise.race([rpc.call("ping"), timeout])
-      .then(() => {
-        if (gen !== this.generation) return;
-        const cur = getHostConn(this.id);
-        if (cur.status === "online") setConn(this.id, { ...cur, lastSeen: Date.now() });
-      })
-      .catch((e) => {
-        if (gen === this.generation) this.dropped(`ping failed: ${errorText(e)}`);
-      })
+      .then(() => this.dispatch({ type: "pong", gen, at: Date.now() }))
+      .catch((e) => this.dispatch({ type: "dropped", gen, reason: `ping failed: ${errorText(e)}` }))
       .finally(() => clearTimeout(timer));
   }
 
@@ -383,7 +364,6 @@ class HostConnection {
     const rpc = this.rpc;
     this.rpc = undefined;
     this.demo = undefined;
-    this.generation++;
     rpc?.close();
   }
 }
@@ -449,7 +429,7 @@ export function startConnections(): void {
   });
   state.cleanup.push(() => appState.remove());
 
-  const sub = ssh.addListener("onDisconnect", (e) => state.conns.get(e.hostId)?.dropped(e.reason));
+  const sub = ssh.addListener("onDisconnect", (e) => state.conns.get(e.hostId)?.disconnected(e.reason));
   state.cleanup.push(() => sub.remove());
 
   // A changed notification pref goes to every online host.
@@ -476,12 +456,14 @@ export function retryNow(hostId: string): number | undefined {
 /**
  * The rpc client of `hostId` when the host is online on attempt `minAttempt` or later, or
  * undefined after `timeoutMs`. Wakes a host that waits for its next retry.
+ * Gives undefined at once when the host is blocked by a host key mismatch: it does not retry by itself.
  */
 export function waitForRpc(hostId: string, timeoutMs: number, minAttempt = 0): Promise<RpcClient | undefined> {
   const ready = (c: HostConn | undefined) => (c?.status === "online" && c.rpc && c.attempt >= minAttempt ? c.rpc : undefined);
   const now = ready(getHostConn(hostId));
   if (now) return Promise.resolve(now);
   running?.conns.get(hostId)?.wake();
+  if (getHostConn(hostId).blocked) return Promise.resolve(undefined);
   return new Promise((resolve) => {
     let off = () => {};
     const timer = setTimeout(() => done(undefined), timeoutMs);
@@ -491,8 +473,9 @@ export function waitForRpc(hostId: string, timeoutMs: number, minAttempt = 0): P
       resolve(rpc);
     };
     off = useConns.subscribe((s) => {
-      const rpc = ready(s.conns[hostId]);
-      if (rpc) done(rpc);
+      const c = s.conns[hostId];
+      const rpc = ready(c);
+      if (rpc || c?.blocked) done(rpc);
     });
   });
 }
