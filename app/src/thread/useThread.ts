@@ -79,11 +79,15 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   /** Guards `loadOlder` synchronously, so a second call with the same cursor never fetches. */
   const loadingOlderRef = useRef(false);
 
-  // A different pane: forget the old thread.
+  // A different pane: forget the old thread. The status and the error of the old pane go too, so the
+  // new pane shows the skeleton, not an empty "live" thread or an old error.
   useEffect(() => {
     setItems([]);
     setRef(undefined);
     setHasOlder(false);
+    // The effect below runs after this one and sets "offline" when there is no rpc.
+    setStatus("loading");
+    setError(undefined);
     source.current = undefined;
     failures.current = 0;
     noLogTries.current = 0;
@@ -115,6 +119,9 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
           restartIn(NO_LOG_RETRY_MS);
           return;
         }
+        // A found log ends this wait: the next session in the pane (`/clear`, a restart) gets all
+        // the retries again. After the fallback the count stays, so a status change shows the terminal at once.
+        if (logPath) noLogTries.current = 0;
         if (!logPath) {
           source.current = undefined;
           setItems([]);
