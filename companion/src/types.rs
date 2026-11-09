@@ -475,3 +475,18 @@ pub struct UpdateApply {
     /// False when no service is installed, or when the restart command failed.
     pub service_restarted: bool,
 }
+
+/// `herdr.update` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HerdrUpdate {
+    /// The herdr version before the update. None when `herdr --version` gave none.
+    pub from: Option<String>,
+    /// The herdr version after the update. None when `herdr --version` gave none.
+    pub to: Option<String>,
+    /// "updated" or "up_to_date".
+    pub status: String,
+    /// The live handoff: "complete" (the panes moved to the new server), "failed" or "none".
+    pub handoff: String,
+    /// The output of `herdr update`, at most the last 16 KiB.
+    pub output: String,
+}
