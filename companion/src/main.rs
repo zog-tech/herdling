@@ -270,6 +270,7 @@ async fn main() -> Result<()> {
             }
             let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
             ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
+            ctx.herdr_update = Some(herdlingd::herdr_update::HerdrUpdateCtx::new(&home));
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }

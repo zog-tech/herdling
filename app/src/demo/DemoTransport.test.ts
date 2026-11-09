@@ -25,6 +25,7 @@ import type {
   ThreadItem,
   ThreadPage,
   ThreadRef,
+  HerdrUpdate,
   UpdateApply,
   UpdateCheck,
   Usage,
@@ -177,6 +178,7 @@ describe("DemoTransport", () => {
     expect(check).toMatchObject({ update_available: false });
     expect(check.latest).toBe(check.current);
     expect(await call<UpdateApply>("update.apply", {}).then(ok("update.apply"))).toMatchObject({ status: "up_to_date" });
+    expect(await call<HerdrUpdate>("herdr.update", {}).then(ok("herdr.update"))).toMatchObject({ status: "up_to_date", handoff: "none" });
 
     const dirs = await call<{ path: string; dirs: string[]; recent_cwds: string[] }>("fs.dirs", {}).then(ok("fs.dirs"));
     expect(dirs.dirs).toContain("projects");

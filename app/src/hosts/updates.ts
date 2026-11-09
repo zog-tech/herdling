@@ -110,7 +110,7 @@ export function updateErrorMessage(e: unknown): string {
 }
 
 /** Waits until the host is online again after attempt `attempt` started. Returns its hello, or undefined after the wait. */
-async function waitForHello(hostId: string, attempt: number | undefined, waitMs: number): Promise<Hello | undefined> {
+export async function waitForHello(hostId: string, attempt: number | undefined, waitMs: number): Promise<Hello | undefined> {
   const end = Date.now() + waitMs;
   while (Date.now() < end) {
     const c = getHostConn(hostId);

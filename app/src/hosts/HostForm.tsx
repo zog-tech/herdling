@@ -20,6 +20,7 @@ import { herdrNotRunningText, HostNotices } from "./HostNotices";
 import { IntegrationsRow } from "./IntegrationsRow";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
+import { HerdrUpdateCard } from "./HerdrUpdateCard";
 import { UpdateCard } from "./UpdateCard";
 import { editPatch } from "./editPatch";
 import { DEFAULT_COMMAND, useHosts, type Host } from "./store";
@@ -132,6 +133,7 @@ export function HostForm({ host }: { host?: Host }) {
   return (
     <Screen>
       {host ? <UpdateCard hostId={host.id} /> : null}
+      {host ? <HerdrUpdateCard hostId={host.id} /> : null}
       {host ? <HostNotices hostId={host.id} /> : null}
       {host ? <IntegrationsRow hostId={host.id} card /> : null}
       <Card>

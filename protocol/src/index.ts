@@ -100,6 +100,20 @@ export type UpdateApply = {
   service_restarted: boolean;
 };
 
+/**
+ * Result of `herdr.update` (no params). herdlingd runs `herdr update --handoff` on the computer.
+ * `from` and `to` come from `herdr --version` before and after; each is missing when herdr gave no version.
+ */
+export type HerdrUpdate = {
+  from?: string | null;
+  to?: string | null;
+  status: "updated" | "up_to_date";
+  /** "complete": the panes moved to the new herdr server. "failed" or "none": herdlingd cannot tell that they did. */
+  handoff: "complete" | "failed" | "none";
+  /** The output of `herdr update`, at most the last 16 KiB. */
+  output: string;
+};
+
 export type ThreadItem =
   | { kind: "user"; id: string; ts: number; text: string; images?: number }
   | { kind: "assistant"; id: string; ts: number; markdown: string }

@@ -68,6 +68,9 @@ pub struct Ctx {
     /// Settings for `update.check` and `update.apply`. None turns updates off: `Ctx::new`
     /// leaves it unset, so a test never downloads or replaces a binary. `main` sets it.
     pub update: Option<crate::update::UpdateCtx>,
+    /// Settings for `herdr.update`. None turns it off: `Ctx::new` leaves it unset, so a test
+    /// never runs a real `herdr update`. `main` sets it.
+    pub herdr_update: Option<crate::herdr_update::HerdrUpdateCtx>,
     /// Runs the system commands of `hello.boot`, `boot.check` and `mac.open_settings`. None
     /// turns them off: `Ctx::new` leaves it unset, so a test never runs a real system command.
     /// `main` sets it.
@@ -106,6 +109,7 @@ impl Ctx {
             stt_timeout: crate::stt::TIMEOUT,
             preview: crate::preview::PreviewState::default(),
             update: None,
+            herdr_update: None,
             sys: None,
             host_os: crate::boot::Os::current(),
             boot_cache: crate::boot::BootCache::default(),
@@ -380,6 +384,7 @@ pub const METHODS: &[&str] = &[
     "stt.make",
     "update.check",
     "update.apply",
+    "herdr.update",
     "boot.check",
     "mac.open_settings",
     "git.status",
@@ -425,6 +430,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "stt.make" => stt_make(ctx, params).await,
         "update.check" => update_check(ctx, params).await,
         "update.apply" => update_apply(ctx, params).await,
+        "herdr.update" => herdr_update(ctx).await,
         "boot.check" => boot_check(ctx).await,
         "mac.open_settings" => mac_open_settings(ctx, params).await,
         "git.status" => git_status(ctx, params).await,
@@ -975,6 +981,15 @@ async fn update_apply(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let u = update_ctx(ctx)?;
     let allow_downgrade = params.get("allow_downgrade").and_then(Value::as_bool).unwrap_or(false);
     let r = crate::update::apply(u, version_param(&params)?, allow_downgrade).await?;
+    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
+}
+
+/// See [`crate::herdr_update::run`]. The phone sends no params: the command is fixed.
+async fn herdr_update(ctx: &Ctx) -> Result<Value, RpcError> {
+    let c = ctx.herdr_update.clone().ok_or_else(|| err("update_unavailable", "herdr updates are off in this process"))?;
+    let r = tokio::task::spawn_blocking(move || crate::herdr_update::run(&c))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 

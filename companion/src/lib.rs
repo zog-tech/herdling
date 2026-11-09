@@ -12,6 +12,7 @@ pub mod events;
 pub mod fsdirs;
 pub mod git;
 pub mod herdr;
+pub mod herdr_update;
 pub mod hostcmd;
 pub mod input_order;
 pub mod install;

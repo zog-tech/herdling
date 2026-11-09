@@ -7,6 +7,7 @@ import type {
   FilePut,
   Boot,
   Hello,
+  HerdrUpdate,
   MacOpenSettings,
   MacSettingsPane,
   PaneAnswer,
@@ -274,6 +275,9 @@ export class DemoTransport implements LineTransport {
         return { current: "demo", latest: "demo", update_available: false, notes: "", target: "demo" } satisfies UpdateCheck;
       case "update.apply":
         return { from: "demo", to: "demo", status: "up_to_date", service_restarted: false } satisfies UpdateApply;
+      // The demo herdr is always up to date too. The demo runs no command.
+      case "herdr.update":
+        return { from: "demo", to: "demo", status: "up_to_date", handoff: "none", output: "herdr demo is already up to date." } satisfies HerdrUpdate;
       case "rpc.cancel": {
         const id = need(p, "stream", method);
         this.streams.get(id)?.();
