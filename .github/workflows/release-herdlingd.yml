@@ -49,20 +49,28 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # Each macOS build runs on a runner of its own CPU type, so the smoke test runs the
+        # binary natively. The Intel build uses the separate Intel pool (macos-15-intel), so the
+        # two macOS jobs do not wait for the same Apple silicon runners.
         include:
           - target: aarch64-apple-darwin
             os: macos-15
             cross: false
+            smoke: true
           - target: x86_64-apple-darwin
-            os: macos-15
+            os: macos-15-intel
             cross: false
-          # Static musl binaries run on every Linux distribution.
+            smoke: true
+          # Static musl binaries run on every Linux distribution. cross uses the images that
+          # companion/Cross.toml pins by digest.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             cross: true
+            smoke: true
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             cross: true
+            smoke: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Add the Rust target
@@ -94,7 +102,7 @@ jobs:
           tar -C pkg -czf "dist/herdlingd-$TARGET.tar.gz" herdlingd LICENSE
           ls -l dist
       - name: Smoke test
-        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-unknown-linux-musl'
+        if: matrix.smoke
         run: pkg/herdlingd version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
