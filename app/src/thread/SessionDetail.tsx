@@ -625,6 +625,8 @@ export function SessionDetail({
   useKeyCommand("interrupt", () => pressKey("ctrl+c"), { enabled: focused });
   useKeyCommand("escape", () => pressKey("esc"), { enabled: focused && view === "terminal" });
   useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused && !terminal });
+  // ⌘F opens the search of the thread or the terminal.
+  useKeyCommand("find", () => setSearchOpen(true), { enabled: focused });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
   useKeyCommand("prevAgent", () => neighbors.prev && onOpenPane(neighbors.prev), { enabled: focused && neighborShortcuts });
   useKeyCommand("nextAgent", () => neighbors.next && onOpenPane(neighbors.next), { enabled: focused && neighborShortcuts });

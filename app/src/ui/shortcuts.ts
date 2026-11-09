@@ -16,6 +16,7 @@ export type ShortcutId =
   | "toggleMode"
   | "newSession"
   | "refresh"
+  | "find"
   | "escape";
 
 export type Shortcut = NativeKeyCommand & { id: ShortcutId };
@@ -35,6 +36,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: "toggleMode", input: "t", modifiers: cmd, title: "Thread or Terminal" },
   { id: "newSession", input: "n", modifiers: cmd, title: "New Session" },
   { id: "refresh", input: "r", modifiers: cmd, title: "Reconnect Offline Hosts" },
+  { id: "find", input: "f", modifiers: cmd, title: "Find" },
   { id: "escape", input: "escape", modifiers: [], title: "Send Esc" },
 ];
 

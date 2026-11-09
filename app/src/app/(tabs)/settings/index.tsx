@@ -17,6 +17,7 @@ import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts, type Host } from "@/hosts/store";
 import { updateStatus } from "@/hosts/updates";
 import { useNotifPrefs, type NotifPref } from "@/push/prefs";
+import { useSavedPrompts } from "@/thread/savedPrompts";
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
 import { Group, Section } from "@/ui/Group";
@@ -297,6 +298,30 @@ function FeelSection() {
   );
 }
 
+/** "Prompts": the saved prompts (quick replies) of the composer. */
+function PromptsSection() {
+  const router = useRouter();
+  const count = useSavedPrompts((s) => s.prompts.length);
+  return (
+    <Section title="Prompts">
+      <Group>
+        <Row
+          accessibilityLabel={`Saved prompts, ${count}`}
+          onPress={() => router.push("/saved-prompts" as never) /* typed routes regenerate on the next dev start */}
+          title="Saved prompts"
+          detail="Quick replies above the empty prompt box."
+          trailing={
+            <Text muted style={{ fontVariant: ["tabular-nums"] }}>
+              {count}
+            </Text>
+          }
+          chevron
+        />
+      </Group>
+    </Section>
+  );
+}
+
 /**
  * Settings: grouped bands with small uppercase headers. Each row has a title, one plain line under
  * it, and its control on the right (a gold switch, a segmented control, or a chevron).
@@ -350,6 +375,7 @@ export default function SettingsScreen() {
           />
         </Group>
       </Section>
+      <PromptsSection />
       <VoiceSection />
       <VoiceInputSection />
       <FeelSection />

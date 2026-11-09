@@ -22,6 +22,7 @@ describe("SHORTCUTS", () => {
       toggleMode: "⌘T",
       newSession: "⌘N",
       refresh: "⌘R",
+      find: "⌘F",
       escape: "Esc",
     });
   });
