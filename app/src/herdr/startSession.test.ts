@@ -36,6 +36,35 @@ describe("startSession", () => {
     expect(rpc.calls[1].params).toEqual({ name: "proj-w1-p1", kind: "codex", pane_id: "w1:p1" });
   });
 
+  it("starts_in_the_root_pane_of_a_fresh_workspace", async () => {
+    const rpc = fakeRpc();
+    const progress: string[] = [];
+    const r = await startSession(rpc, {
+      cwd: "/home/sam/proj/.worktrees/fix",
+      kind: "claude",
+      fresh: { workspaceId: "w7", paneId: "w7:p1" },
+      onProgress: (l) => progress.push(l),
+    });
+    expect(r).toEqual({ paneId: "w7:p1" });
+    // No second workspace and no new tab.
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["agent.start"]);
+    expect(rpc.calls[0].params).toEqual({ name: "fix-w7-p1", kind: "claude", pane_id: "w7:p1" });
+    expect(progress).toEqual(["Starting claude…"]);
+  });
+
+  it("closes_the_fresh_workspace_when_agent_start_fails", async () => {
+    const calls: { method: string; params: any }[] = [];
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        calls.push(p);
+        if (p.method === "agent.start") throw new Error("boom");
+        return {};
+      },
+    } as any;
+    await expect(startSession(rpc, { cwd: "/a/b", kind: "claude", fresh: { workspaceId: "w7", paneId: "w7:p1" } })).rejects.toThrow("boom");
+    expect(calls.at(-1)).toEqual({ method: "workspace.close", params: { workspace_id: "w7" } });
+  });
+
   it("start_passes_args", async () => {
     const rpc = fakeRpc();
     await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "w9", args: ["--resume", "abc"] });
@@ -169,6 +198,12 @@ describe("startShell", () => {
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create"]);
     expect(rpc.calls[0].params).toEqual({ cwd: "/home/sam/proj", label: "proj", focus: false });
     expect(progress).toEqual(["Creating workspace…"]);
+  });
+
+  it("uses_the_root_pane_of_a_fresh_workspace", async () => {
+    const rpc = shellRpc();
+    await expect(startShell(rpc, { cwd: "/home/sam/proj", fresh: { workspaceId: "w7", paneId: "w7:p1" } })).resolves.toEqual({ paneId: "w7:p1" });
+    expect(rpc.calls).toEqual([]);
   });
 
   it("adds_a_tab_to_an_existing_workspace", async () => {
