@@ -49,14 +49,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        # Each macOS build runs on a runner of its own CPU type, so the smoke test runs the
-        # binary natively. The Intel build uses the separate Intel pool (macos-15-intel), so the
-        # two macOS jobs do not wait for the same Apple silicon runners.
+        # Both macOS builds run on the Intel pool (macos-15-intel). The Apple silicon pool
+        # (macos-15) did not give a runner for hours on 2026-11-09 ("capacity constraints").
+        # Xcode on Intel builds aarch64-apple-darwin as a cross target. An Intel runner cannot
+        # run that binary, so it has no smoke test; the Intel binary has one.
         include:
           - target: aarch64-apple-darwin
-            os: macos-15
+            os: macos-15-intel
             cross: false
-            smoke: true
+            smoke: false
           - target: x86_64-apple-darwin
             os: macos-15-intel
             cross: false

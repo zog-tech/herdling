@@ -29,14 +29,14 @@ Targets (Linux builds are static musl binaries, so they run on every distributio
 
 | Target | Runner |
 |---|---|
-| `aarch64-apple-darwin` | Apple silicon macOS runner (`macos-15`) |
+| `aarch64-apple-darwin` | Intel macOS runner (`macos-15-intel`), cross target |
 | `x86_64-apple-darwin` | Intel macOS runner (`macos-15-intel`) |
 | `x86_64-unknown-linux-musl` | Ubuntu runner with `cross` |
 | `aarch64-unknown-linux-musl` | Ubuntu runner with `cross` |
 
-Each macOS build runs on a runner of its own CPU type, so the smoke test (`herdlingd version`)
-runs the binary natively. The Intel runners are a separate pool: the Intel job does not wait for
-the Apple silicon runners. `companion/Cross.toml` pins the `cross` images by digest.
+Both macOS builds run on the Intel pool. The Apple silicon pool did not give a runner for hours
+on 2026-11-09. Xcode on Intel builds `aarch64-apple-darwin` as a cross target. The Intel runner
+cannot run that binary, so only the Intel binary has a smoke test (`herdlingd version`). `companion/Cross.toml` pins the `cross` images by digest.
 
 Assets of each release:
 
