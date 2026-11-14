@@ -263,6 +263,32 @@ async fn thread_resolve_and_previews_for_core_agents() {
 }
 
 #[tokio::test]
+async fn core_thread_resolves_claude_session() {
+    let s = setup(false, true, "working");
+    // The fake terminal t1 has foreground pid 101 in /home/sam/proj/src. HOME is the temp folder.
+    let home = s.dir.path();
+    std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
+    std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
+    let proj = herdlingd::claude::project_dir(home, "/home/sam/proj/src");
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(proj.join("abc.jsonl"), "").unwrap();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t1"})).await;
+    assert_eq!(r["result"]["session"], "abc", "{r}");
+    assert_eq!(r["result"]["kind"], "claude");
+    assert_eq!(r["result"]["cwd"], "/home/sam/proj/src");
+    assert!(r["result"]["log_path"].as_str().unwrap().ends_with("abc.jsonl"), "{r}");
+}
+
+#[tokio::test]
+async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
+    let s = setup(false, true, "working");
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t9"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
+}
+
+#[tokio::test]
 async fn pane_watch_reads_a_core_pane() {
     let s = setup(false, true, "idle");
     let mut sess = Session::start(s.ctx());

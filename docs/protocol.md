@@ -689,8 +689,8 @@ out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
 - The core waits until nobody types at the computer before it types. A typing call can take up
   to 75 seconds.
 - `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list` and
-  `ports.list` accept a core `pane_id`. `thread.resolve` gives `session: null`. `shell.watch`
-  gives `unsupported`.
+  `ports.list` accept a core `pane_id`. `thread.resolve` finds the session of a core agent from
+  the processes of the terminal, as for herdr 1. `shell.watch` gives `unsupported`.
 
 ### Events
 
