@@ -71,16 +71,21 @@ fn label<'a>(t: &'a Value, key: &str) -> Option<&'a str> {
     t.get("labels").and_then(|l| text(l, key))
 }
 
+/// The space name in the `where` label of a terminal: the part before the last `" / "`,
+/// trimmed. A label with no `" / "` gives the whole label. None when the result is empty.
+pub fn where_name(t: &Value) -> Option<String> {
+    label(t, "where")
+        .map(|w| w.rsplit_once(" / ").map_or(w, |(head, _)| head).trim())
+        .filter(|n| !n.is_empty())
+        .map(String::from)
+}
+
 /// The space that the `herdr.*` labels name. None when the space label is missing or empty.
-/// The name is the part of the `where` label before the last `" / "`.
+/// The name is [`where_name`].
 pub fn label_space(t: &Value) -> Option<LabelSpace> {
     let space = label(t, "herdr.space")?.to_string();
     let tab = label(t, "herdr.tab").map(String::from);
-    let name = label(t, "where")
-        .map(|w| w.rsplit_once(" / ").map_or(w, |(head, _)| head).trim())
-        .filter(|n| !n.is_empty())
-        .map(String::from);
-    Some(LabelSpace { space, tab, name })
+    Some(LabelSpace { space, tab, name: where_name(t) })
 }
 
 /// The group of a terminal when no Herdr space names it: the label, the repo, the folder.
@@ -152,4 +157,24 @@ pub fn live_parent<'a>(t: &Value, live: &[&'a Value]) -> Option<&'a Value> {
         return None;
     }
     live.iter().copied().find(|r| text(r, "address") == Some(parent) && agent_status(r).is_some())
+}
+
+/// The name that an entry and a pane of terminal `t` show on a card. The first that exists:
+/// the task name, the Herdr app tab name `tab_name`, the terminal name, the status title, the
+/// terminal title, the reported app, the agent kind, the address. Never empty, and never the
+/// space name: an old app shows the space name when a card has no name.
+pub fn display_name(t: &Value, tab_name: Option<&str>) -> String {
+    let status = t.get("status");
+    task_name(t)
+        .or_else(|| tab_name.map(str::trim).filter(|n| !n.is_empty()).map(String::from))
+        .or_else(|| {
+            [text(t, "name"), status.and_then(|s| text(s, "title")), text(t, "title"), status.and_then(|s| text(s, "app"))]
+                .into_iter()
+                .flatten()
+                .map(|s| s.trim().to_string())
+                .next()
+        })
+        .or_else(|| agent_kind(t))
+        .or_else(|| text(t, "address").map(String::from))
+        .unwrap_or_else(|| "terminal".into())
 }

@@ -674,6 +674,8 @@ herdlingd puts each terminal in the first place that fits:
 2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
    document tab holds yet, for example right after the phone starts an agent. The name of the
    space is the part of the `where` label before the last ` / `.
+   A Herdr app space with no name takes the `where` name of its first terminal, else the folder
+   name of that terminal, else the folder name of the space.
 3. A helper (a subagent terminal) goes to the task tab of its parent. When the parent is gone,
    finished or on another computer, the helper becomes its own task in its own group.
 4. A fallback group. The group name is the first that exists: the `herdling.group` label, the git
@@ -691,7 +693,12 @@ Core agent and pane entries have these optional fields. An old app ignores them.
 | `repo_root` | The root folder of the repo |
 | `branch` | The branch of the repo, when it has one |
 
-The agent `name` and the pane `label` are the task name of the terminal. `display_agent` is null
+The task name of a terminal is its name, else its 7501 title, else its terminal title. A title
+that only repeats the reported app or the agent kind (for example "Claude Code") is not a task
+name. The agent `name` and the pane `label` are the task name. When there is none, they are the
+first that exists of: the name of the Herdr app tab that holds the terminal, the terminal name,
+the 7501 title, the terminal title, the reported app, the agent kind and the address. They are
+never empty, and they are never the name of the space. `display_agent` is null
 for a known kind (`claude`, `codex`, ...), and it has the reported app only for an unknown kind.
 herdlingd reads the repo with `git`, with a short time limit. When `git` is missing or slow, the
 group falls back to the folder name.
@@ -727,7 +734,8 @@ group falls back to the folder name.
   `ports.list` accept a core `pane_id`. `shell.watch` gives `unsupported`.
 - `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
   herdr 1, and gives its transcript (`log_path`). `agents.preview` of a core pane reads the
-  transcript of the agent and sets `source: "log"`. When no transcript exists, both use the screen.
+  transcript of the agent and sets `source: "log"`. When no transcript exists, `thread.resolve`
+  gives `session: null`, and only `agents.preview` falls back to the screen.
 
 ### Events
 

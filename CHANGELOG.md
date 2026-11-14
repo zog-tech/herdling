@@ -11,8 +11,15 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.
   `hc:loose` is gone: an old id gives `pane_not_found`.
 - Core agents and panes have the optional fields `group`, `group_source`, `repo`, `repo_root` and
-  `branch`. The agent `name` is the task name. `display_agent` is null for a known kind.
+  `branch`. The agent `name` is the task name. A title that only repeats the agent app or kind
+  (for example "Claude Code") is not a task name. The entry name then is the Herdr app tab name,
+  the terminal name or title, the app, the kind or the address, never the group name.
+  `display_agent` is null for a known kind.
+- A Herdr app space with no name takes the `where` name of its first terminal, else the folder
+  name of that terminal, else the folder name of the space.
 - `thread.resolve` and `agents.preview` read the transcript of a core agent (`source: "log"`).
+  When no transcript exists, `thread.resolve` gives `session: null`. Only `agents.preview` falls
+  back to the screen.
 
 ## [herdlingd 0.1.9] - 2026-11-09
 

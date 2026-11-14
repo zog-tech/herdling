@@ -119,3 +119,12 @@ fn a_name_equal_to_the_app_is_skipped() {
     let t = rec(json!({"name": "Claude-Code", "title": "Add tests", "status": {"state": "working", "app": "claude-code"}}));
     assert_eq!(task_name(&t).as_deref(), Some("Add tests"));
 }
+
+#[test]
+fn where_name_is_the_part_before_the_last_separator() {
+    assert_eq!(where_name(&rec(json!({"labels": {"where": "web app / 1"}}))).as_deref(), Some("web app"));
+    assert_eq!(where_name(&rec(json!({"labels": {"where": " solo "}}))).as_deref(), Some("solo"));
+    assert_eq!(where_name(&rec(json!({"labels": {"where": "solo"}}))).as_deref(), Some("solo"));
+    assert_eq!(where_name(&rec(json!({"labels": {"where": " / 1"}}))), None);
+    assert_eq!(where_name(&rec(json!({"labels": {}}))), None);
+}

@@ -21,7 +21,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
-use super::groups::{self, folder_of, label_space, live_parent, task_name, GroupSource, Repos};
+use super::groups::{self, display_name, folder_of, label_space, live_parent, task_name, where_name, GroupSource, Repos};
 use crate::types::AgentStatus;
 
 /// The prefix of every core id.
@@ -180,13 +180,13 @@ fn sum_status(statuses: &[AgentStatus]) -> AgentStatus {
 }
 
 /// The pane entry of terminal `t`.
-pub fn pane_entry(t: &Value, tab: &str, ws: &str) -> Value {
+pub fn pane_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Value {
     let addr = text(t, "address").unwrap_or("");
     let mut p = json!({
         "pane_id": pane_id(addr),
         "tab_id": tab,
         "workspace_id": ws,
-        "label": task_name(t),
+        "label": name,
         "agent": agent_status(t).and(agent_kind(t)),
         "cwd": text(t, "cwd"),
         "foreground_cwd": t.get("foreground").and_then(|f| text(f, "cwd")),
@@ -200,7 +200,7 @@ pub fn pane_entry(t: &Value, tab: &str, ws: &str) -> Value {
 }
 
 /// The agent entry of terminal `t`, when it is an agent.
-pub fn agent_entry(t: &Value, tab: &str, ws: &str) -> Option<Value> {
+pub fn agent_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Option<Value> {
     let status = agent_status(t)?;
     let addr = text(t, "address")?;
     let seq = t.get("status_ms").and_then(Value::as_u64).or_else(|| t.get("turn").and_then(Value::as_u64)).unwrap_or(0);
@@ -217,7 +217,7 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str) -> Option<Value> {
         "cwd": cwd_now(t),
         "state_change_seq": seq,
         "terminal_title_stripped": title(t),
-        "name": task_name(t),
+        "name": name,
         "backend": BACKEND,
     }))
 }
@@ -303,11 +303,12 @@ impl Builder<'_> {
     }
 
     /// Adds the pane and agent entries of terminal `t` to tab `ti` of workspace `wi`.
-    fn place(&mut self, t: &Value, wi: usize, ti: usize, g: &Grouping) {
+    fn place(&mut self, t: &Value, wi: usize, ti: usize, g: &Grouping, tab_name: Option<&str>) {
         let (ws, tab) = (&self.ws[wi].id, &self.ws[wi].tabs[ti].id);
-        let mut pane = pane_entry(t, tab, ws);
+        let name = display_name(t, tab_name);
+        let mut pane = pane_entry(t, tab, ws, &name);
         add_group_fields(&mut pane, t, g, self.repos);
-        let agent = agent_entry(t, tab, ws);
+        let agent = agent_entry(t, tab, ws, &name);
         self.panes.push(pane);
         if let Some(mut agent) = agent {
             add_group_fields(&mut agent, t, g, self.repos);
@@ -362,7 +363,7 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         // name into the `where` label of each terminal. The `folder` of the document is stale.
         let label = text(space, "name")
             .map(String::from)
-            .or_else(|| first.and_then(label_space).and_then(|l| l.name))
+            .or_else(|| first.and_then(where_name))
             .or_else(|| first.and_then(folder_name))
             .or_else(|| text(space, "folder").and_then(last))
             .unwrap_or_else(|| format!("Space {}", si + 1));
@@ -371,14 +372,15 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         let tabs = space.get("tabs").and_then(Value::as_array).cloned().unwrap_or_default();
         for (ti, tab) in tabs.iter().enumerate() {
             let Some(tid) = text(tab, "id") else { continue };
-            let tab_label = text(tab, "name").map(String::from).unwrap_or_else(|| format!("Tab {}", ti + 1));
+            let tab_name = text(tab, "name");
+            let tab_label = tab_name.map(String::from).unwrap_or_else(|| format!("Tab {}", ti + 1));
             let tix = b.tab(wi, format!("{PREFIX}tab:{tid}"), || tab_label);
             let mut addrs = Vec::new();
             layout_terminals(tab.get("root").unwrap_or(&Value::Null), &mut addrs);
             for a in addrs {
                 let Some(t) = by_addr(&a) else { continue };
                 if placed.insert(a) {
-                    b.place(t, wi, tix, &g);
+                    b.place(t, wi, tix, &g, tab_name);
                 }
             }
         }
@@ -396,7 +398,7 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         let tix = b.tab(wi, tab_id, || task_label(t));
         let g = Grouping { label: b.ws[wi].label.clone(), source: GroupSource::Space };
         placed.insert(addr.to_string());
-        b.place(t, wi, tix, &g);
+        b.place(t, wi, tix, &g, None);
     }
 
     // Rules 3 and 4. A helper whose parent rules 3 or 4 place waits for the parent.
@@ -410,7 +412,7 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         let wi = b.ws(format!("{PREFIX}g:{}", group.key), || group.label.clone());
         let tix = b.tab(wi, format!("{PREFIX}task:{addr}"), || task_label(t));
         let g = Grouping { label: b.ws[wi].label.clone(), source: group.source };
-        b.place(t, wi, tix, &g);
+        b.place(t, wi, tix, &g, None);
         tasks.insert(addr, (wi, tix, g));
     };
     for &t in &rest {
@@ -425,7 +427,7 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         waiting.retain(|(t, parent)| {
             let Some((wi, tix, g)) = tasks.get(parent) else { return true };
             let (wi, tix, g) = (*wi, *tix, g.clone());
-            b.place(t, wi, tix, &g);
+            b.place(t, wi, tix, &g, None);
             tasks.insert(text(t, "address").unwrap_or_default().to_string(), (wi, tix, g));
             false
         });
@@ -469,7 +471,7 @@ pub fn merge_snapshots<E>(herdr: Result<Value, E>, core: Option<Projection>) -> 
 
 /// The herdr 1 `pane.get` answer for terminal `t`.
 pub fn pane_get(t: &Value) -> Value {
-    let mut pane = pane_entry(t, "", "");
+    let mut pane = pane_entry(t, "", "", &display_name(t, None));
     if let Some(m) = pane.as_object_mut() {
         m.remove("tab_id");
         m.remove("workspace_id");

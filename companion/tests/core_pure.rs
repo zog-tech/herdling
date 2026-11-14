@@ -481,12 +481,18 @@ fn space_doc(name: &str) -> Value {
 
 #[test]
 fn unnamed_space_takes_the_where_name() {
-    let t = json!({"address": "t1", "state": "live", "labels": {"where": "web / 1"},
+    // The `where` name differs from the terminal folder, so only the `where` branch can pass.
+    let t = json!({"address": "t1", "state": "live", "labels": {"where": "web app / 1"},
                    "foreground": {"cwd": "/home/sam/web"}, "cwd": "/home/sam/start",
                    "status": {"state": "working", "app": "pi"}});
     let p = project::project(std::slice::from_ref(&t), Some(&space_doc("")), &Repos::new());
-    assert_eq!(p.workspaces[0]["label"], "web");
-    assert_eq!(p.agents[0]["group"], "web");
+    assert_eq!(p.workspaces[0]["label"], "web app");
+    assert_eq!(p.agents[0]["group"], "web app");
+    // With the `herdr.space` label too, the name stays the same.
+    let mut both = t.clone();
+    both["labels"] = json!({"where": "web app / 1", "herdr.space": "s1"});
+    let p = project::project(&[both], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web app");
     // No `where` label: the folder of the terminal.
     let mut no_where = t.clone();
     no_where["labels"] = json!({});
@@ -500,4 +506,48 @@ fn unnamed_space_takes_the_where_name() {
     // A named space keeps its name.
     let p = project::project(&[t], Some(&space_doc("api")), &Repos::new());
     assert_eq!(p.workspaces[0]["label"], "api");
+}
+
+/// A document agent with only the generic title of its app, in a space and tab of `tab_name`.
+fn generic_agent(tab_name: Option<&str>) -> (Value, Value) {
+    let t = json!({"address": "t1", "name": null, "state": "live", "labels": {}, "cwd": "/home/sam/proj",
+                   "title": "Claude Code", "status": {"state": "working", "app": "claude-code"}});
+    let mut tab = json!({"id": "a", "root": {"type": "block", "content": {"terminal": "t1"}}});
+    if let Some(n) = tab_name {
+        tab["name"] = json!(n);
+    }
+    (t, json!({"spaces": [{"id": "s1", "name": "", "tabs": [tab]}]}))
+}
+
+#[test]
+fn generic_title_agent_is_not_named_after_its_space() {
+    let (t, doc) = generic_agent(None);
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "proj");
+    assert_eq!(p.agents[0]["name"], "Claude Code");
+    assert_eq!(p.panes[0]["label"], "Claude Code");
+    // With no title at all, the app, then the kind, then the address.
+    let t = json!({"address": "t1", "state": "live", "labels": {}, "cwd": "/home/sam/proj",
+                   "status": {"state": "working", "app": "pi"}});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "pi");
+    let t = json!({"address": "t1", "state": "live", "labels": {}, "status": {"state": "working"}});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "t1");
+}
+
+#[test]
+fn tab_name_beats_generic_title() {
+    let (t, doc) = generic_agent(Some("Login fix"));
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Login fix");
+    assert_eq!(p.panes[0]["label"], "Login fix");
+}
+
+#[test]
+fn real_title_wins() {
+    let (mut t, doc) = generic_agent(Some("Login fix"));
+    t["title"] = json!("Fix the login form");
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Fix the login form");
 }
