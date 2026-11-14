@@ -37,13 +37,15 @@ pub async fn once(sock: &CoreSocket, timeout: Duration, method: &str, params: Va
 }
 
 /// The snapshot entries of the core: `terminal.list` placed by the herdr-app document.
-/// A document that cannot be read leaves every terminal in the loose workspace.
+/// A document that cannot be read leaves each terminal in its group (`project`, rules 2 to 4).
 pub async fn projection(sock: &CoreSocket, timeout: Duration) -> Result<Projection, CoreError> {
     let mut c = Client::connect(&sock.current(), timeout).await?;
     let list = c.call("terminal.list", json!({})).await?;
     let doc = c.call("doc.get", json!({ "name": project::LAYOUT_DOC })).await.ok();
     let terminals = list.get("terminals").and_then(Value::as_array).cloned().unwrap_or_default();
-    Ok(project::project(&terminals, doc.as_ref().and_then(|d| d.get("value")).filter(|v| !v.is_null())))
+    // No repo facts yet: each group falls back to the folder name.
+    let repos = super::groups::Repos::new();
+    Ok(project::project(&terminals, doc.as_ref().and_then(|d| d.get("value")).filter(|v| !v.is_null()), &repos))
 }
 
 /// `hello` of the core: `{version, generation}` for `hello.backends.core`. None when no core

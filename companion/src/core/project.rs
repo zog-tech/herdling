@@ -1,29 +1,32 @@
 //! The herdr-core terminals as entries of a herdr 1 `session.snapshot`, so every app build
 //! shows them. Pure: the terminal records and the herdr-app layout document come in.
 //!
-//! - Ids start with [`PREFIX`]: panes `hc:<address>` (`hc:t7`), workspaces `hc:space:<id>`,
-//!   tabs `hc:tab:<id>`. Each entry has `backend: "core"`.
-//! - Spaces and tabs come from the herdr-app document (`doc.get {name: "herdr-app"}`:
-//!   `{spaces: [{id, name, folder, tabs: [{id, name, root}]}]}`, herdr-app `src/mirror.rs`).
-//!   A terminal in no tab goes to the workspace [`LOOSE_WORKSPACE`].
+//! - Ids start with [`PREFIX`]: panes `hc:<address>` (`hc:t7`), workspaces `hc:space:<id>` and
+//!   `hc:g:<group key>`, tabs `hc:tab:<id>` and `hc:task:<address>`. Each entry has
+//!   `backend: "core"`.
+//! - Each terminal is placed once, by the first rule that applies:
+//!   1. The herdr-app document (`doc.get {name: "herdr-app"}`:
+//!      `{spaces: [{id, name, folder, tabs: [{id, name, root}]}]}`, herdr-app `src/mirror.rs`).
+//!   2. The `herdr.space` and `herdr.tab` labels, for a space that is not in the document yet.
+//!   3. A helper goes into the tab of its parent, when rule 3 or 4 placed the parent.
+//!   4. All other terminals: one task tab each, in the workspace of their group
+//!      ([`groups::fallback_group`]: the label, the repo or the folder).
+//! - Core agent and pane entries also have `group`, `group_source` and, when the repo is known,
+//!   `repo`, `repo_root` and `branch`.
 //! - Only live terminals of this machine count. Addresses of other machines (`box/t7`) are left out.
 //! - A terminal is an agent only when its program reports an OSC 7501 status.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
+use super::groups::{self, folder_of, label_space, live_parent, task_name, GroupSource, Repos};
 use crate::types::AgentStatus;
 
 /// The prefix of every core id.
 pub const PREFIX: &str = "hc:";
-/// The workspace of the terminals that are in no herdr-app space.
-pub const LOOSE_WORKSPACE: &str = "hc:loose";
-/// The one tab of [`LOOSE_WORKSPACE`].
-pub const LOOSE_TAB: &str = "hc:loose:tab";
-/// Labels of the loose workspace and its tab.
-pub const LOOSE_WORKSPACE_LABEL: &str = "Herdr 2 terminals";
-pub const LOOSE_TAB_LABEL: &str = "Terminals";
+/// The agent kinds that the app knows by name. Their entries have no `display_agent`.
+const KNOWN_KINDS: [&str; 5] = ["claude", "codex", "opencode", "gemini", "omp"];
 /// The value of the `backend` field.
 pub const BACKEND: &str = "core";
 /// The name of the layout document of herdr-app.
@@ -89,7 +92,7 @@ pub fn agent_status(t: &Value) -> Option<AgentStatus> {
 pub fn agent_kind(t: &Value) -> Option<String> {
     let app = t.get("status").and_then(|s| text(s, "app")).map(|a| a.trim().to_lowercase());
     if let Some(app) = app {
-        for known in ["claude", "codex", "opencode", "gemini", "omp"] {
+        for known in KNOWN_KINDS {
             if app.contains(known) {
                 return Some(known.into());
             }
@@ -182,7 +185,7 @@ pub fn pane_entry(t: &Value, tab: &str, ws: &str) -> Value {
         "pane_id": pane_id(addr),
         "tab_id": tab,
         "workspace_id": ws,
-        "label": text(t, "name"),
+        "label": task_name(t),
         "agent": agent_status(t).and(agent_kind(t)),
         "cwd": text(t, "cwd"),
         "foreground_cwd": t.get("foreground").and_then(|f| text(f, "cwd")),
@@ -200,90 +203,225 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str) -> Option<Value> {
     let status = agent_status(t)?;
     let addr = text(t, "address")?;
     let seq = t.get("status_ms").and_then(Value::as_u64).or_else(|| t.get("turn").and_then(Value::as_u64)).unwrap_or(0);
+    let kind = agent_kind(t);
+    let known = kind.as_deref().is_some_and(|k| KNOWN_KINDS.contains(&k));
+    let display = t.get("status").and_then(|s| text(s, "app")).filter(|_| !known);
     Some(json!({
         "pane_id": pane_id(addr),
         "tab_id": tab,
         "workspace_id": ws,
-        "agent": agent_kind(t),
-        "display_agent": t.get("status").and_then(|s| text(s, "app")),
+        "agent": kind,
+        "display_agent": display,
         "agent_status": status_word(status),
         "cwd": cwd_now(t),
         "state_change_seq": seq,
         "terminal_title_stripped": title(t),
-        "name": text(t, "name"),
+        "name": task_name(t),
         "backend": BACKEND,
     }))
 }
 
+/// The group fields of a placed terminal.
+#[derive(Clone)]
+struct Grouping {
+    label: String,
+    source: GroupSource,
+}
+
+/// Adds `group`, `group_source` and the known repo fields of terminal `t` to `entry`.
+fn add_group_fields(entry: &mut Value, t: &Value, g: &Grouping, repos: &Repos) {
+    let Some(m) = entry.as_object_mut() else { return };
+    m.insert("group".into(), json!(g.label));
+    m.insert("group_source".into(), json!(g.source.word()));
+    if let Some(Some(r)) = folder_of(t).and_then(|f| repos.get(f)) {
+        m.insert("repo".into(), json!(r.name));
+        m.insert("repo_root".into(), json!(r.root));
+        if let Some(b) = &r.branch {
+            m.insert("branch".into(), json!(b));
+        }
+    }
+}
+
+/// The last part of the folder of `t`.
+fn folder_name(t: &Value) -> Option<String> {
+    folder_of(t)?.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).map(String::from)
+}
+
+/// The label of the own tab of terminal `t`: the task name, else the agent kind, else the address.
+fn task_label(t: &Value) -> String {
+    task_name(t).or_else(|| agent_kind(t)).or_else(|| text(t, "address").map(String::from)).unwrap_or_default()
+}
+
+struct TabAcc {
+    id: String,
+    label: String,
+    statuses: Vec<AgentStatus>,
+}
+
+struct WsAcc {
+    id: String,
+    label: String,
+    tabs: Vec<TabAcc>,
+}
+
+/// Collects the entries. Workspaces and tabs keep the order of first use.
+struct Builder<'r> {
+    repos: &'r Repos,
+    ws: Vec<WsAcc>,
+    panes: Vec<Value>,
+    agents: Vec<Value>,
+}
+
+impl Builder<'_> {
+    /// The index of workspace `id`. A new workspace gets `label`.
+    fn ws(&mut self, id: String, label: impl FnOnce() -> String) -> usize {
+        if let Some(i) = self.ws.iter().position(|w| w.id == id) {
+            return i;
+        }
+        self.ws.push(WsAcc { id, label: label(), tabs: Vec::new() });
+        self.ws.len() - 1
+    }
+
+    /// The index of tab `id` in workspace `wi`. A new tab gets `label`.
+    fn tab(&mut self, wi: usize, id: String, label: impl FnOnce() -> String) -> usize {
+        let tabs = &mut self.ws[wi].tabs;
+        if let Some(i) = tabs.iter().position(|t| t.id == id) {
+            return i;
+        }
+        tabs.push(TabAcc { id, label: label(), statuses: Vec::new() });
+        tabs.len() - 1
+    }
+
+    /// Adds the pane and agent entries of terminal `t` to tab `ti` of workspace `wi`.
+    fn place(&mut self, t: &Value, wi: usize, ti: usize, g: &Grouping) {
+        let (ws, tab) = (&self.ws[wi].id, &self.ws[wi].tabs[ti].id);
+        let mut pane = pane_entry(t, tab, ws);
+        add_group_fields(&mut pane, t, g, self.repos);
+        let agent = agent_entry(t, tab, ws);
+        self.panes.push(pane);
+        if let Some(mut agent) = agent {
+            add_group_fields(&mut agent, t, g, self.repos);
+            self.ws[wi].tabs[ti].statuses.extend(agent_status(t));
+            self.agents.push(agent);
+        }
+    }
+
+    fn finish(self) -> Projection {
+        let mut out = Projection { panes: self.panes, agents: self.agents, ..Projection::default() };
+        for (wi, w) in self.ws.into_iter().enumerate() {
+            let mut ws_statuses = Vec::new();
+            let tab_count = w.tabs.len();
+            for (ti, tab) in w.tabs.into_iter().enumerate() {
+                out.tabs.push(json!({
+                    "tab_id": tab.id, "workspace_id": w.id, "label": tab.label, "number": ti + 1,
+                    "agent_status": status_word(sum_status(&tab.statuses)), "backend": BACKEND,
+                }));
+                ws_statuses.extend(tab.statuses);
+            }
+            out.workspaces.push(json!({
+                "workspace_id": w.id, "label": w.label, "number": wi + 1, "tab_count": tab_count,
+                "agent_status": status_word(sum_status(&ws_statuses)), "backend": BACKEND,
+            }));
+        }
+        out
+    }
+}
+
+/// The distinct folders ([`groups::folder_of`]) of the live terminals of this machine, sorted.
+pub fn folders(terminals: &[Value]) -> Vec<String> {
+    let set: BTreeSet<&str> = terminals.iter().filter(|t| counts(t)).filter_map(folder_of).collect();
+    set.into_iter().map(String::from).collect()
+}
+
 /// The snapshot entries of `terminals` (records of `terminal.list` or of a subscription
-/// snapshot), placed by the herdr-app `doc` (the `value` of `doc.get`) when there is one.
-pub fn project(terminals: &[Value], doc: Option<&Value>) -> Projection {
+/// snapshot), placed by the herdr-app `doc` (the `value` of `doc.get`) when there is one, and
+/// grouped with the repo facts `repos`. See the module doc for the placement rules.
+pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Projection {
     let live: Vec<&Value> = terminals.iter().filter(|t| counts(t)).collect();
     let by_addr = |a: &str| live.iter().copied().find(|t| text(t, "address") == Some(a));
     let mut placed: HashSet<String> = HashSet::new();
-    let mut out = Projection::default();
+    let mut b = Builder { repos, ws: Vec::new(), panes: Vec::new(), agents: Vec::new() };
+
+    // Rule 1: the layout document.
     let spaces = doc.and_then(|d| d.get("spaces")).and_then(Value::as_array).cloned().unwrap_or_default();
+    let doc_spaces: HashSet<&str> = spaces.iter().filter_map(|s| text(s, "id")).collect();
     for (si, space) in spaces.iter().enumerate() {
         let Some(sid) = text(space, "id") else { continue };
-        let ws = format!("{PREFIX}space:{sid}");
         let label = text(space, "name")
             .map(String::from)
             .or_else(|| text(space, "folder").and_then(|f| f.trim_end_matches('/').rsplit('/').next()).map(String::from))
             .unwrap_or_else(|| format!("Space {}", si + 1));
+        let g = Grouping { label: label.clone(), source: GroupSource::Space };
+        let wi = b.ws(format!("{PREFIX}space:{sid}"), || label);
         let tabs = space.get("tabs").and_then(Value::as_array).cloned().unwrap_or_default();
-        let mut ws_statuses = Vec::new();
-        let mut tab_count = 0;
         for (ti, tab) in tabs.iter().enumerate() {
             let Some(tid) = text(tab, "id") else { continue };
-            tab_count += 1;
-            let tab_id = format!("{PREFIX}tab:{tid}");
+            let tab_label = text(tab, "name").map(String::from).unwrap_or_else(|| format!("Tab {}", ti + 1));
+            let tix = b.tab(wi, format!("{PREFIX}tab:{tid}"), || tab_label);
             let mut addrs = Vec::new();
             layout_terminals(tab.get("root").unwrap_or(&Value::Null), &mut addrs);
-            let mut statuses = Vec::new();
             for a in addrs {
                 let Some(t) = by_addr(&a) else { continue };
-                if !placed.insert(a) {
-                    continue;
-                }
-                out.panes.push(pane_entry(t, &tab_id, &ws));
-                if let Some(agent) = agent_entry(t, &tab_id, &ws) {
-                    statuses.extend(agent_status(t));
-                    out.agents.push(agent);
+                if placed.insert(a) {
+                    b.place(t, wi, tix, &g);
                 }
             }
-            let label = text(tab, "name").map(String::from).unwrap_or_else(|| format!("Tab {}", ti + 1));
-            out.tabs.push(json!({
-                "tab_id": tab_id, "workspace_id": ws, "label": label, "number": ti + 1,
-                "agent_status": status_word(sum_status(&statuses)), "backend": BACKEND,
-            }));
-            ws_statuses.extend(statuses);
         }
-        out.workspaces.push(json!({
-            "workspace_id": ws, "label": label, "number": si + 1, "tab_count": tab_count,
-            "agent_status": status_word(sum_status(&ws_statuses)), "backend": BACKEND,
-        }));
     }
-    let loose: Vec<&Value> = live.iter().copied().filter(|t| text(t, "address").is_some_and(|a| !placed.contains(a))).collect();
-    if !loose.is_empty() {
-        let mut statuses = Vec::new();
-        for t in loose {
-            out.panes.push(pane_entry(t, LOOSE_TAB, LOOSE_WORKSPACE));
-            if let Some(agent) = agent_entry(t, LOOSE_TAB, LOOSE_WORKSPACE) {
-                statuses.extend(agent_status(t));
-                out.agents.push(agent);
-            }
+
+    // Rule 2: a `herdr.space` label of a space that the document does not have (yet).
+    for &t in &live {
+        let Some(addr) = text(t, "address") else { continue };
+        let Some(ls) = label_space(t).filter(|ls| !placed.contains(addr) && !doc_spaces.contains(ls.space.as_str())) else { continue };
+        let wi = b.ws(format!("{PREFIX}space:{}", ls.space), || {
+            ls.name.clone().or_else(|| folder_name(t)).unwrap_or_else(|| groups::NO_FOLDER_LABEL.into())
+        });
+        let tab_id = ls.tab.as_ref().map_or_else(|| format!("{PREFIX}task:{addr}"), |tab| format!("{PREFIX}tab:{tab}"));
+        let tix = b.tab(wi, tab_id, || task_label(t));
+        let g = Grouping { label: b.ws[wi].label.clone(), source: GroupSource::Space };
+        placed.insert(addr.to_string());
+        b.place(t, wi, tix, &g);
+    }
+
+    // Rules 3 and 4. A helper whose parent rules 3 or 4 place waits for the parent.
+    let rest: Vec<&Value> = live.iter().copied().filter(|t| text(t, "address").is_some_and(|a| !placed.contains(a))).collect();
+    let in_rest = |p: &Value| rest.iter().any(|r| std::ptr::eq(*r, p));
+    let mut tasks: HashMap<String, (usize, usize, Grouping)> = HashMap::new();
+    let mut waiting: Vec<(&Value, String)> = Vec::new();
+    let own_task = |b: &mut Builder, t: &Value, tasks: &mut HashMap<String, (usize, usize, Grouping)>| {
+        let addr = text(t, "address").unwrap_or_default().to_string();
+        let group = groups::fallback_group(t, repos);
+        let wi = b.ws(format!("{PREFIX}g:{}", group.key), || group.label.clone());
+        let tix = b.tab(wi, format!("{PREFIX}task:{addr}"), || task_label(t));
+        let g = Grouping { label: b.ws[wi].label.clone(), source: group.source };
+        b.place(t, wi, tix, &g);
+        tasks.insert(addr, (wi, tix, g));
+    };
+    for &t in &rest {
+        match live_parent(t, &live).filter(|p| in_rest(p)).and_then(|p| text(p, "address")) {
+            Some(parent) => waiting.push((t, parent.to_string())),
+            None => own_task(&mut b, t, &mut tasks),
         }
-        let sum = status_word(sum_status(&statuses));
-        out.tabs.push(json!({
-            "tab_id": LOOSE_TAB, "workspace_id": LOOSE_WORKSPACE, "label": LOOSE_TAB_LABEL, "number": 1,
-            "agent_status": sum, "backend": BACKEND,
-        }));
-        out.workspaces.push(json!({
-            "workspace_id": LOOSE_WORKSPACE, "label": LOOSE_WORKSPACE_LABEL, "number": spaces.len() + 1,
-            "tab_count": 1, "agent_status": sum, "backend": BACKEND,
-        }));
     }
-    out
+    // Place helpers whose parent has a tab, until no more can be placed (helpers of helpers).
+    loop {
+        let before = waiting.len();
+        waiting.retain(|(t, parent)| {
+            let Some((wi, tix, g)) = tasks.get(parent) else { return true };
+            let (wi, tix, g) = (*wi, *tix, g.clone());
+            b.place(t, wi, tix, &g);
+            tasks.insert(text(t, "address").unwrap_or_default().to_string(), (wi, tix, g));
+            false
+        });
+        if waiting.is_empty() || waiting.len() == before {
+            break;
+        }
+    }
+    // A loop of parents (t1 → t2 → t1): each helper gets its own task.
+    for (t, _) in waiting {
+        own_task(&mut b, t, &mut tasks);
+    }
+    b.finish()
 }
 
 /// Adds the core entries to a herdr 1 `session.snapshot` result. The herdr 1 fields stay as

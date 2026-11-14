@@ -135,7 +135,7 @@ async fn snapshot_merges_both_and_each_side_alone() {
     let mut sess = Session::start(core_only.ctx());
     let r = sess.herdr(1, "session.snapshot", json!({})).await;
     assert_eq!(pane_ids(&r, "agents"), ["hc:t1"]);
-    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:loose");
+    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:g:src");
 
     let none = setup(false, false, "idle");
     let mut sess = Session::start(none.ctx());
@@ -177,12 +177,24 @@ async fn calls_on_core_panes_translate() {
 }
 
 #[tokio::test]
+async fn old_loose_ids_are_not_found() {
+    // herdlingd 0.1.x had a "hc:loose" workspace and a "hc:loose:tab" tab. An old app can still send them.
+    let s = setup(false, true, "idle");
+    let mut sess = Session::start(s.ctx());
+    for (i, id) in ["hc:loose", "hc:loose:tab"].into_iter().enumerate() {
+        let r = sess.herdr(i as u64 + 1, "pane.read", json!({"pane_id": id, "source": "visible"})).await;
+        let code = r["error"]["code"].as_str().unwrap_or_default();
+        assert!(matches!(code, "unsupported" | "pane_not_found"), "{id}: {r}");
+    }
+}
+
+#[tokio::test]
 async fn methods_with_no_core_equivalent_are_unsupported() {
     let s = setup(true, true, "idle");
     let mut sess = Session::start(s.ctx());
     for (i, (m, p)) in [
         ("pane.rename", json!({"pane_id": "hc:t1", "label": "x"})),
-        ("agent.start", json!({"workspace_id": "hc:loose", "agent": "claude"})),
+        ("agent.start", json!({"workspace_id": "hc:g:src", "agent": "claude"})),
         ("tab.create", json!({"workspace_id": "hc:space:s1"})),
         ("pane.send_text", json!({"pane_id": "hc:t1", "text": "€"})),
     ]
