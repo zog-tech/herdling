@@ -295,7 +295,25 @@ async fn core_preview_reads_the_transcript() {
     let p = &r["result"]["previews"][0];
     assert_eq!(p["pane_id"], "hc:t1", "{r}");
     assert_eq!(p["last_reply"], "All tests pass now.", "{r}");
-    assert_ne!(p["source"], "screen", "{r}");
+    assert_eq!(p["source"], "log", "{r}");
+}
+
+#[tokio::test]
+async fn core_preview_of_a_working_agent_keeps_the_log_reply() {
+    let s = setup(false, true, "working");
+    let home = s.dir.path();
+    std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
+    std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
+    let proj = herdlingd::claude::project_dir(home, "/home/sam/proj/src");
+    std::fs::create_dir_all(&proj).unwrap();
+    let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All tests pass now."}]}}"#;
+    std::fs::write(proj.join("abc.jsonl"), format!("{line}\n")).unwrap();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "agents.preview", json!({})).await;
+    let p = &r["result"]["previews"][0];
+    assert_eq!(p["last_reply"], "All tests pass now.", "{r}");
+    assert_eq!(p["source"], "log", "{r}");
+    assert_eq!(p["activity"], "Running tests", "{r}");
 }
 
 #[tokio::test]

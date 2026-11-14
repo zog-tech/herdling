@@ -93,54 +93,73 @@ pub async fn previews(
 ) -> Result<Vec<AgentPreview>, CoreError> {
     let list = once(sock, timeout, "terminal.list", json!({})).await?;
     let terminals = list.get("terminals").and_then(Value::as_array).cloned().unwrap_or_default();
-    let mut out = Vec::new();
+    let mut set = tokio::task::JoinSet::new();
+    let mut order = 0;
     for t in terminals.iter().filter(|t| project::counts(t)) {
         let (Some(status), Some(addr)) = (project::agent_status(t), t.get("address").and_then(Value::as_str)) else { continue };
         let pane = project::pane_id(addr);
         if wanted.is_some_and(|w| !w.contains(&pane)) {
             continue;
         }
-        let mut p = AgentPreview {
-            pane_id: pane.clone(),
-            activity: None,
-            last_reply: None,
-            question: None,
-            status_since: project::status_since(t),
-            source: "screen".into(),
-            background: None,
-        };
-        // The log work of one agent is bounded as herdr 1's is. A timeout falls back to the screen.
-        let from_log = tokio::time::timeout(crate::preview::PANE_TIMEOUT, log_preview(home, state, &pane, t)).await;
-        if let Ok(Some(lp)) = from_log {
-            let mut logged = AgentPreview { pane_id: pane.clone(), ..p.clone() };
-            crate::preview::fill_from_log(&mut logged, status, &lp);
-            let has_text = match status {
-                AgentStatus::Working => logged.activity.is_some(),
-                AgentStatus::Blocked => logged.question.is_some(),
-                _ => logged.last_reply.is_some(),
-            };
-            if has_text {
-                out.push(logged);
-                continue;
-            }
-        }
-        let msg = t.pointer("/status/msg").and_then(Value::as_str).map(str::trim).filter(|m| !m.is_empty()).map(String::from);
-        let line = match msg {
-            Some(m) => Some(m),
-            None => match read_text(sock, timeout, &pane, 0).await {
-                Ok((text, _)) if status == AgentStatus::Blocked => crate::preview::screen_question(&text),
-                Ok((text, _)) => crate::preview::screen_line(&text),
-                Err(_) => None,
-            },
-        };
-        match status {
-            AgentStatus::Working => p.activity = line,
-            AgentStatus::Blocked => p.question = line,
-            _ => p.last_reply = line,
-        }
-        out.push(p);
+        let (sock, home, state, t) = (sock.clone(), home.to_path_buf(), state.clone(), t.clone());
+        set.spawn(async move { (order, one_preview(&sock, timeout, &home, &state, &t, status, pane).await) });
+        order += 1;
     }
-    Ok(out)
+    // The agents run at the same time; the result keeps the order of the terminal list.
+    let mut out = Vec::new();
+    while let Some(r) = set.join_next().await {
+        if let Ok(r) = r {
+            out.push(r);
+        }
+    }
+    out.sort_by_key(|(order, _)| *order);
+    Ok(out.into_iter().map(|(_, p)| p).collect())
+}
+
+/// The preview of one core agent. The log gives the reply and, when it has them, the activity or
+/// question. What the log lacks for the status comes from the 7501 message, else the screen.
+async fn one_preview(sock: &CoreSocket, timeout: Duration, home: &Path, state: &PreviewState, t: &Value, status: AgentStatus, pane: String) -> AgentPreview {
+    let mut p = AgentPreview {
+        pane_id: pane.clone(),
+        activity: None,
+        last_reply: None,
+        question: None,
+        status_since: project::status_since(t),
+        source: "screen".into(),
+        background: None,
+    };
+    // The log work of one agent is bounded as herdr 1's is. A timeout falls back to the screen.
+    let from_log = tokio::time::timeout(crate::preview::PANE_TIMEOUT, log_preview(home, state, &pane, t)).await;
+    let logged = match from_log {
+        Ok(Some(lp)) => {
+            crate::preview::fill_from_log(&mut p, status, &lp);
+            true
+        }
+        _ => false,
+    };
+    let missing = match status {
+        AgentStatus::Working => p.activity.is_none(),
+        AgentStatus::Blocked => p.question.is_none(),
+        _ => !logged,
+    };
+    if !missing {
+        return p;
+    }
+    let msg = t.pointer("/status/msg").and_then(Value::as_str).map(str::trim).filter(|m| !m.is_empty()).map(String::from);
+    let line = match msg {
+        Some(m) => Some(m),
+        None => match read_text(sock, timeout, &pane, 0).await {
+            Ok((text, _)) if status == AgentStatus::Blocked => crate::preview::screen_question(&text),
+            Ok((text, _)) => crate::preview::screen_line(&text),
+            Err(_) => None,
+        },
+    };
+    match status {
+        AgentStatus::Working => p.activity = line,
+        AgentStatus::Blocked => p.question = line,
+        _ => p.last_reply = line,
+    }
+    p
 }
 
 /// What the transcript of a core terminal says, or None when the agent has no known log.
