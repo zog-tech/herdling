@@ -46,7 +46,7 @@ pub fn address(pane_id: &str) -> Option<&str> {
     (!a.is_empty() && !a.contains(':') && !a.contains('/')).then_some(a)
 }
 
-fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+pub(crate) fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str).filter(|s| !s.trim().is_empty())
 }
 
@@ -100,7 +100,7 @@ pub fn agent_kind(t: &Value) -> Option<String> {
 }
 
 /// The cwd now: the folder of the foreground process, else the start folder.
-fn cwd_now(t: &Value) -> Option<&str> {
+pub(crate) fn cwd_now(t: &Value) -> Option<&str> {
     t.get("foreground").and_then(|f| text(f, "cwd")).or_else(|| text(t, "cwd"))
 }
 
