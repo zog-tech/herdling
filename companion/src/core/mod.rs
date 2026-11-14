@@ -6,9 +6,11 @@
 pub mod client;
 pub mod endpoint;
 pub mod events;
+pub mod groups;
 pub mod live;
 pub mod merge;
 pub mod project;
+pub mod repos;
 pub mod route;
 pub mod stream;
 pub mod tracker;

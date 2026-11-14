@@ -64,14 +64,21 @@ pub async fn resolve_with(
         Ok(mut c2) => c2.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null),
         Err(_) => Value::Null,
     };
-    let (direct, roots) = pane_pids(info.get("process_info").unwrap_or(&info));
+    let info = info.get("process_info").cloned().unwrap_or(info);
     let home = home.to_path_buf();
-    let resolved = tokio::task::spawn_blocking(move || locate(&home, &cwd, &direct, &roots, table)).await.ok().flatten();
+    let resolved = tokio::task::spawn_blocking(move || session_from_info(&home, &cwd, &info, table)).await.ok().flatten();
     if let Some((session, log)) = resolved {
         out.session = Some(session);
         out.log_path = Some(log.to_string_lossy().into_owned());
     }
     Ok(out)
+}
+
+/// The Claude session id and log path of a pane in `cwd`, from its herdr 1 `pane.process_info`
+/// object `info` (herdr 2 records give the same shape). Blocks: it reads files and can run `ps`.
+pub fn session_from_info(home: &Path, cwd: &str, info: &Value, table: ProcessTable) -> Option<(String, PathBuf)> {
+    let (direct, roots) = pane_pids(info);
+    locate(home, cwd, &direct, &roots, table)
 }
 
 /// Candidate PIDs to test directly (foreground processes first), and the roots whose
@@ -190,7 +197,7 @@ fn log_in_any_project(home: &Path, id: &str) -> Option<PathBuf> {
 }
 
 /// `(pid, ppid)` pairs for every process. Works on macOS and Linux.
-fn process_table() -> Option<Vec<(u32, u32)>> {
+pub fn process_table() -> Option<Vec<(u32, u32)>> {
     let out = std::process::Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output().ok()?;
     Some(parse_ps(&String::from_utf8_lossy(&out.stdout)))
 }

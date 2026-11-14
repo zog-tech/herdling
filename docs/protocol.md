@@ -657,15 +657,57 @@ out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
 | Entry | Id | From |
 |---|---|---|
 | Workspace | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
-| Workspace | `hc:loose` | the terminals that are in no space ("Herdr 2 terminals") |
-| Tab | `hc:tab:<id>`, `hc:loose:tab` | a tab of a space, the one tab of `hc:loose` |
+| Workspace | `hc:g:<key>` | a fallback group (see "Placement") |
+| Tab | `hc:tab:<id>` | a tab of a space, or the one tab of a fallback group |
+| Tab | `hc:task:<address>` | the task tab of a terminal that has no document tab |
 | Pane | `hc:<address>` (`hc:t7`) | every live terminal |
 | Agent | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
+
+The id `hc:loose` of the first 0.1.x versions is gone. A call with `hc:loose` or `hc:loose:tab`
+gives the error code `pane_not_found`.
+
+### Placement
+
+herdlingd puts each terminal in the first place that fits:
+
+1. The space and tab of the herdr-app layout document that hold the terminal.
+2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
+   document tab holds yet, for example right after the phone starts an agent. The name of the
+   space is the part of the `where` label before the last ` / `.
+   A Herdr app space with no name takes the `where` name of its first terminal, else the folder
+   name of that terminal, else the folder name of the space.
+3. A helper (a subagent terminal) goes to the task tab of its parent. When the parent is gone,
+   finished or on another computer, the helper becomes its own task in its own group.
+4. A fallback group. The group name is the first that exists: the `herdling.group` label, the git
+   repo name, the folder name, or `Terminals` (a terminal with no folder).
+
+### Group and task fields
+
+Core agent and pane entries have these optional fields. An old app ignores them.
+
+| Field | Meaning |
+|---|---|
+| `group` | The name of the group of the terminal |
+| `group_source` | Where the name comes from: `space`, `label`, `repo` or `folder` |
+| `repo` | The name of the git repo, when the folder is in one |
+| `repo_root` | The root folder of the repo |
+| `branch` | The branch of the repo, when it has one |
+
+The task name of a terminal is its name, else its 7501 title, else its terminal title. A title
+that only repeats the reported app or the agent kind (for example "Claude Code") is not a task
+name. The agent `name` and the pane `label` are the task name. When there is none, they are the
+first that exists of: the name of the Herdr app tab that holds the terminal, the terminal name,
+the 7501 title, the terminal title, the reported app, the agent kind and the address. They are
+never empty, and they are never the name of the space. `display_agent` is null
+for a known kind (`claude`, `codex`, ...), and it has the reported app only for an unknown kind.
+herdlingd reads the repo with `git`, with a short time limit. When `git` is missing or slow, the
+group falls back to the folder name.
 
 - `agent_status`: 7501 `idle` → `idle`, `working` → `working`, `done` → `done`, `blocked` and
   `error` → `blocked`, other words → `unknown`.
 - `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
-  app as reported, `name` the terminal name, `state_change_seq` the time of the last status change.
+  reported app when the kind is unknown (null for a known kind), `name` the task name,
+  `state_change_seq` the time of the last status change.
 - Each backend fails on its own. When herdr 1 is down and the core is up, the answer has the core
   entries only. With no core, the answer is the herdr 1 answer, unchanged.
 
@@ -689,8 +731,11 @@ out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
 - The core waits until nobody types at the computer before it types. A typing call can take up
   to 75 seconds.
 - `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list` and
-  `ports.list` accept a core `pane_id`. `thread.resolve` gives `session: null`. `shell.watch`
-  gives `unsupported`.
+  `ports.list` accept a core `pane_id`. `shell.watch` gives `unsupported`.
+- `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
+  herdr 1, and gives its transcript (`log_path`). `agents.preview` of a core pane reads the
+  transcript of the agent and sets `source: "log"`. When no transcript exists, `thread.resolve`
+  gives `session: null`, and only `agents.preview` falls back to the screen.
 
 ### Events
 

@@ -126,6 +126,16 @@ pub async fn toplevel(cwd: &Path) -> Result<Option<PathBuf>, RpcError> {
     Ok((!root.is_empty()).then(|| PathBuf::from(root)))
 }
 
+/// The current branch of the repo at `root`. None on an error or on a detached head.
+pub async fn branch(root: &Path) -> Option<String> {
+    let out = git(root, &["rev-parse", "--abbrev-ref", "HEAD"], 4096, TIMEOUT).await.ok()?;
+    if out.code != Some(0) {
+        return None;
+    }
+    let name = out.text().trim().to_string();
+    (!name.is_empty() && name != "HEAD").then_some(name)
+}
+
 /// True when the repo has a commit at `HEAD`.
 async fn has_head(root: &Path) -> Result<bool, RpcError> {
     Ok(git(root, &["rev-parse", "--verify", "--quiet", "HEAD"], 1024, TIMEOUT).await?.code == Some(0))

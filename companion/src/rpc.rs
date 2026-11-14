@@ -783,9 +783,10 @@ fn rpc_cancel(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 async fn thread_resolve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = str_param(&params, "pane_id", "thread.resolve")?;
     if crate::core::project::is_core_id(pane) {
-        // No transcripts for core agents yet: the kind and the folder, with no session.
-        let (cwd, kind) = pane_info(ctx, pane).await;
-        let r = crate::types::ThreadRef { kind: kind.unwrap_or_default(), session: None, log_path: None, cwd };
+        use crate::core::live;
+        let sock = ctx.core_socket.as_ref().ok_or_else(|| err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"))?;
+        let record = live::record(sock, ctx.herdr_timeout, pane).await.map_err(live::rpc_err)?;
+        let r = transcript::resolve_core(&ctx.home, &record).await;
         return serde_json::to_value(r).map_err(|e| err("internal", e.to_string()));
     }
     let r = transcript::resolve(&ctx.herdr_socket, ctx.herdr_timeout, &ctx.home, pane).await.map_err(herdr_err)?;
@@ -1022,7 +1023,7 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         if core_wanted.as_ref().is_some_and(|v| v.is_empty()) {
             return None;
         }
-        crate::core::live::previews(sock, ctx.herdr_timeout, core_wanted.as_deref()).await.ok()
+        crate::core::live::previews(sock, ctx.herdr_timeout, &ctx.home, &ctx.preview, core_wanted.as_deref()).await.ok()
     };
     let (herdr, core) = tokio::join!(herdr, core);
     // Each backend fails on its own: a herdr 1 error counts only when the core gives nothing.

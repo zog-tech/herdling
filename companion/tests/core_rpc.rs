@@ -135,7 +135,7 @@ async fn snapshot_merges_both_and_each_side_alone() {
     let mut sess = Session::start(core_only.ctx());
     let r = sess.herdr(1, "session.snapshot", json!({})).await;
     assert_eq!(pane_ids(&r, "agents"), ["hc:t1"]);
-    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:loose");
+    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:g:src");
 
     let none = setup(false, false, "idle");
     let mut sess = Session::start(none.ctx());
@@ -177,12 +177,24 @@ async fn calls_on_core_panes_translate() {
 }
 
 #[tokio::test]
+async fn old_loose_ids_are_not_found() {
+    // herdlingd 0.1.x had a "hc:loose" workspace and a "hc:loose:tab" tab. An old app can still send them.
+    let s = setup(false, true, "idle");
+    let mut sess = Session::start(s.ctx());
+    for (i, id) in ["hc:loose", "hc:loose:tab"].into_iter().enumerate() {
+        let r = sess.herdr(i as u64 + 1, "pane.read", json!({"pane_id": id, "source": "visible"})).await;
+        let code = r["error"]["code"].as_str().unwrap_or_default();
+        assert!(matches!(code, "unsupported" | "pane_not_found"), "{id}: {r}");
+    }
+}
+
+#[tokio::test]
 async fn methods_with_no_core_equivalent_are_unsupported() {
     let s = setup(true, true, "idle");
     let mut sess = Session::start(s.ctx());
     for (i, (m, p)) in [
         ("pane.rename", json!({"pane_id": "hc:t1", "label": "x"})),
-        ("agent.start", json!({"workspace_id": "hc:loose", "agent": "claude"})),
+        ("agent.start", json!({"workspace_id": "hc:g:src", "agent": "claude"})),
         ("tab.create", json!({"workspace_id": "hc:space:s1"})),
         ("pane.send_text", json!({"pane_id": "hc:t1", "text": "€"})),
     ]
@@ -251,6 +263,68 @@ async fn thread_resolve_and_previews_for_core_agents() {
 }
 
 #[tokio::test]
+async fn core_thread_resolves_claude_session() {
+    let s = setup(false, true, "working");
+    // The fake terminal t1 has foreground pid 101 in /home/sam/proj/src. HOME is the temp folder.
+    let home = s.dir.path();
+    std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
+    std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
+    let proj = herdlingd::claude::project_dir(home, "/home/sam/proj/src");
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(proj.join("abc.jsonl"), "").unwrap();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t1"})).await;
+    assert_eq!(r["result"]["session"], "abc", "{r}");
+    assert_eq!(r["result"]["kind"], "claude");
+    assert_eq!(r["result"]["cwd"], "/home/sam/proj/src");
+    assert!(r["result"]["log_path"].as_str().unwrap().ends_with("abc.jsonl"), "{r}");
+}
+
+#[tokio::test]
+async fn core_preview_reads_the_transcript() {
+    let s = setup(false, true, "idle");
+    let home = s.dir.path();
+    std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
+    std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
+    let proj = herdlingd::claude::project_dir(home, "/home/sam/proj/src");
+    std::fs::create_dir_all(&proj).unwrap();
+    let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All tests pass now."}]}}"#;
+    std::fs::write(proj.join("abc.jsonl"), format!("{line}\n")).unwrap();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "agents.preview", json!({})).await;
+    let p = &r["result"]["previews"][0];
+    assert_eq!(p["pane_id"], "hc:t1", "{r}");
+    assert_eq!(p["last_reply"], "All tests pass now.", "{r}");
+    assert_eq!(p["source"], "log", "{r}");
+}
+
+#[tokio::test]
+async fn core_preview_of_a_working_agent_keeps_the_log_reply() {
+    let s = setup(false, true, "working");
+    let home = s.dir.path();
+    std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
+    std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
+    let proj = herdlingd::claude::project_dir(home, "/home/sam/proj/src");
+    std::fs::create_dir_all(&proj).unwrap();
+    let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All tests pass now."}]}}"#;
+    std::fs::write(proj.join("abc.jsonl"), format!("{line}\n")).unwrap();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "agents.preview", json!({})).await;
+    let p = &r["result"]["previews"][0];
+    assert_eq!(p["last_reply"], "All tests pass now.", "{r}");
+    assert_eq!(p["source"], "log", "{r}");
+    assert_eq!(p["activity"], "Running tests", "{r}");
+}
+
+#[tokio::test]
+async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
+    let s = setup(false, true, "working");
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t9"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
+}
+
+#[tokio::test]
 async fn pane_watch_reads_a_core_pane() {
     let s = setup(false, true, "idle");
     let mut sess = Session::start(s.ctx());
@@ -306,4 +380,37 @@ async fn subscribe_keeps_herdr_one_when_the_core_drops() {
     assert_eq!(sess.event().await["event"], "layout.updated");
     core.send(Ctl::Event(status_event("t1", "blocked")));
     assert_eq!(sess.event().await["data"]["pane_id"], "hc:t1");
+}
+
+/// Runs `git` in `dir`. False when git is not installed or the command fails.
+fn git_ok(dir: &std::path::Path, args: &[&str]) -> bool {
+    std::process::Command::new("git").arg("-C").arg(dir).args(args).status().map(|s| s.success()).unwrap_or(false)
+}
+
+#[tokio::test]
+async fn snapshot_has_repo_of_agent_folder() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path().canonicalize().unwrap();
+    let committed = git_ok(&root, &["init", "-b", "main"])
+        && git_ok(&root, &["-c", "user.name=sam", "-c", "user.email=sam@example.com", "commit", "--allow-empty", "-m", "x"]);
+    if !committed {
+        eprintln!("skipped: git is not available");
+        return;
+    }
+    std::fs::create_dir(root.join("src")).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Setup { dir, core: None };
+    let mut t = terminal("t1", Some("api-agent"), Some("working"));
+    t["foreground"]["cwd"] = json!(root.join("src").to_string_lossy());
+    let st = State { terminals: vec![t], doc: Value::Null, ..State::default() };
+    s.core = Some(fake_core::spawn(&s.core_sock(), st));
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr(1, "session.snapshot", json!({})).await;
+    let agent = &r["result"]["snapshot"]["agents"][0];
+    let name = root.file_name().unwrap().to_string_lossy().to_string();
+    assert_eq!(agent["repo"], json!(name), "{r}");
+    assert_eq!(agent["repo_root"], json!(root.to_string_lossy()), "{r}");
+    assert_eq!(agent["branch"], "main", "{r}");
+    assert_eq!(agent["group_source"], "repo", "{r}");
 }

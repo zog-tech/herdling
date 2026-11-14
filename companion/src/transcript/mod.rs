@@ -280,30 +280,72 @@ pub async fn resolve_with(
 ) -> Result<ThreadRef, HerdrError> {
     // Claude panes resolve as before. For other kinds this call only reads the kind and cwd.
     let mut out = claude::resolve(socket, timeout, home, pane_id).await?;
-    let agent = match Agent::from_kind(&out.kind) {
-        Some(Agent::Claude) | None => return Ok(out),
-        Some(a) => a,
-    };
+    if matches!(Agent::from_kind(&out.kind), Some(Agent::Claude) | None) {
+        return Ok(out);
+    }
     let Some(cwd) = out.cwd.clone() else { return Ok(out) };
     // A failed process lookup is not fatal: the recent-activity rule applies.
     let info = match Client::connect(socket, timeout).await {
         Ok(mut c) => c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null),
         Err(_) => Value::Null,
     };
-    let (fg, shell) = procs::pane_pids(info.get("process_info").unwrap_or(&info));
+    let info = info.get("process_info").cloned().unwrap_or(info);
     let home = home.to_path_buf();
-    let found = tokio::task::spawn_blocking(move || {
-        let start = if fg.is_empty() && shell.is_none() { None } else { procs::agent_start(&procs(), &fg, shell, agent.bins()) };
-        locate(&home, agent, &cwd, start, SystemTime::now())
-    })
-    .await
-    .ok()
-    .flatten();
-    if let Some(s) = found {
-        out.session = Some(s.id);
-        out.log_path = Some(s.log_path);
+    let kind = out.kind.clone();
+    let found = tokio::task::spawn_blocking(move || resolve_from_info(&home, &kind, Some(cwd), &info, procs, claude::process_table))
+        .await
+        .ok();
+    if let Some(r) = found {
+        out.session = r.session;
+        out.log_path = r.log_path;
     }
     Ok(out)
+}
+
+/// The session of an agent of `kind` in `cwd`, from the `pane.process_info` object `info`.
+/// Claude reads its session files; the other agents use the start time of their process.
+/// Blocks: callers use `spawn_blocking`.
+pub fn resolve_from_info(
+    home: &Path,
+    kind: &str,
+    cwd: Option<String>,
+    info: &Value,
+    procs: ProcList,
+    table: claude::ProcessTable,
+) -> ThreadRef {
+    let mut out = ThreadRef { kind: kind.to_string(), session: None, log_path: None, cwd };
+    let (Some(agent), Some(cwd)) = (Agent::from_kind(kind), out.cwd.as_deref()) else { return out };
+    let found = match agent {
+        Agent::Claude => claude::session_from_info(home, cwd, info, table)
+            .map(|(id, log)| (id, log.to_string_lossy().into_owned())),
+        _ => {
+            let (fg, shell) = procs::pane_pids(info);
+            let start = if fg.is_empty() && shell.is_none() { None } else { procs::agent_start(&procs(), &fg, shell, agent.bins()) };
+            locate(home, agent, cwd, start, SystemTime::now()).map(|s| (s.id, s.log_path))
+        }
+    };
+    if let Some((id, log)) = found {
+        out.session = Some(id);
+        out.log_path = Some(log);
+    }
+    out
+}
+
+/// The session of a herdr 2 (herdr-core) terminal record. A record with no known agent kind
+/// gives `session: null` and does no I/O.
+pub async fn resolve_core(home: &Path, record: &Value) -> ThreadRef {
+    use crate::core::{groups, project};
+    let kind = project::agent_kind(record).unwrap_or_else(|| "unknown".into());
+    let cwd = groups::folder_of(record).map(String::from);
+    let bare = ThreadRef { kind: kind.clone(), session: None, log_path: None, cwd: cwd.clone() };
+    if Agent::from_kind(&kind).is_none() || cwd.is_none() {
+        return bare;
+    }
+    let info = project::process_info(record)["process_info"].clone();
+    let home = home.to_path_buf();
+    tokio::task::spawn_blocking(move || resolve_from_info(&home, &kind, cwd, &info, host_procs, claude::process_table))
+        .await
+        .unwrap_or(bare)
 }
 
 /// The session of an agent that runs in `cwd` and started at `start`: the most recent session

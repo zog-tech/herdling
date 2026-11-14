@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use herdlingd::core::client::Notice;
 use herdlingd::core::endpoint::{self, CoreSocket, Inputs};
 use herdlingd::core::merge::{Action, Leg, Merge, Side};
+use herdlingd::core::groups::{RepoInfo, Repos};
 use herdlingd::core::project::{self, Projection};
 use herdlingd::core::route::{self, Shape};
 use herdlingd::core::tracker::{Effect, Tracker};
@@ -97,12 +98,12 @@ fn projection_places_terminals_by_the_layout_document() {
         term("box/t4", None, Some("working")),
         json!({"address": "t5", "state": "finished", "status": null}),
     ];
-    let p = project::project(&terminals, Some(&doc));
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:loose"]);
+    let p = project::project(&terminals, Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:g:a"]);
     assert_eq!(p.workspaces[0]["label"], "api");
     assert_eq!(p.workspaces[0]["agent_status"], "working");
-    assert_eq!(p.workspaces[1]["label"], project::LOOSE_WORKSPACE_LABEL);
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:loose:tab"]);
+    assert_eq!(p.workspaces[1]["label"], "a", "the folder name when no repo is known");
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:task:t3"]);
     assert_eq!(p.tabs[1]["label"], "Tab 2");
     assert_eq!(ids(&p.panes, "pane_id"), ["hc:t1", "hc:t2", "hc:t3"]);
     assert_eq!(p.panes[1]["tab_id"], "hc:tab:a");
@@ -110,8 +111,10 @@ fn projection_places_terminals_by_the_layout_document() {
     assert_eq!(ids(&p.agents, "pane_id"), ["hc:t1", "hc:t3"]);
     let a = &p.agents[0];
     assert_eq!(a["agent"], "claude");
-    assert_eq!(a["display_agent"], "Claude Code");
+    assert_eq!(a["display_agent"], Value::Null, "a known kind has no display name");
     assert_eq!(a["name"], "api-agent");
+    assert_eq!(a["group"], "api");
+    assert_eq!(a["group_source"], "space");
     assert_eq!(a["cwd"], "/home/sam/proj/a");
     assert_eq!(a["state_change_seq"], 5000);
     assert_eq!(a["backend"], "core");
@@ -120,11 +123,142 @@ fn projection_places_terminals_by_the_layout_document() {
 }
 
 #[test]
-fn projection_without_a_document_puts_all_in_the_loose_workspace() {
-    let p = project::project(&[term("t1", None, Some("done"))], None);
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:loose"]);
+fn projection_without_a_document_groups_by_folder() {
+    let p = project::project(&[term("t1", None, Some("done"))], None, &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:a"]);
     assert_eq!(p.agents[0]["agent_status"], "done");
-    assert_eq!(project::project(&[], None), Projection::default());
+    assert_eq!(p.agents[0]["group_source"], "folder");
+    assert_eq!(p.agents[0].get("repo"), None, "no repo field when the repo is not known");
+    assert_eq!(project::project(&[], None, &Repos::new()), Projection::default());
+}
+
+/// A Claude agent in `folder` with no name and the status title `title`.
+fn agent_in(addr: &str, folder: Option<&str>, title: &str) -> Value {
+    json!({"address": addr, "name": null, "cwd": folder, "state": "live", "labels": {},
+           "status": {"state": "working", "app": "Claude Code", "title": title}, "status_ms": 1000, "title": "term"})
+}
+
+fn repo(root: &str, name: &str, branch: Option<&str>) -> Option<RepoInfo> {
+    Some(RepoInfo { root: root.into(), name: name.into(), branch: branch.map(String::from) })
+}
+
+fn all_ids(p: &Projection) -> Vec<String> {
+    let mut v = ids(&p.workspaces, "workspace_id");
+    v.extend(ids(&p.tabs, "tab_id"));
+    v.extend(ids(&p.panes, "tab_id"));
+    v.extend(ids(&p.panes, "workspace_id"));
+    v
+}
+
+#[test]
+fn loose_terminal_groups_by_repo() {
+    let repos = Repos::from([("/home/sam/proj/api".to_string(), repo("/home/sam/proj", "proj", Some("main")))]);
+    let p = project::project(&[agent_in("t8", Some("/home/sam/proj/api"), "fix tests")], None, &repos);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:proj"]);
+    assert_eq!(p.workspaces[0]["label"], "proj");
+    assert_eq!(p.workspaces[0]["number"], 1);
+    assert_eq!(p.workspaces[0]["tab_count"], 1);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t8"]);
+    assert_eq!(p.tabs[0]["label"], "fix tests");
+    let a = &p.agents[0];
+    assert_eq!(a["group"], "proj");
+    assert_eq!(a["group_source"], "repo");
+    assert_eq!(a["repo"], "proj");
+    assert_eq!(a["repo_root"], "/home/sam/proj");
+    assert_eq!(a["branch"], "main");
+    assert_eq!(a["name"], "fix tests");
+    assert_eq!(a["display_agent"], Value::Null);
+    assert_eq!(a["agent"], "claude");
+    assert_eq!(a["tab_id"], "hc:task:t8");
+    assert_eq!(p.panes[0]["label"], "fix tests");
+    assert_eq!(p.panes[0]["group_source"], "repo");
+    assert_eq!(p.panes[0]["branch"], "main");
+    assert!(all_ids(&p).iter().all(|id| !id.starts_with("hc:loose")));
+}
+
+#[test]
+fn label_space_not_in_doc() {
+    let mut t = agent_in("t3", Some("/home/sam/proj/web"), "build");
+    t["labels"] = json!({"herdr.space": "sp9", "herdr.tab": "tb9", "where": "web / 1"});
+    let mut u = agent_in("t4", Some("/home/sam/proj/web"), "lint");
+    u["labels"] = json!({"herdr.space": "sp9"});
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": []}]});
+    let p = project::project(&[t, u], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:space:sp9"]);
+    assert_eq!(p.workspaces[1]["label"], "web");
+    assert_eq!(p.workspaces[1]["number"], 2);
+    assert_eq!(p.workspaces[1]["tab_count"], 2, "one entry for the space, two tabs");
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:tb9", "hc:task:t4"]);
+    assert_eq!(p.agents[0]["group"], "web");
+    assert_eq!(p.agents[0]["group_source"], "space");
+    assert_eq!(p.agents[1]["workspace_id"], "hc:space:sp9");
+}
+
+#[test]
+fn label_space_without_where_takes_the_folder_name() {
+    let mut t = agent_in("t3", Some("/home/sam/proj/web"), "build");
+    t["labels"] = json!({"herdr.space": "sp9"});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.workspaces[0]["workspace_id"], "hc:space:sp9");
+    assert_eq!(p.workspaces[0]["label"], "web");
+}
+
+#[test]
+fn helper_goes_into_parent_tab() {
+    let parent = agent_in("t1", Some("/home/sam/proj"), "main task");
+    let mut helper = agent_in("t2", Some("/home/sam/other"), "sub task");
+    helper["parent"] = json!("t1");
+    let p = project::project(&[helper, parent], None, &Repos::new());
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t1"]);
+    assert_eq!(ids(&p.panes, "tab_id"), ["hc:task:t1", "hc:task:t1"]);
+    assert_eq!(ids(&p.agents, "pane_id").len(), 2);
+    assert!(p.agents.iter().all(|a| a["workspace_id"] == "hc:g:proj"));
+    assert_eq!(p.workspaces.len(), 1);
+}
+
+#[test]
+fn helper_of_space_terminal_is_own_task() {
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": [
+        {"id": "a", "root": {"type": "block", "content": {"terminal": "t1"}}}]}]});
+    let parent = agent_in("t1", Some("/home/sam/proj"), "main task");
+    let mut helper = agent_in("t2", Some("/home/sam/other"), "sub task");
+    helper["parent"] = json!("t1");
+    let p = project::project(&[parent, helper], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:g:other"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:task:t2"]);
+    assert_eq!(p.agents[1]["group_source"], "folder");
+}
+
+#[test]
+fn no_folder_terminal_is_kept() {
+    let t = json!({"address": "t5", "state": "live"});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:terminals"]);
+    assert_eq!(p.workspaces[0]["label"], "Terminals");
+    assert_eq!(ids(&p.panes, "pane_id"), ["hc:t5"]);
+    assert_eq!(p.tabs[0]["label"], "t5", "no name and no agent: the address");
+}
+
+#[test]
+fn unknown_app_keeps_display_agent() {
+    let mut t = agent_in("t6", Some("/home/sam/proj"), "x");
+    t["status"]["app"] = json!("Aider");
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.agents[0]["agent"], "aider");
+    assert_eq!(p.agents[0]["display_agent"], "Aider");
+}
+
+#[test]
+fn folders_are_distinct_and_sorted() {
+    let terminals = vec![
+        agent_in("t1", Some("/home/sam/b"), "x"),
+        agent_in("t2", Some("/home/sam/a"), "x"),
+        agent_in("t3", Some("/home/sam/b"), "x"),
+        agent_in("box/t4", Some("/home/sam/c"), "x"),
+        json!({"address": "t5", "state": "finished", "cwd": "/home/sam/d"}),
+        json!({"address": "t6", "state": "live"}),
+    ];
+    assert_eq!(project::folders(&terminals), ["/home/sam/a", "/home/sam/b"]);
 }
 
 #[test]
@@ -142,7 +276,7 @@ fn status_map() {
 #[test]
 fn snapshot_merge_each_side_alone() {
     let herdr = json!({"snapshot": {"version": "0.9.5", "agents": [{"pane_id": "w1:p1"}], "panes": [], "workspaces": [], "tabs": []}});
-    let core = project::project(&[term("t1", None, Some("idle"))], None);
+    let core = project::project(&[term("t1", None, Some("idle"))], None, &Repos::new());
     // No core: exactly herdr 1.
     assert_eq!(project::merge_snapshots::<()>(Ok(herdr.clone()), None), Ok(herdr.clone()));
     let both = project::merge_snapshots::<()>(Ok(herdr.clone()), Some(core.clone())).unwrap();
@@ -293,4 +427,127 @@ fn merge_state_machine() {
     assert_eq!(m.ended(Side::Herdr), Action::Hint);
     assert_eq!(m.ended(Side::Herdr), Action::None, "an impossible second end");
     assert_eq!(m.ended(Side::Core), Action::Close);
+}
+
+#[test]
+fn helpers_of_helpers_and_parent_loops() {
+    let root = agent_in("t1", Some("/home/sam/proj"), "main");
+    let mut h1 = agent_in("t2", Some("/home/sam/x"), "h1");
+    h1["parent"] = json!("t1");
+    let mut h2 = agent_in("t3", Some("/home/sam/y"), "h2");
+    h2["parent"] = json!("t2");
+    let p = project::project(&[h2, h1, root], None, &Repos::new());
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t1"]);
+    assert_eq!(ids(&p.panes, "pane_id").len(), 3);
+    assert!(p.agents.iter().all(|a| a["group"] == "proj" && a["tab_id"] == "hc:task:t1"));
+    // A loop of parents: nobody is dropped, each gets its own task.
+    let mut a = agent_in("t4", Some("/home/sam/a"), "a");
+    a["parent"] = json!("t5");
+    let mut b = agent_in("t5", Some("/home/sam/b"), "b");
+    b["parent"] = json!("t4");
+    let p = project::project(&[a, b], None, &Repos::new());
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t4", "hc:task:t5"]);
+}
+
+#[test]
+fn label_space_in_doc_but_not_in_a_tab() {
+    // The phone just started agents in space s1; the Herdr app has not saved them in a tab yet.
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": [
+        {"id": "a", "name": "main", "root": {"type": "block", "content": {"terminal": "t1"}}}]}]});
+    let in_tab = agent_in("t1", Some("/home/sam/proj"), "main");
+    let mut same_tab = agent_in("t2", Some("/home/sam/proj"), "second");
+    same_tab["labels"] = json!({"herdr.space": "s1", "herdr.tab": "a"});
+    same_tab["status"]["state"] = json!("blocked");
+    let mut new_tab = agent_in("t3", Some("/home/sam/proj"), "third");
+    new_tab["labels"] = json!({"herdr.space": "s1", "herdr.tab": "b"});
+    let mut no_tab = agent_in("t4", Some("/home/sam/proj"), "fourth");
+    no_tab["labels"] = json!({"herdr.space": "s1"});
+    let p = project::project(&[in_tab, same_tab, new_tab, no_tab], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1"], "one entry for the space");
+    assert_eq!(p.workspaces[0]["tab_count"], 3);
+    assert_eq!(p.workspaces[0]["agent_status"], "blocked");
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert_eq!(p.tabs[0]["label"], "main", "the document tab is reused");
+    assert_eq!(p.tabs[0]["agent_status"], "blocked");
+    assert_eq!(ids(&p.panes, "tab_id"), ["hc:tab:a", "hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert!(p.agents.iter().all(|a| a["group"] == "api" && a["group_source"] == "space"));
+}
+
+fn space_doc(name: &str) -> Value {
+    json!({"spaces": [{"id": "s1", "name": name, "folder": "/home/sam/start", "tabs": [
+        {"id": "a", "root": {"type": "block", "content": {"terminal": "t1"}}},
+    ]}]})
+}
+
+#[test]
+fn unnamed_space_takes_the_where_name() {
+    // The `where` name differs from the terminal folder, so only the `where` branch can pass.
+    let t = json!({"address": "t1", "state": "live", "labels": {"where": "web app / 1"},
+                   "foreground": {"cwd": "/home/sam/web"}, "cwd": "/home/sam/start",
+                   "status": {"state": "working", "app": "pi"}});
+    let p = project::project(std::slice::from_ref(&t), Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web app");
+    assert_eq!(p.agents[0]["group"], "web app");
+    // With the `herdr.space` label too, the name stays the same.
+    let mut both = t.clone();
+    both["labels"] = json!({"where": "web app / 1", "herdr.space": "s1"});
+    let p = project::project(&[both], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web app");
+    // No `where` label: the folder of the terminal.
+    let mut no_where = t.clone();
+    no_where["labels"] = json!({});
+    let p = project::project(&[no_where.clone()], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web");
+    // No terminal folder: the space folder.
+    no_where["foreground"] = Value::Null;
+    no_where["cwd"] = Value::Null;
+    let p = project::project(&[no_where], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "start");
+    // A named space keeps its name.
+    let p = project::project(&[t], Some(&space_doc("api")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "api");
+}
+
+/// A document agent with only the generic title of its app, in a space and tab of `tab_name`.
+fn generic_agent(tab_name: Option<&str>) -> (Value, Value) {
+    let t = json!({"address": "t1", "name": null, "state": "live", "labels": {}, "cwd": "/home/sam/proj",
+                   "title": "Claude Code", "status": {"state": "working", "app": "claude-code"}});
+    let mut tab = json!({"id": "a", "root": {"type": "block", "content": {"terminal": "t1"}}});
+    if let Some(n) = tab_name {
+        tab["name"] = json!(n);
+    }
+    (t, json!({"spaces": [{"id": "s1", "name": "", "tabs": [tab]}]}))
+}
+
+#[test]
+fn generic_title_agent_is_not_named_after_its_space() {
+    let (t, doc) = generic_agent(None);
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "proj");
+    assert_eq!(p.agents[0]["name"], "Claude Code");
+    assert_eq!(p.panes[0]["label"], "Claude Code");
+    // With no title at all, the app, then the kind, then the address.
+    let t = json!({"address": "t1", "state": "live", "labels": {}, "cwd": "/home/sam/proj",
+                   "status": {"state": "working", "app": "pi"}});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "pi");
+    let t = json!({"address": "t1", "state": "live", "labels": {}, "status": {"state": "working"}});
+    let p = project::project(&[t], None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "t1");
+}
+
+#[test]
+fn tab_name_beats_generic_title() {
+    let (t, doc) = generic_agent(Some("Login fix"));
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Login fix");
+    assert_eq!(p.panes[0]["label"], "Login fix");
+}
+
+#[test]
+fn real_title_wins() {
+    let (mut t, doc) = generic_agent(Some("Login fix"));
+    t["title"] = json!("Fix the login form");
+    let p = project::project(&[t], Some(&doc), &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Fix the login form");
 }
