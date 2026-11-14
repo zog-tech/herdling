@@ -472,3 +472,32 @@ fn label_space_in_doc_but_not_in_a_tab() {
     assert_eq!(ids(&p.panes, "tab_id"), ["hc:tab:a", "hc:tab:a", "hc:tab:b", "hc:task:t4"]);
     assert!(p.agents.iter().all(|a| a["group"] == "api" && a["group_source"] == "space"));
 }
+
+fn space_doc(name: &str) -> Value {
+    json!({"spaces": [{"id": "s1", "name": name, "folder": "/home/sam/start", "tabs": [
+        {"id": "a", "root": {"type": "block", "content": {"terminal": "t1"}}},
+    ]}]})
+}
+
+#[test]
+fn unnamed_space_takes_the_where_name() {
+    let t = json!({"address": "t1", "state": "live", "labels": {"where": "web / 1"},
+                   "foreground": {"cwd": "/home/sam/web"}, "cwd": "/home/sam/start",
+                   "status": {"state": "working", "app": "pi"}});
+    let p = project::project(std::slice::from_ref(&t), Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web");
+    assert_eq!(p.agents[0]["group"], "web");
+    // No `where` label: the folder of the terminal.
+    let mut no_where = t.clone();
+    no_where["labels"] = json!({});
+    let p = project::project(&[no_where.clone()], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "web");
+    // No terminal folder: the space folder.
+    no_where["foreground"] = Value::Null;
+    no_where["cwd"] = Value::Null;
+    let p = project::project(&[no_where], Some(&space_doc("")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "start");
+    // A named space keeps its name.
+    let p = project::project(&[t], Some(&space_doc("api")), &Repos::new());
+    assert_eq!(p.workspaces[0]["label"], "api");
+}

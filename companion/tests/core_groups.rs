@@ -97,3 +97,25 @@ fn helper_parent_rules() {
     let own = agent("t1", Some("t1"));
     assert!(live_parent(&own, &[&own]).is_none());
 }
+
+#[test]
+fn generic_title_is_not_a_task_name() {
+    let t = rec(json!({"title": "Claude Code", "status": {"state": "working", "app": "claude-code"}}));
+    assert_eq!(task_name(&t), None);
+    let t = rec(json!({"status": {"state": "working", "app": "claude-code", "title": "claude_code"}, "title": "Claude Code"}));
+    assert_eq!(task_name(&t), None);
+}
+
+#[test]
+fn real_title_is_a_task_name() {
+    let t = rec(json!({"title": "Fix the login form", "status": {"state": "working", "app": "claude-code"}}));
+    assert_eq!(task_name(&t).as_deref(), Some("Fix the login form"));
+    let t = rec(json!({"title": "Claude Code", "status": {"state": "working", "app": "claude-code", "title": "Fix it"}}));
+    assert_eq!(task_name(&t).as_deref(), Some("Fix it"));
+}
+
+#[test]
+fn a_name_equal_to_the_app_is_skipped() {
+    let t = rec(json!({"name": "Claude-Code", "title": "Add tests", "status": {"state": "working", "app": "claude-code"}}));
+    assert_eq!(task_name(&t).as_deref(), Some("Add tests"));
+}

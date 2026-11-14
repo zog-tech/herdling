@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::project::{agent_status, cwd_now, text};
+use super::project::{agent_kind, agent_status, cwd_now, text};
 
 /// The terminal label that sets the group by hand.
 pub const GROUP_LABEL: &str = "herdling.group";
@@ -120,12 +120,28 @@ pub fn group_key(label: &str) -> String {
     }
 }
 
+fn squash(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace() && !matches!(c, '-' | '_')).flat_map(char::to_lowercase).collect()
+}
+
 /// The task name of a terminal: the name, else the status title, else the terminal title.
+/// A candidate that only repeats the reported app or the agent kind (for example the title
+/// "Claude Code" of a new agent) is skipped. None when no candidate is left.
 pub fn task_name(t: &Value) -> Option<String> {
-    text(t, "name")
-        .or_else(|| t.get("status").and_then(|s| text(s, "title")))
-        .or_else(|| text(t, "title"))
-        .map(|s| s.trim().to_string())
+    let generic: Vec<String> = t
+        .get("status")
+        .and_then(|s| text(s, "app"))
+        .map(String::from)
+        .into_iter()
+        .chain(agent_kind(t))
+        .map(|g| squash(&g))
+        .collect();
+    [text(t, "name"), t.get("status").and_then(|s| text(s, "title")), text(t, "title")]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|c| !generic.contains(&squash(c)))
+        .map(String::from)
 }
 
 /// The live agent that started helper `t`. None when the parent is gone, is not an agent, is

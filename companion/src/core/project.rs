@@ -248,6 +248,15 @@ fn folder_name(t: &Value) -> Option<String> {
     folder_of(t)?.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).map(String::from)
 }
 
+/// The first terminal of `space` in tree order that is live on this machine.
+fn first_terminal<'a>(space: &Value, by_addr: &impl Fn(&str) -> Option<&'a Value>) -> Option<&'a Value> {
+    let mut addrs = Vec::new();
+    for tab in space.get("tabs").and_then(Value::as_array)? {
+        layout_terminals(tab.get("root").unwrap_or(&Value::Null), &mut addrs);
+    }
+    addrs.iter().find_map(|a| by_addr(a))
+}
+
 /// The label of the own tab of terminal `t`: the task name, else the agent kind, else the address.
 fn task_label(t: &Value) -> String {
     task_name(t).or_else(|| agent_kind(t)).or_else(|| text(t, "address").map(String::from)).unwrap_or_default()
@@ -347,9 +356,15 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
     let spaces = doc.and_then(|d| d.get("spaces")).and_then(Value::as_array).cloned().unwrap_or_default();
     for (si, space) in spaces.iter().enumerate() {
         let Some(sid) = text(space, "id") else { continue };
+        let first = first_terminal(space, &by_addr);
+        let last = |f: &str| f.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).map(String::from);
+        // The Herdr app names an unnamed space by the folder it shows now, and writes that
+        // name into the `where` label of each terminal. The `folder` of the document is stale.
         let label = text(space, "name")
             .map(String::from)
-            .or_else(|| text(space, "folder").and_then(|f| f.trim_end_matches('/').rsplit('/').next()).map(String::from))
+            .or_else(|| first.and_then(label_space).and_then(|l| l.name))
+            .or_else(|| first.and_then(folder_name))
+            .or_else(|| text(space, "folder").and_then(last))
             .unwrap_or_else(|| format!("Space {}", si + 1));
         let g = Grouping { label: label.clone(), source: GroupSource::Space };
         let wi = b.ws(format!("{PREFIX}space:{sid}"), || label);
