@@ -1023,7 +1023,7 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         if core_wanted.as_ref().is_some_and(|v| v.is_empty()) {
             return None;
         }
-        crate::core::live::previews(sock, ctx.herdr_timeout, core_wanted.as_deref()).await.ok()
+        crate::core::live::previews(sock, ctx.herdr_timeout, &ctx.home, &ctx.preview, core_wanted.as_deref()).await.ok()
     };
     let (herdr, core) = tokio::join!(herdr, core);
     // Each backend fails on its own: a herdr 1 error counts only when the core gives nothing.

@@ -19,7 +19,7 @@ use crate::claude::background::ClaudeFeed;
 use crate::herdr::{self, HerdrError};
 use crate::tail::read_offset_lines_before;
 use crate::transcript::background::BackgroundLog;
-use crate::types::{AgentPreview, BackgroundInfo, ThreadItem};
+use crate::types::{AgentPreview, AgentStatus, BackgroundInfo, ThreadItem};
 
 /// Bytes read from the end of a Claude log.
 pub const TAIL_BYTES: u64 = 256 * 1024;
@@ -102,12 +102,12 @@ impl PreviewState {
         self.since.lock().unwrap().get(pane).and_then(|(_, at)| *at)
     }
 
-    fn cached_log(&self, pane: &str) -> Option<Option<PathBuf>> {
+    pub(crate) fn cached_log(&self, pane: &str) -> Option<Option<PathBuf>> {
         let g = self.logs.lock().unwrap();
         g.get(pane).filter(|(_, at)| at.elapsed() < RESOLVE_TTL).map(|(p, _)| p.clone())
     }
 
-    fn cache_log(&self, pane: &str, log: Option<PathBuf>) {
+    pub(crate) fn cache_log(&self, pane: &str, log: Option<PathBuf>) {
         self.logs.lock().unwrap().insert(pane.to_string(), (log, Instant::now()));
     }
 
@@ -548,6 +548,28 @@ pub async fn previews(
     Ok(out.into_iter().map(|(_, p)| p).collect())
 }
 
+fn status_of(s: &str) -> AgentStatus {
+    match s {
+        "working" => AgentStatus::Working,
+        "blocked" => AgentStatus::Blocked,
+        "idle" => AgentStatus::Idle,
+        "done" => AgentStatus::Done,
+        _ => AgentStatus::Unknown,
+    }
+}
+
+/// Fills `p` from a log preview: the last reply, and the activity of a working agent or the
+/// question of a blocked agent. The source becomes `"log"`. Herdr 1 and core panes share this.
+pub(crate) fn fill_from_log(p: &mut AgentPreview, status: AgentStatus, log: &LogPreview) {
+    p.source = "log".into();
+    p.last_reply = log.last_reply.clone();
+    match status {
+        AgentStatus::Working => p.activity = log.activity.clone(),
+        AgentStatus::Blocked => p.question = log.question.clone(),
+        _ => {}
+    }
+}
+
 /// One pane's preview: from its Claude log when there is one, else from its screen.
 async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &PreviewState, a: &Agent) -> Option<AgentPreview> {
     let mut p = AgentPreview {
@@ -574,13 +596,7 @@ async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &Preview
                 p.background = claude_background(socket, timeout, state, &a.pane_id, &path).await;
             }
             if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_any_log(&path)).await {
-                p.source = "log".into();
-                p.last_reply = lp.last_reply;
-                match a.status.as_str() {
-                    "working" => p.activity = lp.activity,
-                    "blocked" => p.question = lp.question,
-                    _ => {}
-                }
+                fill_from_log(&mut p, status_of(&a.status), &lp);
                 // A blocked agent whose log shows no pending call: ask the screen.
                 if a.status == "blocked" && p.question.is_none() {
                     p.question = read_screen_line(socket, timeout, &a.pane_id, true).await;

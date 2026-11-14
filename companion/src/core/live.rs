@@ -1,6 +1,7 @@
 //! The calls to a running core that `rpc` and `serve` make. Thin I/O over [`super::client`];
 //! the rules are in [`super::project`] and [`super::route`].
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -9,6 +10,7 @@ use super::client::{Client, CoreError};
 use super::endpoint::CoreSocket;
 use super::project::{self, Projection};
 use super::route;
+use crate::preview::PreviewState;
 use crate::types::{AgentPreview, AgentStatus, RpcError};
 
 /// Bound for `terminal.send` and `terminal.keys`: the core waits until nobody types at the
@@ -79,9 +81,16 @@ pub async fn call(sock: &CoreSocket, timeout: Duration, method: &str, params: &V
     Ok(route::shape(&plan.shape, r))
 }
 
-/// One preview line per core agent (only `wanted` panes when given), from the 7501 message, else
-/// from the last line of the screen.
-pub async fn previews(sock: &CoreSocket, timeout: Duration, wanted: Option<&[String]>) -> Result<Vec<AgentPreview>, CoreError> {
+/// One preview line per core agent (only `wanted` panes when given). An agent with a known
+/// transcript is read from its log, as herdr 1 agents are. Else the line comes from the 7501
+/// message, else from the last line of the screen.
+pub async fn previews(
+    sock: &CoreSocket,
+    timeout: Duration,
+    home: &Path,
+    state: &PreviewState,
+    wanted: Option<&[String]>,
+) -> Result<Vec<AgentPreview>, CoreError> {
     let list = once(sock, timeout, "terminal.list", json!({})).await?;
     let terminals = list.get("terminals").and_then(Value::as_array).cloned().unwrap_or_default();
     let mut out = Vec::new();
@@ -90,6 +99,30 @@ pub async fn previews(sock: &CoreSocket, timeout: Duration, wanted: Option<&[Str
         let pane = project::pane_id(addr);
         if wanted.is_some_and(|w| !w.contains(&pane)) {
             continue;
+        }
+        let mut p = AgentPreview {
+            pane_id: pane.clone(),
+            activity: None,
+            last_reply: None,
+            question: None,
+            status_since: project::status_since(t),
+            source: "screen".into(),
+            background: None,
+        };
+        // The log work of one agent is bounded as herdr 1's is. A timeout falls back to the screen.
+        let from_log = tokio::time::timeout(crate::preview::PANE_TIMEOUT, log_preview(home, state, &pane, t)).await;
+        if let Ok(Some(lp)) = from_log {
+            let mut logged = AgentPreview { pane_id: pane.clone(), ..p.clone() };
+            crate::preview::fill_from_log(&mut logged, status, &lp);
+            let has_text = match status {
+                AgentStatus::Working => logged.activity.is_some(),
+                AgentStatus::Blocked => logged.question.is_some(),
+                _ => logged.last_reply.is_some(),
+            };
+            if has_text {
+                out.push(logged);
+                continue;
+            }
         }
         let msg = t.pointer("/status/msg").and_then(Value::as_str).map(str::trim).filter(|m| !m.is_empty()).map(String::from);
         let line = match msg {
@@ -100,15 +133,6 @@ pub async fn previews(sock: &CoreSocket, timeout: Duration, wanted: Option<&[Str
                 Err(_) => None,
             },
         };
-        let mut p = AgentPreview {
-            pane_id: pane,
-            activity: None,
-            last_reply: None,
-            question: None,
-            status_since: project::status_since(t),
-            source: "screen".into(),
-            background: None,
-        };
         match status {
             AgentStatus::Working => p.activity = line,
             AgentStatus::Blocked => p.question = line,
@@ -117,4 +141,20 @@ pub async fn previews(sock: &CoreSocket, timeout: Duration, wanted: Option<&[Str
         out.push(p);
     }
     Ok(out)
+}
+
+/// What the transcript of a core terminal says, or None when the agent has no known log.
+/// The log path is cached per pane, as for herdr 1.
+async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Value) -> Option<crate::preview::LogPreview> {
+    let kind = project::agent_kind(record)?;
+    crate::transcript::Agent::from_kind(&kind)?;
+    let path = match state.cached_log(pane) {
+        Some(l) => l,
+        None => {
+            let l = crate::transcript::resolve_core(home, record).await.log_path.map(PathBuf::from);
+            state.cache_log(pane, l.clone());
+            l
+        }
+    }?;
+    tokio::task::spawn_blocking(move || crate::preview::read_any_log(&path)).await.ok()?.ok()
 }
