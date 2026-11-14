@@ -5,6 +5,15 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [Unreleased herdlingd]
+
+- Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
+  the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.
+  `hc:loose` is gone: an old id gives `pane_not_found`.
+- Core agents and panes have the optional fields `group`, `group_source`, `repo`, `repo_root` and
+  `branch`. The agent `name` is the task name. `display_agent` is null for a known kind.
+- `thread.resolve` and `agents.preview` read the transcript of a core agent (`source: "log"`).
+
 ## [herdlingd 0.1.9] - 2026-11-09
 
 - New method `herdr.update`: updates herdr (herdr 1) on this computer from the phone. herdlingd
