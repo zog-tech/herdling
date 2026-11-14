@@ -182,16 +182,13 @@ fn label_space_not_in_doc() {
     t["labels"] = json!({"herdr.space": "sp9", "herdr.tab": "tb9", "where": "web / 1"});
     let mut u = agent_in("t4", Some("/home/sam/proj/web"), "lint");
     u["labels"] = json!({"herdr.space": "sp9"});
-    // A label of a space that the document has, but no tab of the document holds: rule 4.
-    let mut v = agent_in("t7", Some("/home/sam/proj/api"), "docs");
-    v["labels"] = json!({"herdr.space": "s1", "herdr.tab": "x"});
     let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": []}]});
-    let p = project::project(&[t, u, v], Some(&doc), &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:space:sp9", "hc:g:api"]);
+    let p = project::project(&[t, u], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:space:sp9"]);
     assert_eq!(p.workspaces[1]["label"], "web");
     assert_eq!(p.workspaces[1]["number"], 2);
     assert_eq!(p.workspaces[1]["tab_count"], 2, "one entry for the space, two tabs");
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:tb9", "hc:task:t4", "hc:task:t7"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:tb9", "hc:task:t4"]);
     assert_eq!(p.agents[0]["group"], "web");
     assert_eq!(p.agents[0]["group_source"], "space");
     assert_eq!(p.agents[1]["workspace_id"], "hc:space:sp9");
@@ -450,4 +447,28 @@ fn helpers_of_helpers_and_parent_loops() {
     b["parent"] = json!("t4");
     let p = project::project(&[a, b], None, &Repos::new());
     assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t4", "hc:task:t5"]);
+}
+
+#[test]
+fn label_space_in_doc_but_not_in_a_tab() {
+    // The phone just started agents in space s1; the Herdr app has not saved them in a tab yet.
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": [
+        {"id": "a", "name": "main", "root": {"type": "block", "content": {"terminal": "t1"}}}]}]});
+    let in_tab = agent_in("t1", Some("/home/sam/proj"), "main");
+    let mut same_tab = agent_in("t2", Some("/home/sam/proj"), "second");
+    same_tab["labels"] = json!({"herdr.space": "s1", "herdr.tab": "a"});
+    same_tab["status"]["state"] = json!("blocked");
+    let mut new_tab = agent_in("t3", Some("/home/sam/proj"), "third");
+    new_tab["labels"] = json!({"herdr.space": "s1", "herdr.tab": "b"});
+    let mut no_tab = agent_in("t4", Some("/home/sam/proj"), "fourth");
+    no_tab["labels"] = json!({"herdr.space": "s1"});
+    let p = project::project(&[in_tab, same_tab, new_tab, no_tab], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1"], "one entry for the space");
+    assert_eq!(p.workspaces[0]["tab_count"], 3);
+    assert_eq!(p.workspaces[0]["agent_status"], "blocked");
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert_eq!(p.tabs[0]["label"], "main", "the document tab is reused");
+    assert_eq!(p.tabs[0]["agent_status"], "blocked");
+    assert_eq!(ids(&p.panes, "tab_id"), ["hc:tab:a", "hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert!(p.agents.iter().all(|a| a["group"] == "api" && a["group_source"] == "space"));
 }

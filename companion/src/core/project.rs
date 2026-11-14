@@ -7,7 +7,8 @@
 //! - Each terminal is placed once, by the first rule that applies:
 //!   1. The herdr-app document (`doc.get {name: "herdr-app"}`:
 //!      `{spaces: [{id, name, folder, tabs: [{id, name, root}]}]}`, herdr-app `src/mirror.rs`).
-//!   2. The `herdr.space` and `herdr.tab` labels, for a space that is not in the document yet.
+//!   2. The `herdr.space` and `herdr.tab` labels, for a terminal that no document tab holds.
+//!      A space or tab that the document has is reused.
 //!   3. A helper goes into the tab of its parent, when rule 3 or 4 placed the parent.
 //!   4. All other terminals: one task tab each, in the workspace of their group
 //!      ([`groups::fallback_group`]: the label, the repo or the folder).
@@ -344,7 +345,6 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
 
     // Rule 1: the layout document.
     let spaces = doc.and_then(|d| d.get("spaces")).and_then(Value::as_array).cloned().unwrap_or_default();
-    let doc_spaces: HashSet<&str> = spaces.iter().filter_map(|s| text(s, "id")).collect();
     for (si, space) in spaces.iter().enumerate() {
         let Some(sid) = text(space, "id") else { continue };
         let label = text(space, "name")
@@ -369,10 +369,11 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         }
     }
 
-    // Rule 2: a `herdr.space` label of a space that the document does not have (yet).
+    // Rule 2: the `herdr.space` label of a terminal that no document tab holds, as right after
+    // the phone starts an agent. A space or tab of the document is reused, never added twice.
     for &t in &live {
         let Some(addr) = text(t, "address") else { continue };
-        let Some(ls) = label_space(t).filter(|ls| !placed.contains(addr) && !doc_spaces.contains(ls.space.as_str())) else { continue };
+        let Some(ls) = label_space(t).filter(|_| !placed.contains(addr)) else { continue };
         let wi = b.ws(format!("{PREFIX}space:{}", ls.space), || {
             ls.name.clone().or_else(|| folder_name(t)).unwrap_or_else(|| groups::NO_FOLDER_LABEL.into())
         });
