@@ -208,3 +208,17 @@ Workspace `number`s follow the order of first use; `tab_count` and `agent_status
   Expected: none.
 - [ ] **Step 3: Live check, read only.** Build with `nice -n 15 cargo build -j 2`, then run the new binary's `rpc` against the real core with a `session.snapshot` request, as in `docs/protocol.md` (`printf '...' | ./target/debug/herdlingd rpc`). It only reads. Expected: no `hc:loose`; each agent has a group, a task name and a repo; `thread.resolve` on a Claude agent gives a `log_path`. Do not install the binary: the maintainer decides when to deploy.
 - [ ] **Step 4: Commit** — "docs: Herdr 2 groups, tasks and transcripts"
+
+## Follow-ups found while building plan A
+
+For later plans (C: Herdr 2 actions, F: app). None blocks plan A.
+
+- A stale `herdr.tab` label can give the same tab id in two workspaces. Guard: when another workspace holds the tab id, use `hc:task:<address>`.
+- Two groups with the same key (a label "Proj" and a repo "proj") share one workspace. The label of the first group wins.
+- A helper of a terminal in a parent loop can become its own task.
+- Panes and agents are listed in placement order, not tab order.
+- A core terminal that is not an agent reports its foreground program as its kind.
+- A plain terminal with no title shows its program name ("zsh") in the app's terminal list, not its folder.
+- The push title of a core agent (`push_text`) does not follow the card name.
+- `docs/protocol.md`: the agent field list still says "`name` the task name" (it is the entry name), and the unnamed-space rule sits under the label rule.
+- The test `herdr_update::other_failures_carry_the_output` fails now and then. This is older than plan A.
