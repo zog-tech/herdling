@@ -296,6 +296,20 @@ fn push_text_uses_name_title_then_app() {
 }
 
 #[test]
+fn push_text_placed_uses_the_card_name_and_the_group() {
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "folder": "/p/api", "tabs": [
+        {"id": "b1", "name": "Login fix", "root": {"content": {"terminal": "t1"}}}]}]});
+    let mut t = term("t1", None, Some("done"));
+    t["status"]["title"] = json!("Claude Code");
+    t["title"] = Value::Null;
+    let p = project::project(std::slice::from_ref(&t), Some(&doc), &Default::default());
+    assert_eq!(project::push_text_placed(&t, &p), ("Login fix".into(), "api · m".into()));
+    // A terminal the projection does not hold keeps the record text.
+    let other = term("t9", Some("solo"), Some("done"));
+    assert_eq!(project::push_text_placed(&other, &p), project::push_text(&other));
+}
+
+#[test]
 fn ids_and_targets() {
     assert_eq!(project::address("hc:t7"), Some("t7"));
     assert_eq!(project::address("hc:space:s1"), None);

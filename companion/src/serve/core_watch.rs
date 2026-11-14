@@ -142,7 +142,13 @@ async fn send_notice(ctx: &ServeCtx, client: &reqwest::Client, sock: &CoreSocket
             return;
         }
     };
-    let (title, body) = tracker.record(pane).map_or_else(|| (pane.to_string(), String::new()), project::push_text);
+    // The card name and group need the whole projection; without it the push uses the record alone.
+    let placed = crate::core::live::projection(sock, HERDR_TIMEOUT).await.ok();
+    let (title, body) = match (tracker.record(pane), placed.as_ref()) {
+        (Some(t), Some(p)) => project::push_text_placed(t, p),
+        (Some(t), None) => project::push_text(t),
+        (None, _) => (pane.to_string(), String::new()),
+    };
     let choice = match notice {
         Notice::NeedsYou if cfg.devices.iter().any(|d| d.can(config::CHOICE_ACTIONS)) => choice_of(sock, pane).await,
         _ => None,

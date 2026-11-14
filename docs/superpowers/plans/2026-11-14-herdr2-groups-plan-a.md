@@ -219,6 +219,5 @@ For later plans (C: Herdr 2 actions, F: app). None blocks plan A.
 - Panes and agents are listed in placement order, not tab order.
 - A core terminal that is not an agent reports its foreground program as its kind.
 - A plain terminal with no title shows its program name ("zsh") in the app's terminal list, not its folder.
-- The push title of a core agent (`push_text`) does not follow the card name.
 - `docs/protocol.md`: the agent field list still says "`name` the task name" (it is the entry name), and the unnamed-space rule sits under the label rule.
 - The test `herdr_update::other_failures_carry_the_output` fails now and then. This is older than plan A.

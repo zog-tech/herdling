@@ -128,6 +128,22 @@ pub fn push_text(t: &Value) -> (String, String) {
     (title, body)
 }
 
+/// The push title and body of terminal `t` as its card shows it: the card name, then the group and
+/// the status message. Falls back to `push_text` when `p` does not hold the terminal.
+pub fn push_text_placed(t: &Value, p: &Projection) -> (String, String) {
+    let Some(pane) = text(t, "address").map(pane_id).and_then(|id| p.panes.iter().find(|e| text(e, "pane_id") == Some(id.as_str()))) else {
+        return push_text(t);
+    };
+    let Some(title) = text(pane, "label").map(String::from) else {
+        return push_text(t);
+    };
+    let ws = text(pane, "workspace_id");
+    let group = p.workspaces.iter().find(|w| text(w, "workspace_id") == ws).and_then(|w| text(w, "label"));
+    let msg = t.get("status").and_then(|s| text(s, "msg"));
+    let body = [group.filter(|g| *g != title), msg].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+    (title, body)
+}
+
 /// Unix seconds when the current status began, when the core says.
 pub fn status_since(t: &Value) -> Option<i64> {
     t.get("status_ms").and_then(Value::as_u64).map(|ms| (ms / 1000) as i64)
