@@ -70,8 +70,11 @@ pub async fn lookup(folders: &[String]) -> Repos {
             }
         });
     }
-    while let Some(Ok((f, info))) = tasks.join_next().await {
-        out.insert(f, info);
+    // A task that panicked has no result. The other folders keep theirs.
+    while let Some(done) = tasks.join_next().await {
+        if let Ok((f, info)) = done {
+            out.insert(f, info);
+        }
     }
     out
 }
