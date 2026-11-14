@@ -319,3 +319,36 @@ async fn subscribe_keeps_herdr_one_when_the_core_drops() {
     core.send(Ctl::Event(status_event("t1", "blocked")));
     assert_eq!(sess.event().await["data"]["pane_id"], "hc:t1");
 }
+
+/// Runs `git` in `dir`. False when git is not installed or the command fails.
+fn git_ok(dir: &std::path::Path, args: &[&str]) -> bool {
+    std::process::Command::new("git").arg("-C").arg(dir).args(args).status().map(|s| s.success()).unwrap_or(false)
+}
+
+#[tokio::test]
+async fn snapshot_has_repo_of_agent_folder() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path().canonicalize().unwrap();
+    let committed = git_ok(&root, &["init", "-b", "main"])
+        && git_ok(&root, &["-c", "user.name=sam", "-c", "user.email=sam@example.com", "commit", "--allow-empty", "-m", "x"]);
+    if !committed {
+        eprintln!("skipped: git is not available");
+        return;
+    }
+    std::fs::create_dir(root.join("src")).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Setup { dir, core: None };
+    let mut t = terminal("t1", Some("api-agent"), Some("working"));
+    t["foreground"]["cwd"] = json!(root.join("src").to_string_lossy());
+    let st = State { terminals: vec![t], doc: Value::Null, ..State::default() };
+    s.core = Some(fake_core::spawn(&s.core_sock(), st));
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr(1, "session.snapshot", json!({})).await;
+    let agent = &r["result"]["snapshot"]["agents"][0];
+    let name = root.file_name().unwrap().to_string_lossy().to_string();
+    assert_eq!(agent["repo"], json!(name), "{r}");
+    assert_eq!(agent["repo_root"], json!(root.to_string_lossy()), "{r}");
+    assert_eq!(agent["branch"], "main", "{r}");
+    assert_eq!(agent["group_source"], "repo", "{r}");
+}

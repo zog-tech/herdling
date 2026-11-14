@@ -43,8 +43,7 @@ pub async fn projection(sock: &CoreSocket, timeout: Duration) -> Result<Projecti
     let list = c.call("terminal.list", json!({})).await?;
     let doc = c.call("doc.get", json!({ "name": project::LAYOUT_DOC })).await.ok();
     let terminals = list.get("terminals").and_then(Value::as_array).cloned().unwrap_or_default();
-    // No repo facts yet: each group falls back to the folder name.
-    let repos = super::groups::Repos::new();
+    let repos = super::repos::lookup(&project::folders(&terminals)).await;
     Ok(project::project(&terminals, doc.as_ref().and_then(|d| d.get("value")).filter(|v| !v.is_null()), &repos))
 }
 
