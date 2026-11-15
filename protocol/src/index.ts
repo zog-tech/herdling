@@ -21,6 +21,11 @@ export type Hello = {
   /** When herdlingd starts on this computer. Missing on an older herdlingd. */
   boot?: Boot;
   /**
+   * The `pane.watch` formats the host accepts. `vt` is the raw terminal stream for an emulator in
+   * the app. Missing on an older herdlingd (only `text` and `ansi`).
+   */
+  watch_formats?: string[];
+  /**
    * The herdr backends that herdlingd reaches. Missing on an older herdlingd.
    * `herdr_ok` keeps its meaning: it tells only about herdr 1.
    */
@@ -539,7 +544,8 @@ export type GitWorktree = {
 export type PaneWatchParams = {
   pane_id: string;
   lines?: number;
-  format?: "text" | "ansi";
+  /** `vt`: the raw terminal stream (`PaneWatchVtEvent`). Only when `hello.watch_formats` has it. */
+  format?: "text" | "ansi" | "vt";
   interval_ms?: number;
   /**
    * The phone grid. With both, a Herdr 2 pane is laid out at this size while the stream lives
@@ -550,13 +556,26 @@ export type PaneWatchParams = {
   rows?: number;
 };
 /** `pane.watch` result. `drive` is true when the stream drives the size of a Herdr 2 pane. */
-export type PaneWatchResult = { stream: string; drive?: boolean };
+export type PaneWatchResult = { stream: string; drive?: boolean; format?: "vt" };
 /**
  * `pane.watch` event data. A screen comes first at once, then only when the screen changes.
  * `error` (a herdr error code, for example `pane_not_found`) or `closed` (herdr stopped) ends the stream.
  */
 export type PaneWatchEvent =
   | { revision: number; text: string; truncated: boolean }
+  | { error: string; message?: string }
+  | { closed: true };
+
+/**
+ * `pane.watch` event data with `format: "vt"`. `reset`: a new attach; make a fresh emulator of
+ * this size (the paint of the screen and the history follows as `data`). `data`: raw bytes in
+ * standard base64. `resize`: the terminal size changed (a paint follows). `seq` counts the events
+ * of one `gen` from 0. `error` and `closed` end the stream.
+ */
+export type PaneWatchVtEvent =
+  | { vt: "reset"; gen: number; seq: number; cols: number; rows: number }
+  | { vt: "data"; gen: number; seq: number; data: string }
+  | { vt: "resize"; gen: number; seq: number; cols: number; rows: number }
   | { error: string; message?: string }
   | { closed: true };
 

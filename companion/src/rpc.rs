@@ -520,6 +520,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
         thread_kinds: transcript::KINDS.iter().map(|k| (*k).to_string()).collect(),
         command_kinds: crate::commands::KINDS.iter().map(|k| (*k).to_string()).collect(),
+        watch_formats: crate::watch::FORMATS.iter().map(|f| (*f).to_string()).collect(),
         boot: read_boot(ctx, false).await,
         backends: None,
     };

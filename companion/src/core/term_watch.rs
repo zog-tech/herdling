@@ -6,6 +6,9 @@
 //! keys or focus. In drive mode (the phone asked for its own grid) it attaches as a driver, so
 //! the core lays the terminal out at that size while the stream lives. In both modes herdlingd
 //! sends only CREDIT and CLOSE on the stream channel: typing goes through `terminal.send`.
+//!
+//! With `format: "vt"` there is no emulator here: the bytes go to the app as they are
+//! ([`super::vt::Batch`]), and the emulator in the app draws them.
 
 use std::collections::{HashMap, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -22,6 +25,8 @@ use super::client::{remote, CoreError, GENERATION};
 use super::endpoint::CoreSocket;
 use super::frame::{self, Decoder, Frame, CLOSE, DATA, RESIZE};
 use super::screen::Emulator;
+use super::vt::Batch;
+use crate::watch::Format;
 use crate::rpc::Out;
 
 /// How herdlingd attaches.
@@ -220,9 +225,20 @@ pub struct Watch {
     pub addr: String,
     pub lines: usize,
     pub ansi: bool,
+    pub format: Format,
     pub interval: Duration,
     pub mode: Mode,
     pub facts: Facts,
+}
+
+/// Sends the events of the raw stream. False when the output closed.
+async fn send_all(out: &Out, stream: &str, events: Vec<Value>) -> bool {
+    for data in events {
+        if out.send(event(stream, data)).await.is_err() {
+            return false;
+        }
+    }
+    true
 }
 
 fn event(stream: &str, data: Value) -> Value {
@@ -237,6 +253,8 @@ pub async fn run(w: Watch, first: Attached, out: Out, stream: String) {
     let mut state = attach::start(1);
     let mut gen = 1u64;
     let mut emu: Option<Emulator> = None;
+    let raw = w.format == Format::Vt;
+    let mut batch = Batch::default();
     let mut last_text: Option<String> = None;
     let mut pending: VecDeque<Input> = VecDeque::new();
     pending.push_back(Input::Attached { gen, channel: first.channel, cols: first.cols, rows: first.rows });
@@ -298,6 +316,26 @@ pub async fn run(w: Watch, first: Attached, out: Out, stream: String) {
                             failure: Failure::Gone { code: "unsupported".into(), message: "herdr-core has no terminal.attach".into() },
                         }),
                         Err(OpenError::Core(e)) => pending.push_back(Input::Failed { gen, failure: failure(e) }),
+                    }
+                }
+                Effect::Reset { cols, rows } if raw => {
+                    if !send_all(&out, &stream, batch.reset(gen, cols, rows)).await {
+                        return;
+                    }
+                }
+                Effect::Feed(bytes) if raw => {
+                    if !send_all(&out, &stream, batch.feed(&bytes)).await {
+                        return;
+                    }
+                }
+                Effect::Resize { cols, rows } if raw => {
+                    if !send_all(&out, &stream, batch.resize(cols, rows)).await {
+                        return;
+                    }
+                }
+                Effect::Emit if raw => {
+                    if !send_all(&out, &stream, batch.flush()).await {
+                        return;
                     }
                 }
                 Effect::Reset { cols, rows } => emu = Some(Emulator::new(cols, rows, w.lines)),
@@ -400,16 +438,21 @@ pub async fn pane_watch(
         addr: addr.to_string(),
         lines: p.lines as usize,
         ansi: p.ansi,
+        format: p.format,
         interval: p.interval,
         mode,
         facts: ctx.term_facts.clone(),
     };
     let out = out.clone();
     let stream = ctx.streams.spawn("pane", move |id| run(w, first, out, id));
-    Some(Ok(match mode {
-        Mode::Watch => json!({ "stream": stream }),
-        Mode::Drive { .. } => json!({ "stream": stream, "drive": true }),
-    }))
+    let mut reply = json!({ "stream": stream });
+    if matches!(mode, Mode::Drive { .. }) {
+        reply["drive"] = json!(true);
+    }
+    if p.format == Format::Vt {
+        reply["format"] = json!("vt");
+    }
+    Some(Ok(reply))
 }
 
 /// How long a one-shot read waits for more paint after a frame.

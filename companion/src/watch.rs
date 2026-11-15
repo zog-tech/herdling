@@ -58,12 +58,29 @@ impl Gate {
     }
 }
 
+/// The `format` of a `pane.watch` stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Screen text with no escapes.
+    Text,
+    /// Screen text with SGR colors.
+    Ansi,
+    /// The raw bytes of the terminal for an emulator in the app ([`crate::core::vt`]). Herdr 2
+    /// panes with `terminal.attach` only.
+    Vt,
+}
+
+/// The `format` values that `pane.watch` accepts, for `hello.watch_formats`.
+pub const FORMATS: [&str; 3] = ["text", "ansi", "vt"];
+
 /// Validated `pane.watch` params.
 #[derive(Debug, Clone)]
 pub struct WatchParams {
     pub pane_id: String,
     pub lines: u64,
+    /// `format == Ansi`, for the screen paths.
     pub ansi: bool,
+    pub format: Format,
     pub interval: Duration,
     /// The phone grid `(cols, rows)`, when the app asks to drive a Herdr 2 pane at that size.
     /// Both params or none.
@@ -87,11 +104,13 @@ impl WatchParams {
             .ok_or_else(|| bad("pane.watch requires pane_id"))?
             .to_string();
         let lines = params.get("lines").and_then(Value::as_u64).unwrap_or(DEFAULT_LINES).clamp(1, MAX_LINES);
-        let ansi = match params.get("format").and_then(Value::as_str) {
-            None | Some("text") => false,
-            Some("ansi") => true,
-            Some(_) => return Err(bad("format must be text or ansi")),
+        let format = match params.get("format").and_then(Value::as_str) {
+            None | Some("text") => Format::Text,
+            Some("ansi") => Format::Ansi,
+            Some("vt") => Format::Vt,
+            Some(_) => return Err(bad("format must be text, ansi or vt")),
         };
+        let ansi = format == Format::Ansi;
         let ms = params
             .get("interval_ms")
             .and_then(Value::as_u64)
@@ -102,7 +121,7 @@ impl WatchParams {
             (Some(c), Some(r)) => Some((c.clamp(DRIVE_COLS.0, DRIVE_COLS.1) as u16, r.clamp(DRIVE_ROWS.0, DRIVE_ROWS.1) as u16)),
             _ => None,
         };
-        Ok(WatchParams { pane_id, lines, ansi, interval: Duration::from_millis(ms), size })
+        Ok(WatchParams { pane_id, lines, ansi, format, interval: Duration::from_millis(ms), size })
     }
 }
 
@@ -140,6 +159,10 @@ pub async fn pane_watch(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, Rp
     // `terminal.read` (plain text) below.
     if let Some(r) = crate::core::term_watch::pane_watch(ctx, out, &p, &sock).await {
         return r;
+    }
+    // The raw stream needs `terminal.attach`: the app shows its classic view.
+    if p.format == Format::Vt {
+        return Err(RpcError { code: "unsupported".into(), message: "herdr-core has no terminal.attach: format vt is not available".into() });
     }
     let mut reader = Reader { sock, timeout: ctx.herdr_timeout, pane_id: p.pane_id.clone(), lines: p.lines };
     let first = reader.read().await.map_err(crate::core::live::rpc_err)?;

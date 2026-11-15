@@ -100,6 +100,8 @@ fn watch_params_defaults_and_clamps() {
     assert_eq!(p.interval, Duration::from_millis(1000));
     assert_eq!(WatchParams::parse(&json!({})).unwrap_err().code, "bad_request");
     assert_eq!(WatchParams::parse(&json!({"pane_id": "w1:p1", "format": "html"})).unwrap_err().code, "bad_request");
+    let p = WatchParams::parse(&json!({"pane_id": "w1:p1", "format": "vt"})).unwrap();
+    assert_eq!((p.format, p.ansi), (herdlingd::watch::Format::Vt, false));
 }
 
 #[test]

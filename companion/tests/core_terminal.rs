@@ -293,3 +293,159 @@ async fn ansi_read_on_an_old_core_is_plain_text() {
     let r = sess.herdr(1, "pane.read", json!({"pane_id": "t1", "format": "ansi"})).await;
     assert_eq!(r["result"]["read"]["text"], "plain screen", "{r}");
 }
+
+// The raw stream (`format: "vt"`).
+
+fn vt_params() -> Value {
+    json!({"pane_id": "t1", "lines": 50, "format": "vt", "interval_ms": 50})
+}
+
+fn decoded(e: &Value) -> Vec<u8> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(e["data"].as_str().unwrap()).unwrap()
+}
+
+impl Session {
+    /// The raw bytes of `data` events of `gen` until they contain `want`.
+    async fn vt_until(&mut self, gen: u64, want: &[u8]) -> Vec<u8> {
+        let mut got = Vec::new();
+        while !got.windows(want.len()).any(|w| w == want) {
+            let e = self.event().await;
+            if e["vt"] == "data" && e["gen"] == gen {
+                got.extend(decoded(&e));
+            }
+        }
+        got
+    }
+}
+
+#[tokio::test]
+async fn vt_streams_raw_bytes() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "pane.watch", vt_params()).await;
+    assert_eq!(r["result"]["format"], "vt", "{r}");
+    assert!(r["result"].get("drive").is_none());
+    let reset = sess.event().await;
+    assert_eq!(reset["vt"], "reset", "{reset}");
+    assert_eq!((reset["gen"].clone(), reset["seq"].clone()), (json!(1), json!(0)));
+    assert!(reset["cols"].as_u64().unwrap() > 0 && reset["rows"].as_u64().unwrap() > 0);
+    // The paint comes as it is: no emulator, no SGR rewrite.
+    assert_eq!(sess.vt_until(1, b"red").await, PAINT);
+    s.core.send(Ctl::Output(b"\r\n\x1b[42mnext".to_vec()));
+    assert_eq!(sess.vt_until(1, b"next").await, b"\r\n\x1b[42mnext");
+    assert!(s.core.calls_of("terminal.read").is_empty());
+}
+
+#[tokio::test]
+async fn vt_sequence_numbers_have_no_gap() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    sess.call(1, "pane.watch", vt_params()).await;
+    let mut seqs = vec![];
+    for i in 0..5 {
+        s.core.send(Ctl::Output(format!("line{i}\r\n").into_bytes()));
+    }
+    loop {
+        let e = sess.event().await;
+        seqs.push(e["seq"].as_u64().unwrap());
+        if e["vt"] == "data" && decoded(&e).windows(5).any(|w| w == b"line4") {
+            break;
+        }
+    }
+    let want: Vec<u64> = (0..seqs.len() as u64).collect();
+    assert_eq!(seqs, want);
+}
+
+#[tokio::test]
+async fn vt_is_passive_and_credits() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    sess.call(1, "pane.watch", vt_params()).await;
+    sess.vt_until(1, b"red").await;
+    s.core.send(Ctl::Output(b"\r\nmore output".to_vec()));
+    sess.vt_until(1, b"more").await;
+    let attach = &s.core.calls_of("terminal.attach")[0];
+    assert_eq!(attach["observe"], true);
+    assert_eq!(attach["history"], 50);
+    let frames = s.core.stream_frames();
+    assert!(frames.iter().all(|f| f.1 == 1 || f.1 == 2), "{frames:?}");
+    let credit: u32 = frames.iter().filter(|f| f.1 == 1).map(|f| u32::from_le_bytes(f.2[..4].try_into().unwrap())).sum();
+    assert_eq!(credit as usize, PAINT.len() + b"\r\nmore output".len());
+}
+
+#[tokio::test]
+async fn vt_reattach_resets_with_a_new_gen() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    sess.call(1, "pane.watch", vt_params()).await;
+    sess.vt_until(1, b"red").await;
+    s.core.state.lock().unwrap().paint = b"\x18\x1b[H\x1b[2Jback".to_vec();
+    s.core.send(Ctl::Drop);
+    loop {
+        let e = sess.event().await;
+        if e["vt"] == "reset" {
+            assert_eq!((e["gen"].clone(), e["seq"].clone()), (json!(2), json!(0)), "{e}");
+            break;
+        }
+    }
+    assert_eq!(sess.vt_until(2, b"back").await, b"\x18\x1b[H\x1b[2Jback");
+}
+
+#[tokio::test]
+async fn vt_resize_event() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    sess.call(1, "pane.watch", vt_params()).await;
+    sess.vt_until(1, b"red").await;
+    s.core.send(Ctl::Resize(100, 30));
+    loop {
+        let e = sess.event().await;
+        if e["vt"] == "resize" && e["cols"] == 100 {
+            assert_eq!(e["rows"], 30);
+            assert_eq!(e["gen"], 1);
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn vt_drive_mode() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "t1", "format": "vt", "cols": 45, "rows": 30})).await;
+    assert_eq!((r["result"]["drive"].clone(), r["result"]["format"].clone()), (json!(true), json!("vt")), "{r}");
+    assert_eq!(sess.event().await["vt"], "reset");
+    // The core takes the phone grid and says so with a RESIZE before the paint.
+    let resize = sess.event().await;
+    assert_eq!((resize["vt"].clone(), resize["cols"].clone(), resize["rows"].clone()), (json!("resize"), json!(45), json!(30)), "{resize}");
+    let attach = &s.core.calls_of("terminal.attach")[0];
+    assert_eq!((attach["observe"].clone(), attach["cols"].clone()), (json!(false), json!(45)));
+    sess.vt_until(1, b"red").await;
+    assert!(s.core.stream_frames().iter().all(|f| f.1 == 1 || f.1 == 2));
+}
+
+#[tokio::test]
+async fn vt_on_old_core_is_unsupported() {
+    let s = setup(false, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "pane.watch", vt_params()).await;
+    assert_eq!(r["error"]["code"], "unsupported", "{r}");
+    assert!(s.core.calls_of("terminal.read").is_empty());
+}
+
+#[tokio::test]
+async fn vt_unknown_pane_is_not_found() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "t99", "format": "vt"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
+}
+
+#[tokio::test]
+async fn hello_lists_watch_formats() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "hello", json!({})).await;
+    assert_eq!(r["result"]["watch_formats"], json!(["text", "ansi", "vt"]), "{r}");
+}

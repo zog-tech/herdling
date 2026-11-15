@@ -68,6 +68,10 @@ pub struct Hello {
     /// Agent kinds that `commands.list` answers for. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command_kinds: Vec<String>,
+    /// The `pane.watch` formats this herdlingd accepts (`vt`: the raw terminal stream). An older
+    /// herdlingd does not send the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub watch_formats: Vec<String>,
     /// When herdlingd starts: at boot or after the user logs in. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boot: Option<Boot>,
