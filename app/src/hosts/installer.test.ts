@@ -1,7 +1,7 @@
 jest.mock("../../modules/ssh", () => ({}));
 
 import type { PasswordExecOptions, PasswordExecResult } from "../../modules/ssh";
-import { INSTALL_COMMAND, INSTALL_TIMEOUT_MS, installCommand, parseInstallOutput, runInstaller } from "./installer";
+import { INSTALL_COMMAND, INSTALL_TIMEOUT_MS, installCommand, installMessage, parseInstallOutput, runInstaller } from "./installer";
 
 const FP = "SHA256:" + "a".repeat(43);
 const PASSWORD = "correct horse battery staple";
@@ -71,6 +71,12 @@ describe("HERDLINGD_BOOT", () => {
     expect(!r.ok && r.message).toContain("herdlingd was not installed");
     const ok = parseInstallOutput("HERDLINGD_STEP core\nHERDLINGD_STEP install\nHERDLINGD_INSTALLED 0.2.0\n", "", 0);
     expect(ok).toEqual({ ok: true, version: "0.2.0" });
+  });
+
+  it("names Herdr 2, not herdr 1, in the messages that ask for Herdr", () => {
+    expect(installMessage("no_herdr")).toContain("Herdr 2");
+    expect(installMessage("herdr_install_failed")).toContain("Herdr 2");
+    expect(installMessage("core_install_failed")).toContain("Herdr 2");
   });
 });
 

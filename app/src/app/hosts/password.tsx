@@ -38,30 +38,30 @@ function portOf(text: string): number | undefined {
 
 const STEP_TEXT: Record<SetupStep, string> = {
   connecting: "Connecting…",
-  installing: "Installing herdlingd. This can take a minute…",
-  installing_herdr: "Installing herdr and herdlingd. This can take a few minutes…",
+  installing: "Installing herdlingd. If the computer has no Herdr 2, this installs it too. This can take a few minutes…",
+  installing_herdr: "Installing Herdr 2 and herdlingd. This can take a few minutes…",
   pairing: "Adding this phone's key…",
 };
 
-/** The question when the computer has no herdr: what herdr is, who makes it, and two answers. */
+/** The question when the installer finds no Herdr: what Herdr 2 is, who makes it, and two answers. */
 function HerdrQuestion({ address, onAnswer }: { address: string; onAnswer: (yes: boolean) => void }) {
   return (
     <Card>
       <Text variant="headline" accessibilityRole="header">
-        herdr is not on {address}
+        Herdr 2 is not on {address}
       </Text>
       <Text variant="small" muted>
-        herdr is the terminal workspace that Herdling works with. Your agents run in herdr on the computer. herdr is made
-        by its own project, not by Zog Tech.
+        Herdr 2 is the terminal workspace that Herdling works with. Your agents run in Herdr 2 on the computer. Herdr 2
+        is made by its own project, not by Zog Tech.
       </Text>
       <Text variant="small" muted>
-        Herdling can run the official herdr installer (herdr.dev/install.sh) with the same password:{"\n"}• It downloads
-        herdr from herdr.dev and checks its checksum.{"\n"}• It installs herdr to ~/.local/bin.{"\n"}• It needs no admin
-        rights and does not use sudo.{"\n"}Then Herdling installs herdlingd and pairs.
+        Herdling can install it with the same password:{"\n"}• It downloads Herdr 2 and checks its checksum.{"\n"}• It
+        installs Herdr 2 for your user only.{"\n"}• It needs no admin rights and does not use sudo.{"\n"}Then Herdling
+        installs herdlingd and pairs.
       </Text>
-      <Button label="About herdr" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
+      <Button label="About Herdr" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
       <View style={{ gap: space.sm }}>
-        <Button label="Install herdr and herdlingd" Icon={Download} onPress={() => onAnswer(true)} />
+        <Button label="Install Herdr 2 and herdlingd" Icon={Download} onPress={() => onAnswer(true)} />
         <Button label="Cancel" variant="secondary" onPress={() => onAnswer(false)} />
       </View>
     </Card>
@@ -103,7 +103,7 @@ function InstallQuestion({ address, onAnswer }: { address: string; onAnswer: (ye
         no admin rights and does not use sudo.
       </Text>
       <Text variant="small" muted>
-        herdlingd needs herdr. If herdr is not on the computer, Herdling asks you before it installs herdr.
+        herdlingd needs Herdr 2. If Herdr 2 is not on the computer, the installer installs it first. It does not need herdr 1.
       </Text>
       <View style={{ gap: space.sm }}>
         <Button label="Install and pair" Icon={Download} onPress={() => onAnswer(true)} />
