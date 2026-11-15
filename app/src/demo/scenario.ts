@@ -13,7 +13,6 @@ import type {
   ThreadRef,
 } from "@herdling/protocol";
 
-import { isCore } from "@/herdr/backend";
 import type { AgentInfo, HerdrEvent, PaneInfo, Snapshot, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 import { baseName } from "@/newSession/paths";
 import type { FollowData } from "@/thread/followShared";
@@ -158,8 +157,8 @@ export class DemoScenario {
   private nextId = 1;
   private nextWs = 5;
   private nextTab = 10;
-  private nextPane = 10;
-  /** The group source of each Herdr 2 group that is not a Herdr app space (`hc:g:<key>`). */
+  private nextPane = 20;
+  /** The group source of each Herdr 2 group that is not a Herdr app space (`g:<key>`). */
   private groupSource = new Map<string, GroupSource>();
   /** `state_change_seq` grows from the launch time, so an agent that finished is "Ready" again after a relaunch. */
   private seq: number;
@@ -230,18 +229,17 @@ export class DemoScenario {
     };
   }
 
-  /** The Herdr 2 groups of `groups.list`: every `hc:` workspace with its source and counts. */
+  /** The Herdr 2 groups of `groups.list`: every workspace with its source and counts. */
   coreGroups(): CoreGroup[] {
     const snap = this.snapshot();
     return snap.workspaces
-      .filter((w) => isCore(w.workspace_id))
-      .map((w) => {
+            .map((w) => {
         const source = this.groupSource.get(w.workspace_id) ?? "space";
         return {
           workspace_id: w.workspace_id,
           label: w.label,
           source,
-          ...(source === "space" ? { space_id: w.workspace_id.replace(/^hc:space:/, "") } : {}),
+          ...(source === "space" ? { space_id: w.workspace_id.replace(/^space:/, "") } : {}),
           terminals: snap.panes.filter((x) => x.workspace_id === w.workspace_id).length,
           agents: snap.agents.filter((x) => x.workspace_id === w.workspace_id).length,
           agent_status: w.agent_status,
@@ -416,7 +414,7 @@ export class DemoScenario {
 
   createWorkspace(cwd: string, label?: string): { workspace: WorkspaceInfo; tab: TabInfo; root_pane: PaneInfo } {
     const ws: WorkspaceInfo = {
-      workspace_id: `w${this.nextWs++}`,
+      workspace_id: `space:${this.nextWs++}`,
       label: label || cwd.split("/").filter(Boolean).pop() || "workspace",
       number: this.workspaces.length + 1,
       agent_status: "unknown",
@@ -430,8 +428,8 @@ export class DemoScenario {
   createTab(workspaceId: string, cwd?: string): { tab: TabInfo; root_pane: PaneInfo } {
     this.workspaceExists(workspaceId);
     const number = this.tabs.filter((t) => t.workspace_id === workspaceId).length + 1;
-    const tab: TabInfo = { tab_id: `t${this.nextTab++}`, workspace_id: workspaceId, label: `tab ${number}`, number, agent_status: "unknown" };
-    const pane: PaneInfo = { pane_id: `p${this.nextPane++}`, tab_id: tab.tab_id, workspace_id: workspaceId, label: null, ...(cwd ? { cwd } : {}) };
+    const tab: TabInfo = { tab_id: `tab:${this.nextTab++}`, workspace_id: workspaceId, label: `tab ${number}`, number, agent_status: "unknown" };
+    const pane: PaneInfo = { pane_id: `t${this.nextPane++}`, tab_id: tab.tab_id, workspace_id: workspaceId, label: null, ...(cwd ? { cwd } : {}) };
     this.tabs.push(tab);
     this.panes.push(pane);
     this.emit({ event: "tab_created", data: { tab } });
@@ -600,7 +598,7 @@ export class DemoScenario {
    */
   movePane(paneId: string, target: { workspaceId?: string; newSpace?: boolean; group?: string }): { pane_id: string; workspace_id: string; tab_id: string } {
     const pane = this.panes.find((p) => p.pane_id === paneId);
-    if (!pane || !isCore(paneId)) throw new DemoError("pane_not_found", `pane ${paneId} not found`);
+    if (!pane) throw new DemoError("pane_not_found", `pane ${paneId} not found`);
     const from = pane.workspace_id;
     if (!this.groupSource.has(from)) throw new DemoError("unsupported", "this terminal is in a Herdr app space; move it in the Herdr app");
     const label = this.agents.get(paneId)?.info.name ?? pane.label ?? "terminal";
@@ -611,30 +609,30 @@ export class DemoScenario {
       if (src && src !== "label") throw new DemoError("unsupported", "a repo or folder group takes no terminal");
       wsId = ws.workspace_id;
     } else if (target.newSpace) {
-      wsId = `hc:space:${this.nextWs++}`;
+      wsId = `space:${this.nextWs++}`;
       const name = (pane.cwd ?? "").split("/").filter(Boolean).pop() || "space";
-      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown" });
     } else {
       const name = (target.group ?? "").trim();
       if (!name) {
         // No group name: the folder places the terminal again (its repo group).
         const repo = REPOS[pane.cwd ?? ""]?.repo ?? "terminals";
-        wsId = `hc:g:${repo}`;
+        wsId = `g:${repo}`;
         if (!this.workspaces.some((w) => w.workspace_id === wsId)) {
-          this.workspaces.push({ workspace_id: wsId, label: repo, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+          this.workspaces.push({ workspace_id: wsId, label: repo, number: this.workspaces.length + 1, agent_status: "unknown" });
           this.groupSource.set(wsId, "repo");
         }
       } else {
-        wsId = `hc:g:${name.toLowerCase()}`;
+        wsId = `g:${name.toLowerCase()}`;
         if (!this.workspaces.some((w) => w.workspace_id === wsId)) {
-          this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+          this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown" });
           this.groupSource.set(wsId, "label");
         }
       }
     }
-    const tabId = `hc:tab:${this.nextTab++}`;
+    const tabId = `tab:${this.nextTab++}`;
     const number = this.tabs.filter((t) => t.workspace_id === wsId).length + 1;
-    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label, number, agent_status: "unknown", backend: "core" });
+    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label, number, agent_status: "unknown" });
     const oldTab = pane.tab_id;
     pane.workspace_id = wsId;
     pane.tab_id = tabId;
@@ -646,7 +644,7 @@ export class DemoScenario {
       this.workspaces = this.workspaces.filter((w) => w.workspace_id !== from);
       this.groupSource.delete(from);
     }
-    this.emit({ event: "layout_updated", data: { backend: "core" } });
+    this.emit({ event: "layout_updated", data: {} });
     return { pane_id: paneId, workspace_id: wsId, tab_id: tabId };
   }
 
@@ -662,20 +660,20 @@ export class DemoScenario {
     if (!o.cwd.startsWith("/")) throw new DemoError("bad_request", "cwd must be an absolute path");
     let wsId = o.workspaceId;
     if (!wsId) {
-      wsId = `hc:space:${this.nextWs++}`;
+      wsId = `space:${this.nextWs++}`;
       const name = o.cwd.split("/").filter(Boolean).pop() || "space";
-      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown" });
     } else {
       this.workspaceExists(wsId);
     }
-    const tabId = `hc:tab:${this.nextTab++}`;
+    const tabId = `tab:${this.nextTab++}`;
     const number = this.tabs.filter((t) => t.workspace_id === wsId).length + 1;
-    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label: `tab ${number}`, number, agent_status: "unknown", backend: "core" });
-    const paneId = `hc:t${this.nextPane++}`;
-    this.panes.push({ pane_id: paneId, tab_id: tabId, workspace_id: wsId, label: null, cwd: o.cwd, backend: "core" });
+    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label: `tab ${number}`, number, agent_status: "unknown" });
+    const paneId = `t${this.nextPane++}`;
+    this.panes.push({ pane_id: paneId, tab_id: tabId, workspace_id: wsId, label: null, cwd: o.cwd });
     this.startAgent(paneId, o.kind, undefined, o.args, o.cwd);
     if (o.prompt?.trim()) this.prompt(paneId, o.prompt);
-    this.emit({ event: "layout_updated", data: { backend: "core" } });
+    this.emit({ event: "layout_updated", data: {} });
     return { pane_id: paneId, workspace_id: wsId, tab_id: tabId };
   }
 
@@ -971,7 +969,6 @@ export class DemoScenario {
         terminal_title_stripped: o.title,
         name: o.name,
         ...(o.displayAgent ? { display_agent: o.displayAgent } : {}),
-        ...(isCore(o.pane) ? { backend: "core" as const } : {}),
       },
       log: `demo://${session}.jsonl`,
       session,
@@ -987,26 +984,26 @@ export class DemoScenario {
   }
 
   /**
-   * The starting state: 4 workspaces (two of them a worktree group), 9 tabs, 5 agents and 4 shells
+   * The starting state of the older entries: 4 workspaces (two of them a worktree group), 9 tabs, 5 agents and 4 shells
    * (one runs a dev server). Then one Herdr 2 space with 2 agents (`seedCore`).
    */
   private seed(): void {
     const now = Date.now();
     const min = 60_000;
     this.workspaces = [
-      { workspace_id: "w1", label: "webapp", number: 1, agent_status: "unknown" },
-      { workspace_id: "w2", label: "api-server", number: 2, agent_status: "unknown" },
+      { workspace_id: "space:1", label: "webapp", number: 1, agent_status: "unknown" },
+      { workspace_id: "space:2", label: "api-server", number: 2, agent_status: "unknown" },
       // A worktree group (herdr 0.9): the docs site and one linked worktree. Closing the last
       // pane of "docs-site" asks to close the group.
       {
-        workspace_id: "w3",
+        workspace_id: "space:3",
         label: "docs-site",
         number: 3,
         agent_status: "unknown",
         worktree: { repo_key: DOCS, repo_name: "docs-site", repo_root: DOCS, checkout_path: DOCS, is_linked_worktree: false },
       },
       {
-        workspace_id: "w4",
+        workspace_id: "space:4",
         label: "docs-site · fix-links",
         number: 4,
         agent_status: "unknown",
@@ -1021,39 +1018,39 @@ export class DemoScenario {
       agent_status: "unknown",
     });
     this.tabs = [
-      tab("t1", "w1", "login form", 1),
-      tab("t2", "w1", "tests", 2),
-      tab("t3", "w1", "readme", 3),
-      tab("t4", "w2", "validation", 1),
-      tab("t5", "w2", "docs", 2),
-      tab("t6", "w1", "shell", 4),
-      tab("t7", "w2", "dev server", 3),
-      tab("t8", "w3", "shell", 1),
-      tab("t9", "w4", "shell", 1),
+      tab("tab:1", "space:1", "login form", 1),
+      tab("tab:2", "space:1", "tests", 2),
+      tab("tab:3", "space:1", "readme", 3),
+      tab("tab:4", "space:2", "validation", 1),
+      tab("tab:5", "space:2", "docs", 2),
+      tab("tab:6", "space:1", "shell", 4),
+      tab("tab:7", "space:2", "dev server", 3),
+      tab("tab:8", "space:3", "shell", 1),
+      tab("tab:9", "space:4", "shell", 1),
     ];
-    const pane = (n: number, tabId: string, ws: string): PaneInfo => ({ pane_id: `p${n}`, tab_id: tabId, workspace_id: ws, label: null });
-    this.panes = [pane(1, "t1", "w1"), pane(2, "t4", "w2"), pane(3, "t2", "w1"), pane(4, "t5", "w2"), pane(5, "t3", "w1")];
+    const pane = (n: number, tabId: string, ws: string): PaneInfo => ({ pane_id: `t${n}`, tab_id: tabId, workspace_id: ws, label: null });
+    this.panes = [pane(1, "tab:1", "space:1"), pane(2, "tab:4", "space:2"), pane(3, "tab:2", "space:1"), pane(4, "tab:5", "space:2"), pane(5, "tab:3", "space:1")];
     // 6. A plain shell with no agent in the web app (the board lists it under Terminals).
-    this.panes.push({ ...pane(6, "t6", "w1"), cwd: WEBAPP });
-    this.shells.set("p6", {
+    this.panes.push({ ...pane(6, "tab:6", "space:1"), cwd: WEBAPP });
+    this.shells.set("t6", {
       lines: ["$ git status", "On branch main", "Your branch is up to date with 'origin/main'.", "", "nothing to commit, working tree clean"],
       input: "",
     });
     // 7. A shell that runs a dev server: the board shows "Running: pnpm dev".
-    this.panes.push({ ...pane(7, "t7", "w2"), cwd: API });
-    this.shells.set("p7", {
+    this.panes.push({ ...pane(7, "tab:7", "space:2"), cwd: API });
+    this.shells.set("t7", {
       lines: ["$ pnpm dev", "", "> api-server@0.4.0 dev /home/demo/projects/api-server", "> tsx watch src/index.ts", "", "Server listening on http://localhost:3000"],
       input: "",
       running: { pid: 5150, name: "node", argv: ["pnpm", "dev"] },
     });
     // 8 and 9. Shells in the worktree group: the docs site and its "fix-links" worktree.
-    this.panes.push({ ...pane(8, "t8", "w3"), cwd: DOCS });
-    this.shells.set("p8", {
+    this.panes.push({ ...pane(8, "tab:8", "space:3"), cwd: DOCS });
+    this.shells.set("t8", {
       lines: ["$ git worktree list", `${DOCS}             a1c3e5f [main]`, `${DOCS_LINKS}  7b9d2e4 [fix-links]`],
       input: "",
     });
-    this.panes.push({ ...pane(9, "t9", "w4"), cwd: DOCS_LINKS });
-    this.shells.set("p9", { lines: ["$ git status --short", " M content/guide/install.md"], input: "" });
+    this.panes.push({ ...pane(9, "tab:9", "space:4"), cwd: DOCS_LINKS });
+    this.shells.set("t9", { lines: ["$ git status --short", " M content/guide/install.md"], input: "" });
 
     // 1. Claude, working: fixes the login form, with a running subagent.
     const p1 = this.addAgent({
@@ -1110,7 +1107,7 @@ export class DemoScenario {
     p1.items.push(subItem);
     const sub: Subagent = {
       log: `demo://${p1.session}/subagents/${subId}.jsonl`,
-      parentPane: "p1",
+      parentPane: "t1",
       agentId: subId,
       running: true,
       items: [
@@ -1206,17 +1203,16 @@ export class DemoScenario {
   }
 
   /**
-   * Herdr 2 (herdr-core), as herdlingd merges it into the snapshot: one Herdr app space with two
+   * Herdr 2 (herdr-core), as herdlingd 0.2.0 sends it: one Herdr app space with two
    * agents and a helper, and one agent in no space (a repo group) that can move to a space. The
-   * ids start with `hc:` and every entry has `backend: "core"`.
+   * ids follow the 0.2.0 scheme (`space:`, `g:`, `tab:`, `task:`, a plain pane id) and no entry has a `backend` field.
    */
   private seedCore(now: number): void {
     const min = 60_000;
-    const core = { backend: "core" as const };
-    this.workspaces.push({ workspace_id: "hc:space:1", label: "research", number: 5, agent_status: "unknown", ...core });
-    this.tabs.push({ tab_id: "hc:tab:1", workspace_id: "hc:space:1", label: "agents", number: 1, agent_status: "unknown", ...core });
-    const pane = (id: string, cwd: string): PaneInfo => ({ pane_id: id, tab_id: "hc:tab:1", workspace_id: "hc:space:1", label: null, cwd, ...core });
-    this.panes.push(pane("hc:t1", WEBAPP), pane("hc:t2", API));
+    this.workspaces.push({ workspace_id: "space:r1", label: "research", number: 5, agent_status: "unknown" });
+    this.tabs.push({ tab_id: "tab:a1", workspace_id: "space:r1", label: "agents", number: 1, agent_status: "unknown" });
+    const pane = (id: string, cwd: string): PaneInfo => ({ pane_id: id, tab_id: "tab:a1", workspace_id: "space:r1", label: null, cwd });
+    this.panes.push(pane("t11", WEBAPP), pane("t12", API));
     // 10. Claude in Herdr 2, ready: it answered a question about the bundle size.
     const c1 = this.addAgent({
       pane: this.panes[this.panes.length - 2],
@@ -1249,7 +1245,7 @@ export class DemoScenario {
     });
     c2.since = now - 90 * min;
     // 12. A helper of the bundle task: it works under its task, not as a card of its own.
-    this.panes.push(pane("hc:t3", WEBAPP));
+    this.panes.push(pane("t13", WEBAPP));
     const c3 = this.addAgent({
       pane: this.panes[this.panes.length - 1],
       kind: "claude",
@@ -1257,16 +1253,16 @@ export class DemoScenario {
       cwd: WEBAPP,
       status: "working",
       seq: this.bump(),
-      parentId: "hc:t1",
+      parentId: "t11",
       items: [{ kind: "user", id: this.id(), ts: now - 5 * min, text: "Find every import of the chart library." }],
     });
     c3.since = now - 5 * min;
     c3.activity = "Searching imports";
     // 13. An agent in no Herdr app space: herdlingd groups it by its repo. "Move to space" works on it.
-    this.workspaces.push({ workspace_id: "hc:g:api-server", label: "api-server", number: 6, agent_status: "unknown", ...core });
-    this.groupSource.set("hc:g:api-server", "repo");
-    this.tabs.push({ tab_id: "hc:task:t4", workspace_id: "hc:g:api-server", label: "Retry jitter", number: 1, agent_status: "unknown", ...core });
-    this.panes.push({ pane_id: "hc:t4", tab_id: "hc:task:t4", workspace_id: "hc:g:api-server", label: "Retry jitter", cwd: API, ...core });
+    this.workspaces.push({ workspace_id: "g:api-server", label: "api-server", number: 6, agent_status: "unknown" });
+    this.groupSource.set("g:api-server", "repo");
+    this.tabs.push({ tab_id: "task:t14", workspace_id: "g:api-server", label: "Retry jitter", number: 1, agent_status: "unknown" });
+    this.panes.push({ pane_id: "t14", tab_id: "task:t14", workspace_id: "g:api-server", label: "Retry jitter", cwd: API });
     const c4 = this.addAgent({
       pane: this.panes[this.panes.length - 1],
       kind: "codex",
@@ -1284,8 +1280,8 @@ export class DemoScenario {
 
   /** The scripts that run without user input: the working agent advances, the blocked one asks. */
   private play(): void {
-    const p1 = this.agents.get("p1")!;
-    const p2 = this.agents.get("p2")!;
+    const p1 = this.agents.get("t1")!;
+    const p2 = this.agents.get("t2")!;
     const sub = [...this.subagents.values()][0];
     const subItemId = p1.items.find((i) => i.kind === "subagent")!.id;
     const updateSub = (patch: Partial<Extract<ThreadItem, { kind: "subagent" }>>) => {
@@ -1296,9 +1292,9 @@ export class DemoScenario {
       this.put(sub.log, sub.items, tool(this.id(), Date.now(), name, summary, { summary }, result), { agent_running: sub.running });
 
     this.clock.after(3_000, () => {
-      if (p2.question && this.agents.get("p2") === p2) {
+      if (p2.question && this.agents.get("t2") === p2) {
         const q = p2.question;
-        this.onNotice?.({ kind: "needs_you", paneId: "p2", title: "Codex needs you · api-server", body: q.prompt, choices: q.choices });
+        this.onNotice?.({ kind: "needs_you", paneId: "t2", title: "Codex needs you · api-server", body: q.prompt, choices: q.choices });
       }
     });
 

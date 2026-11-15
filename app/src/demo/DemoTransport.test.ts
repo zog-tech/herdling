@@ -38,6 +38,7 @@ import type {
 } from "@herdling/protocol";
 
 import { parseDiff } from "@/changes/diff";
+import { coreOnly } from "@/herdr/backend";
 import { explainView, parseExplain } from "@/herdr/explain";
 import { isGroupCloseRefusal, linkedWorktreeCount } from "@/herdr/groupClose";
 import { parseIntegrations } from "@/herdr/integrations";
@@ -99,40 +100,42 @@ describe("DemoTransport", () => {
     expect(h.boot).toEqual({ starts_at: "boot", how: expect.any(String), reason: "auto_login_on" });
   });
 
-  it("hello advertises herdr 1 and Herdr 2 backends", async () => {
+  it("hello acts as herdlingd 0.2.0: only the Herdr 2 backend", async () => {
     const h = await call<Hello>("hello");
-    expect(h.backends).toEqual({ herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } });
+    expect(h.herdlingd).toBe("0.2.0");
+    expect(coreOnly(h)).toBe(true);
+    expect(h.backends).toEqual({ core: { version: "demo", generation: 1 } });
   });
 
   it("answers the herdr methods on a Herdr 2 pane as a plan C herdlingd", async () => {
-    const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "hc:t1" });
+    const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "t11" });
     expect(read.read.text).toContain("Claude");
-    await herdr("pane.send_keys", { pane_id: "hc:t2", keys: ["enter"] });
-    await herdr("pane.send_input", { pane_id: "hc:t2", text: "", keys: ["enter"] });
-    await herdr("agent.prompt", { target: "hc:t2", text: "List the routes" });
-    expect(await herdr("pane.get", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_info" });
-    expect(await herdr("pane.process_info", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_process_info" });
+    await herdr("pane.send_keys", { pane_id: "t12", keys: ["enter"] });
+    await herdr("pane.send_input", { pane_id: "t12", text: "", keys: ["enter"] });
+    await herdr("agent.prompt", { target: "t12", text: "List the routes" });
+    expect(await herdr("pane.get", { pane_id: "t11" })).toMatchObject({ type: "pane_info" });
+    expect(await herdr("pane.process_info", { pane_id: "t11" })).toMatchObject({ type: "pane_process_info" });
     // Herdr 2 agents have a chat transcript.
-    expect(await call<ThreadRef>("thread.resolve", { pane_id: "hc:t1" })).toMatchObject({ kind: "claude", log_path: expect.stringMatching(/^demo:/) });
-    expect(await call<GitStatus>("git.status", { pane_id: "hc:t1" })).toMatchObject({ root: expect.any(String) });
+    expect(await call<ThreadRef>("thread.resolve", { pane_id: "t11" })).toMatchObject({ kind: "claude", log_path: expect.stringMatching(/^demo:/) });
+    expect(await call<GitStatus>("git.status", { pane_id: "t11" })).toMatchObject({ root: expect.any(String) });
     // The Herdr app owns the names of its spaces and tabs.
     for (const [method, params] of [
-      ["tab.rename", { tab_id: "hc:tab:1", label: "x" }],
-      ["workspace.rename", { workspace_id: "hc:space:1", label: "x" }],
+      ["tab.rename", { tab_id: "tab:a1", label: "x" }],
+      ["workspace.rename", { workspace_id: "space:r1", label: "x" }],
     ] as const) {
       expect((await callError("herdr.call", { method, params })).code).toBe("unsupported");
     }
     // The other actions work: a task name, a new tab in the space, an agent in it, explain.
-    await herdr("agent.rename", { target: "hc:t1", name: "Bundle size check" });
-    const created = await herdr<{ root_pane: { pane_id: string } }>("tab.create", { workspace_id: "hc:space:1", cwd: "/home/demo/projects/webapp" });
+    await herdr("agent.rename", { target: "t11", name: "Bundle size check" });
+    const created = await herdr<{ root_pane: { pane_id: string } }>("tab.create", { workspace_id: "space:r1", cwd: "/home/demo/projects/webapp" });
     await herdr("agent.start", { pane_id: created.root_pane.pane_id, kind: "claude" });
-    expect(await herdr("agent.explain", { target: "hc:t1" })).toBeTruthy();
-    expect(await call<ShellWatch>("shell.watch", { pane_id: "hc:t1" })).toMatchObject({ pane_id: "hc:t1" });
+    expect(await herdr("agent.explain", { target: "t11" })).toBeTruthy();
+    expect(await call<ShellWatch>("shell.watch", { pane_id: "t11" })).toMatchObject({ pane_id: "t11" });
     // Pane close works, and the snapshot loses the pane.
-    await herdr("pane.close", { pane_id: "hc:t2" });
+    await herdr("pane.close", { pane_id: "t12" });
     const snap = parseSnapshot(await herdr("session.snapshot"));
-    expect(snap.panes.some((p) => p.pane_id === "hc:t2")).toBe(false);
-    expect(snap.agents.some((a) => a.pane_id === "hc:t1")).toBe(true);
+    expect(snap.panes.some((p) => p.pane_id === "t12")).toBe(false);
+    expect(snap.agents.some((a) => a.pane_id === "t11")).toBe(true);
   });
 
   it("answers every advertised method with a valid shape (or a proper error)", async () => {
@@ -148,7 +151,7 @@ describe("DemoTransport", () => {
     expect(snap.agents.length).toBeGreaterThanOrEqual(4);
     for (const a of snap.agents) expect(typeof a.state_change_seq).toBe("number");
 
-    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "p1" }).then(ok("thread.resolve"));
+    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "t1" }).then(ok("thread.resolve"));
     expect(ref).toMatchObject({ kind: "claude", log_path: expect.any(String), session: expect.any(String) });
 
     const page = await call<ThreadPage>("thread.get", { log_path: ref.log_path, limit: 3 }).then(ok("thread.get"));
@@ -169,7 +172,7 @@ describe("DemoTransport", () => {
     unfollow();
     const unsub = await stream("herdr.subscribe", {}).then(ok("herdr.subscribe"));
     unsub();
-    const unwatch = await stream("pane.watch", { pane_id: "p1", format: "ansi" }).then(ok("pane.watch"));
+    const unwatch = await stream("pane.watch", { pane_id: "t1", format: "ansi" }).then(ok("pane.watch"));
     unwatch();
     await jest.advanceTimersByTimeAsync(100);
     answered.add("rpc.cancel");
@@ -203,7 +206,7 @@ describe("DemoTransport", () => {
     expect(agents.missing).not.toContain("claude");
 
     // A wrong label sends nothing (the full flow is in its own test, because it ends the p2 question).
-    expect(await callError("pane.answer", { pane_id: "p2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "t2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
     answered.add("pane.answer");
 
     expect(await call("push.register", {}).then(ok("push.register"))).toEqual({});
@@ -228,18 +231,18 @@ describe("DemoTransport", () => {
     expect(after.automations.find((a) => a.id === pending.id)).toMatchObject({ pending_approval: false, enabled: true });
 
     const { previews } = await call<{ previews: AgentPreview[] }>("agents.preview").then(ok("agents.preview"));
-    expect(previews.find((p) => p.pane_id === "p2")?.question).toBeTruthy();
-    expect(previews.find((p) => p.pane_id === "p1")?.activity).toBeTruthy();
+    expect(previews.find((p) => p.pane_id === "t2")?.question).toBeTruthy();
+    expect(previews.find((p) => p.pane_id === "t1")?.activity).toBeTruthy();
 
     for (const kind of [undefined, "codex", "pi", "opencode"]) {
-      const list = await call<CommandList>("commands.list", { pane_id: "p1", ...(kind ? { kind } : {}) }).then(ok("commands.list"));
+      const list = await call<CommandList>("commands.list", { pane_id: "t1", ...(kind ? { kind } : {}) }).then(ok("commands.list"));
       expect(list.commands.length).toBeGreaterThan(0);
     }
 
     const put = await call<FilePut>("files.put", { name: "screen shot.png", data_b64: "AAAA" }).then(ok("files.put"));
     expect(put.path).toMatch(/^~\/\.cache\/herdling\/uploads\/.*screen_shot\.png$/);
 
-    const status = await call<GitStatus>("git.status", { pane_id: "p1" }).then(ok("git.status"));
+    const status = await call<GitStatus>("git.status", { pane_id: "t1" }).then(ok("git.status"));
     expect(status).toMatchObject({ is_repo: true, branch: expect.any(String) });
     expect(status.files.length).toBeGreaterThan(2);
     const changed = status.files.find((f) => f.status === "M" && !f.binary)!;
@@ -271,8 +274,8 @@ describe("DemoTransport", () => {
     answered.add("hello");
 
     // The browser preview: the pane's dev server first, a grant for a listed port only.
-    const ports = await call<PortsList>("ports.list", { pane_id: "p1" }).then(ok("ports.list"));
-    expect(ports.ports[0]).toMatchObject({ port: 5173, cmd: "vite", pane_id: "p1" });
+    const ports = await call<PortsList>("ports.list", { pane_id: "t1" }).then(ok("ports.list"));
+    expect(ports.ports[0]).toMatchObject({ port: 5173, cmd: "vite", pane_id: "t1" });
     const open = await call<PreviewOpen>("preview.open", { port: 5173 }).then(ok("preview.open"));
     expect(open.grant).toMatch(/^[0-9a-f]{32}$/);
     expect(await callError("preview.open", { port: 4444 })).toMatchObject({ code: "port_not_listening" });
@@ -281,26 +284,30 @@ describe("DemoTransport", () => {
     expect(await callError("preview.close", { grant: "../x" })).toMatchObject({ code: "grant_invalid" });
 
     // "Notify me when it finishes": the demo keeps the watch and sends no push.
-    expect(await call<ShellWatch>("shell.watch", { pane_id: "p1" }).then(ok("shell.watch"))).toMatchObject({ pane_id: "p1", busy: false });
-    expect(await call<ShellWatches>("shell.watches").then(ok("shell.watches"))).toMatchObject({ watches: [{ pane_id: "p1" }] });
-    expect(await call<ShellUnwatch>("shell.unwatch", { pane_id: "p1" }).then(ok("shell.unwatch"))).toEqual({ removed: true });
+    expect(await call<ShellWatch>("shell.watch", { pane_id: "t1" }).then(ok("shell.watch"))).toMatchObject({ pane_id: "t1", busy: false });
+    expect(await call<ShellWatches>("shell.watches").then(ok("shell.watches"))).toMatchObject({ watches: [{ pane_id: "t1" }] });
+    expect(await call<ShellUnwatch>("shell.unwatch", { pane_id: "t1" }).then(ok("shell.unwatch"))).toEqual({ removed: true });
     expect(await callError("shell.watch", {})).toMatchObject({ code: "bad_request" });
 
     // Herdr 2 groups: the demo lists its space and its repo group. A terminal in a space does not move.
     const groups = await call<GroupsList>("groups.list").then(ok("groups.list"));
     expect(groups.groups.map((g) => [g.workspace_id, g.source])).toEqual([
-      ["hc:space:1", "space"],
-      ["hc:g:api-server", "repo"],
+      ["space:1", "space"],
+      ["space:2", "space"],
+      ["space:3", "space"],
+      ["space:4", "space"],
+      ["space:r1", "space"],
+      ["g:api-server", "repo"],
     ]);
-    expect(groups.groups[0]).toMatchObject({ space_id: "1", agents: 3 });
-    expect(await callError("pane.move", { pane_id: "hc:t1", new_space: true })).toMatchObject({ code: "unsupported" });
-    expect(await callError("pane.move", { pane_id: "hc:t4" })).toMatchObject({ code: "bad_request" });
-    const moved = await call<PaneMove>("pane.move", { pane_id: "hc:t4", workspace_id: "hc:space:1" }).then(ok("pane.move"));
-    expect(moved).toMatchObject({ pane_id: "hc:t4", workspace_id: "hc:space:1" });
+    expect(groups.groups[4]).toMatchObject({ space_id: "r1", agents: 3 });
+    expect(await callError("pane.move", { pane_id: "t11", new_space: true })).toMatchObject({ code: "unsupported" });
+    expect(await callError("pane.move", { pane_id: "t14" })).toMatchObject({ code: "bad_request" });
+    const moved = await call<PaneMove>("pane.move", { pane_id: "t14", workspace_id: "space:r1" }).then(ok("pane.move"));
+    expect(moved).toMatchObject({ pane_id: "t14", workspace_id: "space:r1" });
     // The repo group was empty after the move, so it went away.
-    expect((await call<GroupsList>("groups.list")).groups.map((g) => g.workspace_id)).toEqual(["hc:space:1"]);
+    expect((await call<GroupsList>("groups.list")).groups.map((g) => g.workspace_id)).not.toContain("g:api-server");
     const started = await call<SessionStart>("session.start", { cwd: "/home/demo/projects/webapp", kind: "claude", prompt: "Hello" }).then(ok("session.start"));
-    expect(started).toMatchObject({ pane_id: expect.stringMatching(/^hc:t/), workspace_id: expect.stringMatching(/^hc:space:/), prompt_error: null });
+    expect(started).toMatchObject({ pane_id: expect.stringMatching(/^t\d+$/), workspace_id: expect.stringMatching(/^space:/), prompt_error: null });
     const snapAfter = parseSnapshot(await herdr("session.snapshot"));
     expect(snapAfter.agents.find((a) => a.pane_id === started.pane_id)).toMatchObject({ agent: "claude", group: "webapp", group_source: "space" });
 
@@ -317,26 +324,26 @@ describe("DemoTransport", () => {
 
   it("pane.answer checks the menu like herdlingd, then answers", async () => {
     // The blocked Codex agent (p2) asks Yes / … / No. A changed label or a wrong key sends nothing.
-    expect(await callError("pane.answer", { pane_id: "p2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
-    expect(await callError("pane.answer", { pane_id: "p1", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
-    expect(await callError("pane.answer", { pane_id: "p2", key: "x", expect_label: "Yes" })).toMatchObject({ code: "bad_request" });
+    expect(await callError("pane.answer", { pane_id: "t2", key: "3", expect_label: "No" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "t1", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "t2", key: "x", expect_label: "Yes" })).toMatchObject({ code: "bad_request" });
     expect(await callError("pane.answer", { pane_id: "nope", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
-    expect(await call<PaneAnswer>("pane.answer", { pane_id: "p2", key: "1", expect_label: "Yes" })).toEqual({
+    expect(await call<PaneAnswer>("pane.answer", { pane_id: "t2", key: "1", expect_label: "Yes" })).toEqual({
       answered: true,
     });
     // Answered: the menu is gone, so the same answer again is stale.
-    expect(await callError("pane.answer", { pane_id: "p2", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
+    expect(await callError("pane.answer", { pane_id: "t2", key: "1", expect_label: "Yes" })).toMatchObject({ code: "stale" });
   });
 
   it("pane.watch sends the screen at once, then only new screens", async () => {
     const events: { text?: string; error?: string }[] = [];
-    const p = rpc.stream<{ text?: string }>("pane.watch", { pane_id: "p1", format: "text" }, (d) => events.push(d));
+    const p = rpc.stream<{ text?: string }>("pane.watch", { pane_id: "t1", format: "text" }, (d) => events.push(d));
     await jest.advanceTimersByTimeAsync(100);
     const off = await p;
     expect(events).toHaveLength(1);
     expect(events[0].text).toContain("Claude");
     // Typed text shows in the agent's input box.
-    await herdr("pane.send_input", { pane_id: "p1", text: "Add tests" });
+    await herdr("pane.send_input", { pane_id: "t1", text: "Add tests" });
     await jest.advanceTimersByTimeAsync(400);
     expect(events.length).toBeGreaterThan(1);
     expect(events.at(-1)?.text).toContain("Add tests");
@@ -348,15 +355,15 @@ describe("DemoTransport", () => {
   });
 
   it("answers pane.process_info: one demo terminal runs pnpm dev", async () => {
-    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "p6" }))).toEqual({ kind: "idle" });
-    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "p7" }))).toEqual({ kind: "running", command: "pnpm dev" });
+    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "t6" }))).toEqual({ kind: "idle" });
+    expect(terminalStatus(await herdr<ProcessInfo>("pane.process_info", { pane_id: "t7" }))).toEqual({ kind: "running", command: "pnpm dev" });
     expect(await callError("herdr.call", { method: "pane.process_info", params: { pane_id: "nope" } })).toMatchObject({ code: "not_found" });
   });
 
   it("answers herdr methods used by the app", async () => {
-    const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p2", source: "visible", format: "text" });
+    const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "t2", source: "visible", format: "text" });
     expect(read.read.text).toContain("1. Yes");
-    const ansi = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p1", source: "recent", format: "ansi", lines: 200 });
+    const ansi = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "t1", source: "recent", format: "ansi", lines: 200 });
     expect(ansi.read.text).toContain("\x1b[");
 
     const created = await herdr<{ workspace: { workspace_id: string }; tab: { tab_id: string }; root_pane: { pane_id: string } }>("workspace.create", {
@@ -368,8 +375,8 @@ describe("DemoTransport", () => {
     await herdr("agent.start", { name: "docs-site-p6", kind: "pi", pane_id: created.root_pane.pane_id });
     await herdr("agent.prompt", { target: created.root_pane.pane_id, text: "Fix the links" });
     await herdr("agent.rename", { target: created.root_pane.pane_id, name: "links" });
-    await herdr("tab.rename", { tab_id: created.tab.tab_id, label: "links" });
-    await herdr("workspace.rename", { workspace_id: created.workspace.workspace_id, label: "docs" });
+    // The Herdr app owns the names of its tabs and spaces.
+    expect(await callError("herdr.call", { method: "tab.rename", params: { tab_id: created.tab.tab_id, label: "links" } })).toMatchObject({ code: "unsupported" });
     const tab = await herdr<{ root_pane: { pane_id: string } }>("tab.create", { workspace_id: created.workspace.workspace_id, cwd: "/home/demo" });
     await herdr("pane.send_text", { pane_id: tab.root_pane.pane_id, text: "ls" });
     await herdr("pane.send_keys", { pane_id: tab.root_pane.pane_id, keys: ["Enter"] });
@@ -381,15 +388,15 @@ describe("DemoTransport", () => {
   });
 
   it("accepts page keys and acts as a full-screen app on an agent pane", async () => {
-    const before = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p1", format: "text" });
-    await herdr("pane.send_input", { pane_id: "p1", text: "\x1b[5~" });
-    await herdr("pane.send_text", { pane_id: "p1", text: "\x1b[6~" });
-    const after = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "p1", format: "text" });
+    const before = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "t1", format: "text" });
+    await herdr("pane.send_input", { pane_id: "t1", text: "\x1b[5~" });
+    await herdr("pane.send_text", { pane_id: "t1", text: "\x1b[6~" });
+    const after = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "t1", format: "text" });
     // The keys type nothing into the agent's input box.
     expect(after.read.text).toBe(before.read.text);
     const rows = after.read.text.split("\n").length;
-    expect(await herdr("pane.get", { pane_id: "p1" })).toMatchObject({
-      pane: { pane_id: "p1", scroll: { max_offset_from_bottom: 0, viewport_rows: rows } },
+    expect(await herdr("pane.get", { pane_id: "t1" })).toMatchObject({
+      pane: { pane_id: "t1", scroll: { max_offset_from_bottom: 0, viewport_rows: rows } },
     });
   });
 
@@ -416,7 +423,7 @@ describe("DemoTransport", () => {
       await jest.advanceTimersByTimeAsync(100);
       return p;
     })();
-    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "p2" });
+    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "t2" });
     const page = await call<ThreadPage>("thread.get", { log_path: ref.log_path, limit: 40 });
     const p = rpc.stream<FollowData>("thread.follow", { log_path: ref.log_path, from: page.end }, (d) => {
       if ("items" in d) items.push(...d.items);
@@ -425,26 +432,26 @@ describe("DemoTransport", () => {
     await p;
 
     // Answer the permission menu: status event, then streamed thread items.
-    await herdr("pane.send_keys", { pane_id: "p2", keys: ["1"] });
-    expect(events).toContainEqual({ event: "pane_agent_status_changed", data: { pane_id: "p2", agent_status: "working" } });
+    await herdr("pane.send_keys", { pane_id: "t2", keys: ["1"] });
+    expect(events).toContainEqual({ event: "pane_agent_status_changed", data: { pane_id: "t2", agent_status: "working" } });
     await jest.advanceTimersByTimeAsync(30_000);
-    expect(events).toContainEqual({ event: "pane_agent_status_changed", data: { pane_id: "p2", agent_status: "done" } });
+    expect(events).toContainEqual({ event: "pane_agent_status_changed", data: { pane_id: "t2", agent_status: "done" } });
     expect(items.some((i) => i.kind === "assistant")).toBe(true);
 
     unsub();
     await jest.advanceTimersByTimeAsync(100);
     const count = events.length;
-    await herdr("agent.prompt", { target: "p3", text: "again" });
+    await herdr("agent.prompt", { target: "t3", text: "again" });
     await jest.advanceTimersByTimeAsync(10_000);
     expect(events.length).toBe(count);
   });
 
   it("pauses the scenario while inactive and stops all timers on close", async () => {
     transport.setActive(false);
-    const before = (await call<ThreadPage>("thread.get", { log_path: (await call<ThreadRef>("thread.resolve", { pane_id: "p1" })).log_path, limit: 99 }))
+    const before = (await call<ThreadPage>("thread.get", { log_path: (await call<ThreadRef>("thread.resolve", { pane_id: "t1" })).log_path, limit: 99 }))
       .items.length;
     await jest.advanceTimersByTimeAsync(60_000);
-    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "p1" });
+    const ref = await call<ThreadRef>("thread.resolve", { pane_id: "t1" });
     expect((await call<ThreadPage>("thread.get", { log_path: ref.log_path, limit: 99 })).items.length).toBe(before);
     transport.setActive(true);
     await jest.advanceTimersByTimeAsync(10_000);
@@ -473,26 +480,26 @@ describe("DemoTransport herdr 0.9 features", () => {
   });
 
   it("explains the status of an agent", async () => {
-    const v = explainView(parseExplain(await herdr("agent.explain", { target: "p1" })));
+    const v = explainView(parseExplain(await herdr("agent.explain", { target: "t1" })));
     expect(v.summary).toBe("herdr shows this agent as working.");
     expect(v.matched[0].id).toBe("osc_title_working");
-    const blocked = explainView(parseExplain(await herdr("agent.explain", { target: "p2" })));
+    const blocked = explainView(parseExplain(await herdr("agent.explain", { target: "t2" })));
     expect(blocked.summary).toBe("herdr shows this agent as needs you.");
-    expect((await callError("herdr.call", { method: "agent.explain", params: { target: "p6" } })).code).toBe("agent_not_found");
+    expect((await callError("herdr.call", { method: "agent.explain", params: { target: "t6" } })).code).toBe("agent_not_found");
   });
 
   it("refuses to close the last pane of a worktree group, and closes the group with close_group", async () => {
     const ws = await herdr<{ workspaces: unknown[] }>("workspace.list");
-    expect(linkedWorktreeCount(ws, "w3")).toBe(1);
-    const refusal = await callError("herdr.call", { method: "pane.close", params: { pane_id: "p8" } });
+    expect(linkedWorktreeCount(ws, "space:3")).toBe(1);
+    const refusal = await callError("herdr.call", { method: "pane.close", params: { pane_id: "t8" } });
     expect(isGroupCloseRefusal(refusal)).toBe(true);
-    expect((await callError("herdr.call", { method: "workspace.close", params: { workspace_id: "w3" } })).code).toBe(
+    expect((await callError("herdr.call", { method: "workspace.close", params: { workspace_id: "space:3" } })).code).toBe(
       "workspace_group_close_required",
     );
-    expect(transport.scenario.snapshot().workspaces.map((w) => w.workspace_id)).toContain("w4");
-    await herdr("workspace.close", { workspace_id: "w3", close_group: true });
+    expect(transport.scenario.snapshot().workspaces.map((w) => w.workspace_id)).toContain("space:4");
+    await herdr("workspace.close", { workspace_id: "space:3", close_group: true });
     const ids = transport.scenario.snapshot().workspaces.map((w) => w.workspace_id);
-    expect(ids).not.toContain("w3");
-    expect(ids).not.toContain("w4");
+    expect(ids).not.toContain("space:3");
+    expect(ids).not.toContain("space:4");
   });
 });

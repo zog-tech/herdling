@@ -29,7 +29,7 @@ import type {
   Usage,
 } from "@herdling/protocol";
 
-import { CORE_UNSUPPORTED, isCore } from "@/herdr/backend";
+import { CORE_UNSUPPORTED } from "@/herdr/backend";
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
 import { labelMatches, parseChoices } from "@/thread/parseChoices";
@@ -61,8 +61,8 @@ const KEY_NAMES: Record<string, string> = { enter: "Enter", backspace: "BSpace",
 function coreRefusal(method: string, p: Record<string, unknown>): DemoError | undefined {
   const tab = typeof p.tab_id === "string" ? p.tab_id : "";
   const ws = typeof p.workspace_id === "string" ? p.workspace_id : "";
-  if (method === "tab.rename" && tab.startsWith("hc:tab:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its tabs");
-  if (method === "workspace.rename" && isCore(ws)) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its spaces");
+  if (method === "tab.rename" && tab.startsWith("tab:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its tabs");
+  if (method === "workspace.rename" && ws.startsWith("space:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its spaces");
   return undefined;
 }
 
@@ -252,17 +252,16 @@ export class DemoTransport implements LineTransport {
         return {
           host: DEMO_HOST_NAME,
           os: "macos",
-          herdlingd: "demo",
+          herdlingd: "0.2.0",
           herdr_ok: true,
           herdr_version: "demo",
-          herdr_protocol: 1,
           methods: [...DEMO_METHODS],
           // A current herdlingd also reads omp and Gemini CLI logs. The demo has no such agent.
           thread_kinds: [...KINDS, "omp", "gemini"],
           command_kinds: KINDS,
           boot: DEMO_BOOT,
-          // The demo computer runs herdr 1 and Herdr 2 (herdr-core) side by side.
-          backends: { herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } },
+          // As herdlingd 0.2.0: only Herdr 2 (herdr-core), no herdr 1.
+          backends: { core: { version: "demo", generation: 1 } },
         } satisfies Hello;
       // The demo Mac logs in by itself, so herdlingd starts at boot. It opens no settings.
       case "boot.check":

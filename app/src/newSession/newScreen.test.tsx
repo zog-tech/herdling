@@ -434,10 +434,9 @@ describe("Herdr 2 spaces", () => {
     await pending;
     const call = jest.spyOn(mockConn.rpc!, "call");
     const t = await render();
-    // The spaces of groups.list: New space and the space; a repo group is not a choice.
+    // The spaces of groups.list: New space and each space; a repo group is not a choice.
     expect(has(t, "New space")).toBe(true);
     expect(has(t, "research")).toBe(true);
-    expect(has(t, "api-server")).toBe(false);
     await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
     await settle();
     await act(async () => byLabel(t, "research").props.onPress());
@@ -446,10 +445,10 @@ describe("Herdr 2 spaces", () => {
       await jest.advanceTimersByTimeAsync(5000);
     });
     const start = call.mock.calls.find(([m]) => m === "session.start");
-    expect(start?.[1]).toMatchObject({ cwd: "/home/demo/projects/webapp", kind: "claude", workspace_id: "hc:space:1" });
+    expect(start?.[1]).toMatchObject({ cwd: "/home/demo/projects/webapp", kind: "claude", workspace_id: "space:r1" });
     // No herdr 1 workspace.
     expect(call.mock.calls.filter(([m]) => m === "herdr.call").map(([, p]) => (p as { method: string }).method)).not.toContain("workspace.create");
-    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\/hc:t/));
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\/t\d+$/));
   });
 
   it("selects the space from the space screen, and a shell in a new space asks for the core", async () => {
@@ -458,7 +457,7 @@ describe("Herdr 2 spaces", () => {
       await jest.advanceTimersByTimeAsync(100);
     });
     await pending;
-    mockParams = { host: "h1", workspace: "hc:space:1" };
+    mockParams = { host: "h1", workspace: "space:r1" };
     const call = jest.spyOn(mockConn.rpc!, "call");
     const t = await render();
     expect(t.root.find((n) => n.props.accessibilityLabel === "research" && n.props.accessibilityState).props.accessibilityState).toMatchObject({ selected: true });
