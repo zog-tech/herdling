@@ -5,7 +5,10 @@ import {
   assertAllows,
   CORE_UNSUPPORTED,
   coreActions,
+  coreOnly,
+  hostIsCoreOnly,
   isCore,
+  isCoreEntry,
   renameKindsFor,
   setCoreActions,
   useCoreActions,
@@ -68,7 +71,7 @@ describe("allows", () => {
 });
 
 describe("core actions per host", () => {
-  beforeEach(() => useCoreActions.setState({ hosts: {} }));
+  beforeEach(() => useCoreActions.setState({ hosts: {}, only: {} }));
 
   it("needs session.start in hello.methods", () => {
     expect(coreActions({ methods: ["hello", "session.start"] })).toBe(true);
@@ -101,8 +104,55 @@ describe("core actions per host", () => {
 });
 
 describe("renameKindsFor", () => {
+  beforeEach(() => useCoreActions.setState({ hosts: {}, only: {} }));
+
   it("gives a Herdr 2 entry only the task name", () => {
     expect(renameKindsFor("hc:t1")).toEqual(["session"]);
     expect(renameKindsFor({ pane_id: "w1:p1" })).toEqual(["session", "tab", "workspace"]);
+  });
+
+  it("gives a plain id on a Herdr 2 only host only the task name", () => {
+    setCoreActions("h1", { herdlingd: "0.2.0", methods: ["session.start"] });
+    setCoreActions("h2", { herdlingd: "0.1.9", methods: ["session.start"] });
+    expect(renameKindsFor("t7", "h1")).toEqual(["session"]);
+    expect(renameKindsFor({ workspace_id: "space:3" }, "h1")).toEqual(["session"]);
+    expect(renameKindsFor("w1:p1", "h2")).toEqual(["session", "tab", "workspace"]);
+  });
+});
+
+describe("Herdr 2 only hosts", () => {
+  beforeEach(() => useCoreActions.setState({ hosts: {}, only: {} }));
+
+  it("knows herdlingd 0.2.0 and later by its version", () => {
+    expect(coreOnly({ herdlingd: "0.2.0" })).toBe(true);
+    expect(coreOnly({ herdlingd: "0.2.1-dev" })).toBe(true);
+    expect(coreOnly({ herdlingd: "0.10.0" })).toBe(true);
+    expect(coreOnly({ herdlingd: "1.0.0" })).toBe(true);
+    expect(coreOnly({ herdlingd: "0.1.9" })).toBe(false);
+    expect(coreOnly({ herdlingd: "0.1.10" })).toBe(false);
+    expect(coreOnly({ herdlingd: "garbage" })).toBe(false);
+    expect(coreOnly({})).toBe(false);
+    expect(coreOnly(undefined)).toBe(false);
+  });
+
+  it("makes every entry of a 0.2.0 host a Herdr 2 entry and allows every action", () => {
+    setCoreActions("h1", { herdlingd: "0.2.0", methods: ["session.start"] });
+    setCoreActions("h2", { herdlingd: "0.1.9", methods: ["session.start"] });
+    expect(hostIsCoreOnly("h1")).toBe(true);
+    expect(hostIsCoreOnly("h2")).toBe(false);
+    expect(hostIsCoreOnly(undefined)).toBe(false);
+    expect(isCoreEntry("t7", "h1")).toBe(true);
+    expect(isCoreEntry("w1:p1", "h2")).toBe(false);
+    expect(isCoreEntry("hc:t1", "h2")).toBe(true);
+    expect(isCoreEntry("t7")).toBe(false);
+    for (const a of ACTIONS) expect(allows("t7", a, "h1")).toBe(true);
+  });
+
+  it("keeps the last value with no hello, and drops it when the host goes back to 0.1.x", () => {
+    setCoreActions("h1", { herdlingd: "0.2.0", methods: ["session.start"] });
+    setCoreActions("h1", undefined);
+    expect(hostIsCoreOnly("h1")).toBe(true);
+    setCoreActions("h1", { herdlingd: "0.1.9", methods: ["session.start"] });
+    expect(hostIsCoreOnly("h1")).toBe(false);
   });
 });

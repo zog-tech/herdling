@@ -237,7 +237,7 @@ describe("Herdr 2 agents", () => {
     expect(rpc.calls).toEqual([{ method: "agent.rename", params: { target: "hc:t1", name: "Fix the login form" } }]);
     await expect(renameAgent(rpc, "hc:t1", "x".repeat(81), "h1")).rejects.toMatchObject({ code: "bad_name" });
     await expect(renameAgent(rpc, "hc:t1", "two\nlines", "h1")).rejects.toMatchObject({ code: "bad_name" });
-    useCoreActions.setState({ hosts: {} });
+    useCoreActions.setState({ hosts: {}, only: {} });
   });
 
   it("close_works_on_a_herdr_2_pane", async () => {

@@ -5,7 +5,7 @@ import { RpcError, type RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
 import { promptText } from "@/ui/nativeSheet";
 
-import { assertAllows, isCore, renameKindsFor } from "./backend";
+import { assertAllows, isCoreEntry, renameKindsFor } from "./backend";
 import { renameAgent } from "./sessionActions";
 import type { AgentInfo, Snapshot } from "./snapshot";
 import { useSnapshots } from "./snapshotStore";
@@ -136,7 +136,7 @@ export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
   const current = snap ? currentName(snap, kind, t) : "";
   promptText(
     RENAME_LABEL[kind],
-    kind === "session" && isCore(t.pane_id) ? TASK_PROMPT_TEXT : PROMPT_TEXT[kind],
+    kind === "session" && isCoreEntry(t.pane_id, hostId) ? TASK_PROMPT_TEXT : PROMPT_TEXT[kind],
     [
       { text: "Cancel", style: "cancel" },
       {
@@ -159,6 +159,6 @@ export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
 export type MenuItem = { label: string; destructive?: boolean; onPick: () => void };
 
 /** Rename items for one agent, without the ones its host does not support. */
-export function renameItems(rpc: Rpc, hostId: string, t: RenameTarget, kinds: RenameKind[] = renameKindsFor(t)): MenuItem[] {
+export function renameItems(rpc: Rpc, hostId: string, t: RenameTarget, kinds: RenameKind[] = renameKindsFor(t, hostId)): MenuItem[] {
   return kinds.filter((k) => renameSupported(hostId, k)).map((k) => ({ label: RENAME_LABEL[k], onPick: () => promptRename(rpc, hostId, k, t) }));
 }

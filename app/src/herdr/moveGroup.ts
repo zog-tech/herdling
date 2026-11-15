@@ -5,17 +5,16 @@
  */
 import type { CoreGroup, GroupFields, Hello, PaneMoveParams } from "@herdling/protocol";
 
-import { isCore } from "./backend";
-
 /** The longest group name that herdlingd takes. */
 export const GROUP_NAME_MAX = 64;
 
 /**
  * True when the entry can move: a Herdr 2 entry in no Herdr app space, on a host that lists
- * `pane.move`. A terminal in a space stays: it is not known if the Herdr app moves it.
+ * `pane.move`. Only Herdr 2 entries have `group_source`, on herdlingd 0.1.x (`hc:` ids) and on
+ * 0.2.0 (plain ids). A terminal in a space stays: it is not known if the Herdr app moves it.
  */
 export function canMove(entry: GroupFields & { pane_id: string; backend?: string | null }, hello: Pick<Hello, "methods"> | undefined): boolean {
-  return isCore(entry) && !!entry.group_source && entry.group_source !== "space" && (hello?.methods?.includes("pane.move") ?? false);
+  return !!entry.group_source && entry.group_source !== "space" && (hello?.methods?.includes("pane.move") ?? false);
 }
 
 export type MoveTarget =

@@ -283,7 +283,7 @@ describe("Herdr 2 workspaces", () => {
     const rpc = fakeRpc();
     await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:1", hostId: "h1" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start"]);
-    useCoreActions.setState({ hosts: {} });
+    useCoreActions.setState({ hosts: {}, only: {} });
   });
 
   it("start_shell_makes_a_herdr_1_workspace_too", async () => {

@@ -51,7 +51,7 @@ import { forgetCommand, rememberCommand, useHostCommands } from "@/terminal/rece
 import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { canDrive, markNoDrive, useTerminalWidth } from "@/terminal/widthMode";
-import { isCore } from "@/herdr/backend";
+import { coreOnly, isCore } from "@/herdr/backend";
 import { useDebounced } from "@/thread/useThreadSearch";
 import { sendInputWithFallback, sendInputWorks } from "@/terminal/keys";
 import { fullScreenApp, overflows, PAGE_TEXT, paneScroll, type PageDirection } from "@/terminal/pageScroll";
@@ -152,9 +152,11 @@ export function TerminalView({
   const [viewWidth, setViewWidth] = useState(0);
   const [viewHeightState, setViewHeightState] = useState(0);
   // "Phone width": only the session terminal of a Herdr 2 pane, with `pane.watch`, on a connection
-  // that did not refuse the size. Else the view shows "fit".
+  // that did not refuse the size. Else the view shows "fit". A Herdr 2 pane: an `hc:` id
+  // (herdlingd 0.1.x), or any pane of a herdlingd 0.2.0 host (plain ids).
   const [driveRefused, setDriveRefused] = useState(false);
-  const phoneOk = !!controls && isCore(paneId) && listsMethod(hello, "pane.watch") && canDrive(rpc) && !driveRefused;
+  const corePane = isCore(paneId) || coreOnly(hello);
+  const phoneOk = !!controls && corePane && listsMethod(hello, "pane.watch") && canDrive(rpc) && !driveRefused;
   const shownMode: WidthMode = mode === "phone" && !phoneOk ? "fit" : mode;
   // A string, so the debounce waits for the size to stay the same, not for the same object.
   const liveGrid = shownMode === "phone" ? phoneGrid(viewWidth - 2 * space.md, viewHeightState - 2 * space.md, type.size.caption) : null;
@@ -232,12 +234,12 @@ export function TerminalView({
   const queue = useMemo(
     () =>
       rpc
-        ? new SendQueue((op) => sendInputWithFallback(rpc, paneId, op), {
+        ? new SendQueue((op) => sendInputWithFallback(rpc, paneId, op, corePane), {
             pipeline: () => ordered && sendInputWorks(rpc),
             onError: (e) => setSendError(message(e)),
           })
         : undefined,
-    [rpc, paneId, ordered],
+    [rpc, paneId, ordered, corePane],
   );
   useEffect(() => () => queue?.dispose(), [queue]);
   const typist = useMemo(() => (queue ? new Typist(queue) : undefined), [queue]);

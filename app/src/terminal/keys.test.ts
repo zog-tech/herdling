@@ -100,4 +100,16 @@ describe("sendInputWithFallback", () => {
     expect(keyFallbackText({ text: "a", keys: ["home"] })).toBeUndefined();
     expect(keyFallbackText({ keys: ["home", "end"] })).toBe("\x1b[H\x1b[F");
   });
+
+  test("no_fallback_on_a_plain_id_pane_of_a_herdr_two_only_host", async () => {
+    const calls: unknown[] = [];
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        calls.push(p);
+        throw err("bad_request");
+      },
+    };
+    await expect(sendInputWithFallback(rpc, "t3", { keys: ["shift+tab"] }, true)).rejects.toMatchObject({ code: "bad_request" });
+    expect(JSON.stringify(calls)).not.toContain("\\u001b[Z");
+  });
 });

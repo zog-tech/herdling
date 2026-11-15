@@ -674,7 +674,7 @@ export default function BoardScreen() {
                 count={folds ? section.count : undefined}
                 collapsed={section.collapsed}
                 onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}
-                onMenu={ws && renameKindsFor(ws.workspaceId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
+                onMenu={ws && renameKindsFor(ws.workspaceId, ws.hostId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
               />
             );
           }}

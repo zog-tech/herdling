@@ -11,7 +11,11 @@ test("only a Herdr 2 terminal in no space moves, on a host with pane.move", () =
   expect(canMove({ pane_id: "hc:t1", group_source: "folder" }, hello)).toBe(true);
   expect(canMove({ pane_id: "hc:t1", group_source: "space" }, hello)).toBe(false);
   expect(canMove({ pane_id: "hc:t1" }, hello)).toBe(false);
-  expect(canMove({ pane_id: "w1:p1", group_source: "repo" }, hello)).toBe(false);
+  // A herdr 1 entry has no group_source.
+  expect(canMove({ pane_id: "w1:p1" }, hello)).toBe(false);
+  // herdlingd 0.2.0: plain ids, and the group_source tells a Herdr 2 entry.
+  expect(canMove({ pane_id: "t1", group_source: "repo" }, hello)).toBe(true);
+  expect(canMove({ pane_id: "t1", group_source: "space" }, hello)).toBe(false);
   expect(canMove({ pane_id: "hc:t1", group_source: "repo" }, { methods: ["hello"] })).toBe(false);
   expect(canMove({ pane_id: "hc:t1", group_source: "repo" }, undefined)).toBe(false);
 });

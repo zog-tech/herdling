@@ -81,14 +81,15 @@ export function keyFallbackText(op: SendOp): string | undefined {
 /**
  * `sendInput`, and when the computer refuses a key name that has a fallback (`KEY_FALLBACK_TEXT`)
  * on a herdr 1 pane, the fallback text once. A phone-side error (no connection, time-out) is
- * not a refusal: it throws as before.
+ * not a refusal: it throws as before. `core`: the pane is a Herdr 2 pane (default: an `hc:` id).
+ * The caller passes true for every pane of a herdlingd 0.2.0 host, whose ids are plain.
  */
-export async function sendInputWithFallback(rpc: Rpc, paneId: string, op: SendOp): Promise<void> {
+export async function sendInputWithFallback(rpc: Rpc, paneId: string, op: SendOp, core = paneId.startsWith(CORE_ID_PREFIX)): Promise<void> {
   try {
     await sendInput(rpc, paneId, op);
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;
-    const text = paneId.startsWith(CORE_ID_PREFIX) ? undefined : keyFallbackText(op);
+    const text = core ? undefined : keyFallbackText(op);
     if (!text || typeof code !== "string" || LOCAL_CODES.has(code)) throw e;
     await sendInput(rpc, paneId, { text });
   }

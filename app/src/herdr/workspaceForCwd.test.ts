@@ -34,8 +34,14 @@ describe("workspaceForCwd with Herdr 2 entries", () => {
   const oneAgent = { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1", agent: "claude", agent_status: "idle" as const, cwd: "/home/sam/proj" };
   const core = { workspaces: [{ ...ws("hc:space:1"), backend: "core" as const }, ws("w1")], tabs: [], panes: [], agents: [coreAgent, oneAgent] };
 
-  it("never picks a Herdr 2 workspace for New session", () => {
-    expect(workspaceForCwd(core, "/home/sam/proj")?.workspace_id).toBe("w1");
-    expect(workspaceForCwd({ ...core, agents: [coreAgent] }, "/home/sam/proj")).toBeUndefined();
+  it("picks a Herdr 2 workspace too: startSession drops it when the host cannot add a tab", () => {
+    expect(workspaceForCwd(core, "/home/sam/proj")?.workspace_id).toBe("hc:space:1");
+    expect(workspaceForCwd({ ...core, agents: [oneAgent] }, "/home/sam/proj")?.workspace_id).toBe("w1");
+  });
+
+  it("picks a plain-id workspace of herdlingd 0.2.0", () => {
+    const plain = { ...coreAgent, pane_id: "t1", tab_id: "tab:1", workspace_id: "space:1", backend: undefined };
+    const snap2 = { workspaces: [ws("space:1")], tabs: [], panes: [], agents: [plain] };
+    expect(workspaceForCwd(snap2, "/home/sam/proj")?.workspace_id).toBe("space:1");
   });
 });

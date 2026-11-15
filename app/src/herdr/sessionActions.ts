@@ -3,7 +3,7 @@ import type { Hello, ThreadRef } from "@herdling/protocol";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
-import { assertAllows, isCore } from "./backend";
+import { assertAllows, isCoreEntry } from "./backend";
 import { expectPane } from "./expectedPanes";
 import { isGroupCloseRefusal } from "./groupClose";
 import type { AgentInfo } from "./snapshot";
@@ -174,7 +174,7 @@ export const TASK_NAME_MAX = 80;
  */
 export async function renameAgent(rpc: Rpc, paneId: string, name: string, hostId?: string): Promise<void> {
   assertAllows(paneId, "rename", hostId);
-  if (isCore(paneId)) {
+  if (isCoreEntry(paneId, hostId)) {
     if (name.length > TASK_NAME_MAX || /[\x00-\x1f\x7f]/.test(name)) {
       throw new RpcError("bad_name", `Use one line of at most ${TASK_NAME_MAX} characters.`);
     }

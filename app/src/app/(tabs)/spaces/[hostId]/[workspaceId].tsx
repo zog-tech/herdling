@@ -110,7 +110,7 @@ export default function SpaceScreen() {
     const { rpc } = getHostConn(hostId);
     if (!rpc) return;
     const items: { label: string; destructive?: boolean; onPick: () => void }[] = [];
-    if (renameKindsFor(workspaceId).includes("workspace") && renameSupported(hostId, "workspace")) {
+    if (renameKindsFor(workspaceId, hostId).includes("workspace") && renameSupported(hostId, "workspace")) {
       items.push({ label: "Rename space", onPick: () => promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" }) });
     }
     if (allows(workspaceId, "closeGroup", hostId)) {
