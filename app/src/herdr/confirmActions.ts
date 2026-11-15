@@ -95,7 +95,7 @@ function offerTryAgain(rpc: Rpc, hostId: string, agent: AgentInfo, args: string[
     {
       text: "Try again",
       onPress: () =>
-        startRestarted(rpc, agent, args).then(
+        startRestarted(rpc, agent, args, hostId).then(
           ({ paneId }) => {
             expectPane(hostId, paneId, "agent");
             opened(paneId);
@@ -122,7 +122,7 @@ export async function restartConfirmed(
   const oldPane = agent.pane_id;
   let result: { paneId: string; closeError?: string };
   try {
-    result = await restartAgent(rpc, agent, plan);
+    result = await restartAgent(rpc, agent, { ...plan, hostId });
   } catch (e) {
     if (e instanceof RpcError && e.code === RESTART_AFTER_CLOSE && agent.agent) {
       offerTryAgain(rpc, hostId, agent, restartArgs(agent.agent, plan), e.message, opened);

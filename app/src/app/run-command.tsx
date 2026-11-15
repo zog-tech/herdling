@@ -144,8 +144,8 @@ export default function RunCommandScreen() {
   const fallback = folder ? NEW : terminals[0]?.pane_id;
   const chosen = target === NEW ? fallback : terminals.some((p) => p.pane_id === target) ? target : fallback;
   const text = command.replace(/\s+$/, "");
-  // A Herdr 2 terminal has no "Notify me when it finishes" (`shell.watch` needs herdr 1).
-  const canNotify = hostCanNotify && allows(chosen === NEW ? undefined : chosen, "shellWatch");
+  // A Herdr 2 terminal of an older herdlingd has no "Notify me when it finishes".
+  const canNotify = hostCanNotify && allows(chosen === NEW ? undefined : chosen, "shellWatch", hostId);
   const canRun = online && !running && !!text.trim() && chosen !== undefined;
 
   const run = async () => {

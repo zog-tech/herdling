@@ -280,8 +280,8 @@ export const AgentRow = memo(function AgentRow({
   const meta = cards ? footerMeta(bucket, elapsed, item.sinceKnown === true) : undefined;
   const close = () => swipe.current?.close();
   const label = cardLabel(item);
-  // A Herdr 2 agent cannot restart: herdr 1 starts the new agent.
-  const canRestart = allows(item.agent, "restart");
+  // A Herdr 2 agent of an older herdlingd cannot restart.
+  const canRestart = allows(item.agent, "restart", item.hostId);
 
   return (
     <Animated.View style={[enterStyle, cards ? { marginHorizontal: CARD_MARGIN } : null]}>

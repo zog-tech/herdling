@@ -23,7 +23,7 @@ export const CARD_ACTIONS = [
 
 /** The VoiceOver actions of one card: a Herdr 2 agent has no Restart. */
 export function cardActionsFor(item: BoardItem): typeof CARD_ACTIONS {
-  return allows(item.agent, "restart") ? CARD_ACTIONS : CARD_ACTIONS.filter((a) => a.name !== "restart");
+  return allows(item.agent, "restart", item.hostId) ? CARD_ACTIONS : CARD_ACTIONS.filter((a) => a.name !== "restart");
 }
 
 type Handlers = {
@@ -41,7 +41,7 @@ export function runCardAction(name: string, item: BoardItem, h: Handlers): void 
     longpress: h.onPeek,
     markRead: h.onMarkRead,
     reply: h.onReply,
-    restart: allows(item.agent, "restart") ? h.onRestart : undefined,
+    restart: allows(item.agent, "restart", item.hostId) ? h.onRestart : undefined,
   };
   map[name]?.(item);
 }

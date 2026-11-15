@@ -1,3 +1,4 @@
+import { setCoreActions, useCoreActions } from "./backend";
 import { agentName, startSession, startShell } from "./startSession";
 
 function fakeRpc() {
@@ -275,6 +276,14 @@ describe("Herdr 2 workspaces", () => {
     const rpc = fakeRpc();
     await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:1" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create", "agent.start"]);
+  });
+
+  it("a_host_with_the_core_actions_adds_a_tab_to_the_herdr_2_space", async () => {
+    setCoreActions("h1", { methods: ["session.start"] });
+    const rpc = fakeRpc();
+    await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:1", hostId: "h1" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start"]);
+    useCoreActions.setState({ hosts: {} });
   });
 
   it("start_shell_makes_a_herdr_1_workspace_too", async () => {

@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import * as ssh from "../../modules/ssh";
 import { isDemoHost } from "../demo/demoHost";
+import { setCoreActions } from "../herdr/backend";
 import { DemoTransport } from "../demo/DemoTransport";
 import { showDemoNotice } from "../demo/notify";
 import { samePrefs, useNotifPrefs } from "../push/prefs";
@@ -140,6 +141,8 @@ export class ExecTransport implements LineTransport {
 const useConns = create<{ conns: Record<string, HostConn> }>(() => ({ conns: {} }));
 
 function setConn(hostId: string, conn: HostConn): void {
+  // The action gate of Herdr 2 entries reads the methods of the host (`herdr/backend.ts`).
+  setCoreActions(hostId, conn.hello);
   useConns.setState((s) => ({ conns: { ...s.conns, [hostId]: conn } }));
 }
 

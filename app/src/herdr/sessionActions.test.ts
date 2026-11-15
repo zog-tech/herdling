@@ -1,5 +1,7 @@
 import { RpcError } from "@/rpc/RpcClient";
 
+import { setCoreActions, useCoreActions } from "./backend";
+
 import {
   canResume,
   closeAgent,
@@ -222,6 +224,20 @@ describe("Herdr 2 agents", () => {
     await expect(resumeSession(rpc, core, "s1")).rejects.toMatchObject({ code: "unsupported" });
     await expect(renameAgent(rpc, "hc:t1", "web")).rejects.toMatchObject({ code: "unsupported" });
     expect(rpc.calls).toEqual([]);
+  });
+
+  it("a_host_with_the_core_actions_restarts_and_renames_with_a_free_task_name", async () => {
+    setCoreActions("h1", { methods: ["session.start"] });
+    const rpc = fakeRpc();
+    await restartAgent(rpc, core, { hostId: "h1" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start", "pane.close"]);
+    expect(rpc.calls[0].params.workspace_id).toBe("hc:space:1");
+    rpc.calls.length = 0;
+    await renameAgent(rpc, "hc:t1", "Fix the login form", "h1");
+    expect(rpc.calls).toEqual([{ method: "agent.rename", params: { target: "hc:t1", name: "Fix the login form" } }]);
+    await expect(renameAgent(rpc, "hc:t1", "x".repeat(81), "h1")).rejects.toMatchObject({ code: "bad_name" });
+    await expect(renameAgent(rpc, "hc:t1", "two\nlines", "h1")).rejects.toMatchObject({ code: "bad_name" });
+    useCoreActions.setState({ hosts: {} });
   });
 
   it("close_works_on_a_herdr_2_pane", async () => {

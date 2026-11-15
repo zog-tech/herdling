@@ -15,6 +15,8 @@ export type StartOptions = {
   args?: string[];
   /** Called before each step with a short progress label. */
   onProgress?: (label: string) => void;
+  /** The host: it decides if a Herdr 2 workspace can take a new tab (`allows`). */
+  hostId?: string;
 };
 
 /**
@@ -90,10 +92,10 @@ async function paneFor(
  */
 export async function startSession(
   rpc: Pick<RpcClient, "call">,
-  { cwd, kind, prompt, workspaceId: asked, fresh, args, onProgress }: StartOptions,
+  { cwd, kind, prompt, workspaceId: asked, fresh, args, onProgress, hostId }: StartOptions,
 ): Promise<{ paneId: string; promptError?: string }> {
-  // herdr 1 cannot add a tab to a Herdr 2 workspace: the agent gets a new herdr 1 workspace.
-  const workspaceId = asked && allows(asked, "newTab") ? asked : undefined;
+  // An older herdlingd cannot add a tab to a Herdr 2 workspace: the agent gets a new workspace.
+  const workspaceId = asked && allows(asked, "newTab", hostId) ? asked : undefined;
   const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");
@@ -164,10 +166,11 @@ export async function startShell(
     workspaceId: asked,
     fresh,
     onProgress,
-  }: { cwd: string; command?: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void },
+    hostId,
+  }: { cwd: string; command?: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void; hostId?: string },
 ): Promise<{ paneId: string; commandError?: string }> {
   // The same rule as `startSession`: a Herdr 2 workspace gets no herdr 1 tab.
-  const workspaceId = asked && allows(asked, "newTab") ? asked : undefined;
+  const workspaceId = asked && allows(asked, "newTab", hostId) ? asked : undefined;
   const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");

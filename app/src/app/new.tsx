@@ -400,7 +400,7 @@ export default function NewSessionScreen() {
       const reuse = !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
       const workspaceId = reuse && existing ? existing.workspace_id : undefined;
       if (shell) {
-        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, fresh, onProgress: setProgress });
+        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, fresh, onProgress: setProgress, hostId });
         if (!commandError) rememberCommand(hostId, prompt);
         allowLeave();
         // The mark carries the hint into the detail column of regular width too.
@@ -419,6 +419,7 @@ export default function NewSessionScreen() {
         fresh,
         args: buildArgs(kind, choice),
         onProgress: setProgress,
+        hostId,
       });
       pastesSent(sentPastes);
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
@@ -450,7 +451,7 @@ export default function NewSessionScreen() {
         // Same rule as Start: a new workspace, unless the user picked a tab in an existing one.
         const ws = newWorkspace ? undefined : workspaceForCwd(snapshot, s.cwd);
         const reuse = ws && (await workspaceExists(rpc, ws.workspace_id));
-        const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId: reuse && ws ? ws.workspace_id : undefined });
+        const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId: reuse && ws ? ws.workspace_id : undefined, hostId });
         allowLeave();
         expectPane(hostId, paneId, "agent");
         router.replace(`/session/${hostId}/${paneId}` as never);

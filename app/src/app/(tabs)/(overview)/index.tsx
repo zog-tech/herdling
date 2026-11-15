@@ -24,7 +24,7 @@ import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
 import { filterByText, queryWords } from "@/board/textFilter";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
-import { allows } from "@/herdr/backend";
+import { allows, renameKindsFor } from "@/herdr/backend";
 import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
@@ -559,8 +559,8 @@ export default function BoardScreen() {
   const onRestart = useCallback(
     async (i: BoardItem) => {
       const { rpc, hello } = getHostConn(i.hostId);
-      // A Herdr 2 agent cannot restart: herdr 1 starts the new agent.
-      if (!rpc || !allows(i.agent, "restart")) return;
+      // A Herdr 2 agent of an older herdlingd cannot restart.
+      if (!rpc || !allows(i.agent, "restart", i.hostId)) return;
       const session = await sessionToKeep(rpc, hello, i.agent);
       const choice = await chooseRestart(!!session);
       if (!choice) return;
@@ -572,6 +572,7 @@ export default function BoardScreen() {
         await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId), {
           session: choice === "keep" ? session : undefined,
           args: rememberedArgs(i.agent.agent),
+          hostId: i.hostId,
         });
       } catch (e) {
         Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
@@ -588,8 +589,8 @@ export default function BoardScreen() {
         { label: "Peek", onPick: () => onPeek(i) },
       ];
       if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
-      if (rpc && allows(i.agent, "rename")) menu.push(...renameItems(rpc, i.hostId, i.agent));
-      if (allows(i.agent, "restart")) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
+      if (rpc && allows(i.agent, "rename", i.hostId)) menu.push(...renameItems(rpc, i.hostId, i.agent));
+      if (allows(i.agent, "restart", i.hostId)) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
       showActionSheet(
         {
           title: i.title,
@@ -664,7 +665,7 @@ export default function BoardScreen() {
                 count={folds ? section.count : undefined}
                 collapsed={section.collapsed}
                 onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}
-                onMenu={ws && allows(ws.workspaceId, "rename") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
+                onMenu={ws && renameKindsFor(ws.workspaceId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
               />
             );
           }}

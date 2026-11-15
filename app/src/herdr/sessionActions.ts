@@ -3,7 +3,7 @@ import type { Hello, ThreadRef } from "@herdling/protocol";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { RpcError } from "@/rpc/RpcClient";
 
-import { assertAllows } from "./backend";
+import { assertAllows, isCore } from "./backend";
 import { expectPane } from "./expectedPanes";
 import { isGroupCloseRefusal } from "./groupClose";
 import type { AgentInfo } from "./snapshot";
@@ -33,6 +33,8 @@ export type RestartPlan = {
   session?: string;
   /** Start options of the kind (`buildArgs`), after the resume arguments. */
   args?: string[];
+  /** The host of the agent: it decides which actions a Herdr 2 agent has (`allows`). */
+  hostId?: string;
 };
 
 /** The agent arguments of a restart: the resume arguments first (when the kind can resume), then the option arguments. */
@@ -64,7 +66,7 @@ export const RESTART_AFTER_CLOSE = "restart_after_close";
  * "Try again" (`startRestarted`) or "Resume older session" brings it back.
  */
 export async function restartAgent(rpc: Rpc, a: AgentInfo, plan: RestartPlan = {}): Promise<{ paneId: string; closeError?: string }> {
-  assertAllows(a, "restart");
+  assertAllows(a, "restart", plan.hostId);
   const cwd = cwdOf(a);
   const kind = kindOf(a);
   const args = restartArgs(kind, plan);
@@ -78,9 +80,9 @@ export async function restartAgent(rpc: Rpc, a: AgentInfo, plan: RestartPlan = {
       if (isGroupCloseRefusal(e)) throw new RpcError(GROUP_RESTART, GROUP_RESTART_TEXT);
       throw e;
     }
-    return startRestarted(rpc, a, args);
+    return startRestarted(rpc, a, args, plan.hostId);
   }
-  const { paneId } = await startSession(rpc, { cwd, kind, workspaceId: a.workspace_id, args });
+  const { paneId } = await startSession(rpc, { cwd, kind, workspaceId: a.workspace_id, args, hostId: plan.hostId });
   // The new agent runs, so do not throw: the caller opens it and offers to close the old one.
   try {
     await herdr(rpc, "pane.close", { pane_id: a.pane_id });
@@ -95,10 +97,10 @@ export async function restartAgent(rpc: Rpc, a: AgentInfo, plan: RestartPlan = {
  * gone (the old pane was its last one): then the agent gets a new workspace. A failed start throws
  * an error with the code `RESTART_AFTER_CLOSE`.
  */
-export async function startRestarted(rpc: Rpc, a: AgentInfo, args: string[]): Promise<{ paneId: string }> {
+export async function startRestarted(rpc: Rpc, a: AgentInfo, args: string[], hostId?: string): Promise<{ paneId: string }> {
   try {
     const workspaceId = a.workspace_id && (await workspaceExists(rpc, a.workspace_id)) ? a.workspace_id : undefined;
-    const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: kindOf(a), workspaceId, args });
+    const { paneId } = await startSession(rpc, { cwd: cwdOf(a), kind: kindOf(a), workspaceId, args, hostId });
     return { paneId };
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
@@ -144,9 +146,9 @@ export function canResume(hello: Hello | undefined, kind: string): boolean {
 }
 
 /** Opens an earlier session of the same agent in a new tab. The current pane stays. */
-export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Promise<{ paneId: string }> {
-  assertAllows(a, "resume");
-  return resumeInFolder(rpc, { cwd: cwdOf(a), kind: kindOf(a), session, workspaceId: a.workspace_id });
+export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string, hostId?: string): Promise<{ paneId: string }> {
+  assertAllows(a, "resume", hostId);
+  return resumeInFolder(rpc, { cwd: cwdOf(a), kind: kindOf(a), session, workspaceId: a.workspace_id, hostId });
 }
 
 /**
@@ -155,17 +157,28 @@ export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string): Pr
  */
 export async function resumeInFolder(
   rpc: Rpc,
-  o: { cwd: string; kind: string; session: string; workspaceId?: string },
+  o: { cwd: string; kind: string; session: string; workspaceId?: string; hostId?: string },
 ): Promise<{ paneId: string }> {
   const args = resumeArgs(o.kind, o.session);
   if (!args) throw new RpcError("no_resume", `${o.kind} cannot resume an earlier session`);
-  const { paneId } = await startSession(rpc, { cwd: o.cwd, kind: o.kind, workspaceId: o.workspaceId, args });
+  const { paneId } = await startSession(rpc, { cwd: o.cwd, kind: o.kind, workspaceId: o.workspaceId, args, hostId: o.hostId });
   return { paneId };
 }
 
-export async function renameAgent(rpc: Rpc, paneId: string, name: string): Promise<void> {
-  assertAllows(paneId, "rename");
-  if (!AGENT_NAME_RE.test(name)) {
+/** The longest task name of a Herdr 2 agent (the `herdling.name` label). */
+export const TASK_NAME_MAX = 80;
+
+/**
+ * Renames an agent. A herdr 1 agent name follows the herdr rule (`AGENT_NAME_RE`). A Herdr 2 agent
+ * gets a task name: one line of free text up to `TASK_NAME_MAX` characters (`herdling.name`).
+ */
+export async function renameAgent(rpc: Rpc, paneId: string, name: string, hostId?: string): Promise<void> {
+  assertAllows(paneId, "rename", hostId);
+  if (isCore(paneId)) {
+    if (name.length > TASK_NAME_MAX || /[\x00-\x1f\x7f]/.test(name)) {
+      throw new RpcError("bad_name", `Use one line of at most ${TASK_NAME_MAX} characters.`);
+    }
+  } else if (!AGENT_NAME_RE.test(name)) {
     throw new RpcError("bad_name", "Use lowercase letters, digits, - or _, starting with a letter (32 max).");
   }
   try {
