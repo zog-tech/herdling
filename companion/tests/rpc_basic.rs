@@ -69,7 +69,7 @@ async fn herdr_call_goes_to_the_core() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, c) = fake(&dir);
     let mut s = Session::start(ctx);
-    s.send(r#"{"id":2,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1","source":"visible"}}}"#).await;
+    s.send(r#"{"id":2,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"t1","source":"visible"}}}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 2);
     assert_eq!(r["result"]["read"]["text"], "$ ");
@@ -80,7 +80,7 @@ async fn herdr_call_goes_to_the_core() {
 async fn no_core_gives_herdr_unavailable() {
     let dir = tempfile::tempdir().unwrap();
     let mut s = Session::start(bare(&dir));
-    s.send(r#"{"id":3,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
+    s.send(r#"{"id":3,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"t1"}}}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
     s.send(r#"{"id":4,"method":"herdr.call","params":{"method":"session.snapshot","params":{}}}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
@@ -90,7 +90,7 @@ async fn no_core_gives_herdr_unavailable() {
     let mut s = Session::start(ctx);
     s.send(r#"{"id":5,"method":"herdr.call","params":{"method":"session.snapshot","params":{}}}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
-    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
+    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"t1"}}}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
 }
 
@@ -132,7 +132,7 @@ async fn herdr_call_times_out_when_the_core_never_replies() {
     ctx.herdr_timeout = std::time::Duration::from_millis(100);
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let mut s = Session { tx: client_tx, rx: BufReader::new(client_rx).lines() };
-    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
+    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"t1"}}}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 6);
     assert_eq!(r["error"]["code"], "herdr_unavailable");

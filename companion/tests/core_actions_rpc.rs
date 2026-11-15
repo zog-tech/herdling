@@ -106,10 +106,10 @@ fn is_id(v: &Value, prefix: &str) -> bool {
 async fn tab_create_in_a_space_runs_a_labelled_shell() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam/proj", "focus": false})).await;
+    let r = sess.herdr("tab.create", json!({"workspace_id": "space:s1", "cwd": "/home/sam/proj", "focus": false})).await;
     let res = &r["result"];
-    assert_eq!(res["root_pane"]["pane_id"], "hc:t4", "{r}");
-    assert_eq!(res["workspace"]["workspace_id"], "hc:space:s1");
+    assert_eq!(res["root_pane"]["pane_id"], "t4", "{r}");
+    assert_eq!(res["workspace"]["workspace_id"], "space:s1");
     let runs = s.core.calls_of("terminal.run");
     assert_eq!(runs.len(), 1);
     let run = &runs[0];
@@ -118,11 +118,11 @@ async fn tab_create_in_a_space_runs_a_labelled_shell() {
     assert_eq!(run["labels"]["herdr.space"], "s1");
     assert!(is_id(&run["labels"]["herdr.tab"], "tb"), "{run}");
     assert_eq!(run["labels"].as_object().unwrap().len(), 2, "no other label");
-    assert_eq!(res["tab"]["tab_id"], format!("hc:tab:{}", run["labels"]["herdr.tab"].as_str().unwrap()));
+    assert_eq!(res["tab"]["tab_id"], format!("tab:{}", run["labels"]["herdr.tab"].as_str().unwrap()));
     // The new terminal shows in the space at once.
     let snap = sess.herdr("session.snapshot", json!({})).await;
-    let pane = snap["result"]["snapshot"]["panes"].as_array().unwrap().iter().find(|p| p["pane_id"] == "hc:t4").cloned().unwrap();
-    assert_eq!(pane["workspace_id"], "hc:space:s1");
+    let pane = snap["result"]["snapshot"]["panes"].as_array().unwrap().iter().find(|p| p["pane_id"] == "t4").cloned().unwrap();
+    assert_eq!(pane["workspace_id"], "space:s1");
     assert_eq!(pane["tab_id"], res["tab"]["tab_id"]);
 }
 
@@ -130,11 +130,11 @@ async fn tab_create_in_a_space_runs_a_labelled_shell() {
 async fn tab_create_in_a_label_group_keeps_the_label() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:g:clips", "cwd": "/home/sam/clips"})).await;
-    assert_eq!(r["result"]["workspace"]["workspace_id"], "hc:g:clips", "{r}");
-    assert_eq!(r["result"]["tab"]["tab_id"], "hc:task:t4");
+    let r = sess.herdr("tab.create", json!({"workspace_id": "g:clips", "cwd": "/home/sam/clips"})).await;
+    assert_eq!(r["result"]["workspace"]["workspace_id"], "g:clips", "{r}");
+    assert_eq!(r["result"]["tab"]["tab_id"], "task:t4");
     assert_eq!(s.core.calls_of("terminal.run")[0]["labels"], json!({"herdling.group": "Clips"}));
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:g:none", "cwd": "/home/sam"})).await;
+    let r = sess.herdr("tab.create", json!({"workspace_id": "g:none", "cwd": "/home/sam"})).await;
     assert_eq!(r["error"]["code"], "workspace_not_found");
     assert_eq!(s.core.calls_of("terminal.run").len(), 1);
 }
@@ -148,11 +148,11 @@ async fn workspace_create_for_the_core_makes_a_new_space() {
     let space = run["labels"]["herdr.space"].as_str().unwrap();
     assert!(is_id(&run["labels"]["herdr.space"], "sp"), "{run}");
     assert!(is_id(&run["labels"]["herdr.tab"], "tb"));
-    assert_eq!(r["result"]["workspace"]["workspace_id"], format!("hc:space:{space}"));
-    assert_eq!(r["result"]["root_pane"]["pane_id"], "hc:t4");
+    assert_eq!(r["result"]["workspace"]["workspace_id"], format!("space:{space}"));
+    assert_eq!(r["result"]["root_pane"]["pane_id"], "t4");
     // Without the marker (old apps), the core is the default.
     let r = sess.herdr("workspace.create", json!({"cwd": "/home/sam/web", "label": "web", "focus": false})).await;
-    assert_eq!(r["result"]["root_pane"]["pane_id"], "hc:t5", "{r}");
+    assert_eq!(r["result"]["root_pane"]["pane_id"], "t5", "{r}");
     assert_eq!(s.core.calls_of("terminal.run").len(), 2);
     assert!(is_id(&s.core.calls_of("terminal.run")[1]["labels"]["herdr.space"], "sp"));
 }
@@ -161,16 +161,16 @@ async fn workspace_create_for_the_core_makes_a_new_space() {
 async fn agent_start_types_the_agent_command() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("agent.start", json!({"name": "proj-hc-t2", "kind": "claude", "pane_id": "hc:t2", "args": ["--resume", "abc 1"]})).await;
-    assert_eq!(r["result"]["agent"]["pane_id"], "hc:t2", "{r}");
+    let r = sess.herdr("agent.start", json!({"name": "proj-hc-t2", "kind": "claude", "pane_id": "t2", "args": ["--resume", "abc 1"]})).await;
+    assert_eq!(r["result"]["agent"]["pane_id"], "t2", "{r}");
     let sends = s.core.calls_of("terminal.send");
     assert_eq!(sends.len(), 1);
     assert_eq!(sends[0]["terminal"], "t2");
     assert_eq!(sends[0]["text"], "claude --resume 'abc 1'");
     assert_eq!(s.labels("t2"), json!({}), "the herdr agent name is not a label");
-    let r = sess.herdr("agent.start", json!({"kind": "nope", "pane_id": "hc:t2"})).await;
+    let r = sess.herdr("agent.start", json!({"kind": "nope", "pane_id": "t2"})).await;
     assert_eq!(r["error"]["code"], "bad_request");
-    let r = sess.herdr("agent.start", json!({"kind": "claude", "pane_id": "hc:t99"})).await;
+    let r = sess.herdr("agent.start", json!({"kind": "claude", "pane_id": "t99"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
 }
 
@@ -178,11 +178,11 @@ async fn agent_start_types_the_agent_command() {
 async fn prompt_waits_for_the_agent() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("agent.prompt", json!({"target": "hc:t2", "text": "fix it"})).await;
+    let r = sess.herdr("agent.prompt", json!({"target": "t2", "text": "fix it"})).await;
     assert_eq!(r["error"]["code"], "agent_not_ready", "{r}");
     assert!(r["error"]["message"].as_str().unwrap().contains("not an active named agent"));
     assert!(s.core.calls_of("terminal.send").is_empty(), "no text goes into the shell");
-    let r = sess.herdr("agent.prompt", json!({"target": "hc:t1", "text": "fix it"})).await;
+    let r = sess.herdr("agent.prompt", json!({"target": "t1", "text": "fix it"})).await;
     assert!(r.get("error").is_none(), "{r}");
     assert_eq!(s.core.calls_of("terminal.send")[0]["text"], "fix it");
 }
@@ -193,11 +193,11 @@ async fn prompt_waits_for_the_agent() {
 async fn restart_sequence_of_the_app() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("pane.close", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.herdr("pane.close", json!({"pane_id": "t1"})).await;
     assert!(r.get("error").is_none(), "{r}");
-    let r = sess.herdr("workspace.get", json!({"workspace_id": "hc:space:s1"})).await;
-    assert_eq!(r["result"]["workspace"]["workspace_id"], "hc:space:s1", "{r}");
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam/proj/src", "focus": false})).await;
+    let r = sess.herdr("workspace.get", json!({"workspace_id": "space:s1"})).await;
+    assert_eq!(r["result"]["workspace"]["workspace_id"], "space:s1", "{r}");
+    let r = sess.herdr("tab.create", json!({"workspace_id": "space:s1", "cwd": "/home/sam/proj/src", "focus": false})).await;
     let pane = r["result"]["root_pane"]["pane_id"].as_str().unwrap().to_string();
     let r = sess.herdr("agent.start", json!({"name": "src-x", "kind": "claude", "pane_id": pane, "args": ["--resume", "abc"]})).await;
     assert!(r.get("error").is_none(), "{r}");
@@ -212,9 +212,9 @@ async fn restart_sequence_of_the_app() {
 async fn resume_sequence_of_the_app() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("workspace.get", json!({"workspace_id": "hc:g:gone"})).await;
+    let r = sess.herdr("workspace.get", json!({"workspace_id": "g:gone"})).await;
     assert_eq!(r["error"]["code"], "workspace_not_found");
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam/proj"})).await;
+    let r = sess.herdr("tab.create", json!({"workspace_id": "space:s1", "cwd": "/home/sam/proj"})).await;
     let pane = r["result"]["root_pane"]["pane_id"].as_str().unwrap().to_string();
     let r = sess.herdr("agent.start", json!({"kind": "codex", "pane_id": pane, "args": ["resume", "s-9"]})).await;
     assert!(r.get("error").is_none(), "{r}");
@@ -226,20 +226,20 @@ async fn resume_sequence_of_the_app() {
 async fn rename_sets_only_herdling_name() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("agent.rename", json!({"target": "hc:t3", "name": "fix-login"})).await;
+    let r = sess.herdr("agent.rename", json!({"target": "t3", "name": "fix-login"})).await;
     assert!(r.get("error").is_none(), "{r}");
     assert_eq!(s.labels("t3"), json!({"herdling.group": "Clips", "other": "keep", "herdling.name": "fix-login"}));
     let snap = sess.herdr("session.snapshot", json!({})).await;
-    let agent = snap["result"]["snapshot"]["agents"].as_array().unwrap().iter().find(|a| a["pane_id"] == "hc:t3").cloned().unwrap();
+    let agent = snap["result"]["snapshot"]["agents"].as_array().unwrap().iter().find(|a| a["pane_id"] == "t3").cloned().unwrap();
     assert_eq!(agent["name"], "fix-login");
-    sess.herdr("agent.rename", json!({"target": "hc:t3", "name": null})).await;
+    sess.herdr("agent.rename", json!({"target": "t3", "name": null})).await;
     assert_eq!(s.labels("t3"), json!({"herdling.group": "Clips", "other": "keep"}));
-    sess.herdr("tab.rename", json!({"tab_id": "hc:task:t3", "label": "Clip work"})).await;
+    sess.herdr("tab.rename", json!({"tab_id": "task:t3", "label": "Clip work"})).await;
     assert_eq!(s.labels("t3")["herdling.name"], "Clip work");
     for (m, p) in [
-        ("tab.rename", json!({"tab_id": "hc:tab:a", "label": "x"})),
-        ("workspace.rename", json!({"workspace_id": "hc:space:s1", "label": "x"})),
-        ("workspace.rename", json!({"workspace_id": "hc:g:clips", "label": "x"})),
+        ("tab.rename", json!({"tab_id": "tab:a", "label": "x"})),
+        ("workspace.rename", json!({"workspace_id": "space:s1", "label": "x"})),
+        ("workspace.rename", json!({"workspace_id": "g:clips", "label": "x"})),
     ] {
         let r = sess.herdr(m, p).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
@@ -253,10 +253,10 @@ async fn rename_sets_only_herdling_name() {
 async fn close_tab_and_workspace_kill_their_terminals() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("tab.close", json!({"tab_id": "hc:task:t3"})).await;
+    let r = sess.herdr("tab.close", json!({"tab_id": "task:t3"})).await;
     assert!(r.get("error").is_none(), "{r}");
     assert_eq!(s.core.calls_of("terminal.kill"), [json!({"terminal": "t3"})]);
-    let r = sess.herdr("workspace.close", json!({"workspace_id": "hc:space:s1", "close_group": true})).await;
+    let r = sess.herdr("workspace.close", json!({"workspace_id": "space:s1", "close_group": true})).await;
     assert!(r.get("error").is_none(), "{r}");
     assert_eq!(s.core.calls_of("terminal.kill"), [json!({"terminal": "t3"}), json!({"terminal": "t1"}), json!({"terminal": "t2"})]);
 }
@@ -266,10 +266,10 @@ async fn close_unknown_ids_kill_nothing() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
     for (m, p, code) in [
-        ("tab.close", json!({"tab_id": "hc:loose:tab"}), "tab_not_found"),
-        ("tab.close", json!({"tab_id": "hc:tab:none"}), "tab_not_found"),
-        ("workspace.close", json!({"workspace_id": "hc:loose"}), "workspace_not_found"),
-        ("workspace.close", json!({"workspace_id": "hc:g:gone"}), "workspace_not_found"),
+        ("tab.close", json!({"tab_id": "loose:tab"}), "tab_not_found"),
+        ("tab.close", json!({"tab_id": "tab:none"}), "tab_not_found"),
+        ("workspace.close", json!({"workspace_id": "loose"}), "workspace_not_found"),
+        ("workspace.close", json!({"workspace_id": "g:gone"}), "workspace_not_found"),
     ] {
         let r = sess.herdr(m, p).await;
         assert_eq!(r["error"]["code"], code, "{m}: {r}");
@@ -281,12 +281,12 @@ async fn close_unknown_ids_kill_nothing() {
 async fn explain_reads_the_screen() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("agent.explain", json!({"target": "hc:t1"})).await;
+    let r = sess.herdr("agent.explain", json!({"target": "t1"})).await;
     let e = &r["result"]["explain"];
     assert_eq!(r["result"]["type"], "agent_explain", "{r}");
     assert_eq!(e["state"], "working");
     assert_eq!(e["evaluated_rules"][0]["evidence"]["region_preview"], "line 1\nAllow edit?");
-    let r = sess.herdr("agent.explain", json!({"target": "hc:t9"})).await;
+    let r = sess.herdr("agent.explain", json!({"target": "t9"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
 }
 
@@ -295,9 +295,9 @@ async fn old_core_without_the_method_is_unsupported() {
     let s = setup_with(|st| st.methods = Some(vec!["hello".into(), "terminal.list".into(), "terminal.get".into(), "doc.get".into()]));
     let mut sess = Session::start(s.ctx());
     for (m, p) in [
-        ("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam"})),
-        ("agent.rename", json!({"target": "hc:t1", "name": "x"})),
-        ("tab.close", json!({"tab_id": "hc:task:t3"})),
+        ("tab.create", json!({"workspace_id": "space:s1", "cwd": "/home/sam"})),
+        ("agent.rename", json!({"target": "t1", "name": "x"})),
+        ("tab.close", json!({"tab_id": "task:t3"})),
     ] {
         let r = sess.herdr(m, p).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
@@ -314,7 +314,7 @@ async fn workspace_list_has_the_core_workspaces() {
     let r = sess.herdr("workspace.list", json!({})).await;
     assert_eq!(r["result"]["type"], "workspace_list");
     let ids: Vec<&str> = r["result"]["workspaces"].as_array().unwrap().iter().map(|w| w["workspace_id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["hc:space:s1", "hc:g:clips"], "{r}");
+    assert_eq!(ids, ["space:s1", "g:clips"], "{r}");
 }
 
 #[tokio::test]
@@ -324,7 +324,7 @@ async fn groups_list_counts_spaces_and_groups() {
     let r = sess.call("groups.list", json!({})).await;
     let g = r["result"]["groups"].as_array().unwrap();
     assert_eq!(g.len(), 2, "{r}");
-    assert_eq!(g[0]["workspace_id"], "hc:space:s1");
+    assert_eq!(g[0]["workspace_id"], "space:s1");
     assert_eq!(g[0]["space_id"], "s1");
     assert_eq!(g[0]["terminals"], 2);
     assert_eq!(g[0]["agents"], 1);
@@ -337,13 +337,13 @@ async fn groups_list_counts_spaces_and_groups() {
 async fn pane_move_to_new_space_sets_two_labels() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.call("pane.move", json!({"pane_id": "hc:t3", "new_space": true})).await;
+    let r = sess.call("pane.move", json!({"pane_id": "t3", "new_space": true})).await;
     let l = s.labels("t3");
     let space = l["herdr.space"].as_str().unwrap().to_string();
     assert!(is_id(&l["herdr.space"], "sp") && is_id(&l["herdr.tab"], "tb"), "{l}");
     assert_eq!(l["herdling.group"], "Clips", "other labels stay");
     assert_eq!(l["other"], "keep");
-    assert_eq!(r["result"]["workspace_id"], format!("hc:space:{space}"), "{r}");
+    assert_eq!(r["result"]["workspace_id"], format!("space:{space}"), "{r}");
     let calls = s.core.calls_of("terminal.label");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0]["labels"].as_object().unwrap().len(), 2);
@@ -353,10 +353,10 @@ async fn pane_move_to_new_space_sets_two_labels() {
 async fn pane_move_to_group_sets_one_label() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.call("pane.move", json!({"pane_id": "hc:t3", "group": "Web"})).await;
-    assert_eq!(r["result"]["workspace_id"], "hc:g:web", "{r}");
+    let r = sess.call("pane.move", json!({"pane_id": "t3", "group": "Web"})).await;
+    assert_eq!(r["result"]["workspace_id"], "g:web", "{r}");
     assert_eq!(s.core.calls_of("terminal.label")[0]["labels"], json!({"herdling.group": "Web"}));
-    sess.call("pane.move", json!({"pane_id": "hc:t3", "group": ""})).await;
+    sess.call("pane.move", json!({"pane_id": "t3", "group": ""})).await;
     assert_eq!(s.labels("t3"), json!({"other": "keep"}));
 }
 
@@ -364,11 +364,11 @@ async fn pane_move_to_group_sets_one_label() {
 async fn pane_move_refuses_a_terminal_in_a_space() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.call("pane.move", json!({"pane_id": "hc:t1", "new_space": true})).await;
+    let r = sess.call("pane.move", json!({"pane_id": "t1", "new_space": true})).await;
     assert_eq!(r["error"]["code"], "unsupported", "{r}");
-    let r = sess.call("pane.move", json!({"pane_id": "hc:t9", "group": "x"})).await;
+    let r = sess.call("pane.move", json!({"pane_id": "t9", "group": "x"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
-    let r = sess.call("pane.move", json!({"pane_id": "hc:t3"})).await;
+    let r = sess.call("pane.move", json!({"pane_id": "t3"})).await;
     assert_eq!(r["error"]["code"], "bad_request");
     assert!(s.core.calls_of("terminal.label").is_empty());
 }
@@ -377,17 +377,17 @@ async fn pane_move_refuses_a_terminal_in_a_space() {
 async fn session_start_runs_types_and_prompts() {
     let s = setup_with(|st| st.send_starts_agent = true);
     let mut sess = Session::start(s.ctx());
-    let r = sess.call("session.start", json!({"cwd": "/home/sam/proj", "kind": "claude", "workspace_id": "hc:space:s1",
+    let r = sess.call("session.start", json!({"cwd": "/home/sam/proj", "kind": "claude", "workspace_id": "space:s1",
                                                "prompt": "fix the login form", "args": ["--model", "opus"]})).await;
-    assert_eq!(r["result"]["pane_id"], "hc:t4", "{r}");
-    assert_eq!(r["result"]["workspace_id"], "hc:space:s1");
+    assert_eq!(r["result"]["pane_id"], "t4", "{r}");
+    assert_eq!(r["result"]["workspace_id"], "space:s1");
     assert_eq!(r["result"]["prompt_error"], Value::Null);
     let sends: Vec<Value> = s.core.calls_of("terminal.send").into_iter().map(|c| c["text"].clone()).collect();
     assert_eq!(sends, [json!("claude --model opus"), json!("fix the login form")]);
     assert_eq!(s.core.calls_of("terminal.run")[0]["labels"]["herdr.space"], "s1");
     // No workspace: a new space.
     let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "codex"})).await;
-    assert!(r["result"]["workspace_id"].as_str().unwrap().starts_with("hc:space:sp"), "{r}");
+    assert!(r["result"]["workspace_id"].as_str().unwrap().starts_with("space:sp"), "{r}");
 }
 
 #[tokio::test]
@@ -397,7 +397,7 @@ async fn session_start_refusals() {
     for (p, code) in [
         (json!({"cwd": "proj", "kind": "claude"}), "bad_request"),
         (json!({"cwd": "/home/sam", "kind": "nope"}), "bad_request"),
-        (json!({"cwd": "/home/sam", "kind": "claude", "workspace_id": "hc:g:gone"}), "workspace_not_found"),
+        (json!({"cwd": "/home/sam", "kind": "claude", "workspace_id": "g:gone"}), "workspace_not_found"),
     ] {
         let r = sess.call("session.start", p.clone()).await;
         assert_eq!(r["error"]["code"], code, "{p}: {r}");
@@ -429,11 +429,11 @@ async fn worktree_for_the_core_opens_a_new_space() {
     let path = root.join(".worktrees/fix-x");
     assert!(path.is_dir(), "{r}");
     assert_eq!(res["via"], "herdr");
-    assert_eq!(res["pane_id"], "hc:t4");
+    assert_eq!(res["pane_id"], "t4");
     let run = &s.core.calls_of("terminal.run")[0];
     assert_eq!(run["cwd"], path.to_string_lossy().as_ref());
     assert!(is_id(&run["labels"]["herdr.space"], "sp") && is_id(&run["labels"]["herdr.tab"], "tb"), "{run}");
-    assert_eq!(res["workspace_id"], format!("hc:space:{}", run["labels"]["herdr.space"].as_str().unwrap()));
+    assert_eq!(res["workspace_id"], format!("space:{}", run["labels"]["herdr.space"].as_str().unwrap()));
     // Without the marker (old apps), the core is the default.
     let r = sess.call("git.worktree_add", json!({"cwd": root, "branch": "fix-y"})).await;
     assert_eq!(r["result"]["via"], "herdr", "{r}");
@@ -444,11 +444,11 @@ async fn worktree_for_the_core_opens_a_new_space() {
 async fn shell_watch_accepts_a_core_pane() {
     let s = setup();
     let mut sess = Session::start(s.ctx());
-    let r = sess.call("shell.watch", json!({"pane_id": "hc:t2"})).await;
-    assert_eq!(r["result"]["pane_id"], "hc:t2", "{r}");
+    let r = sess.call("shell.watch", json!({"pane_id": "t2"})).await;
+    assert_eq!(r["result"]["pane_id"], "t2", "{r}");
     let r = sess.call("shell.watches", json!({})).await;
-    assert_eq!(r["result"]["watches"][0]["pane_id"], "hc:t2");
-    let r = sess.call("shell.unwatch", json!({"pane_id": "hc:t2"})).await;
+    assert_eq!(r["result"]["watches"][0]["pane_id"], "t2");
+    let r = sess.call("shell.unwatch", json!({"pane_id": "t2"})).await;
     assert_eq!(r["result"]["removed"], true);
 }
 
@@ -462,7 +462,7 @@ async fn new_terminals_show_in_pane_watch() {
         st.send_starts_agent = true;
     });
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam/proj", "focus": false})).await;
+    let r = sess.herdr("tab.create", json!({"workspace_id": "space:s1", "cwd": "/home/sam/proj", "focus": false})).await;
     let pane = r["result"]["root_pane"]["pane_id"].as_str().unwrap().to_string();
     let w = sess.call("pane.watch", json!({"pane_id": pane, "lines": 50, "format": "ansi"})).await;
     assert!(w["result"]["stream"].is_string(), "{w}");
@@ -470,10 +470,69 @@ async fn new_terminals_show_in_pane_watch() {
     let attach = s.core.calls_of("terminal.attach");
     assert_eq!((attach[0]["terminal"].clone(), attach[0]["observe"].clone()), (json!("t4"), json!(true)));
     // An agent from `session.start` too.
-    let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "claude", "workspace_id": "hc:space:s1"})).await;
+    let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "claude", "workspace_id": "space:s1"})).await;
     let pane = r["result"]["pane_id"].as_str().unwrap().to_string();
     let w = sess.call("pane.watch", json!({"pane_id": pane, "lines": 50, "format": "ansi"})).await;
     assert!(w["result"]["stream"].is_string(), "{w}");
     assert!(sess.event().await["text"].as_str().unwrap().contains("~/proj"));
     assert_eq!(s.core.calls_of("terminal.attach")[1]["terminal"], "t5");
+}
+
+#[tokio::test]
+async fn legacy_ids_name_the_same_entries() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    // Saved app state of herdlingd 0.1.x: each id kind with the `hc:` prefix.
+    let r = sess.herdr("pane.read", json!({"pane_id": "hc:t1", "source": "visible"})).await;
+    assert!(r.get("error").is_none(), "pane: {r}");
+    let r = sess.herdr("workspace.get", json!({"workspace_id": "hc:space:s1"})).await;
+    assert_eq!(r["result"]["workspace"]["workspace_id"], "space:s1", "space: {r}");
+    let r = sess.herdr("workspace.get", json!({"workspace_id": "hc:g:clips"})).await;
+    assert_eq!(r["result"]["workspace"]["workspace_id"], "g:clips", "group: {r}");
+    let r = sess.herdr("tab.rename", json!({"tab_id": "hc:task:t3", "label": "Clip work"})).await;
+    assert!(r.get("error").is_none(), "task tab: {r}");
+    assert_eq!(s.labels("t3")["herdling.name"], "Clip work");
+    let r = sess.herdr("tab.close", json!({"tab_id": "hc:tab:a"})).await;
+    assert!(r.get("error").is_none(), "space tab: {r}");
+    assert_eq!(s.core.calls_of("terminal.kill"), [json!({"terminal": "t1"}), json!({"terminal": "t2"})]);
+    // Methods outside herdr.call take legacy ids too.
+    let r = sess.call("shell.watch", json!({"pane_id": "hc:t3"})).await;
+    assert!(r.get("error").is_none(), "shell.watch: {r}");
+    let w = sess.call("shell.watches", json!({})).await;
+    assert!(w.to_string().contains(r#""t3""#) && !w.to_string().contains("hc:"), "the watch keeps the plain id: {w}");
+}
+
+#[tokio::test]
+async fn loose_ids_are_not_found() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    for (m, p, code) in [
+        ("pane.read", json!({"pane_id": "hc:loose"}), "pane_not_found"),
+        ("agent.prompt", json!({"target": "hc:loose", "text": "hi"}), "pane_not_found"),
+        ("tab.close", json!({"tab_id": "hc:loose"}), "tab_not_found"),
+        ("tab.rename", json!({"tab_id": "hc:loose", "label": "x"}), "tab_not_found"),
+        ("workspace.close", json!({"workspace_id": "hc:loose"}), "workspace_not_found"),
+        ("workspace.get", json!({"workspace_id": "hc:loose"}), "workspace_not_found"),
+    ] {
+        let r = sess.herdr(m, p).await;
+        assert_eq!(r["error"]["code"], code, "{m}: {r}");
+    }
+    assert!(s.core.calls_of("terminal.kill").is_empty());
+    assert!(s.core.calls_of("terminal.label").is_empty());
+}
+
+#[tokio::test]
+async fn space_id_with_a_colon_is_not_found() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    for (m, p, code) in [
+        ("tab.create", json!({"workspace_id": "space:s1:x", "cwd": "/home/sam"}), "workspace_not_found"),
+        ("workspace.close", json!({"workspace_id": "space:s1:x"}), "workspace_not_found"),
+        ("tab.close", json!({"tab_id": "tab:a:x"}), "tab_not_found"),
+        ("pane.read", json!({"pane_id": "w1:p1"}), "pane_not_found"),
+    ] {
+        let r = sess.herdr(m, p).await;
+        assert_eq!(r["error"]["code"], code, "{m}: {r}");
+    }
+    assert!(s.core.calls_of("terminal.run").is_empty());
 }

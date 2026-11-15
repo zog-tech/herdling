@@ -62,11 +62,11 @@ fn new_ids_look_like_the_herdr_app_ids() {
 fn place_from_workspace_ids() {
     let p = projection();
     assert_eq!(actions::place_of(None, &p).unwrap(), Place::NewSpace);
-    assert_eq!(actions::place_of(Some("hc:space:s1"), &p).unwrap(), Place::Space("s1".into()));
-    assert_eq!(actions::place_of(Some("hc:space:s9"), &p).unwrap(), Place::Space("s9".into()), "a space the app knows soon");
-    assert_eq!(actions::place_of(Some("hc:g:clips"), &p).unwrap(), Place::LabelGroup { key: "clips".into(), label: "Clips".into() });
-    assert_eq!(actions::place_of(Some("hc:g:proj"), &p).unwrap(), Place::Folder { key: "proj".into() });
-    for bad in ["hc:g:none", "hc:loose", "hc:space:", "hc:space:a/b", "w1", "hc:t1"] {
+    assert_eq!(actions::place_of(Some("space:s1"), &p).unwrap(), Place::Space("s1".into()));
+    assert_eq!(actions::place_of(Some("space:s9"), &p).unwrap(), Place::Space("s9".into()), "a space the app knows soon");
+    assert_eq!(actions::place_of(Some("g:clips"), &p).unwrap(), Place::LabelGroup { key: "clips".into(), label: "Clips".into() });
+    assert_eq!(actions::place_of(Some("g:proj"), &p).unwrap(), Place::Folder { key: "proj".into() });
+    for bad in ["g:none", "loose", "space:", "space:a/b", "w1", "t1"] {
         assert_eq!(actions::place_of(Some(bad), &p).unwrap_err().code, "workspace_not_found", "{bad}");
     }
 }
@@ -84,10 +84,10 @@ fn place_labels_set_only_the_needed_labels() {
 
 #[test]
 fn placed_ids_match_the_projection() {
-    assert_eq!(actions::placed_ids(&Place::Space("s1".into()), &ids(), "t9"), ("hc:space:s1".into(), "hc:tab:tbNEW".into()));
-    assert_eq!(actions::placed_ids(&Place::NewSpace, &ids(), "t9"), ("hc:space:spNEW".into(), "hc:tab:tbNEW".into()));
+    assert_eq!(actions::placed_ids(&Place::Space("s1".into()), &ids(), "t9"), ("space:s1".into(), "tab:tbNEW".into()));
+    assert_eq!(actions::placed_ids(&Place::NewSpace, &ids(), "t9"), ("space:spNEW".into(), "tab:tbNEW".into()));
     let g = Place::LabelGroup { key: "clips".into(), label: "Clips".into() };
-    assert_eq!(actions::placed_ids(&g, &ids(), "t9"), ("hc:g:clips".into(), "hc:task:t9".into()));
+    assert_eq!(actions::placed_ids(&g, &ids(), "t9"), ("g:clips".into(), "task:t9".into()));
 }
 
 #[test]
@@ -103,11 +103,11 @@ fn run_params_and_shell() {
 
 #[test]
 fn created_has_the_herdr_one_shape() {
-    let c = actions::created("tab_created", "hc:space:s1", "hc:tab:tb1", "hc:t9");
+    let c = actions::created("tab_created", "space:s1", "tab:tb1", "t9");
     assert_eq!(c["type"], "tab_created");
-    assert_eq!(c["workspace"]["workspace_id"], "hc:space:s1");
-    assert_eq!(c["tab"]["tab_id"], "hc:tab:tb1");
-    assert_eq!(c["root_pane"]["pane_id"], "hc:t9");
+    assert_eq!(c["workspace"]["workspace_id"], "space:s1");
+    assert_eq!(c["tab"]["tab_id"], "tab:tb1");
+    assert_eq!(c["root_pane"]["pane_id"], "t9");
 }
 
 #[test]
@@ -127,22 +127,22 @@ fn agent_line_quotes_each_argument() {
 #[test]
 fn members_of_tab_and_workspace() {
     let p = projection();
-    assert_eq!(actions::members(&p, &Scope::Tab("hc:tab:a".into())).unwrap(), ["t1", "t2"]);
-    assert_eq!(actions::members(&p, &Scope::Tab("hc:task:t4".into())).unwrap(), ["t4"]);
-    assert_eq!(actions::members(&p, &Scope::Workspace("hc:space:s1".into())).unwrap(), ["t1", "t2", "t3"]);
-    assert_eq!(actions::members(&p, &Scope::Workspace("hc:g:clips".into())).unwrap(), ["t4"]);
-    assert_eq!(actions::members(&p, &Scope::Tab("hc:tab:none".into())).unwrap_err().code, "tab_not_found");
-    assert_eq!(actions::members(&p, &Scope::Tab("hc:loose:tab".into())).unwrap_err().code, "tab_not_found");
-    assert_eq!(actions::members(&p, &Scope::Workspace("hc:loose".into())).unwrap_err().code, "workspace_not_found");
+    assert_eq!(actions::members(&p, &Scope::Tab("tab:a".into())).unwrap(), ["t1", "t2"]);
+    assert_eq!(actions::members(&p, &Scope::Tab("task:t4".into())).unwrap(), ["t4"]);
+    assert_eq!(actions::members(&p, &Scope::Workspace("space:s1".into())).unwrap(), ["t1", "t2", "t3"]);
+    assert_eq!(actions::members(&p, &Scope::Workspace("g:clips".into())).unwrap(), ["t4"]);
+    assert_eq!(actions::members(&p, &Scope::Tab("tab:none".into())).unwrap_err().code, "tab_not_found");
+    assert_eq!(actions::members(&p, &Scope::Tab("loose:tab".into())).unwrap_err().code, "tab_not_found");
+    assert_eq!(actions::members(&p, &Scope::Workspace("loose".into())).unwrap_err().code, "workspace_not_found");
 }
 
 #[test]
 fn workspace_get_answers_from_the_projection() {
     let p = projection();
-    let w = actions::workspace_get(&p, "hc:space:s1").unwrap();
-    assert_eq!(w["workspace"]["workspace_id"], "hc:space:s1");
+    let w = actions::workspace_get(&p, "space:s1").unwrap();
+    assert_eq!(w["workspace"]["workspace_id"], "space:s1");
     assert_eq!(w["workspace"]["label"], "api");
-    assert_eq!(actions::workspace_get(&p, "hc:g:gone").unwrap_err().code, "workspace_not_found");
+    assert_eq!(actions::workspace_get(&p, "g:gone").unwrap_err().code, "workspace_not_found");
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn in_space_and_groups_list() {
     let g = actions::groups(&p);
     let list = g["groups"].as_array().unwrap();
     assert_eq!(list.len(), 3);
-    assert_eq!(list[0], json!({"workspace_id": "hc:space:s1", "label": "api", "source": "space", "space_id": "s1",
+    assert_eq!(list[0], json!({"workspace_id": "space:s1", "label": "api", "source": "space", "space_id": "s1",
                                 "terminals": 3, "agents": 2, "agent_status": "working"}));
     assert_eq!(list[1]["source"], "label");
     assert_eq!(list[1].get("space_id"), None);
@@ -191,7 +191,7 @@ fn in_space_and_groups_list() {
 #[test]
 fn move_target_needs_exactly_one() {
     use actions::MoveTarget;
-    assert_eq!(actions::move_target(&json!({"workspace_id": "hc:space:s1"})).unwrap(), MoveTarget::Workspace("hc:space:s1".into()));
+    assert_eq!(actions::move_target(&json!({"workspace_id": "space:s1"})).unwrap(), MoveTarget::Workspace("space:s1".into()));
     assert_eq!(actions::move_target(&json!({"new_space": true})).unwrap(), MoveTarget::NewSpace);
     assert_eq!(actions::move_target(&json!({"group": " Clips "})).unwrap(), MoveTarget::Group("Clips".into()));
     assert_eq!(actions::move_target(&json!({"group": ""})).unwrap(), MoveTarget::Group(String::new()));
@@ -206,15 +206,15 @@ fn move_labels_only_for_terminals_in_no_space() {
     let p = projection();
     let l = actions::move_labels("t4", &MoveTarget::NewSpace, &p, &ids()).unwrap();
     assert_eq!(l, map(json!({"herdr.space": "spNEW", "herdr.tab": "tbNEW"})));
-    let l = actions::move_labels("t5", &MoveTarget::Workspace("hc:space:s1".into()), &p, &ids()).unwrap();
+    let l = actions::move_labels("t5", &MoveTarget::Workspace("space:s1".into()), &p, &ids()).unwrap();
     assert_eq!(l, map(json!({"herdr.space": "s1", "herdr.tab": "tbNEW"})));
-    let l = actions::move_labels("t5", &MoveTarget::Workspace("hc:g:clips".into()), &p, &ids()).unwrap();
+    let l = actions::move_labels("t5", &MoveTarget::Workspace("g:clips".into()), &p, &ids()).unwrap();
     assert_eq!(l, map(json!({"herdling.group": "Clips"})));
     let l = actions::move_labels("t5", &MoveTarget::Group("Web".into()), &p, &ids()).unwrap();
     assert_eq!(l, map(json!({"herdling.group": "Web"})));
     let e = actions::move_labels("t1", &MoveTarget::NewSpace, &p, &ids()).unwrap_err();
     assert_eq!(e.code, "unsupported", "a terminal in a space does not move");
-    let e = actions::move_labels("t4", &MoveTarget::Workspace("hc:g:proj".into()), &p, &ids()).unwrap_err();
+    let e = actions::move_labels("t4", &MoveTarget::Workspace("g:proj".into()), &p, &ids()).unwrap_err();
     assert_eq!(e.code, "unsupported");
     assert_eq!(actions::move_labels("t99", &MoveTarget::NewSpace, &p, &ids()).unwrap_err().code, "pane_not_found");
 }

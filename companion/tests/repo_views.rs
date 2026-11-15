@@ -127,7 +127,7 @@ async fn status_finds_the_folder_of_a_pane() {
     std::fs::write(dir.join("a.txt"), "changed\n").unwrap();
     let t = fake_core::agent_at("t1", "Claude Code", "idle", &dir.to_string_lossy(), 0);
     let (ctx, _core) = fake_core::with_ctx(home.path(), home.path().into(), fake_core::State { terminals: vec![t], ..Default::default() });
-    let r = call_with(ctx, "git.status", json!({"pane_id": "hc:t1"})).await;
+    let r = call_with(ctx, "git.status", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["files"][0]["path"], "a.txt", "{r}");
 }
 

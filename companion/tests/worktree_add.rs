@@ -69,7 +69,7 @@ async fn worktree_add_makes_a_branch_and_a_folder() {
     assert_eq!(r["result"]["branch"], "herdling/fix-1");
     // With no `backend` param, the core opens the shell in a new space in the worktree.
     assert_eq!(r["result"]["via"], "herdr");
-    assert_eq!(r["result"]["pane_id"], "hc:t1");
+    assert_eq!(r["result"]["pane_id"], "t1");
     let run = &core.calls_of("terminal.run")[0];
     assert_eq!(run["cwd"], path.as_str());
     assert!(run["labels"]["herdr.space"].as_str().unwrap().starts_with("sp"));

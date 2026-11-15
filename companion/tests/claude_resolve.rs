@@ -62,7 +62,7 @@ async fn resolve_via_pid_file() {
         r#"{"pid":4242,"sessionId":"abc-123","cwd":"/home/sam/proj","status":"idle"}"#,
     );
     let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4242));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     let res = &r["result"];
     assert_eq!(res["kind"], "claude");
     assert_eq!(res["session"], "abc-123");
@@ -75,7 +75,7 @@ async fn resolve_via_pid_file() {
 async fn resolve_non_claude_agent() {
     let dir = tempfile::tempdir().unwrap();
     let mut s = Session::start(fake(dir.path(), dir.path().into(), "codex", "/home/sam/proj", 4242));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["kind"], "codex");
     assert!(r["result"]["session"].is_null());
     assert!(r["result"]["log_path"].is_null());
@@ -91,7 +91,7 @@ async fn resolve_fallback_newest_recent_file() {
     write(&proj.join("new.jsonl"), "{}\n");
     // Pid 1 has no session file; the ps walk finds none either.
     let mut s = Session::start(fake(dir.path(), home, "claude", "/home/sam/proj", 999_999_999));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "new");
     assert!(r["result"]["log_path"].as_str().unwrap().ends_with("-home-sam-proj/new.jsonl"));
 }
@@ -100,7 +100,7 @@ async fn resolve_fallback_newest_recent_file() {
 async fn resolve_no_session_when_nothing_recent() {
     let dir = tempfile::tempdir().unwrap();
     let mut s = Session::start(fake(dir.path(), dir.path().join("home"), "claude", "/home/sam/proj", 999_999_999));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["kind"], "claude");
     assert!(r["result"]["session"].is_null());
 }
@@ -246,7 +246,7 @@ async fn resolve_finds_the_log_in_another_project_dir() {
     let log = home.join(".claude/projects/-home-sam-link/moved-sess.jsonl");
     write(&log, "{}\n");
     let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4343));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "moved-sess");
     assert_eq!(r["result"]["log_path"], log.to_string_lossy().as_ref());
 }
@@ -264,7 +264,7 @@ async fn resolve_follows_a_continued_in_record_to_the_new_log() {
     let new_log = project.join("new-sess.jsonl");
     write(&new_log, "{}\n");
     let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4344));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "new-sess");
     assert_eq!(r["result"]["log_path"], new_log.to_string_lossy().as_ref());
 }
@@ -277,6 +277,6 @@ async fn resolve_stays_on_the_old_log_when_the_new_log_is_missing() {
     let log = home.join(".claude/projects/-home-sam-proj/old-sess.jsonl");
     write(&log, "{\"type\":\"continued-in\",\"continuedInSessionId\":\"../../etc\"}\n");
     let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4345));
-    let r = s.call("thread.resolve", json!({"pane_id":"hc:t1"})).await;
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "old-sess");
 }

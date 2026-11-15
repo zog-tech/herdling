@@ -93,7 +93,7 @@ fn setup(attach: bool, paint: &[u8]) -> Setup {
 }
 
 fn watch_params() -> Value {
-    json!({"pane_id": "hc:t1", "lines": 50, "format": "ansi", "interval_ms": 50})
+    json!({"pane_id": "t1", "lines": 50, "format": "ansi", "interval_ms": 50})
 }
 
 #[tokio::test]
@@ -117,7 +117,7 @@ async fn watch_streams_ansi() {
 async fn text_format_has_no_escapes() {
     let s = setup(true, PAINT);
     let mut sess = Session::start(s.ctx());
-    sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 50})).await;
+    sess.call(1, "pane.watch", json!({"pane_id": "t1", "lines": 50})).await;
     assert_eq!(sess.event().await["text"], "red");
 }
 
@@ -144,9 +144,9 @@ async fn attach_is_passive() {
 async fn unknown_pane_is_not_found() {
     let s = setup(true, PAINT);
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "pane.watch", json!({"pane_id": "hc:t99"})).await;
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "t99"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
-    let r = sess.call(2, "pane.watch", json!({"pane_id": "hc:g:proj"})).await;
+    let r = sess.call(2, "pane.watch", json!({"pane_id": "g:proj"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
 }
 
@@ -180,7 +180,7 @@ async fn core_restart_reattaches() {
 async fn resize_frames_resize_the_emulator() {
     let s = setup(true, b"\x18\x1b[H\x1b[2Jone\r\ntwo\r\nthree");
     let mut sess = Session::start(s.ctx());
-    sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 0})).await;
+    sess.call(1, "pane.watch", json!({"pane_id": "t1", "lines": 0})).await;
     sess.event().await;
     // The core makes the grid 2 rows high, then repaints it.
     s.core.send(Ctl::Resize(80, 2));
@@ -196,7 +196,7 @@ async fn resize_frames_resize_the_emulator() {
 async fn drive_mode_attaches_at_the_phone_grid() {
     let s = setup(true, PAINT);
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 50, "format": "ansi", "cols": 45, "rows": 30})).await;
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "t1", "lines": 50, "format": "ansi", "cols": 45, "rows": 30})).await;
     assert_eq!(r["result"]["drive"], true, "{r}");
     assert_eq!(sess.event().await["text"], "\x1b[0;31mred\x1b[0m");
     let attach = &s.core.calls_of("terminal.attach")[0];
@@ -228,14 +228,14 @@ async fn pane_get_reports_a_full_screen_app_during_a_watch() {
     let s = setup(true, b"\x18\x1b[?1049h\x1b[H\x1b[2J\x1b[7m less \x1b[0m");
     let mut sess = Session::start(s.ctx());
     // No watch: no scroll field.
-    let r = sess.herdr(1, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.herdr(1, "pane.get", json!({"pane_id": "t1"})).await;
     assert!(r["result"]["pane"].is_object(), "{r}");
     assert!(r["result"]["pane"].get("scroll").is_none(), "{r}");
     sess.call(2, "pane.watch", watch_params()).await;
     let e = sess.event().await;
     // The alternate screen keeps every row, so the app sees a full screen.
     assert_eq!(e["text"].as_str().unwrap().split('\n').count(), 24, "{e}");
-    let r = sess.herdr(3, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.herdr(3, "pane.get", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["pane"]["scroll"], json!({"max_offset_from_bottom": 0, "viewport_rows": 24}), "{r}");
 }
 
@@ -247,7 +247,7 @@ async fn pane_get_of_a_shell_reports_its_history() {
     let mut sess = Session::start(s.ctx());
     sess.call(1, "pane.watch", watch_params()).await;
     sess.event().await;
-    let r = sess.herdr(2, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.herdr(2, "pane.get", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["pane"]["scroll"], json!({"max_offset_from_bottom": 6, "viewport_rows": 24}), "{r}");
 }
 
@@ -255,7 +255,7 @@ async fn pane_get_of_a_shell_reports_its_history() {
 async fn ansi_read_takes_one_paint_and_detaches() {
     let s = setup(true, PAINT);
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "recent", "lines": 100, "format": "ansi", "strip_ansi": false})).await;
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "t1", "source": "recent", "lines": 100, "format": "ansi", "strip_ansi": false})).await;
     assert_eq!(r["result"]["read"]["text"], "\x1b[0;31mred\x1b[0m", "{r}");
     assert_eq!(r["result"]["read"]["format"], "ansi");
     assert_eq!(r["result"]["type"], "pane_read");
@@ -278,11 +278,11 @@ async fn ansi_read_takes_one_paint_and_detaches() {
 async fn text_read_still_uses_terminal_read() {
     let s = setup(true, PAINT);
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "visible", "format": "text"})).await;
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "t1", "source": "visible", "format": "text"})).await;
     assert_eq!(r["result"]["read"]["text"], "plain screen", "{r}");
     assert!(s.core.calls_of("terminal.attach").is_empty());
     // An ANSI read of a missing terminal is pane_not_found.
-    let r = sess.herdr(2, "pane.read", json!({"pane_id": "hc:t9", "format": "ansi"})).await;
+    let r = sess.herdr(2, "pane.read", json!({"pane_id": "t9", "format": "ansi"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
 }
 
@@ -290,6 +290,6 @@ async fn text_read_still_uses_terminal_read() {
 async fn ansi_read_on_an_old_core_is_plain_text() {
     let s = setup(false, PAINT);
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "format": "ansi"})).await;
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "t1", "format": "ansi"})).await;
     assert_eq!(r["result"]["read"]["text"], "plain screen", "{r}");
 }

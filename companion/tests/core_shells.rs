@@ -54,8 +54,8 @@ fn core_probe_rules() {
 
 #[test]
 fn foreground_events_name_the_pane() {
-    assert_eq!(core_watch::foreground_pane(&event("foreground", "t2", json!({}))).as_deref(), Some("hc:t2"));
-    assert_eq!(core_watch::foreground_pane(&event("title", "t2", json!({}))).as_deref(), Some("hc:t2"));
+    assert_eq!(core_watch::foreground_pane(&event("foreground", "t2", json!({}))).as_deref(), Some("t2"));
+    assert_eq!(core_watch::foreground_pane(&event("title", "t2", json!({}))).as_deref(), Some("t2"));
     assert_eq!(core_watch::foreground_pane(&event("status", "t2", json!({}))), None);
     assert_eq!(core_watch::foreground_pane(&event("foreground", "box/t2", json!({}))), None);
 }
@@ -78,7 +78,7 @@ async fn core_watch_sends_one_push_when_the_command_ends() {
     .unwrap();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let watches = shell_watch::path(dir.path());
-    shell_watch::add(&watches, "hc:t2", Some("d1"), now).unwrap();
+    shell_watch::add(&watches, "t2", Some("d1"), now).unwrap();
     // A watch of a herdr 1 pane (saved by herdlingd 0.1.x) names no terminal: it goes.
     shell_watch::add(&watches, "w1:p1", None, now).unwrap();
     let sock = dir.path().join("core.sock");
@@ -98,7 +98,7 @@ async fn core_watch_sends_one_push_when_the_command_ends() {
     core.wait_subscribes(1).await;
     let mut seen_busy = false;
     for _ in 0..100 {
-        if shell_watch::list(&watches, now).unwrap().iter().any(|w| w.pane_id == "hc:t2" && w.busy.is_some()) {
+        if shell_watch::list(&watches, now).unwrap().iter().any(|w| w.pane_id == "t2" && w.busy.is_some()) {
             seen_busy = true;
             break;
         }

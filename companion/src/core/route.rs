@@ -7,6 +7,7 @@
 use serde_json::{json, Map, Value};
 
 use super::actions::{agent_line, rename_labels, ActionError, Scope};
+use super::ids::{self, Tab};
 use super::project::{self, address};
 
 /// The error code of a herdr method that a core entry cannot do.
@@ -16,13 +17,13 @@ pub const UNSUPPORTED: &str = "unsupported";
 const DEFAULT_LINES: u64 = 200;
 const MAX_LINES: u64 = 1000;
 
-/// The keys that name the entry of a herdr 1 call, in the order they count.
-const ID_KEYS: [&str; 4] = ["pane_id", "target", "tab_id", "workspace_id"];
-
 /// The id of the entry that a herdr 1 call names: the first non-empty string of `pane_id`,
-/// `target`, `tab_id`, `workspace_id`. None for a call that names no entry.
+/// `target`, `tab_id`, `workspace_id`, without the legacy `hc:` prefix. None for a call that
+/// names no entry.
 pub fn target(params: &Value) -> Option<String> {
-    ID_KEYS.iter().find_map(|k| params.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from))
+    ids::ID_KEYS
+        .iter()
+        .find_map(|k| params.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(|v| ids::strip_legacy(v).to_string()))
 }
 
 /// How the core answer becomes the herdr 1 answer.
@@ -114,6 +115,9 @@ fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan
     plain("terminal.keys", json!({ "terminal": addr, "keys": all }))
 }
 
+/// The herdr 1 methods of [`plan`]: each names a pane.
+const PANE_METHODS: [&str; 8] = ["pane.read", "pane.send_input", "pane.send_text", "pane.send_keys", "agent.prompt", "pane.get", "pane.process_info", "pane.close"];
+
 /// The core call for the herdr 1 call `method` on the core pane `id`.
 pub fn plan(method: &str, params: &Value, id: &str) -> Result<Plan, Unsupported> {
     let need_herdr1 = || unsupported(format!("{method} has no meaning on Herdr 2"));
@@ -201,11 +205,8 @@ pub enum Action {
 /// The action of the herdr 1 call `method` on the core id `id`.
 pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionError> {
     let s = |k: &str| params.get(k).and_then(Value::as_str);
-    let pane = || {
-        address(id)
-            .map(String::from)
-            .ok_or_else(|| ActionError::unsupported(format!("{method} on Herdr 2 needs a terminal id, not {id}")))
-    };
+    // A pane method on an id that is no terminal address names no pane.
+    let pane = || address(id).map(String::from).ok_or_else(|| ActionError::not_found("pane", id));
     let owned_names = "The Herdr app owns the names of its spaces and tabs. Rename the task instead.";
     Ok(match method {
         "tab.create" => Action::Run { kind: "tab_created", workspace: Some(id.to_string()), cwd: s("cwd").map(String::from) },
@@ -228,15 +229,17 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
             Action::Prompt { addr: pane()?, text: text.to_string() }
         }
         "agent.rename" => Action::Label { addr: pane()?, labels: rename_labels(s("name")) },
-        "tab.rename" => match id.strip_prefix(&format!("{}task:", project::PREFIX)).filter(|a| address(&project::pane_id(a)).is_some()) {
-            Some(addr) => Action::Label { addr: addr.to_string(), labels: rename_labels(s("label")) },
-            None => return Err(ActionError::unsupported(owned_names)),
+        "tab.rename" => match ids::tab(id) {
+            Some(Tab::Task(addr)) => Action::Label { addr: addr.to_string(), labels: rename_labels(s("label")) },
+            Some(Tab::Space(_)) => return Err(ActionError::unsupported(owned_names)),
+            None => return Err(ActionError::not_found("tab", id)),
         },
         "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
         "tab.close" => Action::Kill(Scope::Tab(id.to_string())),
         "workspace.close" => Action::Kill(Scope::Workspace(id.to_string())),
         "agent.explain" => Action::Explain { addr: pane()? },
         "workspace.get" => Action::WorkspaceGet(id.to_string()),
+        _ if address(id).is_none() && PANE_METHODS.contains(&method) => return Err(ActionError::not_found("pane", id)),
         _ => Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?),
     })
 }

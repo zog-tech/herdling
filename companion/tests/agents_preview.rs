@@ -298,10 +298,10 @@ async fn rpc_previews_every_agent() {
     let r = s.call("agents.preview", json!({})).await;
     let list = r["result"]["previews"].as_array().unwrap_or_else(|| panic!("{r}"));
     assert_eq!(list.len(), 2, "{r}");
-    assert_eq!(list[0]["pane_id"], "hc:t1");
+    assert_eq!(list[0]["pane_id"], "t1");
     assert_eq!(list[0]["source"], "log");
     assert_eq!(list[0]["activity"], "Running pnpm test");
-    assert_eq!(list[1]["pane_id"], "hc:t2");
+    assert_eq!(list[1]["pane_id"], "t2");
     assert_eq!(list[1]["source"], "screen");
     assert_eq!(list[1]["question"], "Would you like to run `rm -rf build`?");
 }
@@ -311,11 +311,11 @@ async fn rpc_filters_by_pane_ids() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, _core) = fake_host(dir.path());
     let mut s = Session::start(ctx);
-    let r = s.call("agents.preview", json!({"pane_ids": ["hc:t1"]})).await;
+    let r = s.call("agents.preview", json!({"pane_ids": ["t1"]})).await;
     let list = r["result"]["previews"].as_array().unwrap();
     assert_eq!(list.len(), 1);
-    assert_eq!(list[0]["pane_id"], "hc:t1");
-    let bad = s.call("agents.preview", json!({"pane_ids": "hc:t1"})).await;
+    assert_eq!(list[0]["pane_id"], "t1");
+    let bad = s.call("agents.preview", json!({"pane_ids": "t1"})).await;
     assert_eq!(bad["error"]["code"], "bad_request");
 }
 

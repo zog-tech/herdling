@@ -87,7 +87,7 @@ async fn done_gives_finished() {
     assert_eq!(body[0]["title"], "api finished");
     // The body names the card group: here the folder group of /…/src.
     assert_eq!(body[0]["body"], "src");
-    assert_eq!(body[0]["data"], json!({"hostId": "h_1", "paneId": "hc:t1"}));
+    assert_eq!(body[0]["data"], json!({"hostId": "h_1", "paneId": "t1"}));
     s.assert_no_body(Duration::from_millis(300)).await;
 }
 

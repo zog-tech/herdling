@@ -104,17 +104,17 @@ fn watch_params_defaults_and_clamps() {
 
 #[test]
 fn watch_params_phone_grid() {
-    let p = WatchParams::parse(&json!({"pane_id": "hc:t1"})).unwrap();
+    let p = WatchParams::parse(&json!({"pane_id": "t1"})).unwrap();
     assert_eq!(p.size, None);
-    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 45, "rows": 30})).unwrap();
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 45, "rows": 30})).unwrap();
     assert_eq!(p.size, Some((45, 30)));
-    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 5, "rows": 9999})).unwrap();
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 5, "rows": 9999})).unwrap();
     assert_eq!(p.size, Some((20, 200)));
-    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 9999, "rows": 1})).unwrap();
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 9999, "rows": 1})).unwrap();
     assert_eq!(p.size, Some((500, 5)));
     // One of the two alone is no grid.
-    assert_eq!(WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 45})).unwrap().size, None);
-    assert_eq!(WatchParams::parse(&json!({"pane_id": "hc:t1", "rows": 30})).unwrap().size, None);
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "t1", "cols": 45})).unwrap().size, None);
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "t1", "rows": 30})).unwrap().size, None);
 }
 
 #[tokio::test]
@@ -122,7 +122,7 @@ async fn watch_sends_first_screen_then_only_changes() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, c) = core(dir.path());
     let mut s = Session::start(ctx);
-    let r = s.watch(1, json!({"pane_id": "hc:t1", "format": "ansi", "lines": 50, "interval_ms": 50})).await;
+    let r = s.watch(1, json!({"pane_id": "t1", "format": "ansi", "lines": 50, "interval_ms": 50})).await;
     let stream = r["result"]["stream"].as_str().unwrap_or_else(|| panic!("no stream: {r}")).to_string();
     assert!(stream.starts_with("pane:"));
     assert_eq!(c.calls_of("terminal.read")[0], json!({"terminal": "t1", "lines": 50}));
@@ -147,12 +147,12 @@ async fn watch_reports_core_errors_as_the_call_error() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, _c) = core(dir.path());
     let mut s = Session::start(ctx);
-    let r = s.watch(1, json!({"pane_id": "hc:t9"})).await;
+    let r = s.watch(1, json!({"pane_id": "t9"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
 
     let dir2 = tempfile::tempdir().unwrap();
     let mut s2 = Session::start(Ctx::new(dir2.path().into()));
-    let r = s2.watch(1, json!({"pane_id": "hc:t1"})).await;
+    let r = s2.watch(1, json!({"pane_id": "t1"})).await;
     assert_eq!(r["error"]["code"], "herdr_unavailable");
     let r = s2.watch(2, json!({})).await;
     assert_eq!(r["error"]["code"], "bad_request");
@@ -163,7 +163,7 @@ async fn watch_ends_with_an_error_event_when_the_pane_goes() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, c) = core(dir.path());
     let mut s = Session::start(ctx);
-    s.watch(1, json!({"pane_id": "hc:t1", "interval_ms": 50})).await;
+    s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     s.recv().await;
     let gone = c.state.lock().unwrap().terminals.pop().unwrap();
     let ev = s.recv().await;
@@ -179,7 +179,7 @@ async fn watch_stops_reading_on_cancel() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, c) = core(dir.path());
     let mut s = Session::start(ctx);
-    let r = s.watch(1, json!({"pane_id": "hc:t1", "interval_ms": 50})).await;
+    let r = s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     let stream = r["result"]["stream"].as_str().unwrap().to_string();
     s.recv().await;
     s.send(&json!({"id": 2, "method": "rpc.cancel", "params": {"stream": stream}}).to_string()).await;
@@ -196,7 +196,7 @@ async fn watch_stops_reading_when_the_channel_closes() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, c) = core(dir.path());
     let mut s = Session::start(ctx);
-    s.watch(1, json!({"pane_id": "hc:t1", "interval_ms": 50})).await;
+    s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     s.recv().await;
     // The SSH channel closes: stdin reaches EOF.
     drop(s.tx.take());
@@ -212,7 +212,7 @@ async fn send_input_types_text_and_enter_as_one_send() {
     let (ctx, c) = core(dir.path());
     let mut s = Session::start(ctx);
     let call = json!({"id": 1, "method": "herdr.call", "params": {"method": "pane.send_input",
-        "params": {"pane_id": "hc:t1", "text": "ls -la", "keys": ["enter"]}}});
+        "params": {"pane_id": "t1", "text": "ls -la", "keys": ["enter"]}}});
     s.send(&call.to_string()).await;
     assert!(s.recv().await.get("result").is_some());
     assert_eq!(c.calls_of("terminal.send"), vec![json!({"terminal": "t1", "text": "ls -la", "force": true})]);
@@ -229,11 +229,11 @@ async fn pipelined_typing_calls_reach_the_core_in_order() {
     for i in 0..N {
         let line = if i % 3 == 2 {
             want.push(json!(["enter"]));
-            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_keys", "params": {"pane_id": "hc:t1", "keys": ["enter"]}}})
+            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_keys", "params": {"pane_id": "t1", "keys": ["enter"]}}})
         } else {
             let text = format!("t{i}");
             want.push(json!(text.chars().map(|c| c.to_string()).collect::<Vec<_>>()));
-            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_input", "params": {"pane_id": "hc:t1", "text": text}}})
+            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_input", "params": {"pane_id": "t1", "text": text}}})
         };
         s.send(&line.to_string()).await;
     }

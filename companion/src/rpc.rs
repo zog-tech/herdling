@@ -414,7 +414,9 @@ pub const METHODS: &[&str] = &[
 ];
 
 /// Add new methods to `METHODS` too.
-async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<Value, RpcError> {
+async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Result<Value, RpcError> {
+    // Saved app state of herdlingd 0.1.x names entries with `hc:` ids: the same entries.
+    crate::core::ids::strip_params(&mut params);
     match method {
         "hello" => hello(ctx).await,
         "ping" => Ok(json!({})),

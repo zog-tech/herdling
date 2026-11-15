@@ -8,7 +8,8 @@
 use serde_json::{json, Map, Value};
 
 use super::groups::GROUP_LABEL;
-use super::project::{self, address, agent_kind, agent_status, Projection, PREFIX};
+use super::ids::{self, Workspace};
+use super::project::{self, address, agent_kind, agent_status, Projection};
 use crate::types::RpcError;
 
 /// The label that renames a task from the phone.
@@ -84,23 +85,18 @@ pub enum Place {
     Folder { key: String },
 }
 
-/// The id after `prefix`, when it is a plain id (no `:` or `/`).
-fn plain_after<'a>(id: &'a str, prefix: &str) -> Option<&'a str> {
-    id.strip_prefix(prefix).filter(|s| !s.is_empty() && !s.contains([':', '/']))
-}
-
 fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str)
 }
 
 /// The place of the workspace id `workspace_id`. None is a new space.
 pub fn place_of(workspace_id: Option<&str>, p: &Projection) -> Result<Place, ActionError> {
-    let Some(id) = workspace_id else { return Ok(Place::NewSpace) };
-    if let Some(space) = plain_after(id, &format!("{PREFIX}space:")) {
-        return Ok(Place::Space(space.into()));
-    }
+    let Some(id) = workspace_id.map(ids::strip_legacy) else { return Ok(Place::NewSpace) };
     let not_found = || ActionError::not_found("workspace", id);
-    let key = plain_after(id, &format!("{PREFIX}g:")).ok_or_else(not_found)?;
+    let key = match ids::workspace(id).ok_or_else(not_found)? {
+        Workspace::Space(space) => return Ok(Place::Space(space.into())),
+        Workspace::Group(key) => key,
+    };
     let ws = p.workspaces.iter().find(|w| text(w, "workspace_id") == Some(id)).ok_or_else(not_found)?;
     let label = text(ws, "label").unwrap_or(key).to_string();
     let source = p.panes.iter().find(|e| text(e, "workspace_id") == Some(id)).and_then(|e| text(e, "group_source"));
@@ -132,11 +128,11 @@ pub fn place_labels(place: &Place, ids: &NewIds) -> Map<String, Value> {
 
 /// The workspace and tab ids that the projection gives the new terminal `addr` at `place`.
 /// For a folder group they hold while the terminal stays in the same folder.
-pub fn placed_ids(place: &Place, ids: &NewIds, addr: &str) -> (String, String) {
+pub fn placed_ids(place: &Place, new: &NewIds, addr: &str) -> (String, String) {
     match place {
-        Place::Space(s) => (format!("{PREFIX}space:{s}"), format!("{PREFIX}tab:{}", ids.tab)),
-        Place::NewSpace => (format!("{PREFIX}space:{}", ids.space), format!("{PREFIX}tab:{}", ids.tab)),
-        Place::LabelGroup { key, .. } | Place::Folder { key } => (format!("{PREFIX}g:{key}"), format!("{PREFIX}task:{addr}")),
+        Place::Space(s) => (ids::space_ws(s), ids::space_tab(&new.tab)),
+        Place::NewSpace => (ids::space_ws(&new.space), ids::space_tab(&new.tab)),
+        Place::LabelGroup { key, .. } | Place::Folder { key } => (ids::group_ws(key), ids::task_tab(addr)),
     }
 }
 
@@ -205,18 +201,18 @@ pub enum Scope {
 /// The terminal addresses in `scope`, in projection order.
 pub fn members(p: &Projection, scope: &Scope) -> Result<Vec<String>, ActionError> {
     let (key, id, kind) = match scope {
-        Scope::Tab(id) => ("tab_id", id, "tab"),
-        Scope::Workspace(id) => ("workspace_id", id, "workspace"),
+        Scope::Tab(id) => ("tab_id", ids::strip_legacy(id), "tab"),
+        Scope::Workspace(id) => ("workspace_id", ids::strip_legacy(id), "workspace"),
     };
     let list: Vec<String> = p
         .panes
         .iter()
-        .filter(|e| text(e, key) == Some(id.as_str()))
+        .filter(|e| text(e, key) == Some(id))
         .filter_map(|e| text(e, "pane_id").and_then(address).map(String::from))
         .collect();
     let known = match scope {
-        Scope::Tab(_) => p.tabs.iter().any(|t| text(t, "tab_id") == Some(id.as_str())),
-        Scope::Workspace(_) => p.workspaces.iter().any(|w| text(w, "workspace_id") == Some(id.as_str())),
+        Scope::Tab(_) => p.tabs.iter().any(|t| text(t, "tab_id") == Some(id)),
+        Scope::Workspace(_) => p.workspaces.iter().any(|w| text(w, "workspace_id") == Some(id)),
     };
     if !known {
         return Err(ActionError::not_found(kind, id));
@@ -226,6 +222,7 @@ pub fn members(p: &Projection, scope: &Scope) -> Result<Vec<String>, ActionError
 
 /// The herdr 1 `workspace.get` answer for the core workspace `id`.
 pub fn workspace_get(p: &Projection, id: &str) -> Result<Value, ActionError> {
+    let id = ids::strip_legacy(id);
     let w = p.workspaces.iter().find(|w| text(w, "workspace_id") == Some(id)).ok_or_else(|| ActionError::not_found("workspace", id))?;
     Ok(json!({ "type": "workspace_info", "workspace": w }))
 }
@@ -281,7 +278,10 @@ pub fn groups(p: &Projection) -> Value {
             let id = text(w, "workspace_id")?;
             let count = |list: &[Value]| list.iter().filter(|e| text(e, "workspace_id") == Some(id)).count();
             let source = p.panes.iter().find(|e| text(e, "workspace_id") == Some(id)).and_then(|e| text(e, "group_source"));
-            let space = plain_after(id, &format!("{PREFIX}space:"));
+            let space = match ids::workspace(id) {
+                Some(Workspace::Space(s)) => Some(s),
+                _ => None,
+            };
             let mut g = json!({
                 "workspace_id": id,
                 "label": w.get("label"),

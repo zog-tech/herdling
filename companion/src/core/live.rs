@@ -122,7 +122,7 @@ pub async fn run_shell(sock: &CoreSocket, timeout: Duration, place: &actions::Pl
 
 /// The place of the workspace id `workspace`. Only a group id needs the projection.
 pub async fn place(sock: &CoreSocket, timeout: Duration, workspace: Option<&str>) -> Result<actions::Place, RpcError> {
-    let needs = workspace.is_some_and(|w| w.starts_with(&format!("{}g:", project::PREFIX)));
+    let needs = workspace.and_then(super::ids::workspace).is_some_and(|w| matches!(w, super::ids::Workspace::Group(_)));
     let p = if needs { placed(sock, timeout).await? } else { Projection::default() };
     Ok(actions::place_of(workspace, &p)?)
 }

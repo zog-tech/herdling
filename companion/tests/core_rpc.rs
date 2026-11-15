@@ -97,9 +97,9 @@ async fn snapshot_comes_from_the_core() {
     let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
     let r = sess.herdr(1, "session.snapshot", json!({})).await;
-    assert_eq!(pane_ids(&r, "agents"), ["hc:t1"]);
-    assert_eq!(pane_ids(&r, "panes"), ["hc:t1", "hc:t2"]);
-    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:g:src");
+    assert_eq!(pane_ids(&r, "agents"), ["t1"]);
+    assert_eq!(pane_ids(&r, "panes"), ["t1", "t2"]);
+    assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "g:src");
 
     let none = setup(false, "idle");
     let mut sess = Session::start(none.ctx());
@@ -111,41 +111,41 @@ async fn snapshot_comes_from_the_core() {
 async fn calls_on_core_panes_translate() {
     let s = setup(true, "blocked");
     let mut sess = Session::start(s.ctx());
-    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "visible", "format": "text"})).await;
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "t1", "source": "visible", "format": "text"})).await;
     assert!(r["result"]["read"]["text"].as_str().unwrap().contains("1. Yes"), "{r}");
     assert_eq!(s.core().calls_of("terminal.read")[0], json!({"terminal": "t1", "lines": 0}));
 
-    let r = sess.herdr(2, "pane.send_input", json!({"pane_id": "hc:t1", "text": "fix it", "keys": ["enter"]})).await;
+    let r = sess.herdr(2, "pane.send_input", json!({"pane_id": "t1", "text": "fix it", "keys": ["enter"]})).await;
     assert!(r["error"].is_null(), "{r}");
     assert_eq!(s.core().calls_of("terminal.send")[0], json!({"terminal": "t1", "text": "fix it", "force": true}));
 
-    let r = sess.herdr(3, "pane.send_keys", json!({"pane_id": "hc:t1", "keys": ["ctrl+c"]})).await;
+    let r = sess.herdr(3, "pane.send_keys", json!({"pane_id": "t1", "keys": ["ctrl+c"]})).await;
     assert!(r["error"].is_null(), "{r}");
     assert_eq!(s.core().calls_of("terminal.keys")[0], json!({"terminal": "t1", "keys": ["ctrl+c"]}));
 
-    let r = sess.herdr(4, "agent.prompt", json!({"target": "hc:t1", "text": "go on"})).await;
+    let r = sess.herdr(4, "agent.prompt", json!({"target": "t1", "text": "go on"})).await;
     assert!(r["error"].is_null(), "{r}");
 
-    let r = sess.herdr(5, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.herdr(5, "pane.get", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["pane"]["agent_status"], "blocked");
-    let r = sess.herdr(6, "pane.process_info", json!({"pane_id": "hc:t2"})).await;
+    let r = sess.herdr(6, "pane.process_info", json!({"pane_id": "t2"})).await;
     assert_eq!(r["result"]["process_info"]["shell_pid"], 100);
 
-    let r = sess.herdr(7, "pane.close", json!({"pane_id": "hc:t2"})).await;
+    let r = sess.herdr(7, "pane.close", json!({"pane_id": "t2"})).await;
     assert!(r["error"].is_null(), "{r}");
     assert_eq!(s.core().calls_of("terminal.kill")[0], json!({"terminal": "t2"}));
 
     // A closed terminal has the herdr 1 code.
-    let r = sess.herdr(8, "pane.get", json!({"pane_id": "hc:t9"})).await;
+    let r = sess.herdr(8, "pane.get", json!({"pane_id": "t9"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
 }
 
 #[tokio::test]
 async fn old_loose_ids_are_not_found() {
-    // herdlingd 0.1.x had a "hc:loose" workspace and a "hc:loose:tab" tab. An old app can still send them.
+    // herdlingd 0.1.x had a "loose" workspace and a "loose:tab" tab. An old app can still send them.
     let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
-    for (i, id) in ["hc:loose", "hc:loose:tab"].into_iter().enumerate() {
+    for (i, id) in ["loose", "loose:tab"].into_iter().enumerate() {
         let r = sess.herdr(i as u64 + 1, "pane.read", json!({"pane_id": id, "source": "visible"})).await;
         let code = r["error"]["code"].as_str().unwrap_or_default();
         assert!(matches!(code, "unsupported" | "pane_not_found"), "{id}: {r}");
@@ -157,10 +157,9 @@ async fn methods_with_no_core_equivalent_are_unsupported() {
     let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
     for (i, (m, p)) in [
-        ("pane.rename", json!({"pane_id": "hc:t1", "label": "x"})),
-        ("agent.start", json!({"workspace_id": "hc:g:src", "agent": "claude"})),
-        ("workspace.rename", json!({"workspace_id": "hc:space:s1", "label": "x"})),
-        ("pane.send_text", json!({"pane_id": "hc:t1", "text": "€"})),
+        ("pane.rename", json!({"pane_id": "t1", "label": "x"})),
+        ("workspace.rename", json!({"workspace_id": "space:s1", "label": "x"})),
+        ("pane.send_text", json!({"pane_id": "t1", "text": "€"})),
     ]
     .into_iter()
     .enumerate()
@@ -168,9 +167,12 @@ async fn methods_with_no_core_equivalent_are_unsupported() {
         let r = sess.herdr(i as u64 + 1, m, p).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
     }
+    // A pane method on a workspace id names no pane.
+    let r = sess.herdr(9, "agent.start", json!({"workspace_id": "g:src", "kind": "claude"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
     // Without a core socket: herdr_unavailable, as old apps know it.
     let mut no_core = Session::start(Ctx::new(s.dir.path().into()));
-    let r = no_core.herdr(1, "pane.read", json!({"pane_id": "hc:t1"})).await;
+    let r = no_core.herdr(1, "pane.read", json!({"pane_id": "t1"})).await;
     assert_eq!(r["error"]["code"], "herdr_unavailable");
     assert!(s.core().calls_of("terminal.read").is_empty());
 }
@@ -195,17 +197,17 @@ async fn hello_lists_backends() {
 async fn pane_answer_on_a_core_pane() {
     let s = setup(true, "blocked");
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "pane.answer", json!({"pane_id": "hc:t1", "key": "2", "expect_label": "Yes"})).await;
+    let r = sess.call(1, "pane.answer", json!({"pane_id": "t1", "key": "2", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "label mismatch");
-    let r = sess.call(2, "pane.answer", json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = sess.call(2, "pane.answer", json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["result"], json!({"answered": true}), "{r}");
     assert_eq!(s.core().calls_of("terminal.keys"), vec![json!({"terminal": "t1", "keys": ["1"]})]);
-    let r = sess.call(3, "pane.answer", json!({"pane_id": "hc:t9", "key": "1", "expect_label": "Yes"})).await;
+    let r = sess.call(3, "pane.answer", json!({"pane_id": "t9", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale");
 
     let idle = setup(true, "working");
     let mut sess = Session::start(idle.ctx());
-    let r = sess.call(1, "pane.answer", json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = sess.call(1, "pane.answer", json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale");
     assert!(idle.core().calls_of("terminal.keys").is_empty());
 }
@@ -214,12 +216,12 @@ async fn pane_answer_on_a_core_pane() {
 async fn thread_resolve_and_previews_for_core_agents() {
     let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["session"], Value::Null);
     assert_eq!(r["result"]["kind"], "claude");
     let r = sess.call(2, "agents.preview", json!({})).await;
     let p = &r["result"]["previews"][0];
-    assert_eq!(p["pane_id"], "hc:t1");
+    assert_eq!(p["pane_id"], "t1");
     assert_eq!(p["activity"], "Running tests");
     assert_eq!(p["status_since"], 1_700_000_000);
 }
@@ -235,7 +237,7 @@ async fn core_thread_resolves_claude_session() {
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::write(proj.join("abc.jsonl"), "").unwrap();
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t1"})).await;
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["session"], "abc", "{r}");
     assert_eq!(r["result"]["kind"], "claude");
     assert_eq!(r["result"]["cwd"], "/home/sam/proj/src");
@@ -255,7 +257,7 @@ async fn core_preview_reads_the_transcript() {
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "agents.preview", json!({})).await;
     let p = &r["result"]["previews"][0];
-    assert_eq!(p["pane_id"], "hc:t1", "{r}");
+    assert_eq!(p["pane_id"], "t1", "{r}");
     assert_eq!(p["last_reply"], "All tests pass now.", "{r}");
     assert_eq!(p["source"], "log", "{r}");
 }
@@ -282,7 +284,7 @@ async fn core_preview_of_a_working_agent_keeps_the_log_reply() {
 async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
     let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t9"})).await;
+    let r = sess.call(1, "thread.resolve", json!({"pane_id": "t9"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
 }
 
@@ -290,7 +292,7 @@ async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
 async fn pane_watch_reads_a_core_pane() {
     let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
-    let r = sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 50, "interval_ms": 50})).await;
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "t1", "lines": 50, "interval_ms": 50})).await;
     assert!(r["result"]["stream"].is_string(), "{r}");
     let first = sess.event().await;
     assert!(first["text"].as_str().unwrap().contains("Allow?"));
@@ -310,7 +312,7 @@ async fn subscribe_with_core_only_streams_core_events() {
     s.core().send(Ctl::Event(status_event("t1", "done")));
     let ev = sess.event().await;
     assert_eq!(ev["event"], "pane.agent_status_changed");
-    assert_eq!(ev["data"]["pane_id"], "hc:t1");
+    assert_eq!(ev["data"]["pane_id"], "t1");
     assert_eq!(ev["data"]["agent_status"], "done");
     s.core().send(Ctl::Missed(json!({"seq": 5, "terminals": []})));
     assert_eq!(sess.event().await["event"], "layout.updated");

@@ -164,14 +164,14 @@ async fn rpc_resolves_the_cwd_from_the_pane() {
     write(&proj.path().join(".claude/commands/here.md"), "From the pane folder\n");
     let (ctx, _core) = core_with(home.path(), proj.path(), "Claude Code");
 
-    let r = call(ctx.clone(), json!({"pane_id": "hc:t1"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "t1"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     let here = list.iter().find(|c| c["name"] == "here").unwrap();
     assert_eq!(here["source"], "project");
     assert_eq!(here["description"], "From the pane folder");
 
     // No core: still the built-ins, no error.
-    let r = call(Ctx::new(home.path().into()), json!({"pane_id": "hc:t1"})).await;
+    let r = call(Ctx::new(home.path().into()), json!({"pane_id": "t1"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "clear"));
 }
 
@@ -312,12 +312,12 @@ async fn rpc_kind_param_and_pane_kind_pick_the_codex_list() {
     let (ctx, _core) = core_with(home.path(), proj.path(), "Codex");
 
     // The kind from the pane.
-    let r = call(ctx.clone(), json!({"pane_id": "hc:t1"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "t1"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     let cx = list.iter().find(|c| c["name"] == "cx").unwrap();
     assert_eq!((cx["trigger"].as_str(), cx["source"].as_str()), (Some("$"), Some("project")));
     // The explicit kind wins over the pane kind.
-    let r = call(ctx.clone(), json!({"pane_id": "hc:t1", "kind": "claude"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "t1", "kind": "claude"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     assert!(list.iter().any(|c| c["name"] == "clear"));
     assert!(!list.iter().any(|c| c["name"] == "cx"));

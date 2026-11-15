@@ -46,7 +46,7 @@ fn keys_sent(sent: &Sent) -> Vec<Value> {
 async fn answers_when_the_menu_is_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["result"], json!({"answered": true}), "{r}");
     assert_eq!(keys_sent(&sent), [json!({"terminal": "t1", "keys": ["1"]})]);
     assert_eq!(sent.calls_of("terminal.read")[0], json!({"terminal": "t1", "lines": 0}));
@@ -60,7 +60,7 @@ async fn accepts_the_cut_label_of_a_push() {
     );
     let (ctx, sent) = fake(dir.path(), "blocked", screen);
     let full = herdlingd::choices::parse_choices(screen)[1].label.clone();
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "2", "expect_label": short_label(&full)})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "2", "expect_label": short_label(&full)})).await;
     assert_eq!(r["result"], json!({"answered": true}), "{r}");
     assert_eq!(keys_sent(&sent).len(), 1);
 }
@@ -69,7 +69,7 @@ async fn accepts_the_cut_label_of_a_push() {
 async fn stale_when_the_label_changed() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "3", "expect_label": "No"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "3", "expect_label": "No"})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
     assert!(keys_sent(&sent).is_empty());
 }
@@ -78,7 +78,7 @@ async fn stale_when_the_label_changed() {
 async fn stale_when_there_is_no_menu() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", "> \n  ? for shortcuts");
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
     assert!(keys_sent(&sent).is_empty());
 }
@@ -87,7 +87,7 @@ async fn stale_when_there_is_no_menu() {
 async fn stale_when_the_key_is_not_in_the_menu() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "4", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "4", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
     assert!(keys_sent(&sent).is_empty());
 }
@@ -96,7 +96,7 @@ async fn stale_when_the_key_is_not_in_the_menu() {
 async fn stale_when_the_agent_no_longer_waits() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "working", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
     assert!(keys_sent(&sent).is_empty());
 }
@@ -105,7 +105,7 @@ async fn stale_when_the_agent_no_longer_waits() {
 async fn stale_when_the_pane_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, _sent) = fake(dir.path(), "blocked", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t9", "key": "1", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t9", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
 }
 
@@ -114,13 +114,13 @@ async fn rejects_bad_params() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
     for p in [
-        json!({"pane_id": "hc:t1", "key": "1"}),
-        json!({"pane_id": "hc:t1", "expect_label": "Yes"}),
+        json!({"pane_id": "t1", "key": "1"}),
+        json!({"pane_id": "t1", "expect_label": "Yes"}),
         json!({"key": "1", "expect_label": "Yes"}),
         json!({"pane_id": "", "key": "1", "expect_label": "Yes"}),
-        json!({"pane_id": "hc:t1", "key": "0", "expect_label": "Yes"}),
-        json!({"pane_id": "hc:t1", "key": "12", "expect_label": "Yes"}),
-        json!({"pane_id": "hc:t1", "key": "enter", "expect_label": "Yes"}),
+        json!({"pane_id": "t1", "key": "0", "expect_label": "Yes"}),
+        json!({"pane_id": "t1", "key": "12", "expect_label": "Yes"}),
+        json!({"pane_id": "t1", "key": "enter", "expect_label": "Yes"}),
     ] {
         let r = call(&ctx, p.clone()).await;
         assert_eq!(r["error"]["code"], "bad_request", "{p} → {r}");
@@ -147,7 +147,7 @@ async fn answers_when_the_question_is_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
     let q = herdlingd::choices::menu_question(MENU).unwrap();
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
     assert_eq!(r["result"], json!({"answered": true}), "{r}");
     assert_eq!(keys_sent(&sent).len(), 1);
 }
@@ -158,11 +158,11 @@ async fn stale_when_a_later_prompt_has_the_same_labels() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", OTHER_MENU);
     let q = herdlingd::choices::menu_question(MENU).unwrap();
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes", "expect_question": q})).await;
     assert_eq!(r["error"]["code"], "stale", "{r}");
     assert!(keys_sent(&sent).is_empty());
     // An older app sends no question: the label check alone decides, as before.
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["result"], json!({"answered": true}), "{r}");
 }
 
@@ -170,7 +170,7 @@ async fn stale_when_a_later_prompt_has_the_same_labels() {
 async fn rejects_a_question_that_is_not_a_string() {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, sent) = fake(dir.path(), "blocked", MENU);
-    let r = call(&ctx, json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes", "expect_question": 5})).await;
+    let r = call(&ctx, json!({"pane_id": "t1", "key": "1", "expect_label": "Yes", "expect_question": 5})).await;
     assert_eq!(r["error"]["code"], "bad_request", "{r}");
     assert!(keys_sent(&sent).is_empty());
 }

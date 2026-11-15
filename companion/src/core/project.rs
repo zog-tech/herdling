@@ -1,9 +1,9 @@
 //! The herdr-core terminals as entries of a herdr 1 `session.snapshot`, so every app build
 //! shows them. Pure: the terminal records and the herdr-app layout document come in.
 //!
-//! - Ids start with [`PREFIX`]: panes `hc:<address>` (`hc:t7`), workspaces `hc:space:<id>` and
-//!   `hc:g:<group key>`, tabs `hc:tab:<id>` and `hc:task:<address>`. Each entry has
-//!   `backend: "core"`.
+//! - Ids are plain (`core::ids`): panes `<address>` (`t7`), workspaces `space:<id>` and
+//!   `g:<group key>`, tabs `tab:<id>` and `task:<address>`. No entry has a `backend` field, so
+//!   old apps allow every action on it.
 //! - Each terminal is placed once, by the first rule that applies:
 //!   1. The herdr-app document (`doc.get {name: "herdr-app"}`:
 //!      `{spaces: [{id, name, folder, tabs: [{id, name, root}]}]}`, herdr-app `src/mirror.rs`).
@@ -21,33 +21,24 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
+use super::ids;
 use super::groups::{self, display_name, folder_of, label_space, live_parent, task_name, where_name, GroupSource, Repos};
 use crate::types::AgentStatus;
 
-/// The prefix of every core id.
-pub const PREFIX: &str = "hc:";
 /// The agent kinds that the app knows by name. Their entries have no `display_agent`.
 const KNOWN_KINDS: [&str; 5] = ["claude", "codex", "opencode", "gemini", "omp"];
-/// The value of the `backend` field.
-pub const BACKEND: &str = "core";
 /// The name of the layout document of herdr-app.
 pub const LAYOUT_DOC: &str = "herdr-app";
 
-/// True for an id of a core entry.
-pub fn is_core_id(id: &str) -> bool {
-    id.starts_with(PREFIX)
-}
-
-/// The pane id of a terminal address.
+/// The pane id of a terminal address (`ids::pane`).
 pub fn pane_id(address: &str) -> String {
-    format!("{PREFIX}{address}")
+    ids::pane(address)
 }
 
-/// The terminal address of a core pane id. None for other ids, workspace and tab ids, and
-/// addresses of other machines.
+/// The terminal address of a pane id (`ids::address`). None for workspace and tab ids and for
+/// addresses of other machines. A legacy `hc:` id gives its address.
 pub fn address(pane_id: &str) -> Option<&str> {
-    let a = pane_id.strip_prefix(PREFIX)?;
-    (!a.is_empty() && !a.contains(':') && !a.contains('/')).then_some(a)
+    ids::address(pane_id)
 }
 
 pub(crate) fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -211,7 +202,6 @@ pub fn pane_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Value {
         "cwd": text(t, "cwd"),
         "foreground_cwd": t.get("foreground").and_then(|f| text(f, "cwd")),
         "terminal_title_stripped": title(t),
-        "backend": BACKEND,
     });
     if let Some(s) = agent_status(t) {
         p["agent_status"] = json!(status_word(s));
@@ -249,7 +239,6 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Option<Value> 
         "state_change_seq": seq,
         "terminal_title_stripped": title(t),
         "name": name,
-        "backend": BACKEND,
     });
     if let Some(parent) = parent_pane_id(t) {
         entry["parent_id"] = json!(parent);
@@ -360,13 +349,13 @@ impl Builder<'_> {
             for (ti, tab) in w.tabs.into_iter().enumerate() {
                 out.tabs.push(json!({
                     "tab_id": tab.id, "workspace_id": w.id, "label": tab.label, "number": ti + 1,
-                    "agent_status": status_word(sum_status(&tab.statuses)), "backend": BACKEND,
+                    "agent_status": status_word(sum_status(&tab.statuses)),
                 }));
                 ws_statuses.extend(tab.statuses);
             }
             out.workspaces.push(json!({
                 "workspace_id": w.id, "label": w.label, "number": wi + 1, "tab_count": tab_count,
-                "agent_status": status_word(sum_status(&ws_statuses)), "backend": BACKEND,
+                "agent_status": status_word(sum_status(&ws_statuses)),
             }));
         }
         out
@@ -403,13 +392,13 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
             .or_else(|| text(space, "folder").and_then(last))
             .unwrap_or_else(|| format!("Space {}", si + 1));
         let g = Grouping { label: label.clone(), source: GroupSource::Space };
-        let wi = b.ws(format!("{PREFIX}space:{sid}"), || label);
+        let wi = b.ws(ids::space_ws(sid), || label);
         let tabs = space.get("tabs").and_then(Value::as_array).cloned().unwrap_or_default();
         for (ti, tab) in tabs.iter().enumerate() {
             let Some(tid) = text(tab, "id") else { continue };
             let tab_name = text(tab, "name");
             let tab_label = tab_name.map(String::from).unwrap_or_else(|| format!("Tab {}", ti + 1));
-            let tix = b.tab(wi, format!("{PREFIX}tab:{tid}"), || tab_label);
+            let tix = b.tab(wi, ids::space_tab(tid), || tab_label);
             let mut addrs = Vec::new();
             layout_terminals(tab.get("root").unwrap_or(&Value::Null), &mut addrs);
             for a in addrs {
@@ -426,7 +415,7 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
     for &t in &live {
         let Some(addr) = text(t, "address") else { continue };
         let Some(ls) = label_space(t).filter(|_| !placed.contains(addr)) else { continue };
-        let wi = b.ws(format!("{PREFIX}space:{}", ls.space), || {
+        let wi = b.ws(ids::space_ws(&ls.space), || {
             ls.name.clone().or_else(|| folder_name(t)).unwrap_or_else(|| groups::NO_FOLDER_LABEL.into())
         });
         // A stale `herdr.tab` label can name a tab of another workspace: then the terminal gets
@@ -434,9 +423,9 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         let tab_id = ls
             .tab
             .as_ref()
-            .map(|tab| format!("{PREFIX}tab:{tab}"))
+            .map(|tab| ids::space_tab(tab))
             .filter(|id| !b.ws.iter().enumerate().any(|(i, w)| i != wi && w.tabs.iter().any(|t| &t.id == id)))
-            .unwrap_or_else(|| format!("{PREFIX}task:{addr}"));
+            .unwrap_or_else(|| ids::task_tab(addr));
         let tix = b.tab(wi, tab_id, || task_label(t));
         let g = Grouping { label: b.ws[wi].label.clone(), source: GroupSource::Space };
         placed.insert(addr.to_string());
@@ -451,8 +440,8 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
     let own_task = |b: &mut Builder, t: &Value, tasks: &mut HashMap<String, (usize, usize, Grouping)>| {
         let addr = text(t, "address").unwrap_or_default().to_string();
         let group = groups::fallback_group(t, repos);
-        let wi = b.ws(format!("{PREFIX}g:{}", group.key), || group.label.clone());
-        let tix = b.tab(wi, format!("{PREFIX}task:{addr}"), || task_label(t));
+        let wi = b.ws(ids::group_ws(&group.key), || group.label.clone());
+        let tix = b.tab(wi, ids::task_tab(&addr), || task_label(t));
         let g = Grouping { label: b.ws[wi].label.clone(), source: group.source };
         b.place(t, wi, tix, &g, None);
         tasks.insert(addr, (wi, tix, g));
