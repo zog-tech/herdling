@@ -463,6 +463,27 @@ pub struct UpdateCheck {
     pub date: Option<String>,
     /// The release asset target for this computer, for example `aarch64-apple-darwin`.
     pub target: String,
+    /// What the update does with herdr-core first. Missing from an older herdlingd.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core: Option<UpdateCore>,
+}
+
+/// The `core` part of `update.check`: the herdr 1 guard for a release that needs herdr-core.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCore {
+    /// True when the release needs herdr-core.
+    pub requires_core: bool,
+    /// True when a `herdr-core` is on this computer.
+    pub installed: bool,
+    /// True when herdr 1 (`herdr`) is on this computer.
+    pub herdr1: bool,
+    /// True when the update installs herdr-core before it replaces herdlingd.
+    pub install_first: bool,
+    /// The herdr-core version that the update installs.
+    pub pinned: String,
+    /// Text for the user before the update, for example that herdr 1 sessions do not show any more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// `update.apply` result.
@@ -474,6 +495,12 @@ pub struct UpdateApply {
     pub status: String,
     /// False when no service is installed, or when the restart command failed.
     pub service_restarted: bool,
+    /// The herdr-core step, when the release needs the core.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core: Option<CoreInstall>,
+    /// Text for the user, for example that herdr 1 sessions do not show any more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// `herdr.update` result.

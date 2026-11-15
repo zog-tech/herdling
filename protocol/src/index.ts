@@ -86,6 +86,28 @@ export type UpdateCheck = {
   date?: string;
   /** The release asset target for this computer, for example `aarch64-apple-darwin`. */
   target: string;
+  /** What the update does with herdr-core first. Missing from an older herdlingd. */
+  core?: UpdateCore;
+};
+
+/**
+ * The herdr 1 guard in `update.check`. When the release needs herdr-core and the computer has
+ * none, `update.apply` installs the core first. When that fails, the update stops and the old
+ * herdlingd stays. Show `notice` before the update.
+ */
+export type UpdateCore = {
+  /** True when the release needs herdr-core. */
+  requires_core: boolean;
+  /** True when a `herdr-core` is on the computer. */
+  installed: boolean;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+  /** True when the update installs herdr-core before it replaces herdlingd. */
+  install_first: boolean;
+  /** The herdr-core version that the update installs. */
+  pinned: string;
+  /** Text for the user before the update. */
+  notice?: string;
 };
 
 /** Params of `update.apply`. Without `version` the host installs the latest release. */
@@ -98,6 +120,10 @@ export type UpdateApply = {
   status: "updated" | "up_to_date";
   /** False when no service is installed, or when the restart command failed. */
   service_restarted: boolean;
+  /** The herdr-core step, when the release needs the core. Error `core_install_failed` when it fails. */
+  core?: CoreInstall;
+  /** Text for the user, for example that herdr 1 sessions do not show any more. */
+  notice?: string;
 };
 
 /**

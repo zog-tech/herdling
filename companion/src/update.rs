@@ -23,7 +23,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::install::{Runner, SystemRunner, LABEL};
-use crate::types::{RpcError, UpdateApply, UpdateCheck};
+use crate::core_install::{self as ci, guard};
+use crate::types::{RpcError, UpdateApply, UpdateCheck, UpdateCore};
 
 /// Where the releases are. Tests use a local server.
 pub const RELEASE_BASE: &str = "https://github.com/zog-tech/herdling/releases";
@@ -62,6 +63,13 @@ pub struct Manifest {
     #[serde(default)]
     pub notes: String,
     pub assets: BTreeMap<String, Asset>,
+    /// True when this release needs herdr-core (from herdlingd 0.2.0). `update.apply` then installs
+    /// the core first and stops when that fails. Missing in older manifests.
+    #[serde(default)]
+    pub requires_core: bool,
+    /// The herdr-core pin of this release (`companion/core-pin.json`). Missing in older manifests.
+    #[serde(default)]
+    pub core: Option<crate::core_install::pin::CorePin>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,6 +97,8 @@ pub struct UpdateCtx {
     /// Ed25519 public keys (raw 32 bytes) that may sign `latest.json`. Production:
     /// [`release_keys`]. Tests pass a throwaway key.
     pub release_keys: Vec<Vec<u8>>,
+    /// The herdr-core install for a release that needs the core. None: such a release is refused.
+    pub core: Option<crate::core_install::CoreInstallCtx>,
 }
 
 impl UpdateCtx {
@@ -97,12 +107,13 @@ impl UpdateCtx {
         UpdateCtx {
             release_base: RELEASE_BASE.into(),
             exe,
-            home,
             os: std::env::consts::OS.into(),
             arch: std::env::consts::ARCH.into(),
             current: env!("CARGO_PKG_VERSION").into(),
             runner: Arc::new(SystemRunner),
             release_keys: release_keys(),
+            core: Some(crate::core_install::CoreInstallCtx::new(&home, crate::core::endpoint::from_env(&home))),
+            home,
         }
     }
 }
@@ -330,7 +341,15 @@ pub async fn check(ctx: &UpdateCtx, version: Option<&str>) -> Result<UpdateCheck
     let m = fetch_manifest(&ctx.release_base, version, &ctx.release_keys).await?;
     asset_for(&m, target)?;
     let newer = compare_versions(&m.version, &ctx.current) == Some(Ordering::Greater);
+    let core = match ctx.core.clone() {
+        Some(c) => {
+            let (requires_core, pinned) = (m.requires_core, m.core.as_ref().map_or_else(|| c.pin.version.clone(), |p| p.version.clone()));
+            tokio::task::spawn_blocking(move || core_check(&c, requires_core, pinned)).await.ok()
+        }
+        None => None,
+    };
     Ok(UpdateCheck {
+        core,
         current: ctx.current.clone(),
         latest: m.version,
         update_available: newer,
@@ -338,6 +357,41 @@ pub async fn check(ctx: &UpdateCtx, version: Option<&str>) -> Result<UpdateCheck
         date: m.date,
         target: target.into(),
     })
+}
+
+/// The `core` part of `update.check`: what the update does with herdr-core first. Blocking.
+fn core_check(c: &ci::CoreInstallCtx, requires_core: bool, pinned: String) -> UpdateCore {
+    let installed = ci::find_core(c).is_some();
+    let herdr1 = ci::herdr1_found(c);
+    let g = guard::guard(requires_core, installed, herdr1);
+    UpdateCore {
+        requires_core,
+        installed,
+        herdr1,
+        install_first: matches!(g, guard::Guard::InstallCoreFirst { .. }),
+        pinned,
+        notice: guard::notice(g).map(String::from),
+    }
+}
+
+/// The herdr-core step of an update to a release that needs the core: install (or update) the
+/// core and make sure that it runs. A failure stops the update before herdlingd changes.
+async fn core_first(ctx: &UpdateCtx, m: &Manifest) -> Result<(crate::types::CoreInstall, Option<String>), RpcError> {
+    let stop = |m: String| err("core_install_failed", format!("{m}. herdlingd did not change"));
+    let c = ctx.core.clone().ok_or_else(|| stop(format!("release {} needs herdr-core, and this herdlingd cannot install it", m.version)))?;
+    let pin = match &m.core {
+        Some(p) if p.valid() => p.clone(),
+        Some(p) => return Err(stop(format!("the herdr-core pin {} of release {} is not valid", p.version, m.version))),
+        None => c.pin.clone(),
+    };
+    let (r, g) = tokio::task::spawn_blocking(move || {
+        let g = guard::guard(true, ci::find_core(&c).is_some(), ci::herdr1_found(&c));
+        (ci::install(&c, &pin), g)
+    })
+    .await
+    .map_err(|e| err("internal", e.to_string()))?;
+    let r = r.map_err(|e| stop(format!("herdr-core could not be installed: {} ({})", e.message, e.code)))?;
+    Ok((r, guard::notice(g).map(String::from)))
 }
 
 /// Holds `update.lock` while an update runs.
@@ -373,6 +427,8 @@ pub async fn apply(ctx: &UpdateCtx, version: Option<&str>, allow_downgrade: bool
         to: m.version.clone(),
         status: status.into(),
         service_restarted,
+        core: None,
+        notice: None,
     };
     match order {
         Ordering::Equal => return Ok(result("up_to_date", false)),
@@ -388,6 +444,8 @@ pub async fn apply(ctx: &UpdateCtx, version: Option<&str>, allow_downgrade: bool
     if want.len() != 64 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(err("update_unavailable", "bad sha256 in the release manifest"));
     }
+    // The herdr 1 guard: a release that needs the core gets it first, or the update stops here.
+    let core = if m.requires_core { Some(core_first(ctx, &m).await?) } else { None };
     let tarball = get_bytes(&asset.url, DOWNLOAD_TIMEOUT, DOWNLOAD_LIMIT).await?;
     let got = sha256_hex(&tarball);
     if got != want {
@@ -398,7 +456,8 @@ pub async fn apply(ctx: &UpdateCtx, version: Option<&str>, allow_downgrade: bool
         .await
         .map_err(|e| err("internal", e.to_string()))??;
     let restarted = restart_service(ctx);
-    Ok(result("updated", restarted))
+    let (core, notice) = core.map_or((None, None), |(r, n)| (Some(r), n));
+    Ok(UpdateApply { core, notice, ..result("updated", restarted) })
 }
 
 pub fn sha256_hex(data: &[u8]) -> String {
