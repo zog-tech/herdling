@@ -18,6 +18,7 @@ import { useHosts, type Host } from "@/hosts/store";
 import { updateStatus } from "@/hosts/updates";
 import { useNotifPrefs, type NotifPref } from "@/push/prefs";
 import { useCustomKeys } from "@/terminal/customKeys";
+import { useTerminalRenderer } from "@/terminal/renderer";
 import { useSavedPrompts } from "@/thread/savedPrompts";
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
@@ -323,13 +324,32 @@ function PromptsSection() {
   );
 }
 
-/** "Terminal": the custom keys and text macros of the terminal key bar. The terminal theme is in Theme. */
+const RENDERERS = [
+  { id: "terminal", label: "Terminal" },
+  { id: "classic", label: "Classic" },
+] as const;
+
+/**
+ * "Terminal": the renderer of the terminal view, and the custom keys and text macros of the key
+ * bar. The terminal theme is in Theme.
+ */
 function TerminalSection() {
   const router = useRouter();
   const count = useCustomKeys((s) => s.keys.length);
+  const renderer = useTerminalRenderer((s) => s.renderer);
+  const setRenderer = useTerminalRenderer((s) => s.set);
   return (
     <Section title="Terminal">
       <Group>
+        <Row
+          title="Renderer"
+          detail={
+            renderer === "terminal"
+              ? "A real terminal: exact grid, cursor and full-screen apps. Needs herdlingd 0.2.0 or later; else Classic."
+              : "Screen text with colors, as in earlier versions."
+          }
+          below={<Segmented options={RENDERERS} value={renderer} onChange={setRenderer} label="Terminal renderer" />}
+        />
         <Row
           accessibilityLabel={`Key bar, ${count} custom keys`}
           onPress={() => router.push("/key-bar" as never) /* typed routes regenerate on the next dev start */}

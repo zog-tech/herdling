@@ -3,6 +3,7 @@ import {
   ArrowUp,
   ChevronsDown,
   ChevronsUp,
+  ArrowDownToLine,
   Keyboard as KeyboardIcon,
   Maximize2,
   WrapText,
@@ -51,6 +52,10 @@ import { forgetCommand, rememberCommand, useHostCommands } from "@/terminal/rece
 import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { canDrive, markNoDrive, useTerminalWidth } from "@/terminal/widthMode";
+import { hasWebView } from "@/preview/webview";
+import { chooseRenderer, useTerminalRenderer } from "@/terminal/renderer";
+import { nextXtermMode, shownXtermMode } from "@/terminal/xterm/layout";
+import { XtermView, type XtermHandle } from "@/terminal/xterm/XtermView";
 import { coreOnly, isCore } from "@/herdr/backend";
 import { useDebounced } from "@/thread/useThreadSearch";
 import { sendInputWithFallback, sendInputWorks } from "@/terminal/keys";
@@ -157,9 +162,17 @@ export function TerminalView({
   const [driveRefused, setDriveRefused] = useState(false);
   const corePane = isCore(paneId) || coreOnly(hello);
   const phoneOk = !!controls && corePane && listsMethod(hello, "pane.watch") && canDrive(rpc) && !driveRefused;
-  const shownMode: WidthMode = mode === "phone" && !phoneOk ? "fit" : mode;
+  // "Terminal": xterm.js on the raw stream, when the host and the build have it. A stream that the
+  // host refuses falls back to the classic view for this screen.
+  const rendererPref = useTerminalRenderer((s) => s.renderer);
+  const [xtermFailed, setXtermFailed] = useState(false);
+  const xterm = !xtermFailed && chooseRenderer(rendererPref, hello, hasWebView()) === "terminal";
+  const onXtermUnsupported = useCallback(() => setXtermFailed(true), []);
+  const xtermRef = useRef<XtermHandle>(null);
+  const [xtermBuffer, setXtermBuffer] = useState({ alternate: false, atBottom: true });
+  const shownMode: WidthMode = xterm ? shownXtermMode(mode, phoneOk) : mode === "phone" && !phoneOk ? "fit" : mode;
   // A string, so the debounce waits for the size to stay the same, not for the same object.
-  const liveGrid = shownMode === "phone" ? phoneGrid(viewWidth - 2 * space.md, viewHeightState - 2 * space.md, type.size.caption) : null;
+  const liveGrid = shownMode === "phone" && !xterm ? phoneGrid(viewWidth - 2 * space.md, viewHeightState - 2 * space.md, type.size.caption) : null;
   const gridKey = useDebounced(liveGrid ? `${liveGrid.cols}x${liveGrid.rows}` : "", PHONE_RESIZE_MS);
   const size = useMemo(() => {
     const [c, r] = gridKey.split("x").map(Number);
@@ -174,7 +187,7 @@ export function TerminalView({
     },
     [rpc],
   );
-  const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
+  const { text, error, refresh } = useTerminalText(hostId, paneId, focused && !xterm, {
     format: "ansi",
     ...(shownMode === "phone" && size ? { size, onDrive } : {}),
   });
@@ -261,8 +274,9 @@ export function TerminalView({
   );
   const onCount = search?.onCount;
   useEffect(() => {
-    onCount?.(matches.length);
-  }, [onCount, matches.length]);
+    // The xterm.js view counts its own matches.
+    if (!xterm) onCount?.(matches.length);
+  }, [onCount, matches.length, xterm]);
   const cols = useMemo(() => (lines ? widestCols(lines) : 0), [lines]);
   // Depends on the column count and the view width only, so it does not jump on small refreshes.
   const fontSize =
@@ -300,7 +314,9 @@ export function TerminalView({
   useEffect(() => {
     if (!controls) return;
     const sub = Keyboard.addListener("keyboardDidShow", () => {
-      if (!termRef.current.trim()) toEnd();
+      if (termRef.current.trim()) return;
+      toEnd();
+      xtermRef.current?.scrollToBottom();
     });
     return () => sub.remove();
   }, [controls, toEnd]);
@@ -361,6 +377,9 @@ export function TerminalView({
     </Text>
   );
   const { label, Icon } = MODES[shownMode];
+  // The page buttons send the page keys to a full-screen app. The xterm.js view knows the alternate
+  // screen itself; its history scrolls by touch.
+  const showPages = !!controls && (xterm ? xtermBuffer.alternate : fullScreen && overflow === false);
 
   const topControls = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
@@ -375,7 +394,7 @@ export function TerminalView({
         accessibilityHint="Double tap to change how the terminal text fits the screen"
         onPress={() => {
           haptics.tap();
-          const next = nextWidthMode(shownMode, phoneOk);
+          const next = xterm ? nextXtermMode(shownMode, phoneOk) : nextWidthMode(shownMode, phoneOk);
           setMode(next);
           if (next === "phone" && !useTerminalWidth.getState().phoneNoteSeen) {
             useTerminalWidth.getState().notePhone();
@@ -414,6 +433,21 @@ export function TerminalView({
         </View>
       ) : null}
       <View style={{ flex: 1 }}>
+        {xterm ? (
+          <XtermView
+            key={`${hostId}:${paneId}`}
+            hostId={hostId}
+            paneId={paneId}
+            enabled={focused}
+            mode={shownMode}
+            onDrive={onDrive}
+            search={search}
+            onBuffer={setXtermBuffer}
+            onUnsupported={onXtermUnsupported}
+            onTap={Keyboard.dismiss}
+            handleRef={xtermRef}
+          />
+        ) : (
         <ScrollView
           ref={scroll}
           onLayout={onLayout}
@@ -438,11 +472,37 @@ export function TerminalView({
             </HScrollView>
           )}
         </ScrollView>
+        )}
         {/* iOS: the latency badge and the width button float over the top right corner. */}
         {topBar ? null : (
           <View pointerEvents="box-none" style={{ position: "absolute", top: space.sm, right: space.sm }}>{topControls}</View>
         )}
-        {controls && fullScreen && overflow === false ? (
+        {xterm && !xtermBuffer.atBottom && !xtermBuffer.alternate ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Jump to end"
+            accessibilityHint="Shows the latest output"
+            onPress={() => {
+              haptics.tap();
+              xtermRef.current?.scrollToBottom();
+            }}
+            style={({ pressed }) => ({
+              position: "absolute",
+              bottom: space.sm,
+              left: space.sm,
+              width: hitTarget,
+              height: hitTarget,
+              borderRadius: radius.md,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.raised,
+              opacity: pressed ? state.pressedFill : 0.8,
+            })}
+          >
+            <ArrowDownToLine size={18} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
+        {showPages ? (
           <View style={{ position: "absolute", bottom: space.sm, right: space.sm, gap: space.xs }}>
             {(["up", "down"] as const).map((dir) => {
               const PageIcon = dir === "up" ? ChevronsUp : ChevronsDown;
