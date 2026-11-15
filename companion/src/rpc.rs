@@ -89,6 +89,8 @@ pub struct Ctx {
     /// Settings for `core.status`, `core.install` and the core path of `herdr.update`. None turns
     /// them off: `Ctx::new` leaves it unset, so a test never installs or starts a core. `main` sets it.
     pub core_install: Option<crate::core_install::CoreInstallCtx>,
+    /// What the running `pane.watch` streams of core panes know (full-screen app, rows).
+    pub term_facts: crate::core::term_watch::Facts,
 }
 
 impl Ctx {
@@ -120,6 +122,7 @@ impl Ctx {
             ports_cache: crate::ports::PortsCache::default(),
             core_socket: None,
             core_install: None,
+            term_facts: Default::default(),
         }
     }
 }
@@ -618,6 +621,9 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         let Some(sock) = &ctx.core_socket else {
             return Err(err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"));
         };
+        if let Some(r) = crate::core::term_watch::herdr_call(ctx, sock, &method, &p, &id).await {
+            return r;
+        }
         return crate::core::live::call(sock, ctx.herdr_timeout, &method, &p, &id).await;
     }
     if method == "session.snapshot" {

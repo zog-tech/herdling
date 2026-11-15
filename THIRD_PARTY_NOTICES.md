@@ -84,6 +84,8 @@ FluidInference from Hugging Face. The model is under the
 | if-addrs | 0.13 | MIT OR BSD-3-Clause |
 | qrcode | 0.14 | MIT OR Apache-2.0 |
 | toml | 0.8 | MIT OR Apache-2.0 |
+| vt100 (terminal emulator of the Herdr 2 terminal view) | 0.18 | MIT |
+| vte (through vt100) | 0.15 | Apache-2.0 OR MIT |
 | dirs, fs4, libc, rand, sha2, base64 | | MIT OR Apache-2.0 |
 
 `cargo tree` in `companion/` shows the full list of crates.
