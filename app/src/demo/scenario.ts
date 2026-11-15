@@ -2,7 +2,10 @@ import type {
   AgentBackground,
   AgentPreview,
   AgentStatus,
+  CoreGroup,
   FsDirs,
+  GroupFields,
+  GroupSource,
   RecentSession,
   SubagentPage,
   ThreadItem,
@@ -48,6 +51,8 @@ type Agent = {
   background?: AgentBackground;
   /** Wall time (ms) when the current status began. */
   since: number;
+  /** The pane of the parent agent of a helper (Herdr 2 `parent_id`). */
+  parentId?: string;
   /** Text typed in the terminal view, sent on Enter. */
   input: string;
   queue: Step[];
@@ -92,6 +97,17 @@ const DIRS: Record<string, string[]> = {
 const GIT_REPOS = new Set([WEBAPP, API, `${HOME}/projects/docs-site`, `${HOME}/projects/mobile-app`, `${HOME}/projects/design-system`]);
 
 /** Recent agent folders, newest first, as herdlingd reads them from the agent logs. */
+/**
+ * The git repo of each demo folder, as herdlingd reports it on Herdr 2 entries (`repo`, `branch`,
+ * `repo_root`).
+ */
+const REPOS: Record<string, { repo: string; branch: string; root: string }> = {
+  [WEBAPP]: { repo: "webapp", branch: "main", root: WEBAPP },
+  [API]: { repo: "api-server", branch: "main", root: API },
+  [DOCS]: { repo: "docs-site", branch: "main", root: DOCS },
+  [DOCS_LINKS]: { repo: "docs-site", branch: "fix-links", root: DOCS },
+};
+
 const RECENT_CWDS = [WEBAPP, API, `${HOME}/projects/docs-site`, `${HOME}/projects/mobile-app`];
 
 /** Earlier sessions per folder for `sessions.recent`: first prompt and age in hours. */
@@ -143,6 +159,8 @@ export class DemoScenario {
   private nextWs = 5;
   private nextTab = 10;
   private nextPane = 10;
+  /** The group source of each Herdr 2 group that is not a Herdr app space (`hc:g:<key>`). */
+  private groupSource = new Map<string, GroupSource>();
   /** `state_change_seq` grows from the launch time, so an agent that finished is "Ready" again after a relaunch. */
   private seq: number;
   private stopped = false;
@@ -177,7 +195,7 @@ export class DemoScenario {
   // ---------- reads ----------
 
   snapshot(): Snapshot {
-    const agents = [...this.agents.values()].map((a) => ({ ...a.info }));
+    const agents = [...this.agents.values()].map((a) => ({ ...a.info, ...this.groupFields(a.info) }));
     const statusOf = (list: AgentInfo[]): AgentStatus => {
       for (const s of ["blocked", "working", "done", "idle"] as const) if (list.some((a) => a.agent_status === s)) return s;
       return "unknown";
@@ -190,8 +208,45 @@ export class DemoScenario {
         tab_count: this.tabs.filter((t) => t.workspace_id === w.workspace_id).length,
       })),
       tabs: this.tabs.map((t) => ({ ...t, agent_status: statusOf(agents.filter((a) => a.tab_id === t.tab_id)) })),
-      panes: this.panes.map((p) => ({ ...p })),
+      panes: this.panes.map((p) => ({ ...p, ...this.groupFields(p, this.agents.get(p.pane_id)?.info.cwd) })),
     };
+  }
+
+  /**
+   * The group and task fields of an entry, as a herdlingd with Herdr 2 sends them: the group is the
+   * workspace name; the source is "space", or the source of a fallback group; the repo comes from
+   * the folder; a helper names its parent.
+   */
+  private groupFields(e: { workspace_id: string; pane_id: string; cwd?: string | null }, cwd?: string | null): GroupFields {
+    const ws = this.workspaces.find((w) => w.workspace_id === e.workspace_id);
+    if (!ws) return {};
+    const repo = REPOS[cwd ?? e.cwd ?? ""];
+    const parent = this.agents.get(e.pane_id)?.parentId;
+    return {
+      group: ws.label,
+      group_source: this.groupSource.get(ws.workspace_id) ?? "space",
+      ...(repo ? { repo: repo.repo, branch: repo.branch, repo_root: repo.root } : {}),
+      ...(parent ? { parent_id: parent } : {}),
+    };
+  }
+
+  /** The Herdr 2 groups of `groups.list`: every `hc:` workspace with its source and counts. */
+  coreGroups(): CoreGroup[] {
+    const snap = this.snapshot();
+    return snap.workspaces
+      .filter((w) => isCore(w.workspace_id))
+      .map((w) => {
+        const source = this.groupSource.get(w.workspace_id) ?? "space";
+        return {
+          workspace_id: w.workspace_id,
+          label: w.label,
+          source,
+          ...(source === "space" ? { space_id: w.workspace_id.replace(/^hc:space:/, "") } : {}),
+          terminals: snap.panes.filter((x) => x.workspace_id === w.workspace_id).length,
+          agents: snap.agents.filter((x) => x.workspace_id === w.workspace_id).length,
+          agent_status: w.agent_status,
+        };
+      });
   }
 
   agentStatus(paneId: string): AgentStatus | undefined {
@@ -216,9 +271,8 @@ export class DemoScenario {
       throw new DemoError("not_found", `pane ${paneId} not found`);
     }
     // As herdlingd: only the kinds with chat support have a thread log; the app shows the terminal for the rest.
-    // A Herdr 2 agent has no thread log yet.
     const kind = a.info.agent ?? "unknown";
-    if (!CHAT_KINDS.includes(kind) || isCore(a.info)) return { kind, session: null, log_path: null, cwd: a.info.cwd ?? null };
+    if (!CHAT_KINDS.includes(kind)) return { kind, session: null, log_path: null, cwd: a.info.cwd ?? null };
     return { kind, session: a.session, log_path: a.log, cwd: a.info.cwd ?? null };
   }
 
@@ -538,6 +592,93 @@ export class DemoScenario {
     this.emit({ event: "workspace_closed", data: { workspace_id: workspaceId } });
   }
 
+  // ---------- Herdr 2 writes (plan C methods) ----------
+
+  /**
+   * `pane.move`: a terminal in no Herdr app space moves to a space (a new tab there), a new space or
+   * a named group. A terminal in a space gives `unsupported`, as herdlingd does.
+   */
+  movePane(paneId: string, target: { workspaceId?: string; newSpace?: boolean; group?: string }): { pane_id: string; workspace_id: string; tab_id: string } {
+    const pane = this.panes.find((p) => p.pane_id === paneId);
+    if (!pane || !isCore(paneId)) throw new DemoError("pane_not_found", `pane ${paneId} not found`);
+    const from = pane.workspace_id;
+    if (!this.groupSource.has(from)) throw new DemoError("unsupported", "this terminal is in a Herdr app space; move it in the Herdr app");
+    const label = this.agents.get(paneId)?.info.name ?? pane.label ?? "terminal";
+    let wsId: string;
+    if (target.workspaceId) {
+      const ws = this.workspaceExists(target.workspaceId);
+      const src = this.groupSource.get(ws.workspace_id);
+      if (src && src !== "label") throw new DemoError("unsupported", "a repo or folder group takes no terminal");
+      wsId = ws.workspace_id;
+    } else if (target.newSpace) {
+      wsId = `hc:space:${this.nextWs++}`;
+      const name = (pane.cwd ?? "").split("/").filter(Boolean).pop() || "space";
+      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+    } else {
+      const name = (target.group ?? "").trim();
+      if (!name) {
+        // No group name: the folder places the terminal again (its repo group).
+        const repo = REPOS[pane.cwd ?? ""]?.repo ?? "terminals";
+        wsId = `hc:g:${repo}`;
+        if (!this.workspaces.some((w) => w.workspace_id === wsId)) {
+          this.workspaces.push({ workspace_id: wsId, label: repo, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+          this.groupSource.set(wsId, "repo");
+        }
+      } else {
+        wsId = `hc:g:${name.toLowerCase()}`;
+        if (!this.workspaces.some((w) => w.workspace_id === wsId)) {
+          this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+          this.groupSource.set(wsId, "label");
+        }
+      }
+    }
+    const tabId = `hc:tab:${this.nextTab++}`;
+    const number = this.tabs.filter((t) => t.workspace_id === wsId).length + 1;
+    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label, number, agent_status: "unknown", backend: "core" });
+    const oldTab = pane.tab_id;
+    pane.workspace_id = wsId;
+    pane.tab_id = tabId;
+    const a = this.agents.get(paneId);
+    if (a) a.info = { ...a.info, workspace_id: wsId, tab_id: tabId };
+    // The old task tab and group go when they are empty.
+    if (!this.panes.some((p) => p.tab_id === oldTab)) this.tabs = this.tabs.filter((t) => t.tab_id !== oldTab);
+    if (!this.panes.some((p) => p.workspace_id === from)) {
+      this.workspaces = this.workspaces.filter((w) => w.workspace_id !== from);
+      this.groupSource.delete(from);
+    }
+    this.emit({ event: "layout_updated", data: { backend: "core" } });
+    return { pane_id: paneId, workspace_id: wsId, tab_id: tabId };
+  }
+
+  /**
+   * `session.start`: a new tab in the space `workspaceId` (or a new space), the agent in it, then
+   * the first prompt. The demo agent is ready at once, so the prompt always goes in.
+   */
+  startCoreSession(o: { cwd: string; kind: string; workspaceId?: string; prompt?: string; args?: string[] }): {
+    pane_id: string;
+    workspace_id: string;
+    tab_id: string;
+  } {
+    if (!o.cwd.startsWith("/")) throw new DemoError("bad_request", "cwd must be an absolute path");
+    let wsId = o.workspaceId;
+    if (!wsId) {
+      wsId = `hc:space:${this.nextWs++}`;
+      const name = o.cwd.split("/").filter(Boolean).pop() || "space";
+      this.workspaces.push({ workspace_id: wsId, label: name, number: this.workspaces.length + 1, agent_status: "unknown", backend: "core" });
+    } else {
+      this.workspaceExists(wsId);
+    }
+    const tabId = `hc:tab:${this.nextTab++}`;
+    const number = this.tabs.filter((t) => t.workspace_id === wsId).length + 1;
+    this.tabs.push({ tab_id: tabId, workspace_id: wsId, label: `tab ${number}`, number, agent_status: "unknown", backend: "core" });
+    const paneId = `hc:t${this.nextPane++}`;
+    this.panes.push({ pane_id: paneId, tab_id: tabId, workspace_id: wsId, label: null, cwd: o.cwd, backend: "core" });
+    this.startAgent(paneId, o.kind, undefined, o.args, o.cwd);
+    if (o.prompt?.trim()) this.prompt(paneId, o.prompt);
+    this.emit({ event: "layout_updated", data: { backend: "core" } });
+    return { pane_id: paneId, workspace_id: wsId, tab_id: tabId };
+  }
+
   // ---------- internals ----------
 
   private id(): string {
@@ -814,6 +955,8 @@ export class DemoScenario {
     title?: string;
     /** The app name that a Herdr 2 agent reports. */
     displayAgent?: string;
+    /** The parent agent of a Herdr 2 helper. */
+    parentId?: string;
   }): Agent {
     const session = `demo-session-${o.pane.pane_id}-${this.nextId++}`;
     const a: Agent = {
@@ -832,6 +975,7 @@ export class DemoScenario {
       },
       log: `demo://${session}.jsonl`,
       session,
+      ...(o.parentId ? { parentId: o.parentId } : {}),
       items: o.items,
       since: Date.now(),
       input: "",
@@ -1062,8 +1206,9 @@ export class DemoScenario {
   }
 
   /**
-   * Herdr 2 (herdr-core): one space with two agents, as herdlingd merges them into the snapshot.
-   * The ids start with `hc:` and every entry has `backend: "core"`. These agents have no thread log.
+   * Herdr 2 (herdr-core), as herdlingd merges it into the snapshot: one Herdr app space with two
+   * agents and a helper, and one agent in no space (a repo group) that can move to a space. The
+   * ids start with `hc:` and every entry has `backend: "core"`.
    */
   private seedCore(now: number): void {
     const min = 60_000;
@@ -1076,8 +1221,7 @@ export class DemoScenario {
     const c1 = this.addAgent({
       pane: this.panes[this.panes.length - 2],
       kind: "claude",
-      displayAgent: "Claude Code",
-      name: null,
+      name: "Bundle size",
       cwd: WEBAPP,
       status: "done",
       seq: this.bump(),
@@ -1097,14 +1241,45 @@ export class DemoScenario {
     const c2 = this.addAgent({
       pane: this.panes[this.panes.length - 1],
       kind: "codex",
-      displayAgent: "Codex",
-      name: null,
+      name: "Rate limits",
       cwd: API,
       status: "idle",
       seq: 0,
       items: [],
     });
     c2.since = now - 90 * min;
+    // 12. A helper of the bundle task: it works under its task, not as a card of its own.
+    this.panes.push(pane("hc:t3", WEBAPP));
+    const c3 = this.addAgent({
+      pane: this.panes[this.panes.length - 1],
+      kind: "claude",
+      name: "Check chart imports",
+      cwd: WEBAPP,
+      status: "working",
+      seq: this.bump(),
+      parentId: "hc:t1",
+      items: [{ kind: "user", id: this.id(), ts: now - 5 * min, text: "Find every import of the chart library." }],
+    });
+    c3.since = now - 5 * min;
+    c3.activity = "Searching imports";
+    // 13. An agent in no Herdr app space: herdlingd groups it by its repo. "Move to space" works on it.
+    this.workspaces.push({ workspace_id: "hc:g:api-server", label: "api-server", number: 6, agent_status: "unknown", ...core });
+    this.groupSource.set("hc:g:api-server", "repo");
+    this.tabs.push({ tab_id: "hc:task:t4", workspace_id: "hc:g:api-server", label: "Retry jitter", number: 1, agent_status: "unknown", ...core });
+    this.panes.push({ pane_id: "hc:t4", tab_id: "hc:task:t4", workspace_id: "hc:g:api-server", label: "Retry jitter", cwd: API, ...core });
+    const c4 = this.addAgent({
+      pane: this.panes[this.panes.length - 1],
+      kind: "codex",
+      name: "Retry jitter",
+      cwd: API,
+      status: "idle",
+      seq: 0,
+      items: [
+        { kind: "user", id: this.id(), ts: now - 30 * min, text: "Add jitter to the retry delay." },
+        { kind: "assistant", id: this.id(), ts: now - 28 * min, markdown: "The retry delay now has up to 20% random jitter." },
+      ],
+    });
+    c4.since = now - 28 * min;
   }
 
   /** The scripts that run without user input: the working agent advances, the blocked one asks. */

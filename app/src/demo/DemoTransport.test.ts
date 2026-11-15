@@ -1,32 +1,34 @@
 import type {
-  AgentsInstalled,
-  FsDirs,
   AgentPreview,
+  AgentsInstalled,
   Automation,
   AutomationRun,
   Boot,
   CommandList,
   FilePut,
+  FsDirs,
   GitDiff,
   GitStatus,
-  GroupsList,
   GitWorktree,
+  GroupsList,
   Hello,
+  HerdrUpdate,
   MacOpenSettings,
   PaneAnswer,
+  PaneMove,
   PortsList,
   PreviewClose,
+  PreviewOpen,
+  RecentSession,
+  SessionStart,
   ShellUnwatch,
   ShellWatch,
   ShellWatches,
-  PreviewOpen,
-  RecentSession,
   Stats,
   SubagentPage,
   ThreadItem,
   ThreadPage,
   ThreadRef,
-  HerdrUpdate,
   UpdateApply,
   UpdateCheck,
   Usage,
@@ -99,7 +101,7 @@ describe("DemoTransport", () => {
     expect(h.backends).toEqual({ herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } });
   });
 
-  it("answers the core methods on a Herdr 2 pane and unsupported for the rest", async () => {
+  it("answers the herdr methods on a Herdr 2 pane as a plan C herdlingd", async () => {
     const read = await herdr<{ read: { text: string } }>("pane.read", { pane_id: "hc:t1" });
     expect(read.read.text).toContain("Claude");
     await herdr("pane.send_keys", { pane_id: "hc:t2", keys: ["enter"] });
@@ -107,21 +109,22 @@ describe("DemoTransport", () => {
     await herdr("agent.prompt", { target: "hc:t2", text: "List the routes" });
     expect(await herdr("pane.get", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_info" });
     expect(await herdr("pane.process_info", { pane_id: "hc:t1" })).toMatchObject({ type: "pane_process_info" });
-    expect(await call<ThreadRef>("thread.resolve", { pane_id: "hc:t1" })).toMatchObject({ kind: "claude", session: null, log_path: null });
+    // Herdr 2 agents have a chat transcript.
+    expect(await call<ThreadRef>("thread.resolve", { pane_id: "hc:t1" })).toMatchObject({ kind: "claude", log_path: expect.stringMatching(/^demo:/) });
     expect(await call<GitStatus>("git.status", { pane_id: "hc:t1" })).toMatchObject({ root: expect.any(String) });
+    // The Herdr app owns the names of its spaces and tabs.
     for (const [method, params] of [
-      ["agent.rename", { target: "hc:t1", name: "x" }],
       ["tab.rename", { tab_id: "hc:tab:1", label: "x" }],
       ["workspace.rename", { workspace_id: "hc:space:1", label: "x" }],
-      ["tab.create", { workspace_id: "hc:space:1" }],
-      ["tab.close", { tab_id: "hc:tab:1" }],
-      ["workspace.close", { workspace_id: "hc:space:1" }],
-      ["agent.explain", { target: "hc:t1" }],
-      ["agent.start", { pane_id: "hc:t1", kind: "claude" }],
     ] as const) {
       expect((await callError("herdr.call", { method, params })).code).toBe("unsupported");
     }
-    expect((await callError("shell.watch", { pane_id: "hc:t1" })).code).toBe("unsupported");
+    // The other actions work: a task name, a new tab in the space, an agent in it, explain.
+    await herdr("agent.rename", { target: "hc:t1", name: "Bundle size check" });
+    const created = await herdr<{ root_pane: { pane_id: string } }>("tab.create", { workspace_id: "hc:space:1", cwd: "/home/demo/projects/webapp" });
+    await herdr("agent.start", { pane_id: created.root_pane.pane_id, kind: "claude" });
+    expect(await herdr("agent.explain", { target: "hc:t1" })).toBeTruthy();
+    expect(await call<ShellWatch>("shell.watch", { pane_id: "hc:t1" })).toMatchObject({ pane_id: "hc:t1" });
     // Pane close works, and the snapshot loses the pane.
     await herdr("pane.close", { pane_id: "hc:t2" });
     const snap = parseSnapshot(await herdr("session.snapshot"));
@@ -280,13 +283,23 @@ describe("DemoTransport", () => {
     expect(await call<ShellUnwatch>("shell.unwatch", { pane_id: "p1" }).then(ok("shell.unwatch"))).toEqual({ removed: true });
     expect(await callError("shell.watch", {})).toMatchObject({ code: "bad_request" });
 
-    // Herdr 2 groups: the demo lists its core space; its terminals cannot move.
+    // Herdr 2 groups: the demo lists its space and its repo group. A terminal in a space does not move.
     const groups = await call<GroupsList>("groups.list").then(ok("groups.list"));
-    expect(groups.groups[0]).toMatchObject({ workspace_id: "hc:space:1", source: "space", space_id: "1" });
+    expect(groups.groups.map((g) => [g.workspace_id, g.source])).toEqual([
+      ["hc:space:1", "space"],
+      ["hc:g:api-server", "repo"],
+    ]);
+    expect(groups.groups[0]).toMatchObject({ space_id: "1", agents: 3 });
     expect(await callError("pane.move", { pane_id: "hc:t1", new_space: true })).toMatchObject({ code: "unsupported" });
-    answered.add("pane.move");
-    expect(await callError("session.start", { cwd: "/home/demo", kind: "claude" })).toMatchObject({ code: "unsupported" });
-    answered.add("session.start");
+    expect(await callError("pane.move", { pane_id: "hc:t4" })).toMatchObject({ code: "bad_request" });
+    const moved = await call<PaneMove>("pane.move", { pane_id: "hc:t4", workspace_id: "hc:space:1" }).then(ok("pane.move"));
+    expect(moved).toMatchObject({ pane_id: "hc:t4", workspace_id: "hc:space:1" });
+    // The repo group was empty after the move, so it went away.
+    expect((await call<GroupsList>("groups.list")).groups.map((g) => g.workspace_id)).toEqual(["hc:space:1"]);
+    const started = await call<SessionStart>("session.start", { cwd: "/home/demo/projects/webapp", kind: "claude", prompt: "Hello" }).then(ok("session.start"));
+    expect(started).toMatchObject({ pane_id: expect.stringMatching(/^hc:t/), workspace_id: expect.stringMatching(/^hc:space:/), prompt_error: null });
+    const snapAfter = parseSnapshot(await herdr("session.snapshot"));
+    expect(snapAfter.agents.find((a) => a.pane_id === started.pane_id)).toMatchObject({ agent: "claude", group: "webapp", group_source: "space" });
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

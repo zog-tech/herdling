@@ -60,10 +60,15 @@ export function statusWithAge(bucket: Bucket, elapsedS: number | undefined): str
 
 /**
  * The title of a card as two parts: the group in bold, then the task name. A card with no group
- * (herdr 1, an older herdlingd) or a task with the name of the group has only the task.
+ * (herdr 1, an older herdlingd) or a task with the name of the group has only the task. A title
+ * that starts with the group ("api · tests", the workspace and tab names) keeps only the rest.
  */
 export function titleParts(item: Pick<BoardItem, "group" | "title">): { group?: string; task: string } {
-  return item.group && !sameName(item.group, item.title) ? { group: item.group, task: item.title } : { task: item.title };
+  const group = item.group;
+  if (!group || sameName(group, item.title)) return { task: item.title };
+  const prefix = `${group.trim()} · `;
+  const rest = item.title.toLowerCase().startsWith(prefix.toLowerCase()) ? item.title.slice(prefix.length).trim() : item.title;
+  return { group, task: rest || item.title };
 }
 
 /** The second line of a card: "<computer> · <kind>", then the repo line and the helpers. */

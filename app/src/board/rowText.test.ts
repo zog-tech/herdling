@@ -46,6 +46,7 @@ test("card_title_and_subtitle_show_the_group_repo_and_helpers", () => {
   expect(titleParts({ group: "Payments", title: "Fix the login form" })).toEqual({ group: "Payments", task: "Fix the login form" });
   expect(titleParts({ group: "api", title: "API" })).toEqual({ task: "API" });
   expect(titleParts({ title: "api" })).toEqual({ task: "api" });
+  expect(titleParts({ group: "webapp", title: "webapp · login form" })).toEqual({ group: "webapp", task: "login form" });
   expect(cardSubtitle({ subtitle: "studio · claude", repoLine: "api · main", helpers: [{ paneId: "hc:t2", title: "x", status: "working" }] })).toBe(
     "studio · claude · api · main · 1 helper · 1 working",
   );

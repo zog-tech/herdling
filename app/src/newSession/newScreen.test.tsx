@@ -418,3 +418,59 @@ describe("long pastes in the first prompt", () => {
     expect(has(t, "Pasted text #1 · 30 lines")).toBe(false);
   });
 });
+
+describe("Herdr 2 spaces", () => {
+  /** The full demo hello: a herdlingd with the plan C methods and a core. */
+  async function coreHost() {
+    const hello = await mockConn.rpc!.call<Hello>("hello");
+    mockConn = { ...mockConn, hello };
+  }
+
+  it("starts the agent with session.start in the picked space", async () => {
+    const pending = coreHost();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    await pending;
+    const call = jest.spyOn(mockConn.rpc!, "call");
+    const t = await render();
+    // The spaces of groups.list: New space and the space; a repo group is not a choice.
+    expect(has(t, "New space")).toBe(true);
+    expect(has(t, "research")).toBe(true);
+    expect(has(t, "api-server")).toBe(false);
+    await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "research").props.onPress());
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    const start = call.mock.calls.find(([m]) => m === "session.start");
+    expect(start?.[1]).toMatchObject({ cwd: "/home/demo/projects/webapp", kind: "claude", workspace_id: "hc:space:1" });
+    // No herdr 1 workspace.
+    expect(call.mock.calls.filter(([m]) => m === "herdr.call").map(([, p]) => (p as { method: string }).method)).not.toContain("workspace.create");
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\/hc:t/));
+  });
+
+  it("selects the space from the space screen, and a shell in a new space asks for the core", async () => {
+    const pending = coreHost();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    await pending;
+    mockParams = { host: "h1", workspace: "hc:space:1" };
+    const call = jest.spyOn(mockConn.rpc!, "call");
+    const t = await render();
+    expect(t.root.find((n) => n.props.accessibilityLabel === "research" && n.props.accessibilityState).props.accessibilityState).toMatchObject({ selected: true });
+    await act(async () => byLabel(t, "New space").props.onPress());
+    await act(async () => byLabel(t, "Shell").props.onPress());
+    await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "Open shell here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    const create = call.mock.calls.find(([m, p]) => m === "herdr.call" && (p as { method: string }).method === "workspace.create");
+    expect((create?.[1] as { params: unknown }).params).toMatchObject({ backend: "core" });
+  });
+});

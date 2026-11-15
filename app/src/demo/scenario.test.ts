@@ -81,20 +81,26 @@ describe("DemoScenario seed", () => {
     s.stop();
   });
 
-  it("has a Herdr 2 space with 2 agents and no thread log", () => {
+  it("has a Herdr 2 space with a task, a helper and an agent in a repo group", () => {
     const s = make();
     const snap = s.snapshot();
     const core = snap.agents.filter((a) => a.backend === "core");
-    expect(core.map((a) => [a.pane_id, a.agent, a.display_agent, a.agent_status])).toEqual([
-      ["hc:t1", "claude", "Claude Code", "done"],
-      ["hc:t2", "codex", "Codex", "idle"],
+    expect(core.map((a) => [a.pane_id, a.agent, a.name, a.agent_status, a.workspace_id])).toEqual([
+      ["hc:t1", "claude", "Bundle size", "done", "hc:space:1"],
+      ["hc:t2", "codex", "Rate limits", "idle", "hc:space:1"],
+      ["hc:t3", "claude", "Check chart imports", "working", "hc:space:1"],
+      ["hc:t4", "codex", "Retry jitter", "idle", "hc:g:api-server"],
     ]);
-    for (const a of core) expect(a).toMatchObject({ workspace_id: "hc:space:1", tab_id: "hc:tab:1" });
+    expect(core[0]).toMatchObject({ group: "research", group_source: "space", repo: "webapp", branch: "main" });
+    expect(core[2].parent_id).toBe("hc:t1");
+    expect(core[3]).toMatchObject({ group: "api-server", group_source: "repo", repo: "api-server" });
     expect(snap.workspaces.find((w) => w.workspace_id === "hc:space:1")).toMatchObject({ backend: "core", label: "research" });
     expect(snap.tabs.find((t) => t.tab_id === "hc:tab:1")).toMatchObject({ backend: "core" });
-    expect(snap.panes.filter((p) => p.backend === "core").map((p) => p.pane_id)).toEqual(["hc:t1", "hc:t2"]);
-    // As herdlingd: a Herdr 2 agent has no chat transcript in this slice.
-    expect(s.resolve("hc:t1")).toEqual({ kind: "claude", session: null, log_path: null, cwd: "/home/demo/projects/webapp" });
+    expect(snap.panes.filter((p) => p.backend === "core").map((p) => p.pane_id)).toEqual(["hc:t1", "hc:t2", "hc:t3", "hc:t4"]);
+    // Every entry carries its group, also the herdr 1 style workspaces of the demo.
+    expect(snap.agents.find((a) => a.pane_id === "p1")).toMatchObject({ group: "webapp", group_source: "space", repo: "webapp" });
+    // As a herdlingd with Herdr 2 transcripts: the agent has a chat log.
+    expect(s.resolve("hc:t1")).toMatchObject({ kind: "claude", log_path: expect.stringMatching(/^demo:/) });
     expect(s.screen("hc:t1")).toContain("Claude");
     s.stop();
   });

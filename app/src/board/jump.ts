@@ -9,6 +9,7 @@ import { agentKind, agentTitle } from "@/herdr/names";
 import type { Snapshot } from "@/herdr/snapshot";
 import { terminalFolder, terminalPanes, terminalTitle } from "@/herdr/terminals";
 
+import { titleParts } from "./rowText";
 import { groupOf, helperParents, type HelperInfo } from "./tasks";
 import { queryWords } from "./textFilter";
 
@@ -53,14 +54,16 @@ export function jumpTasks(hosts: readonly JumpHost[]): JumpTask[] {
     for (const a of s.agents) {
       if (parents.has(a.pane_id)) continue;
       const kind = agentKind(a);
+      const group = groupOf(a) ?? wsLabel(a.workspace_id);
       tasks.push({
         key: `${hostId}:${a.pane_id}`,
         hostId,
         hostName,
         paneId: a.pane_id,
-        title: agentTitle(s, a),
+        // "webapp · login form" in the group "webapp" is the task "login form".
+        title: titleParts({ group, title: agentTitle(s, a) }).task,
         status: a.agent_status,
-        group: groupOf(a) ?? wsLabel(a.workspace_id),
+        group,
         repo: a.repo ?? undefined,
         branch: a.branch ?? undefined,
         folder: a.cwd ?? undefined,
