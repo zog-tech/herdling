@@ -31,6 +31,53 @@ The app does not gate the terminal view of a core pane (`allows(..., "thread")` 
 - One emulator per watch, in the `herdlingd rpc` process of that SSH channel. It costs the grid plus `lines` of history.
 - A core that does not list `terminal.attach` in `hello.methods` keeps the plain `terminal.read` polling of today.
 
+## Phone width: how the core sizes a terminal
+
+Today a Herdling user sees lines cut off: the desk pane is about 150 columns wide, and the phone
+shows that grid. The official Herdr phone app shows a Claude Code pane laid out at the phone width
+(about 45 columns), and it also says that watching from the phone never resizes the computer.
+Findings from herdr-core 0.1.19 (`hc schema`, `crates/herdr-core/src/viewers.rs`, `attach.rs`,
+`schema/README.md`):
+
+- **One size per terminal.** The core has one PTY and one screen grid per terminal. There is no
+  size per client and no reflow for a client. The program (Claude Code) lays out its output for
+  that one size.
+- **Two kinds of viewer.** `terminal.attach` with `observe: true` is a watcher: it never types,
+  resizes or focuses, and its `cols` and `rows` are ignored. Without `observe`, the viewer is a
+  driver: its `cols` and `rows` count.
+- **The last active driver sets the size** (`apply_size`). A driver is active when it attaches,
+  types, sends RESIZE or gains FOCUS. With no driver, the terminal runs at the headless size.
+- **When a driver leaves** (CLOSE, or its connection ends), the core applies the size of the most
+  recently active driver that is left (`detach` → `apply_size`). So the desk size comes back when
+  the phone stops, if the desk app is still attached. The desk also takes the size back at once
+  when the person at the desk types, clicks into the pane (FOCUS) or resizes the window.
+- Each size change sends a `size` event, a RESIZE frame and a fresh paint to observers that asked
+  for `resize_notifications`.
+- The Herdr desktop app attaches as a driver with `history: 2000` and its window size
+  (`herdr-app/src/hc.rs`).
+
+Conclusion: a layout at the phone width is possible only as a driver, and it changes the size
+of the terminal on the computer while the phone drives. The official app's "never resizes"
+statement can only be true for its watch mode. Its phone-width view must drive (or wrap lines on
+the phone, which cannot re-lay out a diff). Herdling keeps the watch mode as the default (old apps,
+previews) and adds an opt-in drive mode:
+
+- `pane.watch` gets two optional params, `cols` and `rows` (the phone grid). With both, on a core
+  pane, herdlingd attaches as a driver at that size (`observe: false`). Without them, as before,
+  a passive watcher. herdlingd still never sends DATA, FOCUS or RESIZE on the stream: typing goes
+  through `terminal.send` and `terminal.keys`, as now. Values are clamped to 20–500 columns and
+  5–200 rows.
+- The reply gets the optional field `drive: true` when the stream drives the size. An older
+  herdlingd ignores the params and gives no `drive`, so the app knows which mode it got.
+- When the app cancels the watch (screen not visible, app in the background, channel closed), the
+  core gives the size back to the desk.
+- A herdr 1 pane ignores `cols` and `rows` (herdr 1 has no per-viewer size).
+- The app part is for plan F: a width mode "Phone width" next to "fit" and "wrap", off by default,
+  with a short note that the pane on the computer gets narrow while the phone shows it.
+- Open question for the maintainer: is the narrow desk pane acceptable while the phone drives?
+  A driver also counts for display queries and image answers in the core; herdlingd answers none,
+  so a program that waits for an image answer from a viewer waits until the core's deadline.
+
 ## Global Constraints
 
 - Branch `herdr2-terminal` in `.claude/worktrees/herdr2-terminal`. Small commits, prefix `companion:` or `docs:`, one short line, no period, a blank line and the reason, then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. `git config user.name` is `zog-tech`. Do not push. Do not install the binary.
@@ -44,7 +91,7 @@ The app does not gate the terminal view of a core pane (`allows(..., "thread")` 
 
 ## Review Focus
 
-1. Passive attach: the attach params have `observe: true`; herdlingd sends no DATA, RESIZE, FOCUS, FACTS or AUTOMATIC_INPUT frame — test in Task 4.
+1. Passive attach: without `cols` and `rows` the attach params have `observe: true`. In both modes herdlingd sends no DATA, RESIZE, FOCUS, FACTS or AUTOMATIC_INPUT frame — test in Task 4.
 2. Flow control: herdlingd sends CREDIT for every DATA payload, so a long stream never stalls at 256 KiB — test in Task 4.
 3. The terminal ends (CLOSE with `exited`): the reattach gets `finished` → the app gets `{error: "pane_not_found"}` and the stream ends — tests in Tasks 3 and 4.
 4. The core restarts (socket closed): herdlingd reattaches with a new generation and a fresh emulator; a late frame of the old attempt is ignored; after the retry limit the app gets `{closed: true}` — tests in Tasks 3 and 4.
@@ -142,6 +189,14 @@ Rules:
   - `old_core_polls_read`: a core with no `terminal.attach` → `terminal.read` calls as today (the existing `pane_watch_reads_a_core_pane` test stays green).
 - [ ] **Step 2–4:** fail, implement, pass. Run all companion tests.
 - [ ] **Step 5: Commit** — "companion: stream Herdr 2 panes with colors through terminal.attach"
+
+### Task 4b: Drive mode at the phone width (opt-in)
+
+**Files:** `companion/src/watch.rs` (`WatchParams.size: Option<(u16, u16)>`), `companion/src/core/term_watch.rs` (`open` takes `Mode::Watch` or `Mode::Drive { cols, rows }`), `companion/tests/core_terminal.rs`, `companion/tests/pane_watch.rs`, `protocol/src/index.ts` (optional `cols`, `rows` in the `pane.watch` params, optional `drive` in the reply).
+
+- [ ] **Step 1: Failing tests:** `WatchParams::parse` with `cols: 45, rows: 30` gives `Some((45, 30))`, clamps 5 → 20 and 9999 → 500, and one of the two alone gives `None`; `pane.watch` with `cols` and `rows` on a core pane sends `terminal.attach` with `observe: false, cols: 45, rows: 30` and replies `drive: true`; without them `observe: true` and no `drive`; still only CREDIT and CLOSE frames go out; a reattach after a core restart keeps the mode.
+- [ ] **Step 2–4:** fail, implement, pass.
+- [ ] **Step 5: Commit** — "companion: drive a Herdr 2 pane at the phone width on request"
 
 ### Task 5: Full-screen facts in `pane.get` and an ANSI `pane.read`
 
