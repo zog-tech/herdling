@@ -86,7 +86,7 @@ previews) and adds an opt-in drive mode:
 - herdlingd never types, resizes or focuses through an attach: only CREDIT and CLOSE frames go out on a stream channel. A test checks this.
 - No test touches the live core: `tests/support/fake_core.rs` (extended for framed mode) and temp folders.
 - Test data: user `sam`, paths like `/home/sam/proj`, hosts like `studio.local`.
-- Cargo: `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target nice -n 15 cargo test -j 2`, the same for `clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate.
+- Cargo: `nice -n 15 cargo test -j 2` with the shared target folder on the build volume (`CARGO_TARGET_DIR`), the same for `clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate.
 - ASD-STE100 for comments and docs. Each new module starts with a doc comment that says what it is for.
 
 ## Review Focus
