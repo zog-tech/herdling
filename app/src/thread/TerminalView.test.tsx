@@ -358,3 +358,15 @@ test("shift_tab_falls_back_to_text_when_herdr_refuses_the_name", async () => {
     { pane_id: "w1:p1", text: "\x1b[Z" },
   ]);
 });
+
+test("phone_width_falls_back_to_fit_on_a_herdr_one_pane", async () => {
+  const { useTerminalWidth } = jest.requireActual("@/terminal/widthMode") as typeof import("@/terminal/widthMode");
+  useTerminalWidth.setState({ mode: "phone" });
+  await mount();
+  expect(tree!.root.findAll((n) => n.props.accessibilityLabel === "Terminal width: Fit to screen" && !!n.props.onPress)).toHaveLength(1);
+  // The cycle on a herdr 1 pane never offers the phone width.
+  useTerminalWidth.setState({ mode: "scroll" });
+  await flush();
+  await act(async () => pressable("Terminal width: Scroll sideways").props.onPress());
+  expect(useTerminalWidth.getState().mode).toBe("fit");
+});

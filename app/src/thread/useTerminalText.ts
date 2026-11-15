@@ -1,4 +1,4 @@
-import type { PaneWatchEvent } from "@herdling/protocol";
+import type { PaneWatchEvent, PaneWatchResult } from "@herdling/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
@@ -17,6 +17,13 @@ type Options = {
   refreshMs?: number;
   /** Lines to read (default 200). */
   lines?: number;
+  /**
+   * The phone grid for a Herdr 2 pane ("Phone width"): `pane.watch` gets `cols` and `rows`, and the
+   * pane lays out its output at that size. A change starts a new watch. Ignored when polling.
+   */
+  size?: { cols: number; rows: number };
+  /** Gets `drive` of the `pane.watch` reply when `size` is set: true when the pane takes the size. */
+  onDrive?: (drive: boolean) => void;
 };
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -38,6 +45,10 @@ export function useTerminalText(
   const refreshMs = o?.refreshMs ?? REFRESH_MS;
   const watchMs = o?.refreshMs ?? WATCH_MS;
   const lines = o?.lines ?? LINES;
+  const cols = o?.size?.cols;
+  const rows = o?.size?.rows;
+  const onDrive = useRef(o?.onDrive);
+  onDrive.current = o?.onDrive;
   const { rpc, hello } = useHostConn(hostId);
   const canWatch = listsMethod(hello, "pane.watch");
   const [text, setText] = useState<string>();
@@ -98,7 +109,7 @@ export function useTerminalText(
       try {
         const off = await rpc.stream<PaneWatchEvent>(
           "pane.watch",
-          { pane_id: paneId, lines, format, interval_ms: watchMs },
+          { pane_id: paneId, lines, format, interval_ms: watchMs, ...(cols && rows ? { cols, rows } : {}) },
           (d) => {
             if (dead) return;
             if ("text" in d) {
@@ -112,6 +123,9 @@ export function useTerminalText(
             unwatch = undefined;
             if ("error" in d) setError(d.message || d.error);
             poll();
+          },
+          (r) => {
+            if (!dead && cols && rows) onDrive.current?.((r as PaneWatchResult | null)?.drive === true);
           },
         );
         if (dead || ended) off();
@@ -130,7 +144,7 @@ export function useTerminalText(
       if (timer) clearInterval(timer);
       unwatch?.();
     };
-  }, [rpc, paneId, enabled, active, format, refreshMs, watchMs, lines, canWatch]);
+  }, [rpc, paneId, enabled, active, format, refreshMs, watchMs, lines, canWatch, cols, rows]);
 
   const refresh = useCallback(() => readNow.current?.(), []);
   return { text, error, refresh };
