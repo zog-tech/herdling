@@ -446,7 +446,16 @@ export type PaneWatchParams = {
   lines?: number;
   format?: "text" | "ansi";
   interval_ms?: number;
+  /**
+   * The phone grid. With both, a Herdr 2 pane is laid out at this size while the stream lives
+   * (the computer pane gets this size too). Clamped to 20–500 columns and 5–200 rows. herdr 1
+   * panes and older herdlingd ignore them.
+   */
+  cols?: number;
+  rows?: number;
 };
+/** `pane.watch` result. `drive` is true when the stream drives the size of a Herdr 2 pane. */
+export type PaneWatchResult = { stream: string; drive?: boolean };
 /**
  * `pane.watch` event data. A screen comes first at once, then only when the screen changes.
  * `error` (a herdr error code, for example `pane_not_found`) or `closed` (herdr stopped) ends the stream.

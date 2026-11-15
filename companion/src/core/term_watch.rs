@@ -387,7 +387,7 @@ pub async fn pane_watch(
     let Some(addr) = super::project::address(&p.pane_id) else {
         return Some(Err(not_found()));
     };
-    let mode = Mode::Watch;
+    let mode = p.size.map_or(Mode::Watch, |(cols, rows)| Mode::Drive { cols, rows });
     let first = match open(sock, ctx.herdr_timeout, addr, p.lines as usize, mode).await {
         Ok(a) => a,
         Err(OpenError::NoAttach) => return None,
@@ -406,5 +406,8 @@ pub async fn pane_watch(
     };
     let out = out.clone();
     let stream = ctx.streams.spawn("pane", move |id| run(w, first, out, id));
-    Some(Ok(json!({ "stream": stream })))
+    Some(Ok(match mode {
+        Mode::Watch => json!({ "stream": stream }),
+        Mode::Drive { .. } => json!({ "stream": stream, "drive": true }),
+    }))
 }

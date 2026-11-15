@@ -64,7 +64,14 @@ pub struct WatchParams {
     pub lines: u64,
     pub ansi: bool,
     pub interval: Duration,
+    /// The phone grid `(cols, rows)`, when the app asks to drive a Herdr 2 pane at that size.
+    /// Both params or none. herdr 1 panes ignore it.
+    pub size: Option<(u16, u16)>,
 }
+
+/// Bounds for the phone grid of a drive watch.
+pub const DRIVE_COLS: (u64, u64) = (20, 500);
+pub const DRIVE_ROWS: (u64, u64) = (5, 200);
 
 fn bad(message: impl Into<String>) -> RpcError {
     RpcError { code: "bad_request".into(), message: message.into() }
@@ -89,7 +96,12 @@ impl WatchParams {
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_INTERVAL_MS)
             .clamp(MIN_INTERVAL_MS, MAX_INTERVAL_MS);
-        Ok(WatchParams { pane_id, lines, ansi, interval: Duration::from_millis(ms) })
+        let n = |k: &str| params.get(k).and_then(Value::as_u64);
+        let size = match (n("cols"), n("rows")) {
+            (Some(c), Some(r)) => Some((c.clamp(DRIVE_COLS.0, DRIVE_COLS.1) as u16, r.clamp(DRIVE_ROWS.0, DRIVE_ROWS.1) as u16)),
+            _ => None,
+        };
+        Ok(WatchParams { pane_id, lines, ansi, interval: Duration::from_millis(ms), size })
     }
 
     fn read_params(&self) -> Value {

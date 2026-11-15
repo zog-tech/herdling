@@ -193,6 +193,26 @@ async fn resize_frames_resize_the_emulator() {
 }
 
 #[tokio::test]
+async fn drive_mode_attaches_at_the_phone_grid() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 50, "format": "ansi", "cols": 45, "rows": 30})).await;
+    assert_eq!(r["result"]["drive"], true, "{r}");
+    assert_eq!(sess.event().await["text"], "\x1b[0;31mred\x1b[0m");
+    let attach = &s.core.calls_of("terminal.attach")[0];
+    assert_eq!((attach["observe"].clone(), attach["cols"].clone(), attach["rows"].clone()), (json!(false), json!(45), json!(30)));
+    s.core.send(Ctl::Output(b"\r\nmore".to_vec()));
+    sess.event_with("more").await;
+    // Still only CREDIT and CLOSE on the stream: typing goes through terminal.send.
+    assert!(s.core.stream_frames().iter().all(|f| f.1 == 1 || f.1 == 2));
+    // A reattach keeps the mode.
+    s.core.send(Ctl::Drop);
+    s.core.wait_calls("terminal.attach", 2).await;
+    let again = &s.core.calls_of("terminal.attach")[1];
+    assert_eq!((again["observe"].clone(), again["cols"].clone()), (json!(false), json!(45)));
+}
+
+#[tokio::test]
 async fn old_core_polls_read() {
     let s = setup(false, PAINT);
     let mut sess = Session::start(s.ctx());
