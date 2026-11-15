@@ -127,6 +127,21 @@ fn watch_params_defaults_and_clamps() {
     assert_eq!(WatchParams::parse(&json!({"pane_id": "w1:p1", "format": "html"})).unwrap_err().code, "bad_request");
 }
 
+#[test]
+fn watch_params_phone_grid() {
+    let p = WatchParams::parse(&json!({"pane_id": "hc:t1"})).unwrap();
+    assert_eq!(p.size, None);
+    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 45, "rows": 30})).unwrap();
+    assert_eq!(p.size, Some((45, 30)));
+    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 5, "rows": 9999})).unwrap();
+    assert_eq!(p.size, Some((20, 200)));
+    let p = WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 9999, "rows": 1})).unwrap();
+    assert_eq!(p.size, Some((500, 5)));
+    // One of the two alone is no grid.
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "hc:t1", "cols": 45})).unwrap().size, None);
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "hc:t1", "rows": 30})).unwrap().size, None);
+}
+
 #[tokio::test]
 async fn watch_sends_first_screen_then_only_changes() {
     let dir = tempfile::tempdir().unwrap();

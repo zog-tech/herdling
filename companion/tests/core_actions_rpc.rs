@@ -46,6 +46,16 @@ impl Session {
     pub async fn herdr(&mut self, method: &str, params: Value) -> Value {
         self.call("herdr.call", json!({"method": method, "params": params})).await
     }
+    /// The data of the next stream event.
+    pub async fn event(&mut self) -> Value {
+        loop {
+            let line = tokio::time::timeout(Duration::from_secs(10), self.rx.next_line()).await.expect("timed out").unwrap().unwrap();
+            let v: Value = serde_json::from_str(&line).unwrap();
+            if v["method"] == "event" {
+                return v["params"]["data"].clone();
+            }
+        }
+    }
 }
 
 pub struct Setup {
@@ -448,4 +458,30 @@ async fn shell_watch_accepts_a_core_pane() {
     assert_eq!(r["result"]["watches"][0]["pane_id"], "hc:t2");
     let r = sess.call("shell.unwatch", json!({"pane_id": "hc:t2"})).await;
     assert_eq!(r["result"]["removed"], true);
+}
+
+/// A new terminal (a login shell from `tab.create` or `session.start`) shows in `pane.watch`
+/// through a passive `terminal.attach`, with colors.
+#[tokio::test]
+async fn new_terminals_show_in_pane_watch() {
+    let s = setup_with(|st| {
+        st.attach = true;
+        st.paint = b"\x18\x1b[H\x1b[2J\x1b[32m~/proj\x1b[0m $".to_vec();
+        st.send_starts_agent = true;
+    });
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr("tab.create", json!({"workspace_id": "hc:space:s1", "cwd": "/home/sam/proj", "focus": false})).await;
+    let pane = r["result"]["root_pane"]["pane_id"].as_str().unwrap().to_string();
+    let w = sess.call("pane.watch", json!({"pane_id": pane, "lines": 50, "format": "ansi"})).await;
+    assert!(w["result"]["stream"].is_string(), "{w}");
+    assert_eq!(sess.event().await["text"], "\x1b[0;32m~/proj\x1b[0m $");
+    let attach = s.core.calls_of("terminal.attach");
+    assert_eq!((attach[0]["terminal"].clone(), attach[0]["observe"].clone()), (json!("t4"), json!(true)));
+    // An agent from `session.start` too.
+    let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "claude", "workspace_id": "hc:space:s1"})).await;
+    let pane = r["result"]["pane_id"].as_str().unwrap().to_string();
+    let w = sess.call("pane.watch", json!({"pane_id": pane, "lines": 50, "format": "ansi"})).await;
+    assert!(w["result"]["stream"].is_string(), "{w}");
+    assert!(sess.event().await["text"].as_str().unwrap().contains("~/proj"));
+    assert_eq!(s.core.calls_of("terminal.attach")[1]["terminal"], "t5");
 }
