@@ -7,6 +7,9 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.0] - unreleased
 
+herdlingd 0.2.0 needs Herdr 2 (herdr-core). When no herdr-core is installed, it installs the pinned
+version itself (also after an update from 0.1.9). herdr 1 sessions do not show in Herdling any more.
+
 ### Breaking
 
 - herdlingd 0.2.0 talks only to Herdr 2 (herdr-core). The herdr 1 client is gone. A computer with
@@ -29,6 +32,13 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   gives `herdr_unavailable`.
 
 ### Also in 0.2.0
+
+- Self-heal: when `serve` starts, and when `hello` finds no core, herdlingd installs the pinned
+  herdr-core if none is installed (the `core.install` path, the same lock, never down, never a
+  package manager core). An update from 0.1.9 (which ignores `requires_core`) no longer leaves the
+  app with no runtime. New `hello.core_setup` (`installing`, `failed`, `missing`, with a message);
+  `herdr_unavailable` errors carry the same message. The app shows it on the host screens.
+- The release workflow puts a core notice in front of the notes of a release that needs the core.
 
 - `core.install` (and the core step of `herdr.update`) ends within 150 seconds, under the 180
   seconds that the app waits (error `install_timeout`). The place step starts only with 60 seconds

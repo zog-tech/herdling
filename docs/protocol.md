@@ -1052,6 +1052,25 @@ the core version and `herdr_protocol` is missing, so old apps show the runtime a
 app knows a Herdr 2 only host by `herdlingd` 0.2.0 or later, and then treats every entry as a
 Herdr 2 entry (task rename only, phone width, no herdr 1 key fallback).
 
+### `hello.core_setup` and the core self-heal
+
+Since 0.2.0. A herdlingd 0.1.9 that updates to 0.2.0 does not read `requires_core`, so no core
+is installed. 0.2.0 then installs the pinned core itself: when `serve` starts, and when `hello`
+finds that no core answers and none is installed. It is the path of `core.install` (the pinned
+SHA-256, the same lock). It runs only when no `herdr-core` is found, so it never downgrades and
+never touches a core of a package manager. After a failure, `hello` tries again after 10
+minutes; `serve` tries at each start.
+
+When no core answers, `hello` has `core_setup`:
+
+```json
+{"herdr_ok": false, "core_setup": {"state": "installing", "message": "Installing Herdr 2 (herdr-core 0.1.20) on this computer. This takes a minute. Then Herdling shows its terminals."}}
+```
+
+`state` is `installing`, `failed` (the message has the error) or `missing`. The field is missing
+when all is well. A `herdr_unavailable` error gets the same message, because old apps show that
+text. The state is in `core-heal.json` next to `core-install.lock`.
+
 ## Compatibility rules
 
 An app and a host can run different versions. Follow these rules so they do not break each other.

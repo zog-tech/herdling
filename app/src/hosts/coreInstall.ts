@@ -121,3 +121,11 @@ export function coreInstallReducer(s: CoreInstallState, e: CoreInstallEvent): { 
       return s.phase === "running" && s.gen === e.gen ? { state: { phase: "failed", gen: s.gen, text: e.text }, effects: [] } : { state: s, effects: [] };
   }
 }
+
+/**
+ * The text when no runtime answers on the host. herdlingd 0.2.0 says what it does about the
+ * Herdr 2 core (`hello.core_setup`: it installs it, or the install failed). Else the old text.
+ */
+export function runtimeDownText(name: string, hello: Pick<Hello, "core_setup">): string {
+  return hello.core_setup?.message || `herdr is not running on ${name}. Start herdr in a terminal on that computer.`;
+}

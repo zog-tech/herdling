@@ -326,6 +326,17 @@ async fn main() -> Result<()> {
         }
         Some("serve") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            // A computer that got this herdlingd from an update that did not know about the core
+            // (0.1.9) has none: install the pinned core now (`core_install::heal`).
+            let ci = herdlingd::core_install::CoreInstallCtx::new(&home, herdlingd::core::endpoint::from_env(&home));
+            tokio::task::spawn_blocking(move || {
+                use herdlingd::core_install::heal;
+                match heal::run(&ci, heal::Trigger::Serve) {
+                    Ok(Some(r)) => eprintln!("herdlingd serve: installed herdr-core {} ({})", r.pinned, r.status),
+                    Ok(None) => {}
+                    Err(e) => eprintln!("herdlingd serve: could not install herdr-core: {} ({})", e.message, e.code),
+                }
+            });
             let ctx = serve::ServeCtx {
                 core_socket: herdlingd::core::endpoint::from_env(&home),
                 config_path: config::default_path(&home),

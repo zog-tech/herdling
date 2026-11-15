@@ -745,3 +745,103 @@ fn the_install_budget_is_under_the_app_timeout() {
     assert!(ci::INSTALL_BUDGET <= Duration::from_secs(150));
     assert!(ci::PLACE_MIN < ci::INSTALL_BUDGET);
 }
+
+mod heal {
+    use super::*;
+    use herdlingd::core_install::heal::{self, Saved, Trigger, View};
+
+    const MIN: u64 = 60_000;
+
+    #[test]
+    fn plan_heals_only_a_required_pin_with_no_core() {
+        let now = 100 * MIN;
+        assert!(heal::plan(true, false, None, now, Trigger::Hello));
+        assert!(!heal::plan(false, false, None, now, Trigger::Serve), "pin not required");
+        assert!(!heal::plan(true, true, None, now, Trigger::Serve), "a core is there: never touch it");
+        // An install runs: no second one, unless its state is stale.
+        let running = Saved::Installing { at_ms: now - MIN };
+        assert!(!heal::plan(true, false, Some(&running), now, Trigger::Serve));
+        let stale = Saved::Installing { at_ms: now - 10 * MIN };
+        assert!(heal::plan(true, false, Some(&stale), now, Trigger::Hello));
+        // After a failure, `hello` waits; `serve` tries at its start.
+        let failed = Saved::Failed { at_ms: now - MIN, error: "x".into() };
+        assert!(!heal::plan(true, false, Some(&failed), now, Trigger::Hello));
+        assert!(heal::plan(true, false, Some(&failed), now, Trigger::Serve));
+        let old = Saved::Failed { at_ms: now - 11 * MIN, error: "x".into() };
+        assert!(heal::plan(true, false, Some(&old), now, Trigger::Hello));
+    }
+
+    #[test]
+    fn the_view_says_what_happens() {
+        let now = 100 * MIN;
+        let installing = Saved::Installing { at_ms: now };
+        let failed = Saved::Failed { at_ms: now, error: "cannot download herdr-core 0.1.20: offline".into() };
+        assert_eq!(heal::view(true, true, true, Some(&installing), now, PIN), View::Quiet, "the core answers");
+        assert_eq!(heal::view(false, false, false, None, now, PIN), View::Quiet, "not required");
+        assert_eq!(heal::view(true, false, false, Some(&installing), now, PIN), View::Installing { version: PIN.into() });
+        assert_eq!(heal::view(true, false, false, Some(&failed), now, PIN), View::Failed { error: "cannot download herdr-core 0.1.20: offline".into() });
+        assert_eq!(heal::view(true, false, false, None, now, PIN), View::Missing);
+        // Installed but not running: the core reports that itself; nothing to add.
+        assert_eq!(heal::view(true, false, true, Some(&failed), now, PIN), View::Quiet);
+        let v = heal::view(true, false, false, Some(&installing), now, PIN);
+        assert!(heal::text(&v).unwrap().starts_with("Installing Herdr 2"));
+        assert_eq!(heal::hello_field(&v).unwrap()["state"], "installing");
+        let f = heal::view(true, false, false, Some(&failed), now, PIN);
+        let msg = heal::unavailable_text("herdr-core: no socket", &f);
+        assert!(msg.contains("offline") && msg.contains("herdlingd core install"), "{msg}");
+        assert_eq!(heal::unavailable_text("herdr-core: no socket", &View::Quiet), "herdr-core: no socket");
+        assert!(heal::hello_field(&View::Quiet).is_none());
+    }
+
+    fn required(f: &mut Fixture) {
+        f.pin.required = true;
+        f.ctx.pin = f.pin.clone();
+    }
+
+    #[test]
+    fn a_computer_with_no_core_installs_the_pin() {
+        let mut f = fixture(None, None, false, true);
+        required(&mut f);
+        let r = heal::run(&f.ctx, Trigger::Serve).unwrap().expect("an install");
+        assert_eq!(r.status, "installed");
+        assert!(f.home().join(".local/bin/herdr-core").exists());
+        assert!(heal::load(&f.ctx.lock_dir).is_none(), "no state after a good install");
+        // Now a core is there: nothing more to do.
+        assert!(heal::run(&f.ctx, Trigger::Serve).unwrap().is_none());
+        assert_eq!(f.urls.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_found_core_or_an_optional_pin_is_left_alone() {
+        let mut f = fixture(Some("0.1.2"), None, false, true);
+        required(&mut f);
+        assert!(heal::run(&f.ctx, Trigger::Serve).unwrap().is_none());
+        assert!(f.calls().iter().all(|c| c.first().map(String::as_str) != Some("update")), "never updates an installed core");
+        let f = fixture(None, None, false, true);
+        assert!(heal::run(&f.ctx, Trigger::Serve).unwrap().is_none());
+        assert!(f.urls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failed_heal_is_saved_for_hello() {
+        let mut f = fixture(None, Some(b"not the tarball".to_vec()), false, true);
+        required(&mut f);
+        let e = heal::run(&f.ctx, Trigger::Serve).unwrap_err();
+        assert_eq!(e.code, "checksum_mismatch");
+        assert!(matches!(heal::load(&f.ctx.lock_dir), Some(Saved::Failed { .. })));
+        let v = heal::current(&f.ctx, false);
+        assert!(matches!(&v, View::Failed { error } if error.contains("sha256")), "{v:?}");
+        // `hello` does not try again at once.
+        assert!(heal::run(&f.ctx, Trigger::Hello).unwrap().is_none());
+        assert_eq!(f.urls.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_busy_lock_leaves_the_install_to_its_owner() {
+        let mut f = fixture(None, None, false, true);
+        required(&mut f);
+        let _held = ci::take_lock(&f.ctx.lock_dir).unwrap();
+        assert!(heal::run(&f.ctx, Trigger::Serve).unwrap().is_none());
+        assert!(f.urls.lock().unwrap().is_empty());
+    }
+}

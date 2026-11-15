@@ -25,7 +25,16 @@ export type Hello = {
    * `herdr_ok` keeps its meaning: it tells only about herdr 1.
    */
   backends?: Backends;
+  /**
+   * When no Herdr 2 core answers (herdlingd 0.2.0 and later): what herdlingd does about it.
+   * `installing`: it installs the pinned core now. `failed`: the last install failed. `missing`:
+   * no core is installed. `message` is the text for the user. Missing when all is well.
+   */
+  core_setup?: CoreSetup;
 };
+
+/** `hello.core_setup`. */
+export type CoreSetup = { state: "installing" | "failed" | "missing" | (string & {}); message: string };
 
 /** herdr 1: the herdr app with its JSON socket API. */
 export type HerdrBackend = { version?: string; protocol?: number };

@@ -9,6 +9,7 @@ import {
   coreUpdateNote,
   hasCoreStatus,
   initialCoreInstall,
+  runtimeDownText,
 } from "./coreInstall";
 
 const status = (o: Partial<CoreStatus> = {}): CoreStatus => ({
@@ -74,4 +75,11 @@ test("install_machine", () => {
   const again = coreInstallReducer(done, { type: "press" });
   expect(again.state).toEqual({ phase: "running", gen: 2 });
   expect(coreInstallReducer(again.state, { type: "failed", gen: 2, text: "no" }).state).toEqual({ phase: "failed", gen: 2, text: "no" });
+});
+
+test("the host text says that herdlingd installs Herdr 2", () => {
+  expect(runtimeDownText("studio", {})).toBe("herdr is not running on studio. Start herdr in a terminal on that computer.");
+  const message = "Installing Herdr 2 (herdr-core 0.1.20) on this computer. This takes a minute. Then Herdling shows its terminals.";
+  expect(runtimeDownText("studio", { core_setup: { state: "installing", message } })).toBe(message);
+  expect(runtimeDownText("studio", { core_setup: { state: "failed", message: "" } })).toContain("herdr is not running");
 });

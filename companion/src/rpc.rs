@@ -327,6 +327,10 @@ where
                         None => dispatch(&ctx, &tx, &req.method, req.params).await,
                         Some(t) => Box::pin(typing_call(&ctx, &tx, t, deadline, &req.method, req.params)).await,
                     };
+                    let result = match result {
+                        Err(e) if e.code == "herdr_unavailable" => Err(core_unavailable(&ctx, e).await),
+                        r => r,
+                    };
                     let resp = match result {
                         Ok(result) => RpcResponse { id: Some(req.id), result: Some(result), error: None },
                         Err(error) => RpcResponse { id: Some(req.id), result: None, error: Some(error) },
@@ -353,6 +357,17 @@ where
         Exit::Dead => abort_everything(&ctx, &mut tasks, &writer, writer_done).await,
     }
     Ok(())
+}
+
+/// A `herdr_unavailable` error with the core install state in its message (old apps show the
+/// message): "Installing Herdr 2…" or the install error. See `core_install::heal`.
+async fn core_unavailable(ctx: &Ctx, e: RpcError) -> RpcError {
+    let Some(ci) = ctx.core_install.clone() else { return e };
+    let view = tokio::task::spawn_blocking(move || crate::core_install::heal::current(&ci, false)).await;
+    match view {
+        Ok(v) => RpcError { code: e.code, message: crate::core_install::heal::unavailable_text(&e.message, &v) },
+        Err(_) => e,
+    }
 }
 
 /// A typing call: waits for its turn, then runs with the input deadline. A turn that does not
@@ -551,6 +566,7 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         command_kinds: crate::commands::KINDS.iter().map(|k| (*k).to_string()).collect(),
         boot: read_boot(ctx, false).await,
         backends: None,
+        core_setup: None,
     };
     // herdr-core is the only backend. Old apps read `herdr_ok` and `herdr_version` to show
     // whether the runtime runs, so these fields describe the core.
@@ -562,6 +578,30 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         h.herdr_ok = true;
         h.herdr_version = core.get("version").and_then(Value::as_str).map(String::from);
         h.backends = Some(json!({ "core": core }));
+    } else if let Some(ci) = ctx.core_install.clone() {
+        // No core answers: install a missing core (`core_install::heal`), and say so.
+        h.core_setup = tokio::task::spawn_blocking(move || {
+            let started = crate::core_install::heal::plan(
+                ci.pin.required,
+                crate::core_install::find_core(&ci).is_some(),
+                crate::core_install::heal::load(&ci.lock_dir).as_ref(),
+                crate::core_install::heal::now_ms(),
+                crate::core_install::heal::Trigger::Hello,
+            );
+            if started {
+                // In the background: the install takes longer than a `hello`.
+                let c = ci.clone();
+                std::thread::spawn(move || {
+                    let _ = crate::core_install::heal::run(&c, crate::core_install::heal::Trigger::Hello);
+                });
+                // The thread writes the state soon; say it now.
+                return crate::core_install::heal::hello_field(&crate::core_install::heal::View::Installing { version: ci.pin.version.clone() });
+            }
+            crate::core_install::heal::hello_field(&crate::core_install::heal::current(&ci, false))
+        })
+        .await
+        .ok()
+        .flatten();
     }
     serde_json::to_value(h).map_err(|e| err("internal", e.to_string()))
 }

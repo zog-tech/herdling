@@ -12,6 +12,7 @@
 //! [`CoreInstallCtx`], so tests pass fakes and never download or touch a live core.
 
 pub mod guard;
+pub mod heal;
 pub mod machine;
 pub mod pin;
 

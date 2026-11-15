@@ -16,7 +16,8 @@ import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
 import { LOGIN_HINT, startsAtLogin } from "./boot";
-import { herdrNotRunningText, HostNotices } from "./HostNotices";
+import { runtimeDownText } from "./coreInstall";
+import { HostNotices } from "./HostNotices";
 import { IntegrationsRow } from "./IntegrationsRow";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
@@ -185,7 +186,7 @@ export function HostForm({ host }: { host?: Host }) {
               <Text>
                 {hello.herdr_ok
                   ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}`
-                  : herdrNotRunningText(hello.host)}
+                  : runtimeDownText(hello.host, hello)}
               </Text>
               {/* A new host has no host notices above: show the boot hint here. */}
               {!host && startsAtLogin(hello) && savedId ? (

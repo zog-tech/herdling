@@ -203,3 +203,62 @@ async fn herdr_update_without_an_install_context_is_unavailable() {
     let r = s.call(1, "herdr.update").await;
     assert_eq!(r["error"]["code"], "update_unavailable", "{r}");
 }
+
+/// A computer that got 0.2.0 from 0.1.9 has no core and no core socket answers.
+fn no_core_required() -> Fix {
+    let mut f = fix(None);
+    f.core_ctx.pin.required = true;
+    f
+}
+
+#[tokio::test]
+async fn hello_with_no_core_installs_it_and_says_so() {
+    let f = no_core_required();
+    let mut ctx = ctx_with(&f);
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(f.core_ctx.home.join("none.sock")));
+    let mut s = Session::start(ctx);
+    let r = s.call(1, "hello").await;
+    assert_eq!(r["result"]["herdr_ok"], false, "{r}");
+    assert_eq!(r["result"]["core_setup"]["state"], "installing", "{r}");
+    assert!(r["result"]["core_setup"]["message"].as_str().unwrap().starts_with("Installing Herdr 2"));
+    // The install runs in the background with the verified path.
+    let core = f.core_ctx.home.join(".local/bin/herdr-core");
+    for _ in 0..200 {
+        if core.exists() && herdlingd::core_install::heal::load(&f.core_ctx.lock_dir).is_none() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(core.exists(), "the pinned core was installed");
+    assert_eq!(*f.downloads.lock().unwrap(), 1);
+    // The next hello does not start another install.
+    let r = s.call(2, "hello").await;
+    assert!(r["result"].get("core_setup").is_none(), "{r}");
+    assert_eq!(*f.downloads.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn herdr_unavailable_says_why() {
+    let f = no_core_required();
+    // A failed install before: an old app shows this message.
+    std::fs::create_dir_all(&f.core_ctx.lock_dir).unwrap();
+    let now = herdlingd::core_install::heal::now_ms();
+    std::fs::write(
+        herdlingd::core_install::heal::path(&f.core_ctx.lock_dir),
+        json!({"state": "failed", "at_ms": now, "error": "cannot download herdr-core 0.1.20: offline"}).to_string(),
+    )
+    .unwrap();
+    let mut ctx = ctx_with(&f);
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(f.core_ctx.home.join("none.sock")));
+    let mut s = Session::start(ctx);
+    let line = json!({"id": 1, "method": "herdr.call", "params": {"method": "session.snapshot", "params": {}}}).to_string();
+    s.tx.write_all(format!("{line}\n").as_bytes()).await.unwrap();
+    let r: Value = serde_json::from_str(&s.rx.next_line().await.unwrap().unwrap()).unwrap();
+    assert_eq!(r["error"]["code"], "herdr_unavailable", "{r}");
+    let msg = r["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("could not install Herdr 2") && msg.contains("offline") && msg.contains("herdlingd core install"), "{msg}");
+    // `hello` waits before it tries again, and says what failed.
+    let r = s.call(2, "hello").await;
+    assert_eq!(r["result"]["core_setup"]["state"], "failed", "{r}");
+    assert_eq!(*f.downloads.lock().unwrap(), 0);
+}
