@@ -133,7 +133,7 @@ pub fn from_tailscale(status: &Value) -> Vec<Suggestion> {
             })
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|s| s.name.to_lowercase());
     out
 }
 

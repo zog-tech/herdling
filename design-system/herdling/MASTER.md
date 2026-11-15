@@ -272,3 +272,19 @@ Each one has an icon, one sentence that says what is true, and an action when on
 - [ ] Haptics follow the table; none on scroll or typing.
 - [ ] Empty, error and offline states have a message and a Retry.
 - [ ] VoiceOver: labels, order, custom actions, live announcements.
+
+## Session screen patterns (plan F2)
+
+- **Pages of a tab.** A strip under the session header: one `dot.size` dot per pane (the open one
+  in `text`, a pane that needs you in ember, others in `divider`), the tab name and "2 of 3" in
+  `caption` muted, and a tab map button. The tab map is a page sheet with one tile per pane; the
+  open pane has a 2 pt accent edge (selected state), a pane that needs you has the ember edge and
+  `blockedTint`.
+- **In-app banner.** A glass card at the top (radius `lg`, `edge` border), the status icon
+  (ember hand, sage check, terminal), the title in bold and one muted line. It enters in
+  `motion.enterMs` and stays 5 s. Never for the open session.
+- **Key bar.** Keys are `card` fills with an `edge` border, 44 pt high; ^C has the `danger` edge.
+  An armed Ctrl or Alt has the accent edge and text (selected state); a locked one also has the
+  `accentTint` fill. Custom keys use the `raised` fill. The drag pad sits at the right, outside
+  the paged row. Page dots under the bar only when it overflows.
+

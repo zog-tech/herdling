@@ -35,6 +35,9 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `pane.read` takes one paint. New dependency: `vt100`.
 - `pane.watch` has the optional params `cols` and `rows`: on a Herdr 2 pane, herdlingd lays the
   terminal out at the phone grid while the stream lives, and the reply has `drive: true`.
+- New read-only method `machines.suggest`: other computers that the user can add, from the
+  herdr-core machine list, the `Host` entries of `~/.ssh/config` and `tailscale status --json`.
+  It gives only names, addresses, users and ports, never keys or other SSH config values.
 
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
@@ -140,6 +143,25 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   removed by the result of the old watch.
 
 ## [Unreleased app]
+
+- Session screen: with more than one pane in the tab, page dots under the header show the place.
+  A swipe on the dots or a tap opens another pane, and the tab map button lists every pane.
+- An in-app banner shows when another agent needs you or finishes while the app is open. A tap
+  opens it. The open session gets no banner, and the notification settings apply. While the app
+  is open, a push shows as this banner, not as a system banner.
+- A new terminal key bar: Esc, Ctrl and Alt (one tap for the next key from the bar or the keyboard,
+  a long press keeps them on), Tab, Shift-Tab, ^C, Enter, arrows, a drag pad for the arrow keys and
+  custom keys. The bar pages sideways with page dots. Settings, Key bar edits the custom keys and
+  text keys such as `/new`, `yes` and `1`; they stay on the phone.
+- Settings, Theme, Terminal: a light "Paper" screen for the terminal view.
+- A "Phone width" terminal mode for Herdr 2 panes: the pane lays out its output at the phone
+  width. The pane on the computer gets the phone's size while the phone watches it. It needs a
+  herdlingd with `pane.watch` `cols` and `rows`; else the view stays at "Fit to screen".
+- Add computer suggests more computers from a paired one (`machines.suggest`). A tap opens "Set up
+  with password" with the details filled in.
+- The host screen shows Herdr 2 (`core.status`) and offers **Install Herdr 2** or **Update Herdr 2**
+  (`core.install`). Before a herdlingd update that needs Herdr 2, the app says that the core
+  installs first and shows the herdr 1 notice.
 
 - The host screen has a herdr card with the herdr version and **Update herdr**, when the
   computer runs a herdlingd with `herdr.update`. The confirmation tells that herdr tries to keep

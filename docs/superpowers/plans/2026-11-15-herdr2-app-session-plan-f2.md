@@ -1,6 +1,6 @@
 # Herdr 2 session screen and suggested computers (plan F2) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** The session screen gets the patterns of a terminal remote (pages for the panes of a tab, a tab map, an in-app banner, a key bar with modifiers, a drag pad, custom keys and text macros, terminal themes), and Add computer suggests more computers from a paired one (`machines.suggest`).
 
@@ -68,19 +68,19 @@
 - `pub fn parse_target(target: &str) -> (Option<String>, String, Option<u16>)`
 - `pub fn merge(lists: Vec<Vec<Suggestion>>, own_names: &[String]) -> Vec<Suggestion>`
 
-- [ ] **Step 1: Failing tests**: `ssh_config_keeps_only_real_aliases` (Review Focus 3; `IdentityFile` text never in the JSON), `ssh_config_skips_proxy_entries`, `tailscale_peers_use_magic_dns`, `tailscale_without_dns_uses_ipv4`, `core_machines_parse_targets` (`sam@studio.local:2222`, a `via` target gives `host`), `merge_joins_sources_and_drops_self`.
-- [ ] **Step 2: Run** `nice -n 15 cargo test -j 2 --test machines_suggest` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** — "companion: add pure rules for suggested computers"
+- [x] **Step 1: Failing tests**: `ssh_config_keeps_only_real_aliases` (Review Focus 3; `IdentityFile` text never in the JSON), `ssh_config_skips_proxy_entries`, `tailscale_peers_use_magic_dns`, `tailscale_without_dns_uses_ipv4`, `core_machines_parse_targets` (`sam@studio.local:2222`, a `via` target gives `host`), `merge_joins_sources_and_drops_self`.
+- [x] **Step 2: Run** `nice -n 15 cargo test -j 2 --test machines_suggest` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** — "companion: add pure rules for suggested computers"
 
 ### Task 2: `machines.suggest` method
 
 **Files:** Modify `companion/src/rpc.rs` (`Ctx.ssh_config: PathBuf` = `home/.ssh/config`, `Ctx.tailscale: Option<PathBuf>` None in `Ctx::new`, `METHODS`, `dispatch`), `companion/src/main.rs` (finds tailscale), `companion/tests/support/fake_core.rs` (`machine.list`), `protocol/src/index.ts` (`Suggestion`, `MachinesSuggest`), `app/src/hosts/methods.ts`, `app/src/demo/DemoTransport.ts`, `docs/protocol.md`. Test: `companion/tests/machines_suggest.rs`, `app/src/demo/DemoTransport.test.ts`.
 
-- [ ] **Step 1: Failing tests**: `suggest_reads_the_given_config_and_tailscale` (a temp home with `.ssh/config`, a fake `tailscale` shell script that prints JSON), `suggest_without_sources_is_empty`, `suggest_adds_core_machines` (fake core). Demo: `machines.suggest` gives two suggestions.
-- [ ] **Step 2–4:** run, implement, run. The rpc-basic method list test stays green.
-- [ ] **Step 5: Commit** — "companion: add machines.suggest"
+- [x] **Step 1: Failing tests**: `suggest_reads_the_given_config_and_tailscale` (a temp home with `.ssh/config`, a fake `tailscale` shell script that prints JSON), `suggest_without_sources_is_empty`, `suggest_adds_core_machines` (fake core). Demo: `machines.suggest` gives two suggestions.
+- [x] **Step 2–4:** run, implement, run. The rpc-basic method list test stays green.
+- [x] **Step 5: Commit** — "companion: add machines.suggest"
 
 ### Task 3: Suggested computers in Add computer
 
@@ -89,13 +89,13 @@
 - `type SuggestedHost = Suggestion & { from: string /* host name */ }`
 - `suggestReducer(state, event)`: states `idle | loading{gen} | ready{list} | failed{error}`; events `load{gen}`, `loaded{gen, list}`, `failed{gen, error}`; an old `gen` is ignored.
 
-- [ ] Tests: `drops_saved_hosts_by_address`, `merges_the_same_address_from_two_hosts`, `old_generation_is_ignored`. Run, implement, run. Commit — "app: suggest more computers in Add computer"
+- [x] Tests: `drops_saved_hosts_by_address`, `merges_the_same_address_from_two_hosts`, `old_generation_is_ignored`. Run, implement, run. Commit — "app: suggest more computers in Add computer"
 
 ### Task 4: Terminal themes
 
 **Files:** Modify `app/src/theme/palettes.ts` (`TerminalThemeId`, `TERMINAL_THEMES`, `ThemeChoice.terminal?`), `savedChoice.ts` (`parseChoice`), `themePrefs.ts` (`setTerminal`), `app/src/app/theme.tsx` ("Terminal" section), `thread/TerminalView.tsx` (loading text in `terminal.fg`), `design-system/herdling/MASTER.md`. Test: `palettes.test.ts`, `themePrefs.test.ts`.
 
-- [ ] Tests: `paper_terminal_passes` (fg on bg ≥ 7; every ANSI entry but white ≥ 4 on the paper bg), `paper_changes_only_the_terminal`, `parse_choice_reads_the_terminal_theme`. Run, implement, run. Commit — "terminal: add a light terminal theme"
+- [x] Tests: `paper_terminal_passes` (fg on bg ≥ 7; every ANSI entry but white ≥ 4 on the paper bg), `paper_changes_only_the_terminal`, `parse_choice_reads_the_terminal_theme`. Run, implement, run. Commit — "terminal: add a light terminal theme"
 
 ### Task 5: Key bar rules and key fallback
 
@@ -109,21 +109,21 @@
 - `pageCount(content: number, view: number): number`, `pageOf(offset: number, view: number): number`.
 - `keys.ts`: `KEY_FALLBACK_TEXT: Record<string, string>`, `sendInputWithFallback(rpc, paneId, op)`.
 
-- [ ] Tests: each `modReducer` state and event; `encode` for ctrl+letter, ctrl+capital, ctrl+symbol (Review Focus 1), alt+char, alt+named key, a locked mod stays, a macro clears; `padStep` per axis and the remainder; pages; fallback on `RpcError` refusal, no fallback on network error or core pane (Review Focus 5). Run, implement, run. Commit — "terminal: add key bar rules and key name fallbacks"
+- [x] Tests: each `modReducer` state and event; `encode` for ctrl+letter, ctrl+capital, ctrl+symbol (Review Focus 1), alt+char, alt+named key, a locked mod stays, a macro clears; `padStep` per axis and the remainder; pages; fallback on `RpcError` refusal, no fallback on network error or core pane (Review Focus 5). Run, implement, run. Commit — "terminal: add key bar rules and key name fallbacks"
 
 ### Task 6: Custom keys and the Key bar settings
 
 **Files:** Create `app/src/terminal/customKeys.ts` (store and pure list rules), `app/src/app/key-bar.tsx`; modify `app/src/app/_layout.tsx` (one `Stack.Screen`), `app/src/app/theme.tsx` or Settings (a "Key bar" row). Test: `customKeys.test.ts`.
 
 - `type CustomKey = { kind: "text"; text: string; enter: boolean } | { kind: "key"; key: string }`; `CUSTOM_KEY_CAP = 16`; `DEFAULT_CUSTOM_KEYS`; `addKey`, `editKey`, `removeKey`, `moveKey`, `keyLabel`; `KEY_CHOICES`.
-- [ ] Tests for each list rule and `keyLabel`. Run, implement, run. Commit — "terminal: add custom keys and text macros"
+- [x] Tests for each list rule and `keyLabel`. Run, implement, run. Commit — "terminal: add custom keys and text macros"
 
 ### Task 7: The key bar component and the pane pager
 
 **Files:** Create `app/src/terminal/KeyBar.tsx` (replaces `KeyRow` in `TerminalControls`), `app/src/herdr/tabPanes.ts`, `app/src/thread/PanePager.tsx`; modify `thread/TerminalView.tsx` (mods with the keyboard, fallback sender), `thread/SessionDetail.tsx`. Test: `tabPanes.test.ts`, `KeyBar.test.tsx`, `TerminalView.test.tsx`.
 
 - `tabPanes(s: Snapshot | undefined, paneId: string) → { tabId: string; panes: TabPane[]; index: number } | null`, `TabPane = { pane_id; title; kind?; status?: AgentStatus; terminal: boolean }`.
-- [ ] Tests: two panes in order, one pane → null, unknown pane → null (Review Focus 4); KeyBar: Ctrl then "c" from the bar sends `ctrl+c`; TerminalView: Ctrl then a typed "d" sends `ctrl+d` and leaves the box empty. Run, implement, run. Commit — "thread: page through the panes of a tab and add the key bar"
+- [x] Tests: two panes in order, one pane → null, unknown pane → null (Review Focus 4); KeyBar: Ctrl then "c" from the bar sends `ctrl+c`; TerminalView: Ctrl then a typed "d" sends `ctrl+d` and leaves the box empty. Run, implement, run. Commit — "thread: page through the panes of a tab and add the key bar"
 
 ### Task 8: In-app banner
 
@@ -131,12 +131,30 @@
 
 - `bannerItems(hostId, hostName, prev?: Snapshot, next: Snapshot) → BannerItem[]`; `BannerItem = { key; hostId; paneId; title; detail; kind: "blocked" | "done" | "shell" }`.
 - `bannerReducer(state, event)`: state `{ current?: BannerItem & { gen }; queue; recent: Record<string, number> }`; events `arrive{items, now, allowed(item)}`, `dismiss{gen}`, `timeout{gen}`; effects `{ type: "timer"; gen; ms }`.
-- [ ] Tests: blocked and finished transitions, first snapshot gives none, open session filtered (Review Focus 2), dedupe within 30 s, stale timeout ignored, queue order. Run, implement, run. Commit — "app: show an in-app banner when another agent needs you"
+- [x] Tests: blocked and finished transitions, first snapshot gives none, open session filtered (Review Focus 2), dedupe within 30 s, stale timeout ignored, queue order. Run, implement, run. Commit — "app: show an in-app banner when another agent needs you"
+
+### Task 10: Herdr 2 on the host screen (after the merge of plan B)
+
+**Files:** Create `app/src/hosts/coreInstall.ts` (pure), `app/src/hosts/CoreCard.tsx`; modify `hosts/HostForm.tsx`, `hosts/UpdateCard.tsx`, `hosts/updates.ts`, `hosts/store.ts` (`UpdateCache.core?`), `hosts/methods.ts` (`core.status`, `core.install`), the demo host. Test: `coreInstall.test.ts`, the demo test.
+
+- The card shows when the host lists `core.status`; the button when it lists `core.install`, the core is not managed and `update_available`. Install: idle → running → done | failed, with a generation; `core.install` with a 3 minute limit; the status loads again after it.
+- Before a herdlingd update: `coreUpdateNote(update.check core)` ("installs first" and `notice`) in the card and in the confirmation; `update.apply` `notice` in the result.
+- `APP_METHODS` gets both methods: the app calls them. An older herdlingd shows the usual "Update herdlingd" hint and keeps working, because each call is gated on `listsMethod`.
+- [x] Tests, implement, commit — "app: show Herdr 2 on the host screen and install it"
+
+### Task 11: "Phone width" (after the merge of plan D)
+
+**Files:** `terminal/fit.ts` (`WidthMode` + `"phone"`, `nextWidthMode(mode, phone)`, `phoneGrid`), `terminal/widthMode.ts` (`phoneNoteSeen`, `markNoDrive`, `canDrive`), `rpc/RpcClient.ts` (`stream` gets an optional `onResult`), `thread/useTerminalText.ts` (`size`, `onDrive`), `thread/TerminalView.tsx`.
+
+- Offered only in the session terminal of a core pane (`hc:`) whose host lists `pane.watch`, after scroll in the cycle. Off by default.
+- The grid comes from the view size and the normal font, debounced 400 ms as a `"<cols>x<rows>"` key; a new grid starts a new watch.
+- A reply without `drive: true` marks the connection and shows "fit". A one-time note: "The pane on your computer gets the phone's size while you watch it here."
+- [x] Tests, implement, commit — "terminal: add a Phone width mode for Herdr 2 panes"
 
 ### Task 9: Docs and checks
 
-- [ ] `CHANGELOG.md`, `docs/protocol.md` (`machines.suggest`), `AGENTS.md` map (`suggest.rs`, new app modules), `MASTER.md` (terminal themes, key bar, banner).
-- [ ] Full checks: tsc in `app/` and `protocol/`, Jest, clippy, cargo test.
-- [ ] Privacy scan of `git diff herdr2-only`.
-- [ ] Live read-only check: a debug build, `{"id":1,"method":"machines.suggest"}` piped into `herdlingd rpc`; output kept in the scratchpad only.
-- [ ] Commit — "docs: plan F2 session screen and suggested computers"
+- [x] `CHANGELOG.md`, `docs/protocol.md` (`machines.suggest`), `AGENTS.md` map (`suggest.rs`, new app modules), `MASTER.md` (terminal themes, key bar, banner).
+- [x] Full checks: tsc in `app/` and `protocol/`, Jest, clippy, cargo test.
+- [x] Privacy scan of `git diff herdr2-only`.
+- [x] Live read-only check: a debug build, `{"id":1,"method":"machines.suggest"}` piped into `herdlingd rpc`; output kept in the scratchpad only.
+- [x] Commit — "docs: plan F2 session screen and suggested computers"

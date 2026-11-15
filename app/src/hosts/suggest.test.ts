@@ -15,13 +15,13 @@ test("merges_the_same_address_from_two_hosts", () => {
   const list = mergeSuggestions(
     [
       { hostName: "studio", suggestions: [s("lab", "lab.example")] },
-      { hostName: "mini", suggestions: [s("lab-ts", "LAB.example", { sources: ["tailscale"], user: "sam", port: 2222 })] },
+      { hostName: "build", suggestions: [s("lab-ts", "LAB.example", { sources: ["tailscale"], user: "sam", port: 2222 })] },
     ],
     [],
   );
   expect(list).toHaveLength(1);
-  expect(list[0]).toMatchObject({ name: "lab", from: ["studio", "mini"], sources: ["ssh_config", "tailscale"], user: "sam", port: 2222 });
-  expect(suggestionDetail(list[0])).toBe("sam@lab.example:2222 · SSH config, Tailscale on studio, mini");
+  expect(list[0]).toMatchObject({ name: "lab", from: ["studio", "build"], sources: ["ssh_config", "tailscale"], user: "sam", port: 2222 });
+  expect(suggestionDetail(list[0])).toBe("sam@lab.example:2222 · SSH config, Tailscale on studio, build");
 });
 
 test("old_generation_is_ignored", () => {
