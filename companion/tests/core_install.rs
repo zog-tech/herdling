@@ -612,3 +612,59 @@ fn the_driver_ends_and_maps_failures() {
     let mut io = Scripted { found: found(Where::Missing, None), downloads: 0 };
     assert_eq!(ci::drive(&wrong, "u", &mut io).unwrap_err().code, "checksum_mismatch");
 }
+
+fn exe(p: &Path, body: &str) {
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(p, body).unwrap();
+    std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn a_symlink_to_a_package_manager_core_is_managed() {
+    let f = fixture(None, None, true, true);
+    // `~/.local/bin/herdr-core` links to a Homebrew core outside the home folder layout.
+    let brew = f._dir.path().join("opt/homebrew/Cellar/herdr-core/0.1.30/bin/herdr-core");
+    exe(&brew, "brew");
+    let dest = f.home().join(".local/bin/herdr-core");
+    std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&brew, &dest).unwrap();
+    let (at, path) = ci::find_core(&f.ctx).unwrap();
+    assert_eq!(at, Where::Managed);
+    assert_eq!(path, dest);
+    // The install keeps it: no download, the link stays.
+    *f.core.installed.lock().unwrap() = Some("0.1.2".into());
+    let r = ci::install(&f.ctx, &f.pin).unwrap();
+    assert_eq!(r.status, "kept_managed");
+    assert!(f.urls.lock().unwrap().is_empty());
+    assert!(std::fs::symlink_metadata(&dest).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_link(&dest).unwrap(), brew);
+}
+
+#[test]
+fn a_symlink_into_the_upstream_bundle_folder_is_ours() {
+    let f = fixture(None, None, true, true);
+    // The upstream macOS install links `~/.local/bin/herdr-core` into `~/.local/share/herdr-core`.
+    let bundle = f.home().join(".local/share/herdr-core/current/Contents/MacOS/herdr-core");
+    exe(&bundle, "core");
+    let dest = f.home().join(".local/bin/herdr-core");
+    std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&bundle, &dest).unwrap();
+    assert_eq!(ci::find_core(&f.ctx).unwrap().0, Where::Ours);
+}
+
+#[test]
+fn a_broken_symlink_is_kept_as_managed() {
+    let f = fixture(None, None, true, true);
+    let dest = f.home().join(".local/bin/herdr-core");
+    std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(f._dir.path().join("gone/herdr-core"), &dest).unwrap();
+    // A link that herdlingd did not make is never replaced, also when its target is gone.
+    assert_eq!(ci::find_core(&f.ctx).unwrap().0, Where::Managed);
+}
+
+#[test]
+fn a_plain_file_in_local_bin_is_ours() {
+    let f = fixture(None, None, true, true);
+    exe(&f.home().join(".local/bin/herdr-core"), "core");
+    assert_eq!(ci::find_core(&f.ctx).unwrap().0, Where::Ours);
+}

@@ -166,11 +166,41 @@ fn executable(p: &Path) -> bool {
     fs::metadata(p).map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false)
 }
 
-/// Where the core is: `~/.local/bin/herdr-core` first, else the first `herdr-core` in `dirs`.
+/// The folder of the upstream macOS app bundle install. Its installer puts a symlink to the core
+/// in this folder at `~/.local/bin/herdr-core`.
+fn upstream_share(home: &Path) -> PathBuf {
+    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
+    home.join(".local/share/herdr-core")
+}
+
+/// What `~/.local/bin/herdr-core` is. A plain executable file and a symlink into the upstream
+/// bundle folder are ours. Any other symlink (Homebrew, Nix, a link that the user made) is
+/// managed: herdlingd never replaces it, also when its target is gone. A broken link into the
+/// upstream folder counts as no core. None: nothing usable is there.
+fn classify_dest(dest: &Path, home: &Path) -> Option<Where> {
+    let meta = fs::symlink_metadata(dest).ok()?;
+    if !meta.file_type().is_symlink() {
+        return executable(dest).then_some(Where::Ours);
+    }
+    let share = upstream_share(home);
+    match dest.canonicalize() {
+        Ok(target) if target.starts_with(&share) && executable(&target) => Some(Where::Ours),
+        Ok(_) => Some(Where::Managed),
+        Err(_) => {
+            let raw = fs::read_link(dest).ok()?;
+            let raw = if raw.is_absolute() { raw } else { dest.parent().map(|p| p.join(&raw)).unwrap_or(raw) };
+            let into_share = raw.starts_with(&share) || raw.starts_with(home.join(".local/share/herdr-core"));
+            (!into_share).then_some(Where::Managed)
+        }
+    }
+}
+
+/// Where the core is: `~/.local/bin/herdr-core` first (see [`classify_dest`]), else the first
+/// `herdr-core` in `dirs`.
 pub fn find_core(ctx: &CoreInstallCtx) -> Option<(Where, PathBuf)> {
     let dest = ctx.dest();
-    if executable(&dest) {
-        return Some((Where::Ours, dest));
+    if let Some(at) = classify_dest(&dest, &ctx.home) {
+        return Some((at, dest));
     }
     ctx.dirs.iter().map(|d| d.join(BIN)).find(|p| *p != dest && executable(p)).map(|p| (Where::Managed, p))
 }
