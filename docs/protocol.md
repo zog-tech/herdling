@@ -854,6 +854,33 @@ group falls back to the folder name.
 - With no core socket or no core answer, the call gives `herdr_unavailable` (old apps show
   "herdr is not running").
 
+### Typing on Herdr 2
+
+Since herdlingd 0.2.0. The app calls do not change (`pane.send_input`, `pane.send_text`,
+`pane.send_keys`, `agent.prompt`, `pane.answer`).
+
+- A line with Enter (`text` and `keys: ["enter"]`, or `pane.send_text` with a final newline) and
+  `agent.prompt` go through `terminal.send`. The core pastes the text and presses Enter when
+  nobody types at the computer.
+- Text without Enter, and keys, go in at once. herdlingd opens a short `terminal.attach` stream
+  (`observe: false`, `resumed: true`, at the size that the terminal has, so nothing resizes) and
+  writes the bytes, then closes the stream. The text goes as it is, so every character works
+  (punctuation, accents, emoji). Keys get the xterm bytes for the modes of the program (from the
+  first paint, for example application cursor keys). When the core has `automatic_input`
+  (`hello.features` and the attach reply), the bytes go as AUTOMATIC_INPUT frames: they do not
+  count as a person at the computer. Else they go as DATA.
+- A key with no xterm form (for example `shift+enter`) goes through `terminal.keys`.
+- `pane.answer` types its digit in the same way.
+- Every typing call answers within 10 seconds of its arrival, the wait behind earlier calls to
+  the same pane included. The app gives a call 15 seconds. A `terminal.send` that still waits at
+  the deadline (someone types at the computer) is cancelled: herdlingd closes its connection,
+  and the core never types a send that it has not started. The error is `busy` with a text that
+  asks the user to look at the terminal first. A send that went in just before the close (a new
+  turn, or the agent works) counts as sent.
+- When a typing call to a pane fails, the calls to that pane that arrived before the failure do
+  not run. Their error is `dropped` (or `busy` when they ran out of time), and nothing was typed.
+  A later Enter does not run a half-typed command.
+
 ### Calls on a core id
 
 On herdlingd 0.2.0 every `herdr.call` goes to the core. The id is the first non-empty string of
@@ -864,8 +891,7 @@ the core.
 |---|---|
 | `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0). With `format: "ansi"`: one passive `terminal.attach`, see "Terminal view" |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
-| `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
-| `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
+| `pane.send_keys`, `pane.send_input` with keys, `pane.send_input` or `pane.send_text` without Enter | typed at once as raw bytes on a short `terminal.attach` stream (see "Typing on Herdr 2"). A core without `terminal.attach` gets `terminal.keys`, only when each character has a key |
 | `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
 | `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
@@ -891,8 +917,7 @@ the core.
   or workspace, `terminal.send` of `agent.start` and `agent.prompt`), herdlingd reads the core
   `hello.methods`. A core that lacks the method gives `unsupported`, and nothing changes.
 - The core error kinds `not_found` and `finished` become `pane_not_found`. Other kinds are the code.
-- The core waits until nobody types at the computer before it types. A typing call can take up
-  to 75 seconds.
+- Typing calls answer within 10 seconds of their arrival. See "Typing on Herdr 2".
 - `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list`,
   `ports.list` and `shell.watch` accept a core `pane_id`.
 - `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
@@ -970,7 +995,7 @@ of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
 - herdlingd attaches as a watcher (`observe: true`, `resize_notifications: true`, `history` =
   `lines`). The core never takes its size, keys or focus. With `cols` and `rows` it attaches as a
   driver at that size. In both modes herdlingd sends only CREDIT and CLOSE frames on the stream:
-  typing goes through `terminal.send` and `terminal.keys`.
+  typing has its own short streams (see "Typing on Herdr 2").
 - A terminal emulator in herdlingd reads the stream. Each event has the history lines and the
   screen rows with SGR colors (`format: "ansi"`), as herdr 1 gives them. Trailing blank rows are cut
   on the main screen; on the alternate screen (a full-screen app) every row stays. `revision` is 0.

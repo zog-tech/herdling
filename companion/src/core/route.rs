@@ -94,6 +94,21 @@ fn keys_param(params: &Value) -> Result<Vec<String>, Unsupported> {
     }
 }
 
+/// The text and the keys of a typing call, as [`plan`] reads them: `pane.send_text` with one
+/// final newline is a line and Enter.
+pub fn typed(method: &str, params: &Value) -> Result<(String, Vec<String>), Unsupported> {
+    let text = params.get("text").and_then(Value::as_str).unwrap_or("");
+    Ok(match method {
+        "pane.send_input" => (text.to_string(), keys_param(params)?),
+        "pane.send_text" => match text.strip_suffix('\n').or_else(|| text.strip_suffix('\r')) {
+            Some(line) if !line.is_empty() && !line.contains(['\n', '\r']) => (line.to_string(), vec!["enter".into()]),
+            _ => (text.to_string(), vec![]),
+        },
+        "pane.send_keys" => (String::new(), keys_param(params)?),
+        _ => (String::new(), vec![]),
+    })
+}
+
 /// Typing `text`, then pressing `keys`: one `terminal.send` when it is a line and Enter,
 /// else one `terminal.keys`. `force` types into a blocked program too.
 fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan, Unsupported> {
@@ -191,6 +206,9 @@ pub enum Action {
     /// `agent.start`: type the command of agent `kind` with `args` into the shell of `addr`.
     /// The line is quoted for the shell family of that terminal (`core::live`).
     Start { addr: String, kind: String, args: Vec<String> },
+    /// Text without Enter, and keys: typed at once (`core::typing`). `fallback` is the
+    /// `terminal.keys` call of [`plan`] for a core without `terminal.attach`, if the text has keys.
+    Type { addr: String, text: String, keys: Vec<String>, fallback: Option<Plan> },
     /// `agent.prompt`: send `text` once the terminal reports an agent status.
     Prompt { addr: String, text: String },
     /// `agent.rename` and the rename of a task tab: set these labels.
@@ -255,6 +273,16 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
         "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
         "tab.close" => Action::Kill(Scope::Tab(id.to_string()), pane_ids(params)?),
         "workspace.close" => Action::Kill(Scope::Workspace(id.to_string()), pane_ids(params)?),
+        "pane.send_input" | "pane.send_text" | "pane.send_keys" => {
+            let addr = pane()?;
+            let (text, keys) = typed(method, params).map_err(|u| ActionError::unsupported(u.0))?;
+            if (!text.is_empty() && keys == ["enter"]) || (text.is_empty() && keys.is_empty()) {
+                // A line (`terminal.send`), or nothing to type.
+                Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?)
+            } else {
+                Action::Type { addr, text, keys, fallback: plan(method, params, id).ok() }
+            }
+        }
         "agent.explain" => Action::Explain { addr: pane()? },
         "workspace.get" => Action::WorkspaceGet(id.to_string()),
         _ if address(id).is_none() && PANE_METHODS.contains(&method) => return Err(ActionError::not_found("pane", id)),

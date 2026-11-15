@@ -54,6 +54,13 @@ pub struct State {
     pub attach: bool,
     /// The first paint of each attach.
     pub paint: Vec<u8>,
+    /// `hello.features` has `automatic_input` and attach replies confirm it.
+    pub automatic_input: bool,
+    /// A `terminal.send` waits this long before it types, like a core that waits for quiet at
+    /// the computer. A connection that closes meanwhile cancels it: it never types.
+    pub send_delay: Option<std::time::Duration>,
+    /// The texts that a delayed `terminal.send` typed (after its wait).
+    pub typed: Vec<String>,
 }
 
 /// The methods that the fake answers.
@@ -184,7 +191,11 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
             }
             let framed = st.attach && params["framed"] == true;
             Ok(json!({"generation": st.generation, "version": "0.1.19", "core": {"id": "c1", "name": "studio"},
-                      "framed": framed, "methods": methods, "features": if st.attach { json!(["framed", "attach"]) } else { json!([]) }}))
+                      "framed": framed, "methods": methods, "features": match (st.attach, st.automatic_input) {
+                          (true, true) => json!(["framed", "attach", "automatic_input"]),
+                          (true, false) => json!(["framed", "attach"]),
+                          _ => json!([]),
+                      }}))
         }
         "terminal.list" => Ok(json!({"terminals": st.terminals, "hidden_finished": 0, "machines": []})),
         "terminal.get" => find(),
@@ -268,6 +279,17 @@ pub fn spawn(path: &Path, state: State) -> FakeCore {
                     // Subscribe to the control bus before the reply, so no notification is lost.
                     let mut bus = (method == "events.subscribe").then(|| tx.subscribe());
                     cl.lock().unwrap().push((method.clone(), params.clone()));
+                    let delay = if method == "terminal.send" { st.lock().unwrap().send_delay } else { None };
+                    if let Some(d) = delay {
+                        // The wait of the core. A closed connection cancels the send.
+                        let mut rest = String::new();
+                        tokio::select! {
+                            _ = tokio::time::sleep(d) => {}
+                            _ = reader.read_line(&mut rest) => return,
+                        }
+                        let text = params["text"].as_str().unwrap_or("").to_string();
+                        st.lock().unwrap().typed.push(text);
+                    }
                     let resp = { answer(&mut st.lock().unwrap(), &method, &params) };
                     let framed = method == "hello" && resp.as_ref().is_ok_and(|r| r["framed"] == true);
                     let framed_bus = framed.then(|| tx.subscribe());
@@ -348,7 +370,7 @@ async fn framed_loop(
                                 let ch = next;
                                 next += 1;
                                 open.push(ch);
-                                let r = json!({"channel": ch, "terminal": t, "resize_notifications": true, "automatic_input": false});
+                                let r = json!({"channel": ch, "terminal": t, "resize_notifications": true, "automatic_input": st.automatic_input});
                                 out.extend(frame(0, 0, reply(&req["id"], Ok(r)).to_string().as_bytes()));
                                 let (c, r) = if params["observe"] == true {
                                     (t["cols"].as_u64().unwrap_or(80) as u16, t["rows"].as_u64().unwrap_or(24) as u16)

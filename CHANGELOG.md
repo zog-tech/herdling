@@ -30,6 +30,12 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ### Also in 0.2.0
 
+- Typing on Herdr 2: text without Enter and keys go in at once as raw bytes on a short attach
+  stream, so punctuation, accents and emoji work in "Type directly" (also from the app builds
+  1.0.0 and 1.0.1). Every typing call answers within 10 seconds. A line that waits for quiet at
+  the computer longer is cancelled and never types later (error `busy`), so a resend cannot
+  double it. The calls behind a failed call to the same pane do not run (error `dropped`).
+
 - `tab.close` and `workspace.close` take an optional `pane_ids`: only the panes that the app showed
   close. Without it, the close of a repo or folder group gives `unsupported`, because the group
   follows the folders of its terminals. The app sends the list.

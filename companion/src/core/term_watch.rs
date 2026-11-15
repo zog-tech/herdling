@@ -31,6 +31,9 @@ pub enum Mode {
     Watch,
     /// A driver at the phone grid: the terminal takes this size while the stream lives.
     Drive { cols: u16, rows: u16 },
+    /// A short stream that only types (`core::live::type_in`): a driver that is not active
+    /// (`resumed`), at the size that the terminal has now, so the size stays.
+    Type { cols: u16, rows: u16 },
 }
 
 /// One framed core connection.
@@ -44,7 +47,8 @@ impl Conn {
     /// The next frame. `Ok(None)` when the core closed the connection. Safe to cancel: only the
     /// socket read waits, and the decoder keeps what was read.
     async fn frame(&mut self) -> Result<Option<Frame>, CoreError> {
-        let mut buf = [0u8; 64 * 1024];
+        // On the heap: a 64 KiB array would make every future that reads a frame that large.
+        let mut buf = vec![0u8; 64 * 1024];
         loop {
             match self.dec.next_frame() {
                 Ok(Some(f)) => return Ok(Some(f)),
@@ -72,6 +76,8 @@ pub struct Attached {
     pub rows: u16,
     /// Stream frames that came before the attach reply.
     pub early: Vec<Frame>,
+    /// The core and the attach reply both have `automatic_input` (frame kind 6).
+    pub automatic_input: bool,
 }
 
 /// Why [`open`] failed.
@@ -119,15 +125,20 @@ async fn open_inner(sock: &CoreSocket, addr: &str, history: usize, mode: Mode) -
     if h.get("framed") != Some(&Value::Bool(true)) || !lists {
         return Err(OpenError::NoAttach);
     }
+    let features_automatic =
+        h.get("features").and_then(Value::as_array).is_some_and(|f| f.iter().any(|x| x == "automatic_input"));
     let (observe, cols, rows) = match mode {
         // A watcher's size is not used; the core wants one.
         Mode::Watch => (true, 80, 24),
-        Mode::Drive { cols, rows } => (false, cols, rows),
+        Mode::Drive { cols, rows } | Mode::Type { cols, rows } => (false, cols, rows),
     };
-    let params = json!({
+    let mut params = json!({
         "terminal": addr, "observe": observe, "resize_notifications": true,
         "history": history, "cols": cols, "rows": rows,
     });
+    if matches!(mode, Mode::Type { .. }) {
+        params["resumed"] = json!(true);
+    }
     conn.write(&frame::rpc(&json!({"jsonrpc": "2.0", "id": 2, "method": "terminal.attach", "params": params}))).await?;
     let mut early = Vec::new();
     loop {
@@ -153,7 +164,84 @@ async fn open_inner(sock: &CoreSocket, addr: &str, history: usize, mode: Mode) -
             .ok_or_else(|| CoreError::Unavailable("attach gave no channel".into()))?;
         let t = r.get("terminal").cloned().unwrap_or(Value::Null);
         early.retain(|f| f.channel == channel);
-        return Ok(Attached { conn, channel, cols: size_of(&t, "cols", cols), rows: size_of(&t, "rows", rows), early });
+        let automatic_input = super::typing::type_frame(features_automatic, r.get("automatic_input") == Some(&Value::Bool(true))) == frame::AUTOMATIC_INPUT;
+        return Ok(Attached { conn, channel, cols: size_of(&t, "cols", cols), rows: size_of(&t, "rows", rows), early, automatic_input });
+    }
+}
+
+/// What [`type_into`] typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Typed {
+    /// The text and every key.
+    All,
+    /// The text only: a key has no legacy form, so the caller presses the keys with `terminal.keys`.
+    TextOnly,
+}
+
+/// The largest frame of typed bytes.
+const TYPE_CHUNK: usize = 16 * 1024;
+
+/// Types `text`, then `keys`, into terminal `addr` at once, on a short attach stream (see
+/// `core::typing`). The stream attaches at the size that the terminal has (`cols`, `rows`), so
+/// nothing changes size. It returns after the core answered the CLOSE: the core takes the input
+/// frames before it. The whole of it ends by `deadline`.
+pub async fn type_into(
+    sock: &CoreSocket,
+    deadline: tokio::time::Instant,
+    addr: &str,
+    (cols, rows): (u16, u16),
+    text: &str,
+    keys: &[String],
+) -> Result<Typed, OpenError> {
+    use super::typing::{encode_keys, modes_of, Modes, KEY_GAP};
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+    let mut a = open(sock, left, addr, 0, Mode::Type { cols, rows }).await?;
+    let kind = if a.automatic_input { frame::AUTOMATIC_INPUT } else { frame::DATA };
+    let work = async {
+        // The arrows depend on the modes of the program: read them from the first paint.
+        let modes = if keys.is_empty() {
+            Modes::default()
+        } else {
+            let mut paint = a.early.iter().find(|f| f.kind == DATA).map(|f| f.payload.clone());
+            while paint.is_none() {
+                let Some(f) = a.conn.frame().await? else { return Err(CoreError::Unavailable("socket closed".into())) };
+                if f.channel == a.channel && f.kind == DATA {
+                    a.conn.write(&frame::credit(a.channel, f.payload.len() as u32)).await?;
+                    paint = Some(f.payload);
+                }
+            }
+            modes_of(&paint.unwrap_or_default())
+        };
+        let encoded = encode_keys(keys, modes);
+        let mut wrote = false;
+        for chunk in text.as_bytes().chunks(TYPE_CHUNK) {
+            a.conn.write(&frame::encode(a.channel, kind, chunk)).await?;
+            wrote = true;
+        }
+        for k in encoded.iter().flatten() {
+            if wrote {
+                tokio::time::sleep(KEY_GAP).await;
+            }
+            a.conn.write(&frame::encode(a.channel, kind, k)).await?;
+            wrote = true;
+        }
+        a.conn.write(&frame::close(a.channel)).await?;
+        loop {
+            match a.conn.frame().await? {
+                None => break,
+                Some(f) if f.channel == a.channel && f.kind == CLOSE => break,
+                // Credit the paint and output, so the CLOSE never waits behind them.
+                Some(f) if f.channel == a.channel && f.kind == DATA => {
+                    a.conn.write(&frame::credit(a.channel, f.payload.len() as u32)).await?;
+                }
+                Some(_) => {}
+            }
+        }
+        Ok(if encoded.is_some() { Typed::All } else { Typed::TextOnly })
+    };
+    match tokio::time::timeout_at(deadline, work).await {
+        Ok(r) => r.map_err(OpenError::Core),
+        Err(_) => Err(OpenError::Core(CoreError::Unavailable("typing timed out".into()))),
     }
 }
 
@@ -408,7 +496,7 @@ pub async fn pane_watch(
     let stream = ctx.streams.spawn("pane", move |id| run(w, first, out, id));
     Some(Ok(match mode {
         Mode::Watch => json!({ "stream": stream }),
-        Mode::Drive { .. } => json!({ "stream": stream, "drive": true }),
+        Mode::Drive { .. } | Mode::Type { .. } => json!({ "stream": stream, "drive": true }),
     }))
 }
 

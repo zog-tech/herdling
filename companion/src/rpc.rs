@@ -75,6 +75,8 @@ pub struct Ctx {
     pub boot_cache: crate::boot::BootCache,
     /// Keeps typing calls to one pane in arrival order, see [`crate::input_order`].
     pub input_order: crate::input_order::InputOrder,
+    /// The longest time of one typing call from its arrival (see `core::typing`). Tests make it short.
+    pub input_timeout: Duration,
     /// The last listener list of `ports.list` and `preview.open`, see [`crate::ports::CACHE_TTL`].
     pub ports_cache: crate::ports::PortsCache,
     /// The herdr-core (Herdr 2) socket. None turns the core off: `Ctx::new` leaves it unset, so
@@ -118,6 +120,7 @@ impl Ctx {
             host_os: crate::boot::Os::current(),
             boot_cache: crate::boot::BootCache::default(),
             input_order: crate::input_order::InputOrder::default(),
+            input_timeout: crate::core::typing::INPUT_TIMEOUT,
             ports_cache: crate::ports::PortsCache::default(),
             core_socket: None,
             core_install: None,
@@ -315,12 +318,16 @@ where
             Ok(req) => {
                 let (ctx, tx) = (ctx.clone(), tx.clone());
                 // Taken here, in arrival order, so typing calls to one pane reach herdr in order.
-                let mut turn = ctx.input_order.take_for(&req.method, &req.params);
+                let turn = ctx.input_order.take_for(&req.method, &req.params);
+                // A typing call answers within INPUT_TIMEOUT of its arrival, the wait for its
+                // turn included (`core::typing`).
+                let deadline = tokio::time::Instant::now() + ctx.input_timeout;
                 tasks.spawn(async move {
-                    if let Some(t) = turn.as_mut() {
-                        t.wait().await;
-                    }
-                    let resp = match dispatch(&ctx, &tx, &req.method, req.params).await {
+                    let result = match turn {
+                        None => dispatch(&ctx, &tx, &req.method, req.params).await,
+                        Some(t) => Box::pin(typing_call(&ctx, &tx, t, deadline, &req.method, req.params)).await,
+                    };
+                    let resp = match result {
                         Ok(result) => RpcResponse { id: Some(req.id), result: Some(result), error: None },
                         Err(error) => RpcResponse { id: Some(req.id), result: None, error: Some(error) },
                     };
@@ -346,6 +353,28 @@ where
         Exit::Dead => abort_everything(&ctx, &mut tasks, &writer, writer_done).await,
     }
     Ok(())
+}
+
+/// A typing call: waits for its turn, then runs with the input deadline. A turn that does not
+/// come by the deadline, or that follows a failed call, types nothing.
+async fn typing_call(ctx: &Ctx, tx: &Out, mut turn: crate::input_order::Turn, deadline: tokio::time::Instant, method: &str, params: Value) -> Result<Value, RpcError> {
+    use crate::core::{live, typing};
+    if tokio::time::timeout_at(deadline, turn.wait()).await.is_err() {
+        turn.fail();
+        // Keep the place: the next call runs only after the earlier one ended.
+        tokio::spawn(async move { turn.wait().await });
+        return Err(typing::busy_error());
+    }
+    if turn.dropped() {
+        // The failure time stays: the calls behind this one that came before it drop too.
+        return Err(err("dropped", "Not sent: an earlier key or line to this terminal failed. Nothing was typed."));
+    }
+    // Boxed: the dispatch future is large, and the scope must not put it on the stack.
+    let r = live::INPUT_DEADLINE.scope(deadline, Box::pin(dispatch(ctx, tx, method, params))).await;
+    if r.is_err() {
+        turn.fail();
+    }
+    r
 }
 
 /// Stops requests, streams (dropping their herdr connections) and the writer.
@@ -676,8 +705,10 @@ async fn pane_answer_core(ctx: &Ctx, pane: &str, key: &str, expect: &str, expect
         return Err(stale("the question changed"));
     }
     let addr = project::address(pane).unwrap_or_default();
-    let mut c = crate::core::client::Client::connect(&sock.current(), ctx.herdr_timeout).await.map_err(live::rpc_err)?;
-    c.call_with("terminal.keys", json!({ "terminal": addr, "keys": [key] }), live::TYPING_TIMEOUT).await.map_err(live::rpc_err)?;
+    // The digit goes in at once, as typed text (`core::typing`); a core without attach gets it
+    // with `terminal.keys`.
+    let fallback = crate::core::route::plan("pane.send_keys", &json!({ "keys": [key] }), addr).ok();
+    live::type_in(sock, ctx.herdr_timeout, addr, "", &[key.to_string()], fallback).await?;
     Ok(json!({ "answered": true }))
 }
 
