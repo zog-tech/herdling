@@ -422,7 +422,11 @@ export type GitDiffParams = ({ cwd: string } | { pane_id: string }) & { path?: s
 export type GitDiff = { diff: string; truncated: boolean; root: string };
 
 /** Params of `git.worktree_add`: the repo folder (or a pane in it) and the new branch name. */
-export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & { branch: string };
+export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & {
+  branch: string;
+  /** `"core"`: open the worktree in a new Herdr 2 space. Then `via` is `"herdr"` and the ids are core ids. */
+  backend?: "core";
+};
 
 /**
  * Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`.
@@ -498,3 +502,38 @@ export type ShellUnwatchParams = { pane_id: string };
 export type ShellUnwatch = { removed: boolean };
 /** `shell.watches` result: the live watches of the computer. */
 export type ShellWatches = { watches: ShellWatch[] };
+
+/**
+ * One group of Herdr 2 (herdr-core) terminals in `groups.list`: a Herdr app space or a fallback
+ * group. `workspace_id` is the id of the group in the snapshot (`hc:space:<id>` or `hc:g:<key>`).
+ * `space_id` is set for a space. `terminals` counts every terminal, `agents` only the agents.
+ */
+export type CoreGroup = {
+  workspace_id: string;
+  label: string;
+  source: "space" | "label" | "repo" | "folder";
+  space_id?: string;
+  terminals: number;
+  agents: number;
+  agent_status: AgentStatus;
+};
+/** `groups.list` result. The host must reach a Herdr 2 core, else the error is `unsupported`. */
+export type GroupsList = { groups: CoreGroup[] };
+
+/**
+ * `pane.move` params: a Herdr 2 terminal that is in no Herdr app space, and exactly one target.
+ * `workspace_id` is a space (`hc:space:<id>`) or a label group (`hc:g:<key>`); `new_space: true`
+ * makes a new space; `group` sets the `herdling.group` label (an empty string removes it).
+ */
+export type PaneMoveParams = { pane_id: string } & ({ workspace_id: string } | { new_space: true } | { group: string });
+/** `pane.move` result: where the terminal shows now. The ids are null when the snapshot does not hold it. */
+export type PaneMove = { pane_id: string; workspace_id: string | null; tab_id: string | null };
+
+/**
+ * `session.start` params: starts an agent on the Herdr 2 core. `cwd` is an absolute path, `kind`
+ * an agent kind with a known program. `workspace_id`: a space (`hc:space:<id>`) or a group
+ * (`hc:g:<key>`); missing makes a new space. `args` are agent arguments (for example a resume).
+ */
+export type SessionStartParams = { cwd: string; kind: string; workspace_id?: string; prompt?: string; args?: string[] };
+/** `session.start` result. `prompt_error` says why the first prompt did not go in; the agent runs. */
+export type SessionStart = { pane_id: string; workspace_id: string; tab_id: string; prompt_error?: string | null };

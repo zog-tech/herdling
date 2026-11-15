@@ -9,6 +9,7 @@ import type {
   FilePut,
   GitDiff,
   GitStatus,
+  GroupsList,
   GitWorktree,
   Hello,
   MacOpenSettings,
@@ -278,6 +279,14 @@ describe("DemoTransport", () => {
     expect(await call<ShellWatches>("shell.watches").then(ok("shell.watches"))).toMatchObject({ watches: [{ pane_id: "p1" }] });
     expect(await call<ShellUnwatch>("shell.unwatch", { pane_id: "p1" }).then(ok("shell.unwatch"))).toEqual({ removed: true });
     expect(await callError("shell.watch", {})).toMatchObject({ code: "bad_request" });
+
+    // Herdr 2 groups: the demo lists its core space; its terminals cannot move.
+    const groups = await call<GroupsList>("groups.list").then(ok("groups.list"));
+    expect(groups.groups[0]).toMatchObject({ workspace_id: "hc:space:1", source: "space", space_id: "1" });
+    expect(await callError("pane.move", { pane_id: "hc:t1", new_space: true })).toMatchObject({ code: "unsupported" });
+    answered.add("pane.move");
+    expect(await callError("session.start", { cwd: "/home/demo", kind: "claude" })).toMatchObject({ code: "unsupported" });
+    answered.add("session.start");
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

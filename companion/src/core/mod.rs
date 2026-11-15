@@ -13,5 +13,6 @@ pub mod merge;
 pub mod project;
 pub mod repos;
 pub mod route;
+pub mod start;
 pub mod stream;
 pub mod tracker;

@@ -1,10 +1,13 @@
 import type {
+  AgentStatus,
   AgentsInstalled,
   Automation,
   AutomationRun,
   CommandInfo,
   CommandList,
+  CoreGroup,
   FilePut,
+  GroupsList,
   Boot,
   Hello,
   HerdrUpdate,
@@ -370,6 +373,28 @@ export class DemoTransport implements LineTransport {
         return { removed: this.shellWatches.delete(need(p, "pane_id", method)) } satisfies ShellUnwatch;
       case "shell.watches":
         return { watches: [...this.shellWatches.values()] } satisfies ShellWatches;
+      // Herdr 2 groups: the demo core terminals are in one Herdr app space, so none can move.
+      case "groups.list": {
+        const snap = this.scenario.snapshot();
+        const groups: CoreGroup[] = snap.workspaces
+          .filter((w) => isCore(w.workspace_id))
+          .map((w) => ({
+            workspace_id: w.workspace_id,
+            label: w.label ?? "",
+            source: "space",
+            space_id: w.workspace_id.replace(/^hc:space:/, ""),
+            terminals: snap.panes.filter((x) => x.workspace_id === w.workspace_id).length,
+            agents: snap.agents.filter((x) => x.workspace_id === w.workspace_id).length,
+            agent_status: (w.agent_status ?? "unknown") as AgentStatus,
+          }));
+        return { groups } satisfies GroupsList;
+      }
+      case "pane.move":
+        need(p, "pane_id", method);
+        throw new DemoError("unsupported", "this terminal is in a Herdr app space; move it in the Herdr app");
+      case "session.start":
+        need(p, "cwd", method);
+        throw new DemoError("unsupported", "The demo computer starts agents with New session.");
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":

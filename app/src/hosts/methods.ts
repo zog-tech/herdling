@@ -43,6 +43,9 @@ export const APP_METHODS = [
   "shell.watch",
   "shell.unwatch",
   "shell.watches",
+  "groups.list",
+  "pane.move",
+  "session.start",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

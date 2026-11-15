@@ -399,6 +399,9 @@ pub const METHODS: &[&str] = &[
     "shell.watch",
     "shell.unwatch",
     "shell.watches",
+    "groups.list",
+    "pane.move",
+    "session.start",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -445,6 +448,9 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "shell.watch" => shell_watch(ctx, params).await,
         "shell.unwatch" => shell_unwatch(ctx, params).await,
         "shell.watches" => shell_watches(ctx).await,
+        "groups.list" => groups_list(ctx).await,
+        "pane.move" => pane_move(ctx, params).await,
+        "session.start" => session_start(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -1397,4 +1403,55 @@ async fn shell_watches(ctx: &Ctx) -> Result<Value, RpcError> {
         .map_err(|e| err("internal", e.to_string()))?
         .map_err(|e| err("io_error", format!("shell.watches: {e}")))?;
     Ok(json!({ "watches": list.iter().map(watch_json).collect::<Vec<_>>() }))
+}
+
+/// `groups.list`: the groups of the core terminals on this computer (Herdr app spaces and
+/// fallback groups), with counts. See [`crate::core::actions::groups`].
+async fn groups_list(ctx: &Ctx) -> Result<Value, RpcError> {
+    let sock = core_sock(ctx)?;
+    let p = crate::core::live::projection(sock, ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)?;
+    Ok(crate::core::actions::groups(&p))
+}
+
+/// `pane.move`: puts a core terminal that is in no Herdr app space into a space (a new one or
+/// an existing one) or into a named group. Changes only `herdr.space`, `herdr.tab` or
+/// `herdling.group`. See [`crate::core::actions::move_labels`].
+async fn pane_move(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    use crate::core::{actions, live, project};
+    let pane = str_param(&params, "pane_id", "pane.move")?.to_string();
+    let target = actions::move_target(&params)?;
+    let sock = core_sock(ctx)?;
+    let addr = project::address(&pane).ok_or_else(|| err("pane_not_found", format!("no Herdr 2 terminal {pane}")))?;
+    let p = live::projection(sock, ctx.herdr_timeout).await.map_err(live::rpc_err)?;
+    let labels = actions::move_labels(addr, &target, &p, &actions::fresh_ids())?;
+    live::label(sock, ctx.herdr_timeout, addr, labels).await?;
+    // The projection after the move says where the terminal shows now.
+    let after = live::projection(sock, ctx.herdr_timeout).await.map_err(live::rpc_err)?;
+    let (ws, tab) = actions::where_is(&after, &pane).unzip();
+    Ok(json!({ "pane_id": pane, "workspace_id": ws, "tab_id": tab }))
+}
+
+/// `session.start`: starts an agent on the core in a Herdr app space (an existing one, or a new
+/// one when `workspace_id` is missing) or in a group, then sends the first prompt. See
+/// [`crate::core::start`].
+async fn session_start(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    use crate::core::{actions, live, project, start};
+    let cwd = str_param(&params, "cwd", "session.start")?;
+    if !cwd.starts_with('/') {
+        return Err(err("bad_request", "session.start: cwd must be an absolute path"));
+    }
+    let kind = str_param(&params, "kind", "session.start")?;
+    let args: Vec<String> = match params.get("args") {
+        None | Some(Value::Null) => vec![],
+        Some(Value::Array(a)) => a.iter().map(|v| v.as_str().map(String::from)).collect::<Option<_>>().ok_or_else(|| err("bad_request", "session.start: args must be strings"))?,
+        Some(_) => return Err(err("bad_request", "session.start: args must be an array")),
+    };
+    let prompt = params.get("prompt").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).map(String::from);
+    let plan = start::Plan { line: actions::agent_line(kind, &args)?, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
+    let sock = core_sock(ctx)?;
+    let place = live::place(sock, ctx.herdr_timeout, params.get("workspace_id").and_then(Value::as_str)).await?;
+    let s = live::start_agent(sock, ctx.herdr_timeout, &place, cwd, &plan).await?;
+    Ok(json!({
+        "pane_id": project::pane_id(&s.addr), "workspace_id": s.workspace, "tab_id": s.tab, "prompt_error": s.prompt_error,
+    }))
 }

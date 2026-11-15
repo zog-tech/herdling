@@ -311,3 +311,69 @@ pub fn merge_workspace_list(herdr: Option<Value>, p: &Projection) -> Value {
     }
     out
 }
+
+/// The longest group name that `pane.move` and `herdlingd group` accept, in characters.
+pub const MAX_GROUP: usize = 64;
+
+/// Checks a group name: trimmed, at most [`MAX_GROUP`] characters, no control characters.
+/// An empty name is allowed: it removes the label.
+pub fn group_name(name: &str) -> Result<String, ActionError> {
+    let n = name.trim();
+    if n.chars().count() > MAX_GROUP || n.chars().any(char::is_control) {
+        return Err(ActionError::bad(format!("a group name has at most {MAX_GROUP} characters and no control characters")));
+    }
+    Ok(n.to_string())
+}
+
+/// Where `pane.move` puts a terminal.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MoveTarget {
+    /// A workspace id: a Herdr app space, or a label group.
+    Workspace(String),
+    NewSpace,
+    /// A `herdling.group` name. Empty removes the label.
+    Group(String),
+}
+
+/// The target of `pane.move` params: exactly one of `workspace_id`, `new_space: true`, `group`.
+pub fn move_target(params: &Value) -> Result<MoveTarget, ActionError> {
+    let ws = params.get("workspace_id").and_then(Value::as_str);
+    let new = params.get("new_space").and_then(Value::as_bool) == Some(true);
+    let group = params.get("group").and_then(Value::as_str);
+    match (ws, new, group) {
+        (Some(w), false, None) => Ok(MoveTarget::Workspace(w.to_string())),
+        (None, true, None) => Ok(MoveTarget::NewSpace),
+        (None, false, Some(g)) => Ok(MoveTarget::Group(group_name(g)?)),
+        _ => Err(ActionError::bad("pane.move needs exactly one of workspace_id, new_space or group")),
+    }
+}
+
+/// The labels that move terminal `addr` to `target`. Only a terminal in no Herdr app space
+/// moves: whether the Herdr app moves a terminal that it holds is not known.
+pub fn move_labels(addr: &str, target: &MoveTarget, p: &Projection, ids: &NewIds) -> Result<Map<String, Value>, ActionError> {
+    let pane = project::pane_id(addr);
+    if !p.panes.iter().any(|e| text(e, "pane_id") == Some(pane.as_str())) {
+        return Err(ActionError::not_found("pane", &pane));
+    }
+    if in_space(addr, p) {
+        return Err(ActionError::unsupported("this terminal is in a Herdr app space; move it in the Herdr app"));
+    }
+    match target {
+        MoveTarget::NewSpace => Ok(place_labels(&Place::NewSpace, ids)),
+        MoveTarget::Group(name) => {
+            let mut m = Map::new();
+            m.insert(GROUP_LABEL.into(), json!(name));
+            Ok(m)
+        }
+        MoveTarget::Workspace(id) => match place_of(Some(id), p)? {
+            Place::Folder { .. } => Err(ActionError::unsupported("a repo or folder group follows the folder of the terminal; give a group name instead")),
+            place => Ok(place_labels(&place, ids)),
+        },
+    }
+}
+
+/// The workspace and tab ids of pane `pane` in the projection.
+pub fn where_is(p: &Projection, pane: &str) -> Option<(String, String)> {
+    let e = p.panes.iter().find(|e| text(e, "pane_id") == Some(pane))?;
+    Some((text(e, "workspace_id")?.to_string(), text(e, "tab_id")?.to_string()))
+}

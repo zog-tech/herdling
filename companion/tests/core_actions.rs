@@ -187,3 +187,34 @@ fn in_space_and_groups_list() {
     assert_eq!(list[2]["source"], "repo");
     assert_eq!(list[2]["terminals"], 1);
 }
+
+#[test]
+fn move_target_needs_exactly_one() {
+    use actions::MoveTarget;
+    assert_eq!(actions::move_target(&json!({"workspace_id": "hc:space:s1"})).unwrap(), MoveTarget::Workspace("hc:space:s1".into()));
+    assert_eq!(actions::move_target(&json!({"new_space": true})).unwrap(), MoveTarget::NewSpace);
+    assert_eq!(actions::move_target(&json!({"group": " Clips "})).unwrap(), MoveTarget::Group("Clips".into()));
+    assert_eq!(actions::move_target(&json!({"group": ""})).unwrap(), MoveTarget::Group(String::new()));
+    for bad in [json!({}), json!({"new_space": true, "group": "x"}), json!({"group": "a\nb"}), json!({"group": "x".repeat(65)})] {
+        assert_eq!(actions::move_target(&bad).unwrap_err().code, "bad_request", "{bad}");
+    }
+}
+
+#[test]
+fn move_labels_only_for_terminals_in_no_space() {
+    use actions::MoveTarget;
+    let p = projection();
+    let l = actions::move_labels("t4", &MoveTarget::NewSpace, &p, &ids()).unwrap();
+    assert_eq!(l, map(json!({"herdr.space": "spNEW", "herdr.tab": "tbNEW"})));
+    let l = actions::move_labels("t5", &MoveTarget::Workspace("hc:space:s1".into()), &p, &ids()).unwrap();
+    assert_eq!(l, map(json!({"herdr.space": "s1", "herdr.tab": "tbNEW"})));
+    let l = actions::move_labels("t5", &MoveTarget::Workspace("hc:g:clips".into()), &p, &ids()).unwrap();
+    assert_eq!(l, map(json!({"herdling.group": "Clips"})));
+    let l = actions::move_labels("t5", &MoveTarget::Group("Web".into()), &p, &ids()).unwrap();
+    assert_eq!(l, map(json!({"herdling.group": "Web"})));
+    let e = actions::move_labels("t1", &MoveTarget::NewSpace, &p, &ids()).unwrap_err();
+    assert_eq!(e.code, "unsupported", "a terminal in a space does not move");
+    let e = actions::move_labels("t4", &MoveTarget::Workspace("hc:g:proj".into()), &p, &ids()).unwrap_err();
+    assert_eq!(e.code, "unsupported");
+    assert_eq!(actions::move_labels("t99", &MoveTarget::NewSpace, &p, &ids()).unwrap_err().code, "pane_not_found");
+}

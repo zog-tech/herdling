@@ -292,3 +292,67 @@ async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Val
     }?;
     tokio::task::spawn_blocking(move || crate::preview::read_any_log(&path)).await.ok()?.ok()
 }
+
+/// The result of `session.start`.
+pub struct Started {
+    pub addr: String,
+    pub workspace: String,
+    pub tab: String,
+    pub prompt_error: Option<String>,
+}
+
+/// Starts an agent with the steps of [`super::start`]: a shell at `place` in `cwd`, the agent
+/// command `plan.line`, then the first prompt once the agent reports a status.
+pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: &str, plan: &super::start::Plan) -> Result<Started, RpcError> {
+    use super::start::{begin, step, Effect, Input, Outcome};
+    let (mut state, mut effects) = begin();
+    let mut ids: Option<(String, String)> = None;
+    loop {
+        let mut input = None;
+        for effect in effects {
+            match effect {
+                Effect::Run => {
+                    input = Some(match run_shell(sock, timeout, place, Some(cwd)).await {
+                        Ok((addr, ws, tab)) => {
+                            ids = Some((ws, tab));
+                            Input::Ran(addr)
+                        }
+                        // A refusal before the shell runs keeps its code (unsupported, not found).
+                        Err(e) => return Err(e),
+                    });
+                }
+                Effect::Type { addr, line } => {
+                    input = Some(match send(sock, timeout, &addr, &line).await {
+                        Ok(_) => Input::Typed,
+                        Err(e) => Input::Failed(e.message),
+                    });
+                }
+                Effect::Wait(d) => tokio::time::sleep(d).await,
+                Effect::Get(addr) => {
+                    input = Some(match once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await {
+                        Ok(t) => Input::Record(t),
+                        Err(e) => Input::Failed(rpc_err(e).message),
+                    });
+                }
+                Effect::Send { addr, text } => {
+                    input = Some(match send(sock, timeout, &addr, &text).await {
+                        Ok(_) => Input::Sent,
+                        Err(e) => Input::Failed(e.message),
+                    });
+                }
+                Effect::Kill(addr) => {
+                    let _ = once(sock, timeout, "terminal.kill", json!({ "terminal": addr })).await;
+                }
+                Effect::Finish(Outcome::Started { addr, prompt_error }) => {
+                    let (workspace, tab) = ids.clone().unwrap_or_default();
+                    return Ok(Started { addr, workspace, tab, prompt_error });
+                }
+                Effect::Finish(Outcome::Failed(message)) => return Err(RpcError { code: "start_failed".into(), message }),
+            }
+        }
+        let Some(i) = input else {
+            return Err(RpcError { code: "internal".into(), message: "session.start stopped with no result".into() });
+        };
+        (state, effects) = step(state, i, plan);
+    }
+}

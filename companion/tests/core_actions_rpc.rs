@@ -314,3 +314,94 @@ async fn workspace_list_adds_core_workspaces() {
     let ids: Vec<&str> = r["result"]["workspaces"].as_array().unwrap().iter().map(|w| w["workspace_id"].as_str().unwrap()).collect();
     assert_eq!(ids, ["w1", "hc:space:s1", "hc:g:clips"], "{r}");
 }
+
+#[tokio::test]
+async fn groups_list_counts_spaces_and_groups() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("groups.list", json!({})).await;
+    let g = r["result"]["groups"].as_array().unwrap();
+    assert_eq!(g.len(), 2, "{r}");
+    assert_eq!(g[0]["workspace_id"], "hc:space:s1");
+    assert_eq!(g[0]["space_id"], "s1");
+    assert_eq!(g[0]["terminals"], 2);
+    assert_eq!(g[0]["agents"], 1);
+    assert_eq!(g[1]["source"], "label");
+    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
+    assert_eq!(no_core.call("groups.list", json!({})).await["error"]["code"], "unsupported");
+}
+
+#[tokio::test]
+async fn pane_move_to_new_space_sets_two_labels() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("pane.move", json!({"pane_id": "hc:t3", "new_space": true})).await;
+    let l = s.labels("t3");
+    let space = l["herdr.space"].as_str().unwrap().to_string();
+    assert!(is_id(&l["herdr.space"], "sp") && is_id(&l["herdr.tab"], "tb"), "{l}");
+    assert_eq!(l["herdling.group"], "Clips", "other labels stay");
+    assert_eq!(l["other"], "keep");
+    assert_eq!(r["result"]["workspace_id"], format!("hc:space:{space}"), "{r}");
+    let calls = s.core.calls_of("terminal.label");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["labels"].as_object().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn pane_move_to_group_sets_one_label() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("pane.move", json!({"pane_id": "hc:t3", "group": "Web"})).await;
+    assert_eq!(r["result"]["workspace_id"], "hc:g:web", "{r}");
+    assert_eq!(s.core.calls_of("terminal.label")[0]["labels"], json!({"herdling.group": "Web"}));
+    sess.call("pane.move", json!({"pane_id": "hc:t3", "group": ""})).await;
+    assert_eq!(s.labels("t3"), json!({"other": "keep"}));
+}
+
+#[tokio::test]
+async fn pane_move_refuses_a_terminal_in_a_space() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("pane.move", json!({"pane_id": "hc:t1", "new_space": true})).await;
+    assert_eq!(r["error"]["code"], "unsupported", "{r}");
+    let r = sess.call("pane.move", json!({"pane_id": "hc:t9", "group": "x"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found");
+    let r = sess.call("pane.move", json!({"pane_id": "hc:t3"})).await;
+    assert_eq!(r["error"]["code"], "bad_request");
+    assert!(s.core.calls_of("terminal.label").is_empty());
+}
+
+#[tokio::test]
+async fn session_start_runs_types_and_prompts() {
+    let s = setup_with(|st| st.send_starts_agent = true);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("session.start", json!({"cwd": "/home/sam/proj", "kind": "claude", "workspace_id": "hc:space:s1",
+                                               "prompt": "fix the login form", "args": ["--model", "opus"]})).await;
+    assert_eq!(r["result"]["pane_id"], "hc:t4", "{r}");
+    assert_eq!(r["result"]["workspace_id"], "hc:space:s1");
+    assert_eq!(r["result"]["prompt_error"], Value::Null);
+    let sends: Vec<Value> = s.core.calls_of("terminal.send").into_iter().map(|c| c["text"].clone()).collect();
+    assert_eq!(sends, [json!("claude --model opus"), json!("fix the login form")]);
+    assert_eq!(s.core.calls_of("terminal.run")[0]["labels"]["herdr.space"], "s1");
+    // No workspace: a new space.
+    let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "codex"})).await;
+    assert!(r["result"]["workspace_id"].as_str().unwrap().starts_with("hc:space:sp"), "{r}");
+}
+
+#[tokio::test]
+async fn session_start_refusals() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    for (p, code) in [
+        (json!({"cwd": "proj", "kind": "claude"}), "bad_request"),
+        (json!({"cwd": "/home/sam", "kind": "nope"}), "bad_request"),
+        (json!({"cwd": "/home/sam", "kind": "claude", "workspace_id": "hc:g:gone"}), "workspace_not_found"),
+    ] {
+        let r = sess.call("session.start", p.clone()).await;
+        assert_eq!(r["error"]["code"], code, "{p}: {r}");
+    }
+    assert!(s.core.calls_of("terminal.run").is_empty());
+    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
+    let r = no_core.call("session.start", json!({"cwd": "/home/sam", "kind": "claude"})).await;
+    assert_eq!(r["error"]["code"], "unsupported");
+}

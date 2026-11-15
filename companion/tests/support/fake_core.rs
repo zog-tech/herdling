@@ -34,6 +34,9 @@ pub struct State {
     pub errors: HashMap<String, (String, String)>,
     /// `hello.methods`. None: every method that the fake answers.
     pub methods: Option<Vec<String>>,
+    /// A `terminal.send` to a terminal with no status gives it an idle agent status, as if the
+    /// typed command started an agent.
+    pub send_starts_agent: bool,
 }
 
 /// The methods that the fake answers.
@@ -124,7 +127,15 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
         "terminal.list" => Ok(json!({"terminals": st.terminals, "hidden_finished": 0, "machines": []})),
         "terminal.get" => find(),
         "terminal.read" => find().map(|_| json!({"text": st.screen, "complete": true, "how": "screen"})),
-        "terminal.send" | "terminal.keys" => find().map(|_| json!({"turn": 3, "status": "idle"})),
+        "terminal.send" | "terminal.keys" => {
+            let t = find()?;
+            if method == "terminal.send" && st.send_starts_agent && t["status"].is_null() {
+                let a = t["address"].clone();
+                let rec = st.terminals.iter_mut().find(|t| t["address"] == a).unwrap();
+                rec["status"] = json!({"state": "idle", "app": "Claude Code"});
+            }
+            Ok(json!({"turn": 3, "status": "idle"}))
+        }
         "terminal.kill" => {
             let t = find()?;
             let a = t["address"].clone();
