@@ -1380,7 +1380,9 @@ async fn session_start(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         Some(_) => return Err(err("bad_request", "session.start: args must be an array")),
     };
     let prompt = params.get("prompt").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).map(String::from);
-    let plan = start::Plan { line: actions::agent_line(kind, &args)?, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
+    // The new shell is the login shell (`core::live::run_shell`): quote for its family.
+    let family = actions::ShellFamily::of(std::env::var("SHELL").ok().as_deref());
+    let plan = start::Plan { line: actions::agent_line(kind, &args, family)?, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
     let sock = core_sock(ctx)?;
     let place = live::place(sock, ctx.herdr_timeout, params.get("workspace_id").and_then(Value::as_str)).await?;
     let s = live::start_agent(sock, ctx.herdr_timeout, &place, cwd, &plan).await?;

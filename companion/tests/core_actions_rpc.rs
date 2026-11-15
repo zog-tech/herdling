@@ -159,7 +159,8 @@ async fn workspace_create_for_the_core_makes_a_new_space() {
 
 #[tokio::test]
 async fn agent_start_types_the_agent_command() {
-    let s = setup();
+    // t2 runs zsh: POSIX quotes.
+    let s = setup_with(|st| st.terminals[1]["foreground"]["name"] = json!("zsh"));
     let mut sess = Session::start(s.ctx());
     let r = sess.herdr("agent.start", json!({"name": "proj-hc-t2", "kind": "claude", "pane_id": "t2", "args": ["--resume", "abc 1"]})).await;
     assert_eq!(r["result"]["agent"]["pane_id"], "t2", "{r}");
@@ -172,6 +173,20 @@ async fn agent_start_types_the_agent_command() {
     assert_eq!(r["error"]["code"], "bad_request");
     let r = sess.herdr("agent.start", json!({"kind": "claude", "pane_id": "t99"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found");
+}
+
+#[tokio::test]
+async fn agent_start_quotes_for_the_shell_in_the_pane() {
+    // t2 runs fish: a backslash and a quote need the fish escapes, not the POSIX form.
+    let s = setup_with(|st| st.terminals[1]["foreground"]["name"] = json!("fish"));
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr("agent.start", json!({"kind": "claude", "pane_id": "t2", "args": ["--resume", r"a\'b"]})).await;
+    assert!(r.get("error").is_none(), "{r}");
+    assert_eq!(s.core.calls_of("terminal.send")[0]["text"], r"claude --resume 'a\\\'b'");
+    // A control character never reaches the shell.
+    let r = sess.herdr("agent.start", json!({"kind": "claude", "pane_id": "t2", "args": ["x\nrm -rf ~"]})).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    assert_eq!(s.core.calls_of("terminal.send").len(), 1);
 }
 
 #[tokio::test]

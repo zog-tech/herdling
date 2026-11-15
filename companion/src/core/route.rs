@@ -6,7 +6,7 @@
 
 use serde_json::{json, Map, Value};
 
-use super::actions::{agent_line, rename_labels, ActionError, Scope};
+use super::actions::{agent_line, rename_labels, ActionError, Scope, ShellFamily};
 use super::ids::{self, Tab};
 use super::project::{self, address};
 
@@ -188,8 +188,9 @@ pub enum Action {
     /// `tab.create` (and `workspace.create` for the core): a new shell in a new tab of
     /// `workspace` (None: a new space). `kind` is the herdr 1 answer type.
     Run { kind: &'static str, workspace: Option<String>, cwd: Option<String> },
-    /// `agent.start`: type the agent command `line` into the shell of `addr`.
-    Start { addr: String, line: String },
+    /// `agent.start`: type the command of agent `kind` with `args` into the shell of `addr`.
+    /// The line is quoted for the shell family of that terminal (`core::live`).
+    Start { addr: String, kind: String, args: Vec<String> },
     /// `agent.prompt`: send `text` once the terminal reports an agent status.
     Prompt { addr: String, text: String },
     /// `agent.rename` and the rename of a task tab: set these labels.
@@ -222,7 +223,9 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
                     .ok_or_else(|| ActionError::bad("agent.start: args must be strings"))?,
                 Some(_) => return Err(ActionError::bad("agent.start: args must be an array")),
             };
-            Action::Start { addr, line: agent_line(kind, &args)? }
+            // The checks of the kind and the arguments come before any call.
+            agent_line(kind, &args, ShellFamily::Posix)?;
+            Action::Start { addr, kind: kind.to_string(), args }
         }
         "agent.prompt" => {
             let text = s("text").filter(|t| !t.is_empty()).ok_or_else(|| ActionError::unsupported("agent.prompt requires text"))?;

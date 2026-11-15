@@ -155,7 +155,10 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
             let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
             Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
         }
-        Action::Start { addr, line } => {
+        Action::Start { addr, kind, args } => {
+            let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            let login = std::env::var("SHELL").ok();
+            let line = actions::agent_line(&kind, &args, actions::family_of_terminal(&t, login.as_deref()))?;
             send(sock, timeout, &addr, &line).await?;
             Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
         }

@@ -1,7 +1,7 @@
 //! The pure rules of the Herdr 2 actions: new ids, placement labels, the agent command line,
 //! the members of a tab or space, the explain answer, renames and the group list.
 
-use herdlingd::core::actions::{self, NewIds, Place, Scope};
+use herdlingd::core::actions::{self, NewIds, Place, Scope, ShellFamily};
 use herdlingd::core::groups::{RepoInfo, Repos};
 use herdlingd::core::project::{self, Projection};
 use serde_json::{json, Map, Value};
@@ -113,15 +113,80 @@ fn created_has_the_herdr_one_shape() {
 #[test]
 fn agent_line_quotes_each_argument() {
     let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    assert_eq!(actions::agent_line("claude", &a(&["--resume", "abc-1"])).unwrap(), "claude --resume abc-1");
-    assert_eq!(actions::agent_line("codex", &a(&["resume", "a b"])).unwrap(), "codex resume 'a b'");
-    assert_eq!(actions::agent_line("kiro", &[]).unwrap(), "kiro-cli");
-    assert_eq!(actions::shell_quote("it's"), r"'it'\''s'");
-    assert_eq!(actions::shell_quote(""), "''");
-    assert_eq!(actions::shell_quote("$(rm -rf ~)"), "'$(rm -rf ~)'");
-    assert_eq!(actions::shell_quote("--model=opus/x.1"), "--model=opus/x.1");
-    assert_eq!(actions::agent_line("nope", &[]).unwrap_err().code, "bad_request");
-    assert_eq!(actions::agent_line("shell", &[]).unwrap_err().code, "bad_request");
+    let posix = ShellFamily::Posix;
+    assert_eq!(actions::agent_line("claude", &a(&["--resume", "abc-1"]), posix).unwrap(), "claude --resume abc-1");
+    assert_eq!(actions::agent_line("codex", &a(&["resume", "a b"]), posix).unwrap(), "codex resume 'a b'");
+    assert_eq!(actions::agent_line("kiro", &[], posix).unwrap(), "kiro-cli");
+    assert_eq!(actions::agent_line("nope", &[], posix).unwrap_err().code, "bad_request");
+    assert_eq!(actions::agent_line("shell", &[], posix).unwrap_err().code, "bad_request");
+}
+
+#[test]
+fn the_shell_family_comes_from_the_program_name() {
+    for (shell, family) in [
+        (Some("/bin/zsh"), ShellFamily::Posix),
+        (Some("/usr/bin/bash"), ShellFamily::Posix),
+        (Some("-zsh"), ShellFamily::Posix),
+        (Some("sh"), ShellFamily::Posix),
+        (Some("/opt/homebrew/bin/fish"), ShellFamily::Fish),
+        (Some("/usr/local/bin/nu"), ShellFamily::Nu),
+        (Some("/usr/bin/xonsh"), ShellFamily::Other),
+        (Some("/bin/tcsh"), ShellFamily::Other),
+        (Some(""), ShellFamily::Other),
+        (None, ShellFamily::Other),
+    ] {
+        assert_eq!(ShellFamily::of(shell), family, "{shell:?}");
+    }
+}
+
+#[test]
+fn posix_quoting() {
+    let q = |s: &str| actions::quote_for(ShellFamily::Posix, s).unwrap();
+    assert_eq!(q("it's"), r"'it'\''s'");
+    assert_eq!(q(r"a\b"), r"'a\b'");
+    assert_eq!(q(""), "''");
+    assert_eq!(q("$(rm -rf ~)"), "'$(rm -rf ~)'");
+    // zsh expands `=cmd` at the start of a word, so such a word is quoted.
+    assert_eq!(q("=ls"), "'=ls'");
+}
+
+#[test]
+fn fish_quoting_escapes_backslash_and_quote() {
+    let q = |s: &str| actions::quote_for(ShellFamily::Fish, s).unwrap();
+    assert_eq!(q("plain-word"), "plain-word");
+    assert_eq!(q("a b"), "'a b'");
+    assert_eq!(q("it's"), r"'it\'s'");
+    assert_eq!(q(r"a\b"), r"'a\\b'");
+    // The POSIX form of this argument ends the quote early in fish and runs `rm`.
+    assert_eq!(q(r"x\'; rm -rf ~; echo '"), r"'x\\\'; rm -rf ~; echo \''");
+    assert_eq!(q("%self"), "'%self'");
+    assert_eq!(actions::agent_line("codex", &[r"\'".to_string()], ShellFamily::Fish).unwrap(), r"codex '\\\''");
+}
+
+#[test]
+fn nu_quoting_uses_double_quotes_with_escapes() {
+    let q = |s: &str| actions::quote_for(ShellFamily::Nu, s).unwrap();
+    assert_eq!(q("--model=opus/x.1"), "--model=opus/x.1");
+    assert_eq!(q("a b"), r#""a b""#);
+    assert_eq!(q(r#"say "hi" \ $(x)"#), r#""say \"hi\" \\ $(x)""#);
+}
+
+#[test]
+fn other_shells_take_only_plain_words() {
+    assert_eq!(actions::quote_for(ShellFamily::Other, "--resume").unwrap(), "--resume");
+    assert_eq!(actions::quote_for(ShellFamily::Other, "abc-1").unwrap(), "abc-1");
+    assert_eq!(actions::quote_for(ShellFamily::Other, "a b").unwrap_err().code, "bad_request");
+    assert_eq!(actions::agent_line("codex", &["a b".into()], ShellFamily::Other).unwrap_err().code, "bad_request");
+}
+
+#[test]
+fn control_characters_are_refused_in_every_shell() {
+    for family in [ShellFamily::Posix, ShellFamily::Fish, ShellFamily::Nu, ShellFamily::Other] {
+        for bad in ["a\nb", "a\rb", "\u{1b}[2J", "a\tb", "x\u{7f}"] {
+            assert_eq!(actions::quote_for(family, bad).unwrap_err().code, "bad_request", "{family:?} {bad:?}");
+        }
+    }
+    assert_eq!(actions::agent_line("claude", &["a\nrm -rf ~".into()], ShellFamily::Posix).unwrap_err().code, "bad_request");
 }
 
 #[test]
