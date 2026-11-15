@@ -14,6 +14,8 @@ import { setCrashRoute } from "@/crash/globalHandler";
 import { startConnections } from "@/hosts/connection";
 import { UpdateChecks } from "@/hosts/UpdateChecks";
 import { START_OPTIONS_DETENT_ANDROID } from "@/newSession/StartOptionsSheet";
+import { addBanners, BannerHost, bannerShowing } from "@/push/BannerHost";
+import { bannerFromPush } from "@/push/banner";
 import { registerChoiceCategory } from "@/push/choiceActions";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
 import { useAppFonts } from "@/theme/fonts";
@@ -33,7 +35,10 @@ startConnections();
 Notifications.setNotificationHandler({
   handleNotification: async (n) => {
     const show = showBannerFor(n.request.content.data);
-    return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
+    // While the app shows its own banner, a push about a session goes there, not to the system banner.
+    const own = show && bannerShowing() ? bannerFromPush(n.request.content.data, n.request.content.title, n.request.content.body) : null;
+    if (own) addBanners([own]);
+    return { shouldShowBanner: show && !own, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
   },
 });
 // The Yes and No buttons of a "needs you" push. Registered before the first push can show.
@@ -190,6 +195,7 @@ function ThemedRoot() {
       </ThemeProvider>
       <NativeSheetHost />
       <NoticeHost />
+      <BannerHost />
     </GestureHandlerRootView>
   );
 }
