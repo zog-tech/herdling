@@ -1,6 +1,6 @@
 import type { Snapshot } from "@/herdr/snapshot";
 
-import { firstTab, hostSpaces, tabLabel } from "./spaces";
+import { closeSpaceParams, firstTab, hostSpaces, tabLabel } from "./spaces";
 
 const snap: Snapshot = {
   workspaces: [
@@ -58,4 +58,11 @@ test("firstTab and tabLabel", () => {
   expect(firstTab({ tabs: [] })).toBeUndefined();
   expect(tabLabel(docs.tabs[0], 0)).toBe("Tab 1");
   expect(tabLabel(pay.tabs[1], 1)).toBe("tests");
+});
+
+test("the close of a Herdr 2 space names the panes that the screen showed", () => {
+  const space = hostSpaces(snap).find((s) => s.workspaceId === "hc:space:1")!;
+  expect(closeSpaceParams(space, true)).toEqual({ workspace_id: "hc:space:1", pane_ids: ["hc:t1", "hc:t2", "hc:t3"] });
+  // herdr 1 knows no `pane_ids`.
+  expect(closeSpaceParams(space, false)).toEqual({ workspace_id: "hc:space:1" });
 });

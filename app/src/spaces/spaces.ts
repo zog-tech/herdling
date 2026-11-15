@@ -78,3 +78,14 @@ export const tabLabel = (t: Pick<SpaceTab, "label">, index: number) => t.label.t
 
 /** The most thumbnails that poll at one time on a space screen. */
 export const MAX_THUMBS = 6;
+
+/**
+ * The params of `workspace.close` for a space screen. For a Herdr 2 space they name every pane
+ * that the screen showed (`pane_ids`), so herdlingd closes only those. A repo or folder group
+ * follows the folder of each terminal, and a terminal that joined it later stays open.
+ * herdr 1 does not know the field.
+ */
+export function closeSpaceParams(space: Pick<Space, "workspaceId" | "tabs">, core: boolean): { workspace_id: string; pane_ids?: string[] } {
+  if (!core) return { workspace_id: space.workspaceId };
+  return { workspace_id: space.workspaceId, pane_ids: space.tabs.flatMap((t) => t.panes.map((p) => p.paneId)) };
+}

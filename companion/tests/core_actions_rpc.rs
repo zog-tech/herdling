@@ -277,6 +277,38 @@ async fn close_tab_and_workspace_kill_their_terminals() {
 }
 
 #[tokio::test]
+async fn close_with_pane_ids_kills_only_the_shown_panes() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr("workspace.close", json!({"workspace_id": "space:s1", "pane_ids": ["t2", "t3"]})).await;
+    assert_eq!(r["result"]["closed"], json!(["t2"]), "{r}");
+    assert_eq!(s.core.calls_of("terminal.kill"), [json!({"terminal": "t2"})]);
+    let r = sess.herdr("workspace.close", json!({"workspace_id": "space:s1", "pane_ids": "t1"})).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+}
+
+#[tokio::test]
+async fn an_old_app_cannot_close_a_folder_group() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    // t1 and t2 are in no space here: the folder places them in one group.
+    s.core.state.lock().unwrap().doc = json!({"spaces": []});
+    let snap = sess.herdr("session.snapshot", json!({})).await;
+    let panes = snap["result"]["snapshot"]["panes"].as_array().unwrap().clone();
+    let ws = panes.iter().find(|p| p["pane_id"] == "t1").unwrap()["workspace_id"].as_str().unwrap().to_string();
+    assert!(ws.starts_with("g:"), "{ws}");
+    let r = sess.herdr("workspace.close", json!({"workspace_id": ws})).await;
+    assert_eq!(r["error"]["code"], "unsupported", "{r}");
+    assert!(s.core.calls_of("terminal.kill").is_empty());
+    // The new app sends what it showed.
+    let r = sess.herdr("workspace.close", json!({"workspace_id": ws, "pane_ids": ["t1"]})).await;
+    assert_eq!(r["result"]["closed"], json!(["t1"]), "{r}");
+    // A label group still closes as a whole.
+    let r = sess.herdr("workspace.close", json!({"workspace_id": "g:clips"})).await;
+    assert_eq!(r["result"]["closed"], json!(["t3"]), "{r}");
+}
+
+#[tokio::test]
 async fn close_unknown_ids_kill_nothing() {
     let s = setup();
     let mut sess = Session::start(s.ctx());

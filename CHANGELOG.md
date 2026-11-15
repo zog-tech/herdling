@@ -30,6 +30,15 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ### Also in 0.2.0
 
+- `tab.close` and `workspace.close` take an optional `pane_ids`: only the panes that the app showed
+  close. Without it, the close of a repo or folder group gives `unsupported`, because the group
+  follows the folders of its terminals. The app sends the list.
+- `agent.start` and `session.start` quote the agent arguments for the shell in the pane (POSIX,
+  fish or Nushell). Another shell takes only plain words. An argument with a control character
+  gives `bad_request`.
+- `herdlingd` keeps a `~/.local/bin/herdr-core` symlink that points outside the upstream bundle
+  folder (Homebrew, Nix): it is a package manager core, never replaced.
+
 - Herdr 2 actions: on a core entry, `tab.create`, `agent.start`, `agent.prompt`, `agent.rename`,
   `tab.close`, `workspace.close`, `agent.explain`, `workspace.get` and `workspace.list` work.
   The app's restart and resume work through them. Space and tab renames give `unsupported`.

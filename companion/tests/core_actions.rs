@@ -283,3 +283,33 @@ fn move_labels_only_for_terminals_in_no_space() {
     assert_eq!(e.code, "unsupported");
     assert_eq!(actions::move_labels("t99", &MoveTarget::NewSpace, &p, &ids()).unwrap_err().code, "pane_not_found");
 }
+
+/// The workspace id of pane `pane` in the projection.
+fn ws_of(p: &Projection, pane: &str) -> String {
+    actions::where_is(p, pane).unwrap().0
+}
+
+#[test]
+fn close_members_with_the_panes_that_the_app_showed() {
+    let p = projection();
+    let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let space = Scope::Workspace("space:s1".into());
+    // No list: the whole space, as before.
+    assert_eq!(actions::close_members(&p, &space, None).unwrap(), ["t1", "t2", "t3"]);
+    // A list: only the panes in both. A legacy `hc:` id counts; a pane of another space does not.
+    assert_eq!(actions::close_members(&p, &space, Some(&ids(&["t1", "hc:t3", "t4", "t9"]))).unwrap(), ["t1", "t3"]);
+    assert!(actions::close_members(&p, &space, Some(&[])).unwrap().is_empty());
+    assert_eq!(actions::close_members(&p, &Scope::Tab("tab:a".into()), Some(&ids(&["t2"]))).unwrap(), ["t2"]);
+    // A label group keeps its members until someone changes the label.
+    assert_eq!(actions::close_members(&p, &Scope::Workspace("g:clips".into()), None).unwrap(), ["t4"]);
+    // A repo group follows the folder of each terminal: with no list it is refused.
+    let repo = Scope::Workspace(ws_of(&p, "t5"));
+    let e = actions::close_members(&p, &repo, None).unwrap_err();
+    assert_eq!(e.code, "unsupported");
+    assert!(e.message.contains("one by one"), "{}", e.message);
+    assert_eq!(actions::close_members(&p, &repo, Some(&ids(&["t5", "t1"]))).unwrap(), ["t5"]);
+    // The task tab of such a group is one terminal: no list needed.
+    assert_eq!(actions::close_members(&p, &Scope::Tab("task:t5".into()), None).unwrap(), ["t5"]);
+    // Unknown ids stay errors.
+    assert_eq!(actions::close_members(&p, &Scope::Workspace("g:gone".into()), Some(&ids(&["t1"]))).unwrap_err().code, "workspace_not_found");
+}

@@ -871,11 +871,11 @@ the core.
 | `pane.close` | `terminal.kill` |
 | `tab.create` on `space:<id>` or `g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
 | `workspace.create` | the same, in a new space. 0.1.x apps send `backend: "core"`; old apps send no `backend`. Both go to the core on 0.2.0 |
-| `agent.start` on a pane | types the agent command (`<program> <args>`, shell-quoted) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used |
+| `agent.start` on a pane | types the agent command (`<program> <args>`) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used. Each argument is quoted for the shell in the pane (its foreground program, else the `SHELL` of herdlingd): POSIX quotes for sh, bash, zsh and the like, fish quotes for fish, double quotes for Nushell. Another shell takes only plain words. An argument with a control character, or one that the shell cannot take, gives `bad_request` and types nothing |
 | `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
 | `tab.rename` of `task:<address>` | the same for that terminal |
 | `tab.rename` of `tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
-| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used |
+| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used. Optional `pane_ids` (since 0.2.0): the panes that the app showed; only the panes in both close. Without `pane_ids`, a `workspace.close` of a repo or folder group (`g:<key>` whose terminals have no `herdling.group` label) gives `unsupported` and kills nothing: such a group follows the folder of each terminal, so an older app can have shown other terminals. A space, a tab and a label group close as a whole |
 | `agent.explain` | `terminal.get` and `terminal.read`: the agent reports its status itself, so `screen_detection_skipped` is true, the one rule `osc-7501` matched, and its evidence is the end of the screen |
 | `workspace.get` | the workspace entry of the snapshot, else `workspace_not_found` |
 

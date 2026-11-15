@@ -174,8 +174,8 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
             send(sock, timeout, &addr, &text).await
         }
         Action::Label { addr, labels } => Ok(project::pane_get(&label(sock, timeout, &addr, labels).await?)),
-        Action::Kill(scope) => {
-            let members = actions::members(&placed(sock, timeout).await?, &scope)?;
+        Action::Kill(scope, shown) => {
+            let members = actions::close_members(&placed(sock, timeout).await?, &scope, shown.as_deref())?;
             let mut c = connect(sock, timeout).await?;
             require(&mut c, &["terminal.kill"]).await?;
             let mut closed = Vec::new();

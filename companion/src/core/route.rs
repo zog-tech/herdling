@@ -195,12 +195,27 @@ pub enum Action {
     Prompt { addr: String, text: String },
     /// `agent.rename` and the rename of a task tab: set these labels.
     Label { addr: String, labels: Map<String, Value> },
-    /// `tab.close`, `workspace.close`: kill every terminal of the scope.
-    Kill(Scope),
+    /// `tab.close`, `workspace.close`: kill the terminals of the scope, only those of `pane_ids`
+    /// when the app sent the list (see [`super::actions::close_members`]).
+    Kill(Scope, Option<Vec<String>>),
     /// `agent.explain`.
     Explain { addr: String },
     /// `workspace.get` of a core workspace.
     WorkspaceGet(String),
+}
+
+/// The optional `pane_ids` of a close: the panes that the app showed.
+fn pane_ids(params: &Value) -> Result<Option<Vec<String>>, ActionError> {
+    match params.get("pane_ids") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|v| v.as_str().map(String::from))
+            .collect::<Option<_>>()
+            .map(Some)
+            .ok_or_else(|| ActionError::bad("pane_ids must be strings")),
+        Some(_) => Err(ActionError::bad("pane_ids must be an array")),
+    }
 }
 
 /// The action of the herdr 1 call `method` on the core id `id`.
@@ -238,8 +253,8 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
             None => return Err(ActionError::not_found("tab", id)),
         },
         "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
-        "tab.close" => Action::Kill(Scope::Tab(id.to_string())),
-        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string())),
+        "tab.close" => Action::Kill(Scope::Tab(id.to_string()), pane_ids(params)?),
+        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string()), pane_ids(params)?),
         "agent.explain" => Action::Explain { addr: pane()? },
         "workspace.get" => Action::WorkspaceGet(id.to_string()),
         _ if address(id).is_none() && PANE_METHODS.contains(&method) => return Err(ActionError::not_found("pane", id)),

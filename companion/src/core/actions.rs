@@ -285,6 +285,37 @@ pub fn members(p: &Projection, scope: &Scope) -> Result<Vec<String>, ActionError
     Ok(list)
 }
 
+/// The terminals that a `tab.close` or `workspace.close` of `scope` kills.
+///
+/// `shown`: the pane ids that the app showed in that tab or space (`pane_ids`). Only the panes
+/// in both the scope and `shown` close, so a terminal that joined the group after the app drew
+/// it stays. With no list (an old app), a Herdr app space, a tab and a label group close as a
+/// whole: their members change only by an explicit move. A repo or folder group follows the
+/// folder of each terminal right now, so the old app can have shown other terminals. Such a
+/// close is refused: a clear refusal is safer than a kill of a terminal the user did not see.
+pub fn close_members(p: &Projection, scope: &Scope, shown: Option<&[String]>) -> Result<Vec<String>, ActionError> {
+    let all = members(p, scope)?;
+    if let Some(shown) = shown {
+        let shown: Vec<&str> = shown.iter().map(|s| ids::strip_legacy(s)).collect();
+        return Ok(all.into_iter().filter(|addr| shown.contains(&project::pane_id(addr).as_str())).collect());
+    }
+    if let Scope::Workspace(id) = scope {
+        let id = ids::strip_legacy(id);
+        let follows_folder = matches!(ids::workspace(id), Some(Workspace::Group(_)))
+            && p.panes
+                .iter()
+                .filter(|e| text(e, "workspace_id") == Some(id))
+                .any(|e| text(e, "group_source") != Some("label"));
+        if follows_folder {
+            return Err(ActionError::unsupported(
+                "This group follows the folders of its terminals, so Herdling cannot be sure which terminals it closes. \
+                 Close its terminals one by one, or update Herdling.",
+            ));
+        }
+    }
+    Ok(all)
+}
+
 /// The herdr 1 `workspace.get` answer for the core workspace `id`.
 pub fn workspace_get(p: &Projection, id: &str) -> Result<Value, ActionError> {
     let id = ids::strip_legacy(id);

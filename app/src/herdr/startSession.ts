@@ -3,7 +3,7 @@ import type { SessionStart, SessionStartParams } from "@herdling/protocol";
 import type { RpcClient } from "@/rpc/RpcClient";
 import { sendLine } from "@/terminal/keys";
 
-import { allows } from "./backend";
+import { allows, isCoreEntry } from "./backend";
 
 export type StartOptions = {
   cwd: string;
@@ -120,9 +120,11 @@ export async function startSession(
     // Do not leave an empty workspace or tab behind; a retry would offer to reuse it.
     // A plain close is enough: the workspace of a new session has no linked worktrees. Never send
     // `close_group` here: when herdr refuses, the workspace stays (see `groupClose.ts`).
+    // On Herdr 2, `pane_ids` limits the close to the new pane: a folder group can hold others.
+    const only = isCoreEntry(paneId, hostId) ? { pane_ids: [paneId] } : {};
     const undo = workspaceId && !fresh
-      ? created.tab?.tab_id && herdr(rpc, "tab.close", { tab_id: created.tab.tab_id })
-      : created.workspace?.workspace_id && herdr(rpc, "workspace.close", { workspace_id: created.workspace.workspace_id });
+      ? created.tab?.tab_id && herdr(rpc, "tab.close", { tab_id: created.tab.tab_id, ...only })
+      : created.workspace?.workspace_id && herdr(rpc, "workspace.close", { workspace_id: created.workspace.workspace_id, ...only });
     await Promise.resolve(undo).catch(() => {});
     throw e;
   }
