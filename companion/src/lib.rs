@@ -6,6 +6,7 @@ pub mod claude;
 pub mod commands;
 pub mod config;
 pub mod core;
+pub mod core_install;
 pub mod cpace;
 pub mod enroll;
 pub mod events;

@@ -233,6 +233,12 @@ async fn get_bytes(url: &str, timeout: Duration, limit: usize) -> Result<Vec<u8>
     get_bytes_or(url, timeout, limit, "update_unavailable").await
 }
 
+/// GETs `url` with the download time limit and returns at most `limit` bytes. The caller checks
+/// the URL. Errors have the code `update_unavailable`.
+pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>, RpcError> {
+    get_bytes(url, DOWNLOAD_TIMEOUT, limit).await
+}
+
 /// [`get_bytes`], with `status_code` as the error code when the server answers with an HTTP error.
 async fn get_bytes_or(url: &str, timeout: Duration, limit: usize, status_code: &str) -> Result<Vec<u8>, RpcError> {
     let unavailable = |m: String| err("update_unavailable", m);

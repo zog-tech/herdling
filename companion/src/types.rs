@@ -490,3 +490,46 @@ pub struct HerdrUpdate {
     /// The output of `herdr update`, at most the last 16 KiB.
     pub output: String,
 }
+
+/// `core.status` result: herdr-core (Herdr 2) on this computer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoreStatus {
+    /// True when a `herdr-core` is on this computer.
+    pub found: bool,
+    /// The version of the installed `herdr-core`. None when none is found or it gave no version.
+    pub installed: Option<String>,
+    /// True when the core is not in `~/.local/bin` (a package manager owns it). herdlingd never
+    /// replaces it.
+    pub managed: bool,
+    /// True when a core answers on its socket.
+    pub running: bool,
+    /// The version of the running core, when it says one.
+    pub running_version: Option<String>,
+    /// The herdr-core version that this herdlingd installs.
+    pub pinned: String,
+    /// True when the installed or the running core is newer than the pin. herdlingd keeps it.
+    pub newer_than_pin: bool,
+    /// True when `core.install` would install or update the core.
+    pub update_available: bool,
+    /// True when this herdlingd needs the core to work.
+    pub required: bool,
+    /// The upstream build target for this computer (`macos-aarch64`). None: no build.
+    pub target: Option<String>,
+    /// True when herdr 1 (`herdr`) is on this computer.
+    pub herdr1: bool,
+}
+
+/// `core.install` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoreInstall {
+    /// The version before. None when no core was installed or it gave no version.
+    pub from: Option<String>,
+    /// The installed version after.
+    pub to: Option<String>,
+    /// "installed", "updated", "up_to_date", "kept_newer", "kept_unknown" or "kept_managed".
+    pub status: String,
+    /// True when herdlingd started the core.
+    pub started: bool,
+    /// The pinned version.
+    pub pinned: String,
+}
