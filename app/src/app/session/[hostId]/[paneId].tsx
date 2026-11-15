@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect } from "react";
 
+import { bannerOpened } from "@/push/BannerHost";
 import { dismissPaneNotifications } from "@/push/dismiss";
 import { SessionDetail } from "@/thread/SessionDetail";
 
@@ -29,6 +30,7 @@ export default function SessionScreen() {
   // The user sees the session now: the delivered notifications of the pane go away.
   useEffect(() => {
     void dismissPaneNotifications(hostId, paneId);
+    bannerOpened(hostId, paneId);
   }, [hostId, paneId]);
   return (
     <SessionDetail

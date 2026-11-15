@@ -4,6 +4,7 @@ import {
   fitFontSize,
   lineHeightFor,
   nextWidthMode,
+  phoneGrid,
   widestCols,
 } from "./fit";
 
@@ -57,5 +58,21 @@ describe("nextWidthMode", () => {
     expect(nextWidthMode("fit")).toBe("wrap");
     expect(nextWidthMode("wrap")).toBe("scroll");
     expect(nextWidthMode("scroll")).toBe("fit");
+  });
+});
+
+describe("phone width", () => {
+  it("comes after scroll only when the host supports it", () => {
+    expect(nextWidthMode("scroll", true)).toBe("phone");
+    expect(nextWidthMode("phone", true)).toBe("fit");
+    expect(nextWidthMode("phone")).toBe("fit");
+  });
+  it("grid_of_the_view", () => {
+    // 12 pt: 7.2 pt per column, 17 pt per row.
+    expect(phoneGrid(360, 600, 12)).toEqual({ cols: 50, rows: 35 });
+    expect(phoneGrid(0, 600, 12)).toBeNull();
+    // Clamped to the pane.watch limits.
+    expect(phoneGrid(50, 40, 12)).toEqual({ cols: 20, rows: 5 });
+    expect(phoneGrid(10_000, 10_000, 12)).toEqual({ cols: 500, rows: 200 });
   });
 });

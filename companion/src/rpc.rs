@@ -80,6 +80,11 @@ pub struct Ctx {
     /// The herdr-core (Herdr 2) socket. None turns the core off: `Ctx::new` leaves it unset, so
     /// a test never reaches a real core. `main` sets it.
     pub core_socket: Option<crate::core::endpoint::CoreSocket>,
+    /// The SSH config that `machines.suggest` reads: `~/.ssh/config` of `home`.
+    pub ssh_config: PathBuf,
+    /// The `tailscale` program for `machines.suggest`. None: no Tailscale peers. `Ctx::new` leaves
+    /// it unset, so a test never runs a real `tailscale`. `main` sets it.
+    pub tailscale: Option<PathBuf>,
     /// Settings for `core.status`, `core.install` and the core path of `herdr.update`. None turns
     /// them off: `Ctx::new` leaves it unset, so a test never installs or starts a core. `main` sets it.
     pub core_install: Option<crate::core_install::CoreInstallCtx>,
@@ -92,6 +97,8 @@ impl Ctx {
         Ctx {
             config_path: crate::config::default_path(&home),
             authorized_keys: home.join(".ssh/authorized_keys"),
+            ssh_config: home.join(".ssh/config"),
+            tailscale: None,
             bin_dirs: crate::automations::default_bin_dirs(&home),
             home,
             herdr_timeout: HERDR_TIMEOUT,
@@ -401,6 +408,7 @@ pub const METHODS: &[&str] = &[
     "groups.list",
     "pane.move",
     "session.start",
+    "machines.suggest",
     "core.status",
     "core.install",
 ];
@@ -452,6 +460,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "groups.list" => groups_list(ctx).await,
         "pane.move" => pane_move(ctx, params).await,
         "session.start" => session_start(ctx, params).await,
+        "machines.suggest" => machines_suggest(ctx).await,
         "core.status" => core_status(ctx).await,
         "core.install" => core_install(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
@@ -1303,6 +1312,32 @@ async fn shell_watches(ctx: &Ctx) -> Result<Value, RpcError> {
 
 /// `groups.list`: the groups of the core terminals on this computer (Herdr app spaces and
 /// fallback groups), with counts. See [`crate::core::actions::groups`].
+/// `machines.suggest`: other computers that the user can add, from the core machine list, the
+/// SSH config and Tailscale. Read only. A source that fails gives no entries. See [`crate::suggest`].
+async fn machines_suggest(ctx: &Ctx) -> Result<Value, RpcError> {
+    use crate::suggest;
+    let core = async {
+        match &ctx.core_socket {
+            Some(sock) => crate::core::live::once(sock, ctx.herdr_timeout, "machine.list", json!({}))
+                .await
+                .map(|r| suggest::from_core(&r))
+                .unwrap_or_default(),
+            None => vec![],
+        }
+    };
+    let tailscale = async {
+        match &ctx.tailscale {
+            Some(bin) => suggest::read_tailscale(bin, suggest::TAILSCALE_TIMEOUT).await,
+            None => vec![],
+        }
+    };
+    let path = ctx.ssh_config.clone();
+    let ssh = async { tokio::task::spawn_blocking(move || suggest::read_ssh_config(&path)).await.unwrap_or_default() };
+    let own = async { tokio::task::spawn_blocking(hostname).await.unwrap_or_default() };
+    let (core, ssh, tailscale, own) = tokio::join!(core, ssh, tailscale, own);
+    Ok(json!({ "suggestions": suggest::merge(vec![core, ssh, tailscale], &[own]) }))
+}
+
 async fn groups_list(ctx: &Ctx) -> Result<Value, RpcError> {
     let sock = core_sock(ctx)?;
     let p = crate::core::live::projection(sock, ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)?;

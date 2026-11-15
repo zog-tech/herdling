@@ -1,4 +1,4 @@
-import type { Hello, UpdateApply, UpdateCheck } from "@herdling/protocol";
+import type { Hello, UpdateApply, UpdateCheck, UpdateCore } from "@herdling/protocol";
 import { useEffect } from "react";
 
 import * as ssh from "../../modules/ssh";
@@ -25,7 +25,7 @@ const POLL_MS = 500;
 
 export type UpdateStatus =
   | { kind: "none" }
-  | { kind: "available"; from: string; to: string; notes: string }
+  | { kind: "available"; from: string; to: string; notes: string; core?: UpdateCore }
   /** The host's herdlingd has no `update.apply`: the installer must run over a password login. */
   | { kind: "password" };
 
@@ -41,7 +41,7 @@ export function updateStatus(host: Host, hello: Hello | undefined): UpdateStatus
   if (isDemoHost(host) || !hello) return { kind: "none" };
   if (!listsMethod(hello, "update.apply")) return { kind: "password" };
   const c = host.updateCheck;
-  if (c && c.updateAvailable && c.current === hello.herdlingd) return { kind: "available", from: c.current, to: c.latest, notes: c.notes };
+  if (c && c.updateAvailable && c.current === hello.herdlingd) return { kind: "available", from: c.current, to: c.latest, notes: c.notes, ...(c.core ? { core: c.core } : {}) };
   return { kind: "none" };
 }
 
@@ -51,7 +51,7 @@ export function showUpdateNotice(host: Host, status: UpdateStatus): boolean {
 }
 
 function cacheOf(r: UpdateCheck, now: number): UpdateCache {
-  return { checkedAt: now, current: r.current, latest: r.latest, updateAvailable: r.update_available, notes: r.notes ?? "" };
+  return { checkedAt: now, current: r.current, latest: r.latest, updateAvailable: r.update_available, notes: r.notes ?? "", ...(r.core ? { core: r.core } : {}) };
 }
 
 const checking = new Set<string>();
@@ -120,7 +120,8 @@ export async function waitForHello(hostId: string, attempt: number | undefined, 
   return undefined;
 }
 
-export type ApplyOutcome = { status: UpdateApply["status"]; version: string };
+/** `notice`: the text of herdlingd after a release that needs Herdr 2 (for example about herdr 1 sessions). */
+export type ApplyOutcome = { status: UpdateApply["status"]; version: string; notice?: string };
 
 /**
  * Runs `update.apply`, then reconnects: the open rpc process keeps the old code, and a new SSH
@@ -141,13 +142,13 @@ export async function applyUpdate(hostId: string, waitMs = RECONNECT_WAIT_MS): P
     });
   if (r.status === "up_to_date") {
     saveRunning(r.to, r.to);
-    return { status: r.status, version: r.to };
+    return { status: r.status, version: r.to, ...(r.notice ? { notice: r.notice } : {}) };
   }
   const attempt = retryNow(hostId);
   const hello = await waitForHello(hostId, attempt, waitMs);
   if (!hello) throw new Error(`herdlingd ${r.to} is installed, but the host did not connect again yet. Herdling keeps trying.`);
   saveRunning(hello.herdlingd, r.to);
-  return { status: r.status, version: hello.herdlingd };
+  return { status: r.status, version: hello.herdlingd, ...(r.notice ? { notice: r.notice } : {}) };
 }
 
 const defaultInstallerDeps: InstallerDeps = { execWithPassword: ssh.execWithPassword };

@@ -9,6 +9,9 @@ import type {
   FsDirs,
   GitDiff,
   GitStatus,
+  MachinesSuggest,
+  CoreStatus,
+  CoreInstall,
   GitWorktree,
   GroupsList,
   Hello,
@@ -300,6 +303,14 @@ describe("DemoTransport", () => {
     expect(started).toMatchObject({ pane_id: expect.stringMatching(/^hc:t/), workspace_id: expect.stringMatching(/^hc:space:/), prompt_error: null });
     const snapAfter = parseSnapshot(await herdr("session.snapshot"));
     expect(snapAfter.agents.find((a) => a.pane_id === started.pane_id)).toMatchObject({ agent: "claude", group: "webapp", group_source: "space" });
+
+    // Herdr 2 on the demo computer: installed, running, nothing to update.
+    expect(await call<CoreStatus>("core.status").then(ok("core.status"))).toMatchObject({ found: true, running: true, update_available: false });
+    expect(await call<CoreInstall>("core.install").then(ok("core.install"))).toMatchObject({ status: "up_to_date" });
+
+    // Suggested computers: names and addresses only.
+    const suggested = await call<MachinesSuggest>("machines.suggest").then(ok("machines.suggest"));
+    expect(suggested.suggestions.map((x) => x.name)).toEqual(["lab", "build-box"]);
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

@@ -1,3 +1,4 @@
+import type { UpdateCore } from "@herdling/protocol";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -28,6 +29,8 @@ export type UpdateCache = {
   latest: string;
   updateAvailable: boolean;
   notes: string;
+  /** The Herdr 2 part of `update.check`: the release needs herdr-core. Missing from an older herdlingd. */
+  core?: UpdateCore;
 };
 
 export const DEFAULT_COMMAND = "herdlingd rpc";

@@ -11,6 +11,9 @@ import type {
   Hello,
   HerdrUpdate,
   MacOpenSettings,
+  MachinesSuggest,
+  CoreInstall,
+  CoreStatus,
   MacSettingsPane,
   PaneAnswer,
   PaneMove,
@@ -390,6 +393,31 @@ export class DemoTransport implements LineTransport {
         });
         return { ...r, prompt_error: null } satisfies SessionStart;
       }
+      // The demo computer has an up-to-date Herdr 2 that runs.
+      case "core.status":
+        return {
+          found: true,
+          installed: "0.1.20",
+          managed: false,
+          running: true,
+          running_version: "0.1.20",
+          pinned: "0.1.20",
+          newer_than_pin: false,
+          update_available: false,
+          required: false,
+          target: "macos-aarch64",
+          herdr1: false,
+        } satisfies CoreStatus;
+      case "core.install":
+        return { from: "0.1.20", to: "0.1.20", status: "up_to_date", started: false, pinned: "0.1.20" } satisfies CoreInstall;
+      // Two made-up computers, so the demo shows "Suggested" in Add computer.
+      case "machines.suggest":
+        return {
+          suggestions: [
+            { name: "lab", address: "lab.example.ts.net", sources: ["tailscale"], online: true },
+            { name: "build-box", address: "192.0.2.20", user: "demo", sources: ["ssh_config"] },
+          ],
+        } satisfies MachinesSuggest;
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":

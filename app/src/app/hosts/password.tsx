@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Download, ExternalLink, KeyRound, LifeBuoy, Power } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { Alert, Linking, View } from "react-native";
@@ -119,10 +119,12 @@ function InstallQuestion({ address, onAnswer }: { address: string; onAnswer: (ye
  */
 export default function PasswordSetupScreen() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [portText, setPortText] = useState("22");
-  const [user, setUser] = useState("");
+  // A suggested computer (Add computer, "Suggested") fills in what it knows.
+  const given = useLocalSearchParams<{ name?: string; address?: string; port?: string; user?: string }>();
+  const [name, setName] = useState(given.name ?? "");
+  const [address, setAddress] = useState(given.address ?? "");
+  const [portText, setPortText] = useState(given.port && portOf(given.port) ? given.port : "22");
+  const [user, setUser] = useState(given.user ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<SetupStep>();

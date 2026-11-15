@@ -26,6 +26,7 @@ pub mod rpc;
 pub mod serve;
 pub mod shell_watch;
 pub mod stats;
+pub mod suggest;
 pub mod summary;
 pub mod tail;
 pub mod transcript;

@@ -72,16 +72,16 @@ The path alias `@/` points to `app/src/`.
 |---|---|
 | `app/` | Expo Router routes: tabs, session, subagent, new session, pairing, host screens, `demo` |
 | `rpc/` | `RpcClient`: request ids, responses, streamed events, cancel |
-| `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`) |
+| `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`), suggested computers (`suggest.ts`), the Herdr 2 card (`coreInstall.ts`, `CoreCard.tsx`) |
 | `pairing/` | Pairing by code and QR code, the pairing URL |
 | `herdr/` | herdr snapshot, start, restart, resume, rename and close actions. `backend.ts`: which actions a Herdr 2 entry has (per host, from `hello.methods`); `moveGroup.ts`: "Move to space" |
 | `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents, the Herdr 2 space picker (`spacePick.ts`) |
 | `board/` | The board: buckets, rows, the peek sheet, elapsed clocks. `tasks.ts`: helpers under their task, the repo line, group tiles; `jump.ts`: "Jump to a terminal" (route `app/jump.tsx`) |
 | `spaces/` | The Spaces tab and the space screen (routes `app/(tabs)/spaces/`): the spaces model, the tab map and the thumbnail poll machine |
-| `thread/` | The chat view: thread items, follow, composer, permission choices |
-| `terminal/` | The ANSI terminal view and the key row |
+| `thread/` | The chat view: thread items, follow, composer, permission choices, the pages of a tab (`PanePager.tsx`, rules in `herdr/tabPanes.ts`) |
+| `terminal/` | The ANSI terminal view, the key bar (`KeyBar.tsx`, rules in `keyRules.ts`, custom keys in `customKeys.ts`) and the width modes (`fit.ts`, "Phone width") |
 | `preview/` | Browser preview: port list, tunnel, lazy `react-native-webview` loader (route `app/preview/`) |
-| `push/` | Push token, registration with each computer, notification routing |
+| `push/` | Push token, registration with each computer, notification routing, the in-app banner (`banner.ts`, `BannerHost.tsx`) |
 | `voice/` | Recording, recognition, speech, summaries |
 | `usage/`, `automations/` | Plan usage meters and the automations tab |
 | `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts. `ui/layout.ts`: compact or regular width (two columns from 700 pt); `ui/shortcuts.ts` and `ui/keyCommands.ts`: keyboard shortcuts |
@@ -108,6 +108,7 @@ The path alias `@/` points to `app/src/`.
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |
 | `stats.rs`, `usage.rs`, `automations.rs` | Host stats, plan usage, the `herdr-automate` adapter |
+| `suggest.rs` | `machines.suggest`: core machines, SSH config hosts and Tailscale peers (names and addresses only) |
 
 When you add an RPC method, add it to `METHODS` in `companion/src/rpc.rs`, to `APP_METHODS` in
 `app/src/hosts/methods.ts`, and to the types in `protocol/src/index.ts`. Document it in `docs/protocol.md`.
