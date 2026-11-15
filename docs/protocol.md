@@ -273,6 +273,10 @@ Error codes:
 | `timeout` | `herdr update` ran longer than 180 seconds and herdlingd stopped it |
 | `update_unavailable` | herdr updates are off in this process |
 
+**herdlingd 0.2.0:** the herdr 1 path above is gone. `herdr.update` always updates herdr-core
+to the pin (never down), as `core.install` does. Without an install context the code is
+`update_unavailable`. The text below tells the result.
+
 On a computer with herdr-core and no herdr 1 (from the herdlingd after 0.1.9), `herdr.update`
 updates herdr-core to the pin, as `core.install` does, and gives the result in the same shape:
 `status` `"updated"` when the core was installed or updated, else `"up_to_date"`; `handoff`
@@ -760,6 +764,12 @@ herdr-core 0.1.19, protocol generation 1). It starts a core only in `core.instal
 `update.apply` for a release that needs the core, and in the installer. Old apps see the core entries
 because they come in the herdr 1 shapes.
 
+**herdlingd 0.2.0 talks only to Herdr 2.** The herdr 1 client is gone: every `herdr.call`, every
+event stream and every push comes from the core. The entries have plain ids and no `backend`
+field, so the app builds 1.0.0 and 1.0.1 allow every action on them. Each herdr 1 method that
+those builds send gets its Herdr 2 meaning (see "Calls on a core id"). A computer with only
+herdr 1 must stay on herdlingd 0.1.x, or install Herdr 2 (`core.install`).
+
 ### The core socket
 
 herdlingd finds the socket with the rules of `hc`: `HC_SOCKET`; else `socket` in
@@ -772,21 +782,29 @@ folders that has the socket. On macOS the core has no runtime folder: its socket
 
 ### Snapshot entries
 
-`herdr.call {method: "session.snapshot"}` adds the live terminals of this computer to the herdr 1
-lists `workspaces`, `tabs`, `panes` and `agents`. Terminals of other machines (`box/t7`) are left
-out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
+`herdr.call {method: "session.snapshot"}` gives the live terminals of this computer in the
+herdr 1 lists `workspaces`, `tabs`, `panes` and `agents`. Terminals of other machines (`box/t7`)
+are left out.
 
-| Entry | Id | From |
-|---|---|---|
-| Workspace | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
-| Workspace | `hc:g:<key>` | a fallback group (see "Placement") |
-| Tab | `hc:tab:<id>` | a tab of a space, or the one tab of a fallback group |
-| Tab | `hc:task:<address>` | the task tab of a terminal that has no document tab |
-| Pane | `hc:<address>` (`hc:t7`) | every live terminal |
-| Agent | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
+| Entry | Id (0.2.0) | Id (0.1.x) | From |
+|---|---|---|---|
+| Workspace | `space:<id>` | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
+| Workspace | `g:<key>` | `hc:g:<key>` | a fallback group (see "Placement") |
+| Tab | `tab:<id>` | `hc:tab:<id>` | a tab of a space, or the one tab of a fallback group |
+| Tab | `task:<address>` | `hc:task:<address>` | the task tab of a terminal that has no document tab |
+| Pane | `<address>` (`t7`) | `hc:<address>` | every live terminal |
+| Agent | `<address>` | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
 
-The id `hc:loose` of the first 0.1.x versions is gone. A call with `hc:loose` or `hc:loose:tab`
-gives the error code `pane_not_found`.
+- A pane id has no `:` and no `/`. Every other id has a kind word and a `:`, so the kinds never
+  collide. herdr 1 ids (`w1:p1`) name nothing.
+- herdlingd 0.1.x merged the core entries with the herdr 1 entries: each core entry had the
+  `hc:` prefix and `backend: "core"`. herdlingd 0.2.0 has neither.
+- herdlingd 0.2.0 removes a `hc:` prefix from each input id once (`pane_id`, `target`, `tab_id`,
+  `workspace_id`, also in the params of `herdr.call`). Saved app state of 0.1.x names the same
+  entries.
+- The id `hc:loose` of the first 0.1.x versions becomes `loose`. It names no pane
+  (`pane_not_found`), no tab (`tab_not_found`) and no workspace (`workspace_not_found`).
+- A space id or a tab id with a `:` or a `/` names nothing.
 
 ### Placement
 
@@ -798,7 +816,7 @@ herdlingd puts each terminal in the first place that fits:
 2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
    document tab holds yet, for example right after the phone starts an agent. The name of the
    space is the part of the `where` label before the last ` / `. When another workspace already
-   holds the tab id (a stale label), the terminal gets its own task tab `hc:task:<address>`.
+   holds the tab id (a stale label), the terminal gets its own task tab `task:<address>`.
 3. A helper (a subagent terminal) goes to the task tab of its parent. When the parent is gone,
    finished or on another computer, the helper becomes its own task in its own group.
 4. A fallback group. The group name is the first that exists: the `herdling.group` label, the git
@@ -815,7 +833,7 @@ Core agent and pane entries have these optional fields. An old app ignores them.
 | `repo` | The name of the git repo, when the folder is in one |
 | `repo_root` | The root folder of the repo |
 | `branch` | The branch of the repo, when it has one |
-| `parent_id` | The pane id of the parent terminal (`hc:<address>`), for a helper that a terminal on this computer started. The app shows the helper under its task when the parent is a live agent |
+| `parent_id` | The pane id of the parent terminal (`<address>`), for a helper that a terminal on this computer started. The app shows the helper under its task when the parent is a live agent |
 
 The task name of a terminal is its `herdling.name` label (a rename from the phone), else its
 name, else its 7501 title, else its terminal title. A title
@@ -833,12 +851,14 @@ group falls back to the folder name.
 - `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
   reported app when the kind is unknown (null for a known kind), `name` the entry name (see
   above), `state_change_seq` the time of the last status change.
-- Each backend fails on its own. When herdr 1 is down and the core is up, the answer has the core
-  entries only. With no core, the answer is the herdr 1 answer, unchanged.
+- With no core socket or no core answer, the call gives `herdr_unavailable` (old apps show
+  "herdr is not running").
 
 ### Calls on a core id
 
-`herdr.call` with a param `target` or `*_id` that starts with `hc:` goes to the core:
+On herdlingd 0.2.0 every `herdr.call` goes to the core. The id is the first non-empty string of
+`pane_id`, `target`, `tab_id` and `workspace_id`. On 0.1.x only a call with an `hc:` id went to
+the core.
 
 | herdr 1 method | On the core |
 |---|---|
@@ -849,21 +869,24 @@ group falls back to the folder name.
 | `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
 | `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
-| `tab.create` on `hc:space:<id>` or `hc:g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
-| `workspace.create` with `backend: "core"` | the same, in a new space. Without `backend: "core"` the call goes to herdr 1 |
+| `tab.create` on `space:<id>` or `g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
+| `workspace.create` | the same, in a new space. 0.1.x apps send `backend: "core"`; old apps send no `backend`. Both go to the core on 0.2.0 |
 | `agent.start` on a pane | types the agent command (`<program> <args>`, shell-quoted) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used |
 | `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
-| `tab.rename` of `hc:task:<address>` | the same for that terminal |
-| `tab.rename` of `hc:tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
+| `tab.rename` of `task:<address>` | the same for that terminal |
+| `tab.rename` of `tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
 | `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used |
 | `agent.explain` | `terminal.get` and `terminal.read`: the agent reports its status itself, so `screen_detection_skipped` is true, the one rule `osc-7501` matched, and its evidence is the end of the screen |
 | `workspace.get` | the workspace entry of the snapshot, else `workspace_not_found` |
 
-- `workspace.list` (no id) adds the core workspaces to the herdr 1 list, as `session.snapshot` does.
+- `session.snapshot`, `workspace.list` and `workspace.create` name no entry. Any other method
+  with no id gives `unsupported`.
+- `workspace.list` gives the core workspaces, as `session.snapshot` does.
 - Restart and resume of the app use these calls: `pane.close`, `workspace.get`, `tab.create`,
   then `agent.start` with the resume arguments. The new agent is a new tab of the same space.
-- Every other method gives the error code `unsupported`, also a pane method on a workspace or tab
-  id. A herdlingd that does not reach a core also gives `unsupported`.
+- A pane method on an id that is no terminal address gives `pane_not_found`. Every other method
+  gives the error code `unsupported` (for example `pane.split`, `workspace.focus`, `tab.focus`).
+  A herdlingd 0.2.0 that does not reach a core gives `herdr_unavailable`.
 - Before a call that changes the core (`terminal.run`, `terminal.label`, `terminal.kill` of a tab
   or workspace, `terminal.send` of `agent.start` and `agent.prompt`), herdlingd reads the core
   `hello.methods`. A core that lacks the method gives `unsupported`, and nothing changes.
@@ -885,9 +908,9 @@ only these labels:
 
 | Place | Labels |
 |---|---|
-| a space `hc:space:<id>` | `herdr.space=<id>`, `herdr.tab=<new tab id>` |
+| a space `space:<id>` | `herdr.space=<id>`, `herdr.tab=<new tab id>` |
 | a new space | `herdr.space=<new space id>`, `herdr.tab=<new tab id>` |
-| a label group `hc:g:<key>` | `herdling.group=<group name>` |
+| a label group `g:<key>` | `herdling.group=<group name>` |
 | a repo or folder group | none: the folder places the terminal |
 
 New ids look like the Herdr app ids: `sp` or `tb` and 32 hex digits. Each new agent gets a new tab
@@ -901,8 +924,8 @@ agent_status}]}`, one per workspace of the core part of the snapshot. `source` i
 
 ### `pane.move`
 
-Params: `pane_id` (a core pane) and exactly one of `workspace_id` (a space `hc:space:<id>` or a
-label group `hc:g:<key>`), `new_space: true`, or `group` (a name of at most 64 characters; an
+Params: `pane_id` (a core pane) and exactly one of `workspace_id` (a space `space:<id>` or a
+label group `g:<key>`), `new_space: true`, or `group` (a name of at most 64 characters; an
 empty name removes the label). Result: `{pane_id, workspace_id, tab_id}`, where the terminal
 shows now.
 
@@ -916,7 +939,7 @@ shows now.
 ### `session.start`
 
 Params: `cwd` (an absolute path), `kind` (an agent kind with a known program), optional
-`workspace_id` (`hc:space:<id>` or `hc:g:<key>`; missing makes a new space), `prompt` and `args`.
+`workspace_id` (`space:<id>` or `g:<key>`; missing makes a new space), `prompt` and `args`.
 Result: `{pane_id, workspace_id, tab_id, prompt_error}`.
 
 herdlingd starts a shell (see "New terminals"), types the agent command, waits up to 60 seconds
@@ -926,8 +949,9 @@ still runs and `prompt_error` says why.
 
 ### Worktrees on the core
 
-`git.worktree_add` with `backend: "core"` makes the worktree with git, then starts a shell in a
-new space in the worktree folder. The result has `via: "herdr"` and the core `workspace_id`,
+`git.worktree_add` makes the worktree with git, then starts a shell in a new space in the
+worktree folder. On 0.1.x this needed `backend: "core"`; on 0.2.0 it is the default, and the
+param is still accepted. The result has `via: "herdr"` and the core `workspace_id`,
 `tab_id` and `pane_id`, so the app starts the agent in that pane. herdlingd checks the core
 methods before git runs.
 
@@ -961,16 +985,13 @@ of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
 
 ### Events
 
-`herdr.subscribe` with no `events` list also reads the core events. It sends them as herdr 1
-lines with `hc:` ids: a status change as `pane.agent_status_changed`, a cleared status as
+`herdr.subscribe` reads the core events. It sends them as herdr 1 lines with plain ids: a status change as `pane.agent_status_changed`, a cleared status as
 `pane.agent_detected` with `released: true`, `created` as `pane.created`, `finished` and
 `removed` as `pane.closed`. `missed`, `lost` and a change of the herdr-app document give
-`layout.updated` with `backend: "core"`, so the app reads the snapshot again.
+`layout.updated`, so the app reads the snapshot again.
 
-- The stream lives while one backend is connected. When one backend stops and the other runs,
-  the stream sends `layout.updated` and tries to connect again every 3 seconds. A new connection
-  sends `layout.updated` again. When the last backend stops, the stream sends `{"closed": true}`.
-  With no core, the stream works as before.
+- An `events` list keeps only the lines with those event names.
+- When the core stream ends, the app gets `{"closed": true}` and subscribes again.
 
 ### Pushes
 
@@ -983,7 +1004,8 @@ are the herdr 1 rules.
 with the same debounce and prefs. The title is the terminal name, else the 7501 title, else the
 app. After `missed`, serve compares the snapshot with the known statuses. After a reconnect, the
 snapshot is a new baseline. The core does not report desk activity, so "quiet at the computer"
-does not hold back a core push.
+does not hold back a core push. On 0.2.0 `quiet_at_desk` has no effect (the field stays, so old
+apps can send it).
 
 ### `hello.backends`
 
@@ -991,7 +1013,12 @@ does not hold back a core push.
 {"backends": {"herdr": {"version": "0.9.5", "protocol": 22}, "core": {"version": "0.1.19", "generation": 1}}}
 ```
 
-A backend that does not answer is missing. `herdr_ok` still tells about herdr 1 only.
+A backend that does not answer is missing. On 0.1.x `herdr_ok` tells about herdr 1 only.
+
+On 0.2.0 `backends` has only `core`. `herdr_ok` is true when the core answers, `herdr_version` is
+the core version and `herdr_protocol` is missing, so old apps show the runtime as running. The
+app knows a Herdr 2 only host by `herdlingd` 0.2.0 or later, and then treats every entry as a
+Herdr 2 entry (task rename only, phone width, no herdr 1 key fallback).
 
 ## Compatibility rules
 

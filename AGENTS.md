@@ -6,6 +6,7 @@ Read this file before you change code.
 ## 1. The project
 
 Herdling is a phone app for [herdr](https://herdr.dev), the terminal workspace for AI coding agents.
+From herdlingd 0.2.0, Herdling works with Herdr 2 (herdr-core) only.
 It shows the agents on the user's own computers, sends a push when an agent finishes or needs the
 user, and lets the user answer from the phone. License: MPL-2.0. Owner: Zog Tech, Inc.
 Website: https://herdling.zog-tech.com. Contact: admin@zog-tech.com.
@@ -74,7 +75,7 @@ The path alias `@/` points to `app/src/`.
 | `rpc/` | `RpcClient`: request ids, responses, streamed events, cancel |
 | `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`), suggested computers (`suggest.ts`), the Herdr 2 card (`coreInstall.ts`, `CoreCard.tsx`) |
 | `pairing/` | Pairing by code and QR code, the pairing URL |
-| `herdr/` | herdr snapshot, start, restart, resume, rename and close actions. `backend.ts`: which actions a Herdr 2 entry has (per host, from `hello.methods`); `moveGroup.ts`: "Move to space" |
+| `herdr/` | herdr snapshot, start, restart, resume, rename and close actions. `backend.ts`: which actions a Herdr 2 entry has (per host, from `hello.methods`), and the Herdr 2 only hosts (herdlingd 0.2.0, plain ids); `moveGroup.ts`: "Move to space" |
 | `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents, the Herdr 2 space picker (`spacePick.ts`) |
 | `board/` | The board: buckets, rows, the peek sheet, elapsed clocks. `tasks.ts`: helpers under their task, the repo line, group tiles; `jump.ts`: "Jump to a terminal" (route `app/jump.tsx`) |
 | `spaces/` | The Spaces tab and the space screen (routes `app/(tabs)/spaces/`): the spaces model, the tab map and the thumbnail poll machine |
@@ -95,14 +96,13 @@ The path alias `@/` points to `app/src/`.
 | `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `core`, `proxy`, `group`, `version` |
 | `group_cmd.rs` | `herdlingd group`: the `herdling.group` label of the own Herdr 2 terminal |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
-| `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
 | `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI |
-| `serve/` | The user service: herdr watch, push debounce, desk activity ("quiet at the computer"), Bonjour, the pairing HTTP endpoint |
+| `serve/` | The user service: the Herdr 2 watch (`core_watch.rs`), the shell watches (`shells.rs`), push debounce, Bonjour, the pairing HTTP endpoint |
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
-| `git.rs`, `worktree.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (herdr `worktree.create`, or git) |
+| `git.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (git, then a shell in a new Herdr 2 space) |
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
-| `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), the action rules (`actions.rs`: labels, new ids, close, explain, groups), the start state machine (`start.rs`), call routing (`route.rs`), event lines (`events.rs`), the merged subscribe stream (`merge.rs`, `stream.rs`) and the serve tracker (`tracker.rs`). The terminal view: the framed wire (`frame.rs`), the emulator and its ANSI render (`screen.rs`), the attach stream state machine (`attach.rs`) and its I/O (`term_watch.rs`). `serve/core_watch.rs` sends its pushes |
+| `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the entry ids (`ids.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), the action rules (`actions.rs`: labels, new ids, close, explain, groups), the start state machine (`start.rs`), call routing (`route.rs`), event lines (`events.rs`), the subscribe stream (`stream.rs`) and the serve tracker (`tracker.rs`). The terminal view: the framed wire (`frame.rs`), the emulator and its ANSI render (`screen.rs`), the attach stream state machine (`attach.rs`) and its I/O (`term_watch.rs`). `serve/core_watch.rs` sends its pushes |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `core_install/` | herdr-core install, update and status (`core.status`, `core.install`, `herdlingd core`): the pin (`pin.rs`, from `companion/core-pin.json`), the pure state machine (`machine.rs`), the herdr 1 guard (`guard.rs`) and the I/O driver (`mod.rs`) |
 | `push.rs` | Expo push messages. Never log push tokens |

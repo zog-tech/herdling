@@ -31,7 +31,7 @@
 The screenshots show the built-in demo computer.
 
 Herdling is a phone app for [herdr](https://herdr.dev), the terminal workspace for AI coding agents.
-It shows every agent on every computer you own: Claude Code, Codex, Pi, OpenCode and the other
+From `herdlingd` 0.2.0 it works with Herdr 2 (herdr-core). It shows every agent on every computer you own: Claude Code, Codex, Pi, OpenCode and the other
 agents that herdr runs. It tells you when an agent finishes or needs you, and you answer from the phone.
 
 The phone connects straight to your computers over SSH. On each computer, a small companion
@@ -103,12 +103,10 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 
 Check these three things on each computer:
 
-1. **herdr is installed and runs.** Install it with its official installer,
-   `curl -fsSL https://herdr.dev/install.sh | sh` (to `~/.local/bin`, no sudo), and start it with
-   `herdr` in a terminal. Herdling works with herdr, the terminal app (herdr.dev also calls it
-   "Herdr TUI"), not with the agents of the separate Herdr desktop app. If herdr is missing, the
-   app's password setup offers **Install herdr and herdlingd**, and the installer has
-   `--with-herdr`. Neither installs herdr unless you ask.
+1. **Herdr 2 (herdr-core) runs.** The `herdlingd` installer installs the herdr-core version that
+   its release pins (to `~/.local/bin`, no sudo), and starts it. The Herdr app runs the same core.
+   `herdlingd` 0.2.0 does not work with herdr 1 (the herdr TUI with its own socket). A computer
+   that has only herdr 1 stays on `herdlingd` 0.1.x until you install Herdr 2.
 2. **SSH is on.** On a Mac: System Settings > General > Sharing > **Remote Login** (off on a new
    Mac). On Linux: the OpenSSH server (`sudo apt install openssh-server`,
    `sudo systemctl enable --now ssh`). When the phone cannot reach port 22, the app shows a
@@ -126,13 +124,14 @@ with no login, the computer shows Offline. To start herdlingd at boot:
 - **Linux:** run `sudo loginctl enable-linger $USER` once.
 
 The app shows "Starts after you log in on this computer" with a guide and a re-check
-(herdlingd 0.1.1 or later). herdr has no service of its own: after a restart, run `herdr` again.
+(herdlingd 0.1.1 or later).
 
 ### Troubleshooting
 
 - **"Can't reach <address>:22":** SSH (Remote Login) is off, or the phone is on another network.
   Tap **Turn on SSH on the computer** in the app.
-- **"herdr is not running":** run `herdr` in a terminal on that computer.
+- **"herdr is not running":** Herdr 2 (herdr-core) does not run on that computer. Open the Herdr
+  app, or run `herdlingd core install` there.
 - **Offline after a restart:** nobody is logged in. See "Start at boot".
 
 More in the [guide](https://herdling.zog-tech.com/docs#troubleshooting).
@@ -220,14 +219,12 @@ herdr (unchanged), through its socket ~/.config/herdr/herdr.sock
   own commands for speech to text, text to speech and summaries. See [docs/voice.md](docs/voice.md).
 - **Updates.** The app gets JavaScript updates over the air with `expo-updates`. An app and a
   computer can run different versions: the protocol only adds methods and fields.
-- **Herdr 2 (herdr-core), first part.** When a herdr-core (`hc`) runs on the computer,
-  `herdlingd` joins it. It never starts a core. Its agents and terminals show on the board next
-  to the herdr 1 ones, in the spaces of the Herdr app, with a "Herdr 2" label. You can read
-  them, type into them, answer a permission menu, close them and get pushes when an agent
-  finishes or needs you. Older app builds see them too. Rename, restart, worktrees, new tabs,
-  the chat view and "Notify me when it finishes" need herdr 1 in the app for now. A newer
-  `herdlingd` already does these actions on Herdr 2, and `herdlingd group <name>` puts a Herdr 2
-  terminal in a named group. See "Herdr 2" in [docs/protocol.md](docs/protocol.md).
+- **Herdr 2 (herdr-core).** `herdlingd` 0.2.0 joins the herdr-core (`hc`) of the computer and
+  talks only to it. Its agents and terminals show on the board in the spaces of the Herdr app, or
+  in groups by repo, folder or `herdlingd group <name>`. Every action works on them, also in the
+  app builds 1.0.0 and 1.0.1: each herdr 1 call of those builds gets its Herdr 2 meaning.
+  `herdlingd` 0.1.x worked with herdr 1 and Herdr 2 side by side. See "Herdr 2" in
+  [docs/protocol.md](docs/protocol.md).
 
 ## How Herdling compares
 

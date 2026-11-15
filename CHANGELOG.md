@@ -5,12 +5,35 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [Unreleased herdlingd]
+## [herdlingd 0.2.0] - unreleased
+
+### Breaking
+
+- herdlingd 0.2.0 talks only to Herdr 2 (herdr-core). The herdr 1 client is gone. A computer with
+  only herdr 1 (the herdr TUI and its socket) must stay on herdlingd 0.1.x, or install Herdr 2
+  first. The pin is now required (`core-pin.json` `"required": true`): the installer,
+  `herdlingd update` and `update.apply` install the pinned herdr-core.
+- Herdr 2 entries have plain ids: panes `t7`, workspaces `space:<id>` and `g:<key>`, tabs
+  `tab:<id>` and `task:<address>`. The `hc:` prefix and the `backend` field are gone, so the app
+  builds 1.0.0 and 1.0.1 allow every action on them. An input id loses an `hc:` prefix once, so
+  saved app state names the same entries. `hc:loose` names nothing.
+- `hello.backends` has only `core`. `herdr_ok` is true when the core answers, and
+  `herdr_version` is the core version.
+- `workspace.create` and `git.worktree_add` use the core by default. `backend: "core"` is still
+  accepted.
+- `herdr.subscribe` reads only the core stream. An `events` list filters the lines by name.
+- `herdr.update` always updates herdr-core to the pin. The `herdr update --handoff` path is gone.
+- Desk activity is gone (only herdr 1 reported it): `quiet_at_desk` has no effect.
+- A pane method on an id that is no terminal address gives `pane_not_found`. A method with no
+  Herdr 2 meaning (`pane.split`, `workspace.focus`, `tab.focus`) gives `unsupported`. No core
+  gives `herdr_unavailable`.
+
+### Also in 0.2.0
 
 - Herdr 2 actions: on a core entry, `tab.create`, `agent.start`, `agent.prompt`, `agent.rename`,
   `tab.close`, `workspace.close`, `agent.explain`, `workspace.get` and `workspace.list` work.
   The app's restart and resume work through them. Space and tab renames give `unsupported`.
-  `workspace.create` and `git.worktree_add` with `backend: "core"` open a new Herdr app space.
+  `workspace.create` and `git.worktree_add` open a new Herdr app space.
 - New methods `groups.list`, `pane.move` and `session.start`. A new terminal is a login shell
   with the Herdr app labels `herdr.space` and `herdr.tab`, so the Herdr app shows it at the desk.
 - `shell.watch` works on Herdr 2 terminals.
@@ -21,7 +44,6 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   (`companion/core-pin.json`, now herdr-core 0.1.20). It never downgrades a core and never replaces
   a core of a package manager. New methods `core.status` and `core.install`, and the commands
   `herdlingd core status`, `install` and `required`.
-- `herdr.update` updates herdr-core to the pin on a computer with the core and no herdr 1.
 - The release manifest can say `requires_core` and carry the core pin. `update.check` then tells the
   app (`core`, with a notice for herdr 1 users), and `update.apply` installs the core first. When
   that fails, the update stops with `core_install_failed` and the old herdlingd stays.
@@ -41,8 +63,7 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
-  the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.
-  `hc:loose` is gone: an old id gives `pane_not_found`.
+  the folder (ids: see "Breaking").
 - Core agents and panes have the optional fields `group`, `group_source`, `repo`, `repo_root` and
   `branch`. The agent `name` is the task name. A title that only repeats the agent app or kind
   (for example "Claude Code") is not a task name. The entry name then is the Herdr app tab name,
@@ -146,6 +167,9 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- On a computer with herdlingd 0.2.0 or later, every entry is a Herdr 2 entry (plain ids): the
+  task rename, the phone width mode and "Move to space" work, and the herdr 1 key fallback is off.
+  A 0.1.x computer keeps the old rules for its herdr 1 panes.
 - One board: Herdr 2 agents are normal cards. The "Herdr 2" sections and labels are gone.
 - On a computer whose herdlingd has the Herdr 2 actions (`session.start` in `hello.methods`), a
   Herdr 2 agent has every action again: the chat view, rename (a free task name), restart,
