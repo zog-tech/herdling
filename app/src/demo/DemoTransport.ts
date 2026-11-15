@@ -1,20 +1,27 @@
 import type {
+  AgentStatus,
   AgentsInstalled,
   Automation,
   AutomationRun,
   CommandInfo,
   CommandList,
   FilePut,
+  GroupsList,
   Boot,
   Hello,
   HerdrUpdate,
   MacOpenSettings,
+  MachinesSuggest,
+  CoreInstall,
+  CoreStatus,
   MacSettingsPane,
   PaneAnswer,
+  PaneMove,
   PortsList,
   PreviewClose,
   ShellUnwatch,
   ShellWatch,
+  SessionStart,
   ShellWatches,
   Stats,
   UpdateApply,
@@ -22,7 +29,7 @@ import type {
   Usage,
 } from "@herdling/protocol";
 
-import { CORE_UNSUPPORTED, isCore } from "@/herdr/backend";
+import { CORE_UNSUPPORTED } from "@/herdr/backend";
 import { APP_METHODS } from "@/hosts/methods";
 import type { LineTransport } from "@/rpc/transport";
 import { labelMatches, parseChoices } from "@/thread/parseChoices";
@@ -47,20 +54,17 @@ const WATCH_MS = 200;
 /** herdr key names (what the app sends) to the names the scenario knows. */
 const KEY_NAMES: Record<string, string> = { enter: "Enter", backspace: "BSpace", esc: "Escape", "ctrl+c": "C-c" };
 
-/** The herdr methods that work on a Herdr 2 pane, as in herdlingd. Every other one answers `unsupported`. */
-export const CORE_HERDR_METHODS: ReadonlySet<string> = new Set([
-  "pane.read",
-  "pane.send_input",
-  "pane.send_text",
-  "pane.send_keys",
-  "pane.get",
-  "pane.process_info",
-  "pane.close",
-  "agent.prompt",
-]);
-
-/** The error of herdlingd for a herdr 1 method on a Herdr 2 id. */
-const coreUnsupported = (method: string) => new DemoError(CORE_UNSUPPORTED, `${method} needs herdr 1; Herdr 2 terminals do not have it`);
+/**
+ * The demo acts as a herdlingd with the plan C methods: every herdr method works on a Herdr 2 id,
+ * except the renames of a Herdr app space or tab (the Herdr app owns those names).
+ */
+function coreRefusal(method: string, p: Record<string, unknown>): DemoError | undefined {
+  const tab = typeof p.tab_id === "string" ? p.tab_id : "";
+  const ws = typeof p.workspace_id === "string" ? p.workspace_id : "";
+  if (method === "tab.rename" && tab.startsWith("tab:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its tabs");
+  if (method === "workspace.rename" && ws.startsWith("space:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its spaces");
+  return undefined;
+}
 
 const DEMO_BOOT: Boot = {
   starts_at: "boot",
@@ -248,17 +252,16 @@ export class DemoTransport implements LineTransport {
         return {
           host: DEMO_HOST_NAME,
           os: "macos",
-          herdlingd: "demo",
+          herdlingd: "0.2.0",
           herdr_ok: true,
           herdr_version: "demo",
-          herdr_protocol: 1,
           methods: [...DEMO_METHODS],
           // A current herdlingd also reads omp and Gemini CLI logs. The demo has no such agent.
           thread_kinds: [...KINDS, "omp", "gemini"],
           command_kinds: KINDS,
           boot: DEMO_BOOT,
-          // The demo computer runs herdr 1 and Herdr 2 (herdr-core) side by side.
-          backends: { herdr: { version: "demo", protocol: 1 }, core: { version: "demo", generation: 1 } },
+          // As herdlingd 0.2.0: only Herdr 2 (herdr-core), no herdr 1.
+          backends: { core: { version: "demo", generation: 1 } },
         } satisfies Hello;
       // The demo Mac logs in by itself, so herdlingd starts at boot. It opens no settings.
       case "boot.check":
@@ -360,7 +363,6 @@ export class DemoTransport implements LineTransport {
       }
       case "shell.watch": {
         const pane = need(p, "pane_id", method);
-        if (isCore(pane)) throw coreUnsupported(method);
         const since = Math.floor(Date.now() / 1000);
         const w: ShellWatch = { pane_id: pane, since, expires_at: since + 24 * 3600, busy: false };
         this.shellWatches.set(pane, w);
@@ -370,6 +372,51 @@ export class DemoTransport implements LineTransport {
         return { removed: this.shellWatches.delete(need(p, "pane_id", method)) } satisfies ShellUnwatch;
       case "shell.watches":
         return { watches: [...this.shellWatches.values()] } satisfies ShellWatches;
+      // Herdr 2 groups: the spaces and the fallback groups of the demo core.
+      case "groups.list":
+        return { groups: this.scenario.coreGroups() } satisfies GroupsList;
+      case "pane.move": {
+        const pane = need(p, "pane_id", method);
+        const targets = [str(p, "workspace_id") !== undefined, p.new_space === true, str(p, "group") !== undefined].filter(Boolean).length;
+        if (targets !== 1) throw new DemoError("bad_request", "pane.move takes exactly one of workspace_id, new_space and group");
+        return this.scenario.movePane(pane, { workspaceId: str(p, "workspace_id"), newSpace: p.new_space === true, group: str(p, "group") }) satisfies PaneMove;
+      }
+      case "session.start": {
+        const args = Array.isArray(p.args) ? p.args.filter((a): a is string => typeof a === "string") : undefined;
+        const r = this.scenario.startCoreSession({
+          cwd: need(p, "cwd", method),
+          kind: need(p, "kind", method),
+          workspaceId: str(p, "workspace_id"),
+          prompt: str(p, "prompt"),
+          args,
+        });
+        return { ...r, prompt_error: null } satisfies SessionStart;
+      }
+      // The demo computer has an up-to-date Herdr 2 that runs.
+      case "core.status":
+        return {
+          found: true,
+          installed: "0.1.20",
+          managed: false,
+          running: true,
+          running_version: "0.1.20",
+          pinned: "0.1.20",
+          newer_than_pin: false,
+          update_available: false,
+          required: false,
+          target: "macos-aarch64",
+          herdr1: false,
+        } satisfies CoreStatus;
+      case "core.install":
+        return { from: "0.1.20", to: "0.1.20", status: "up_to_date", started: false, pinned: "0.1.20" } satisfies CoreInstall;
+      // Two made-up computers, so the demo shows "Suggested" in Add computer.
+      case "machines.suggest":
+        return {
+          suggestions: [
+            { name: "lab", address: "lab.example.ts.net", sources: ["tailscale"], online: true },
+            { name: "build-box", address: "192.0.2.20", user: "demo", sources: ["ssh_config"] },
+          ],
+        } satisfies MachinesSuggest;
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":
@@ -412,9 +459,9 @@ export class DemoTransport implements LineTransport {
   private herdr(method: string, p: Params): unknown {
     const s = this.scenario;
     const m = `herdr ${method}`;
-    // As herdlingd: a Herdr 2 id gets only the methods that the core has.
-    const target = str(p, "pane_id") ?? str(p, "target") ?? str(p, "tab_id") ?? str(p, "workspace_id");
-    if (isCore(target) && !CORE_HERDR_METHODS.has(method)) throw coreUnsupported(method);
+    // As herdlingd: the Herdr app owns the names of its spaces and tabs.
+    const refusal = coreRefusal(method, p);
+    if (refusal) throw refusal;
     switch (method) {
       case "session.snapshot":
         return { snapshot: s.snapshot() };

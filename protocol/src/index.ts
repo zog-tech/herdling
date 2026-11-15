@@ -21,11 +21,25 @@ export type Hello = {
   /** When herdlingd starts on this computer. Missing on an older herdlingd. */
   boot?: Boot;
   /**
+   * The `pane.watch` formats the host accepts. `vt` is the raw terminal stream for an emulator in
+   * the app. Missing on an older herdlingd (only `text` and `ansi`).
+   */
+  watch_formats?: string[];
+  /**
    * The herdr backends that herdlingd reaches. Missing on an older herdlingd.
    * `herdr_ok` keeps its meaning: it tells only about herdr 1.
    */
   backends?: Backends;
+  /**
+   * When no Herdr 2 core answers (herdlingd 0.2.0 and later): what herdlingd does about it.
+   * `installing`: it installs the pinned core now. `failed`: the last install failed. `missing`:
+   * no core is installed. `message` is the text for the user. Missing when all is well.
+   */
+  core_setup?: CoreSetup;
 };
+
+/** `hello.core_setup`. */
+export type CoreSetup = { state: "installing" | "failed" | "missing" | (string & {}); message: string };
 
 /** herdr 1: the herdr app with its JSON socket API. */
 export type HerdrBackend = { version?: string; protocol?: number };
@@ -41,6 +55,27 @@ export type Backends = { herdr?: HerdrBackend; core?: CoreBackend };
  * Herdr 2 entries have `backend: "core"` and ids that start with `hc:`.
  */
 export type SnapshotBackend = "core";
+
+/** Where the group name of a Herdr 2 terminal comes from (`docs/protocol.md`, "Placement"). */
+export type GroupSource = "space" | "label" | "repo" | "folder";
+
+/**
+ * The optional group and task fields of a Herdr 2 agent or pane entry. An older herdlingd, and
+ * herdr 1, send none of them.
+ */
+export type GroupFields = {
+  /** The name of the group of the terminal (a Herdr app space or a fallback group). */
+  group?: string | null;
+  group_source?: GroupSource | null;
+  /** The name of the git repo, when the folder is in one. */
+  repo?: string | null;
+  /** The root folder of the repo. */
+  repo_root?: string | null;
+  /** The branch of the repo, when it has one. */
+  branch?: string | null;
+  /** The pane id of the parent terminal of a helper (`hc:<address>`). */
+  parent_id?: string | null;
+};
 
 /**
  * When herdlingd starts: `hello.boot` and the result of `boot.check`.
@@ -86,6 +121,28 @@ export type UpdateCheck = {
   date?: string;
   /** The release asset target for this computer, for example `aarch64-apple-darwin`. */
   target: string;
+  /** What the update does with herdr-core first. Missing from an older herdlingd. */
+  core?: UpdateCore;
+};
+
+/**
+ * The herdr 1 guard in `update.check`. When the release needs herdr-core and the computer has
+ * none, `update.apply` installs the core first. When that fails, the update stops and the old
+ * herdlingd stays. Show `notice` before the update.
+ */
+export type UpdateCore = {
+  /** True when the release needs herdr-core. */
+  requires_core: boolean;
+  /** True when a `herdr-core` is on the computer. */
+  installed: boolean;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+  /** True when the update installs herdr-core before it replaces herdlingd. */
+  install_first: boolean;
+  /** The herdr-core version that the update installs. */
+  pinned: string;
+  /** Text for the user before the update. */
+  notice?: string;
 };
 
 /** Params of `update.apply`. Without `version` the host installs the latest release. */
@@ -98,6 +155,10 @@ export type UpdateApply = {
   status: "updated" | "up_to_date";
   /** False when no service is installed, or when the restart command failed. */
   service_restarted: boolean;
+  /** The herdr-core step, when the release needs the core. Error `core_install_failed` when it fails. */
+  core?: CoreInstall;
+  /** Text for the user, for example that herdr 1 sessions do not show any more. */
+  notice?: string;
 };
 
 /**
@@ -112,6 +173,50 @@ export type HerdrUpdate = {
   handoff: "complete" | "failed" | "none";
   /** The output of `herdr update`, at most the last 16 KiB. */
   output: string;
+};
+
+/**
+ * Result of `core.status` (no params): herdr-core (Herdr 2) on the computer. Only reads.
+ * Check `hello.methods` for `core.status` first.
+ */
+export type CoreStatus = {
+  /** True when a `herdr-core` is on the computer. */
+  found: boolean;
+  /** Version of the installed `herdr-core`. Null when none is found or it gave no version. */
+  installed?: string | null;
+  /** True when a package manager owns the core (not in `~/.local/bin`). herdlingd never replaces it. */
+  managed: boolean;
+  /** True when a core answers on its socket. */
+  running: boolean;
+  /** Version of the running core, when it says one. */
+  running_version?: string | null;
+  /** The herdr-core version that this herdlingd installs. */
+  pinned: string;
+  /** True when the installed or running core is newer than the pin. herdlingd keeps it. */
+  newer_than_pin: boolean;
+  /** True when `core.install` would install or update the core. */
+  update_available: boolean;
+  /** True when this herdlingd needs the core to work. */
+  required: boolean;
+  /** Upstream build target, for example `macos-aarch64`. Null: no build for this computer. */
+  target?: string | null;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+};
+
+/**
+ * Result of `core.install` (no params): installs the pinned herdr-core when it is missing, updates
+ * herdlingd's own core when it is older (never down), and makes sure that the core runs.
+ * Errors: `unsupported_target`, `download_failed`, `checksum_mismatch`, `install_failed`,
+ * `core_not_running`, `busy`.
+ */
+export type CoreInstall = {
+  from?: string | null;
+  to?: string | null;
+  status: "installed" | "updated" | "up_to_date" | "kept_newer" | "kept_unknown" | "kept_managed";
+  /** True when herdlingd started the core. */
+  started: boolean;
+  pinned: string;
 };
 
 export type ThreadItem =
@@ -422,7 +527,11 @@ export type GitDiffParams = ({ cwd: string } | { pane_id: string }) & { path?: s
 export type GitDiff = { diff: string; truncated: boolean; root: string };
 
 /** Params of `git.worktree_add`: the repo folder (or a pane in it) and the new branch name. */
-export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & { branch: string };
+export type GitWorktreeAddParams = ({ cwd: string } | { pane_id: string }) & {
+  branch: string;
+  /** `"core"`: open the worktree in a new Herdr 2 space. Then `via` is `"herdr"` and the ids are core ids. */
+  backend?: "core";
+};
 
 /**
  * Result of `git.worktree_add`: the new worktree folder, `<root>/.worktrees/<branch with "/" as "-">`.
@@ -444,15 +553,38 @@ export type GitWorktree = {
 export type PaneWatchParams = {
   pane_id: string;
   lines?: number;
-  format?: "text" | "ansi";
+  /** `vt`: the raw terminal stream (`PaneWatchVtEvent`). Only when `hello.watch_formats` has it. */
+  format?: "text" | "ansi" | "vt";
   interval_ms?: number;
+  /**
+   * The phone grid. With both, a Herdr 2 pane is laid out at this size while the stream lives
+   * (the computer pane gets this size too). Clamped to 20–500 columns and 5–200 rows. herdr 1
+   * panes and older herdlingd ignore them.
+   */
+  cols?: number;
+  rows?: number;
 };
+/** `pane.watch` result. `drive` is true when the stream drives the size of a Herdr 2 pane. */
+export type PaneWatchResult = { stream: string; drive?: boolean; format?: "vt" };
 /**
  * `pane.watch` event data. A screen comes first at once, then only when the screen changes.
  * `error` (a herdr error code, for example `pane_not_found`) or `closed` (herdr stopped) ends the stream.
  */
 export type PaneWatchEvent =
   | { revision: number; text: string; truncated: boolean }
+  | { error: string; message?: string }
+  | { closed: true };
+
+/**
+ * `pane.watch` event data with `format: "vt"`. `reset`: a new attach; make a fresh emulator of
+ * this size (the paint of the screen and the history follows as `data`). `data`: raw bytes in
+ * standard base64. `resize`: the terminal size changed (a paint follows). `seq` counts the events
+ * of one `gen` from 0. `error` and `closed` end the stream.
+ */
+export type PaneWatchVtEvent =
+  | { vt: "reset"; gen: number; seq: number; cols: number; rows: number }
+  | { vt: "data"; gen: number; seq: number; data: string }
+  | { vt: "resize"; gen: number; seq: number; cols: number; rows: number }
   | { error: string; message?: string }
   | { closed: true };
 
@@ -498,3 +630,56 @@ export type ShellUnwatchParams = { pane_id: string };
 export type ShellUnwatch = { removed: boolean };
 /** `shell.watches` result: the live watches of the computer. */
 export type ShellWatches = { watches: ShellWatch[] };
+
+/**
+ * One group of Herdr 2 (herdr-core) terminals in `groups.list`: a Herdr app space or a fallback
+ * group. `workspace_id` is the id of the group in the snapshot (`hc:space:<id>` or `hc:g:<key>`).
+ * `space_id` is set for a space. `terminals` counts every terminal, `agents` only the agents.
+ */
+export type CoreGroup = {
+  workspace_id: string;
+  label: string;
+  source: GroupSource;
+  space_id?: string;
+  terminals: number;
+  agents: number;
+  agent_status: AgentStatus;
+};
+/** `groups.list` result. The host must reach a Herdr 2 core, else the error is `unsupported`. */
+export type GroupsList = { groups: CoreGroup[] };
+
+/**
+ * `pane.move` params: a Herdr 2 terminal that is in no Herdr app space, and exactly one target.
+ * `workspace_id` is a space (`hc:space:<id>`) or a label group (`hc:g:<key>`); `new_space: true`
+ * makes a new space; `group` sets the `herdling.group` label (an empty string removes it).
+ */
+export type PaneMoveParams = { pane_id: string } & ({ workspace_id: string } | { new_space: true } | { group: string });
+/** `pane.move` result: where the terminal shows now. The ids are null when the snapshot does not hold it. */
+export type PaneMove = { pane_id: string; workspace_id: string | null; tab_id: string | null };
+
+/**
+ * `session.start` params: starts an agent on the Herdr 2 core. `cwd` is an absolute path, `kind`
+ * an agent kind with a known program. `workspace_id`: a space (`hc:space:<id>`) or a group
+ * (`hc:g:<key>`); missing makes a new space. `args` are agent arguments (for example a resume).
+ */
+export type SessionStartParams = { cwd: string; kind: string; workspace_id?: string; prompt?: string; args?: string[] };
+/** `session.start` result. `prompt_error` says why the first prompt did not go in; the agent runs. */
+export type SessionStart = { pane_id: string; workspace_id: string; tab_id: string; prompt_error?: string | null };
+
+/** Where a suggested computer comes from: the herdr-core machine list, `~/.ssh/config`, or Tailscale. */
+export type SuggestionSource = "core" | "ssh_config" | "tailscale";
+/**
+ * One computer in `machines.suggest`: a name, an address the phone can try, and the user and the
+ * port when the source has them. `online` is set when the source knows it. Never keys or other
+ * SSH config values.
+ */
+export type MachineSuggestion = {
+  name: string;
+  address: string;
+  user?: string;
+  port?: number;
+  sources: SuggestionSource[];
+  online?: boolean;
+};
+/** `machines.suggest` result. Read only; a source that fails gives no entries. */
+export type MachinesSuggest = { suggestions: MachineSuggestion[] };

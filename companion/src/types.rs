@@ -68,6 +68,10 @@ pub struct Hello {
     /// Agent kinds that `commands.list` answers for. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command_kinds: Vec<String>,
+    /// The `pane.watch` formats this herdlingd accepts (`vt`: the raw terminal stream). An older
+    /// herdlingd does not send the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub watch_formats: Vec<String>,
     /// When herdlingd starts: at boot or after the user logs in. An older herdlingd does not send the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boot: Option<Boot>,
@@ -76,6 +80,10 @@ pub struct Hello {
     /// send the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backends: Option<Value>,
+    /// When no core answers: `{"state": "installing" | "failed" | "missing", "message"}`, what
+    /// herdlingd does about the core (see `core_install::heal`). An older herdlingd does not send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_setup: Option<Value>,
 }
 
 /// `hello.boot` and the result of `boot.check`.
@@ -463,6 +471,27 @@ pub struct UpdateCheck {
     pub date: Option<String>,
     /// The release asset target for this computer, for example `aarch64-apple-darwin`.
     pub target: String,
+    /// What the update does with herdr-core first. Missing from an older herdlingd.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core: Option<UpdateCore>,
+}
+
+/// The `core` part of `update.check`: the herdr 1 guard for a release that needs herdr-core.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCore {
+    /// True when the release needs herdr-core.
+    pub requires_core: bool,
+    /// True when a `herdr-core` is on this computer.
+    pub installed: bool,
+    /// True when herdr 1 (`herdr`) is on this computer.
+    pub herdr1: bool,
+    /// True when the update installs herdr-core before it replaces herdlingd.
+    pub install_first: bool,
+    /// The herdr-core version that the update installs.
+    pub pinned: String,
+    /// Text for the user before the update, for example that herdr 1 sessions do not show any more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// `update.apply` result.
@@ -474,6 +503,12 @@ pub struct UpdateApply {
     pub status: String,
     /// False when no service is installed, or when the restart command failed.
     pub service_restarted: bool,
+    /// The herdr-core step, when the release needs the core.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core: Option<CoreInstall>,
+    /// Text for the user, for example that herdr 1 sessions do not show any more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// `herdr.update` result.
@@ -489,4 +524,47 @@ pub struct HerdrUpdate {
     pub handoff: String,
     /// The output of `herdr update`, at most the last 16 KiB.
     pub output: String,
+}
+
+/// `core.status` result: herdr-core (Herdr 2) on this computer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoreStatus {
+    /// True when a `herdr-core` is on this computer.
+    pub found: bool,
+    /// The version of the installed `herdr-core`. None when none is found or it gave no version.
+    pub installed: Option<String>,
+    /// True when the core is not in `~/.local/bin` (a package manager owns it). herdlingd never
+    /// replaces it.
+    pub managed: bool,
+    /// True when a core answers on its socket.
+    pub running: bool,
+    /// The version of the running core, when it says one.
+    pub running_version: Option<String>,
+    /// The herdr-core version that this herdlingd installs.
+    pub pinned: String,
+    /// True when the installed or the running core is newer than the pin. herdlingd keeps it.
+    pub newer_than_pin: bool,
+    /// True when `core.install` would install or update the core.
+    pub update_available: bool,
+    /// True when this herdlingd needs the core to work.
+    pub required: bool,
+    /// The upstream build target for this computer (`macos-aarch64`). None: no build.
+    pub target: Option<String>,
+    /// True when herdr 1 (`herdr`) is on this computer.
+    pub herdr1: bool,
+}
+
+/// `core.install` result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoreInstall {
+    /// The version before. None when no core was installed or it gave no version.
+    pub from: Option<String>,
+    /// The installed version after.
+    pub to: Option<String>,
+    /// "installed", "updated", "up_to_date", "kept_newer", "kept_unknown" or "kept_managed".
+    pub status: String,
+    /// True when herdlingd started the core.
+    pub started: bool,
+    /// The pinned version.
+    pub pinned: String,
 }

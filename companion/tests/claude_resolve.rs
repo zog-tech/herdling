@@ -1,7 +1,6 @@
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
@@ -15,10 +14,10 @@ struct Session {
 }
 
 impl Session {
-    fn start(sock: PathBuf, home: PathBuf) -> Session {
+    fn start(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(65536);
         let (server_out, client_rx) = tokio::io::duplex(65536);
-        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
     async fn call(&mut self, method: &str, params: Value) -> Value {
@@ -28,18 +27,17 @@ impl Session {
     }
 }
 
-fn fake(dir: &Path, agent: &str, cwd: &str, fg_pid: u32) -> PathBuf {
-    let sock = dir.join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("agent.get".to_string(), json!({"type":"agent_get","agent":{"agent":agent,"cwd":cwd,"pane_id":"w1:p1"}}));
-    m.insert(
-        "pane.process_info".to_string(),
-        json!({"type":"pane_process_info","process_info":{
-            "pane_id":"w1:p1","shell_pid":1,"foreground_process_group_id":fg_pid,
-            "foreground_processes":[{"pid":fg_pid,"name":"claude"}]}}),
-    );
-    fake_herdr::spawn(&sock, m);
-    sock
+/// A core with one agent terminal `t1` of `agent` in `cwd` whose foreground process is `fg_pid`,
+/// and a context with `home`. The fake core lives as long as the runtime of the test.
+fn fake(dir: &Path, home: PathBuf, agent: &str, cwd: &str, fg_pid: u64) -> Ctx {
+    let app = if agent == "claude" { "Claude Code" } else { "Codex" };
+    let state = fake_core::State { terminals: vec![fake_core::agent_at("t1", app, "idle", cwd, fg_pid)], ..Default::default() };
+    fake_core::with_ctx(dir, home, state).0
+}
+
+/// A context with no core.
+fn bare(home: PathBuf) -> Ctx {
+    Ctx::new(home)
 }
 
 fn write(path: &Path, text: &str) {
@@ -63,9 +61,8 @@ async fn resolve_via_pid_file() {
         &home.join(".claude/sessions/4242.json"),
         r#"{"pid":4242,"sessionId":"abc-123","cwd":"/home/sam/proj","status":"idle"}"#,
     );
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4242);
-    let mut s = Session::start(sock, home.clone());
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4242));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     let res = &r["result"];
     assert_eq!(res["kind"], "claude");
     assert_eq!(res["session"], "abc-123");
@@ -77,9 +74,8 @@ async fn resolve_via_pid_file() {
 #[tokio::test]
 async fn resolve_non_claude_agent() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = fake(dir.path(), "codex", "/home/sam/proj", 4242);
-    let mut s = Session::start(sock, dir.path().into());
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), dir.path().into(), "codex", "/home/sam/proj", 4242));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["kind"], "codex");
     assert!(r["result"]["session"].is_null());
     assert!(r["result"]["log_path"].is_null());
@@ -94,9 +90,8 @@ async fn resolve_fallback_newest_recent_file() {
     std::thread::sleep(std::time::Duration::from_millis(30));
     write(&proj.join("new.jsonl"), "{}\n");
     // Pid 1 has no session file; the ps walk finds none either.
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 999_999_999);
-    let mut s = Session::start(sock, home);
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), home, "claude", "/home/sam/proj", 999_999_999));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "new");
     assert!(r["result"]["log_path"].as_str().unwrap().ends_with("-home-sam-proj/new.jsonl"));
 }
@@ -104,9 +99,8 @@ async fn resolve_fallback_newest_recent_file() {
 #[tokio::test]
 async fn resolve_no_session_when_nothing_recent() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 999_999_999);
-    let mut s = Session::start(sock, dir.path().join("home"));
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), dir.path().join("home"), "claude", "/home/sam/proj", 999_999_999));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["kind"], "claude");
     assert!(r["result"]["session"].is_null());
 }
@@ -138,7 +132,7 @@ async fn recent_sessions_sorted_with_first_prompt() {
         r#"{"type":"user","uuid":"u3","message":{"role":"user","content":"hello"}}
 "#,
     );
-    let mut s = Session::start(dir.path().join("none.sock"), home);
+    let mut s = Session::start(bare(home));
     let r = s.call("sessions.recent", json!({"cwd":"/home/sam/proj","limit":5})).await;
     let list = r["result"].as_array().unwrap();
     assert_eq!(list.len(), 2);
@@ -165,7 +159,7 @@ async fn fs_dirs_lists_dirs_and_recent_cwds() {
     );
     std::thread::sleep(std::time::Duration::from_millis(30));
     write(&home.join(".claude/projects/-p-two/s.jsonl"), "{\"cwd\":\"/home/sam/two\"}\n");
-    let mut s = Session::start(dir.path().join("none.sock"), home.clone());
+    let mut s = Session::start(bare(home.clone()));
     let r = s.call("fs.dirs", json!({"path": home.join("work").to_string_lossy()})).await;
     let res = &r["result"];
     assert_eq!(res["dirs"], json!(["Alpha", "beta"]));
@@ -187,7 +181,7 @@ async fn fs_dirs_hidden_git_and_no_recent() {
     std::fs::create_dir_all(home.join("work/plain")).unwrap();
     std::fs::create_dir_all(home.join("work/.config")).unwrap();
     write(&home.join(".claude/projects/-p-one/s.jsonl"), "{\"cwd\":\"/home/sam/one\"}\n");
-    let mut s = Session::start(dir.path().join("none.sock"), home.clone());
+    let mut s = Session::start(bare(home.clone()));
     let work = home.join("work").to_string_lossy().into_owned();
     // The defaults: no hidden folders, recent folders read.
     let r = s.call("fs.dirs", json!({"path": work})).await;
@@ -210,7 +204,7 @@ async fn thread_subagent_reads_sibling_transcript() {
         &dir.path().join("sess1/subagents/agent-a1b2.jsonl"),
         "{\"type\":\"user\",\"uuid\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"do it\"}}\n",
     );
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(dir.path().into()));
     let r = s.call("thread.subagent", json!({"log_path": log, "agent_id":"a1b2","limit":10})).await;
     assert_eq!(r["result"]["items"][0]["text"], "do it");
     assert!(r["result"]["log_path"].as_str().unwrap().ends_with("/subagents/agent-a1b2.jsonl"));
@@ -224,52 +218,22 @@ async fn subagent_page_includes_log_path() {
     let log = dir.path().join("sess1.jsonl");
     write(&log, "");
     write(&dir.path().join("sess1/subagents/agent-a1.jsonl"), "");
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(dir.path().into()));
     let r = s.call("thread.subagent", json!({"log_path": log, "agent_id":"a1","limit":10})).await;
     let p = r["result"]["log_path"].as_str().unwrap();
     assert!(p.ends_with("/subagents/agent-a1.jsonl"), "{p}");
     assert!(r["result"]["end"].is_number());
 }
 
-#[tokio::test]
-async fn resolve_via_child_of_pane_pid() {
+#[test]
+fn resolve_via_child_of_pane_pid() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     write(&home.join(".claude/sessions/300.json"), r#"{"pid":300,"sessionId":"child-sess","cwd":"/home/sam/proj"}"#);
     // Pane shell is 100, foreground is 200, claude (300) is a child of 200.
-    let sock = dir.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("agent.get".to_string(), json!({"agent":{"agent":"claude","cwd":"/home/sam/proj"}}));
-    m.insert(
-        "pane.process_info".to_string(),
-        json!({"process_info":{"shell_pid":100,"foreground_process_group_id":200,
-            "foreground_processes":[{"pid":200,"name":"node"}]}}),
-    );
-    fake_herdr::spawn(&sock, m);
-    let r = claude::resolve_with(&sock, std::time::Duration::from_secs(5), &home, "w1:p1", || {
-        Some(vec![(200, 100), (300, 200), (400, 1)])
-    })
-    .await
-    .unwrap();
-    assert_eq!(r.session.as_deref(), Some("child-sess"));
-}
-
-#[tokio::test]
-async fn resolve_works_when_herdr_closes_each_connection_after_one_reply() {
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().join("home");
-    write(&home.join(".claude/sessions/200.json"), r#"{"pid":200,"sessionId":"oneshot-sess","cwd":"/home/sam/proj"}"#);
-    let sock = dir.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("agent.get".to_string(), json!({"agent":{"agent":"claude","cwd":"/home/sam/proj"}}));
-    m.insert(
-        "pane.process_info".to_string(),
-        json!({"process_info":{"shell_pid":100,"foreground_process_group_id":200,
-            "foreground_processes":[{"pid":200,"name":"claude"}]}}),
-    );
-    fake_herdr::spawn_one_shot(&sock, m);
-    let r = claude::resolve_with(&sock, std::time::Duration::from_secs(5), &home, "w1:p1", || None).await.unwrap();
-    assert_eq!(r.session.as_deref(), Some("oneshot-sess"));
+    let info = json!({"shell_pid":100,"foreground_process_group_id":200, "foreground_processes":[{"pid":200,"name":"node"}]});
+    let r = claude::session_from_info(&home, "/home/sam/proj", &info, || Some(vec![(200, 100), (300, 200), (400, 1)]));
+    assert_eq!(r.map(|(id, _)| id).as_deref(), Some("child-sess"));
 }
 
 /// After `/restart` from a folder reached through a symlink, Claude Code reports the real folder
@@ -281,9 +245,8 @@ async fn resolve_finds_the_log_in_another_project_dir() {
     write(&home.join(".claude/sessions/4343.json"), r#"{"pid":4343,"sessionId":"moved-sess","cwd":"/home/sam/proj"}"#);
     let log = home.join(".claude/projects/-home-sam-link/moved-sess.jsonl");
     write(&log, "{}\n");
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4343);
-    let mut s = Session::start(sock, home.clone());
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4343));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "moved-sess");
     assert_eq!(r["result"]["log_path"], log.to_string_lossy().as_ref());
 }
@@ -300,9 +263,8 @@ async fn resolve_follows_a_continued_in_record_to_the_new_log() {
     );
     let new_log = project.join("new-sess.jsonl");
     write(&new_log, "{}\n");
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4344);
-    let mut s = Session::start(sock, home.clone());
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4344));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "new-sess");
     assert_eq!(r["result"]["log_path"], new_log.to_string_lossy().as_ref());
 }
@@ -314,8 +276,7 @@ async fn resolve_stays_on_the_old_log_when_the_new_log_is_missing() {
     write(&home.join(".claude/sessions/4345.json"), r#"{"pid":4345,"sessionId":"old-sess","cwd":"/home/sam/proj"}"#);
     let log = home.join(".claude/projects/-home-sam-proj/old-sess.jsonl");
     write(&log, "{\"type\":\"continued-in\",\"continuedInSessionId\":\"../../etc\"}\n");
-    let sock = fake(dir.path(), "claude", "/home/sam/proj", 4345);
-    let mut s = Session::start(sock, home.clone());
-    let r = s.call("thread.resolve", json!({"pane_id":"w1:p1"})).await;
+    let mut s = Session::start(fake(dir.path(), home.clone(), "claude", "/home/sam/proj", 4345));
+    let r = s.call("thread.resolve", json!({"pane_id":"t1"})).await;
     assert_eq!(r["result"]["session"], "old-sess");
 }

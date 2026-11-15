@@ -9,13 +9,25 @@ use serde_json::{json, Value};
 use super::client::{Client, CoreError};
 use super::endpoint::CoreSocket;
 use super::project::{self, Projection};
-use super::route;
+use super::actions;
+use super::route::{self, Action};
+use super::typing;
 use crate::preview::PreviewState;
 use crate::types::{AgentPreview, AgentStatus, RpcError};
 
-/// Bound for `terminal.send` and `terminal.keys`: the core waits until nobody types at the
-/// computer (about 3 s), and an unfinished draft there holds a send for up to 60 s.
-pub const TYPING_TIMEOUT: Duration = Duration::from_secs(75);
+tokio::task_local! {
+    /// The end of the phone input call that runs in this task: its arrival plus
+    /// [`typing::INPUT_TIMEOUT`]. `rpc` sets it for each typing call (see `crate::input_order`).
+    pub static INPUT_DEADLINE: tokio::time::Instant;
+}
+
+/// The deadline of the input call of this task, else [`typing::INPUT_TIMEOUT`] from now.
+pub fn input_deadline() -> tokio::time::Instant {
+    INPUT_DEADLINE.try_with(|d| *d).unwrap_or_else(|_| tokio::time::Instant::now() + typing::INPUT_TIMEOUT)
+}
+
+/// How long a check after a timed-out send may take. The app still gets its answer in time.
+const AFTER_CHECK: Duration = Duration::from_secs(2);
 
 /// The RPC error of a core error. `not_found` and `finished` become `pane_not_found`, the code
 /// that herdr 1 gives for a closed pane, so the app and the pane checks treat both the same.
@@ -74,15 +86,209 @@ pub async fn read_text(sock: &CoreSocket, timeout: Duration, pane: &str, lines: 
 /// `herdr.call` of `method` on the core id `id`. A method with no core equivalent gives the
 /// error code `unsupported`.
 pub async fn call(sock: &CoreSocket, timeout: Duration, method: &str, params: &Value, id: &str) -> Result<Value, RpcError> {
-    let plan = route::plan(method, params, id).map_err(|u| RpcError { code: route::UNSUPPORTED.into(), message: u.0 })?;
-    let bound = if matches!(plan.method, "terminal.send" | "terminal.keys") { TYPING_TIMEOUT } else { timeout };
-    let mut c = Client::connect(&sock.current(), timeout).await.map_err(rpc_err)?;
-    let r = c.call_with(plan.method, plan.params, bound).await.map_err(rpc_err)?;
-    Ok(route::shape(&plan.shape, r))
+    run(sock, timeout, route::action(method, params, id)?).await
+}
+
+/// Checks that the core has each of `methods` (`hello.methods`). A core that does not list its
+/// methods is tried. A missing method gives `unsupported`, before any change.
+pub async fn require(c: &mut Client, methods: &[&str]) -> Result<(), RpcError> {
+    let h = c.hello().await.map_err(rpc_err)?;
+    let Some(list) = h.get("methods").and_then(Value::as_array) else { return Ok(()) };
+    match methods.iter().find(|m| !list.iter().any(|l| l.as_str() == Some(m))) {
+        Some(m) => Err(RpcError {
+            code: route::UNSUPPORTED.into(),
+            message: format!("this herdr-core has no {m}; update herdr-core"),
+        }),
+        None => Ok(()),
+    }
+}
+
+async fn connect(sock: &CoreSocket, timeout: Duration) -> Result<Client, RpcError> {
+    Client::connect(&sock.current(), timeout).await.map_err(rpc_err)
+}
+
+/// The projection, as an RPC result.
+async fn placed(sock: &CoreSocket, timeout: Duration) -> Result<Projection, RpcError> {
+    projection(sock, timeout).await.map_err(rpc_err)
+}
+
+/// A new shell at `place` (see [`actions::place_labels`]) in `cwd`. Returns the new terminal
+/// address and the workspace and tab ids that the projection gives it.
+pub async fn run_shell(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: Option<&str>) -> Result<(String, String, String), RpcError> {
+    let ids = actions::fresh_ids();
+    let shell = std::env::var("SHELL").ok();
+    let params = actions::run_params(cwd, actions::place_labels(place, &ids), actions::shell_argv(shell.as_deref()));
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.run"]).await?;
+    let t = c.call("terminal.run", params).await.map_err(rpc_err)?;
+    let addr = t
+        .get("address")
+        .or_else(|| t.pointer("/terminal/address"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError { code: "internal".into(), message: "terminal.run gave no address".into() })?
+        .to_string();
+    let (ws, tab) = actions::placed_ids(place, &ids, &addr);
+    Ok((addr, ws, tab))
+}
+
+/// The place of the workspace id `workspace`. Only a group id needs the projection.
+pub async fn place(sock: &CoreSocket, timeout: Duration, workspace: Option<&str>) -> Result<actions::Place, RpcError> {
+    let needs = workspace.and_then(super::ids::workspace).is_some_and(|w| matches!(w, super::ids::Workspace::Group(_)));
+    let p = if needs { placed(sock, timeout).await? } else { Projection::default() };
+    Ok(actions::place_of(workspace, &p)?)
+}
+
+/// Sends `text` to `addr` (`terminal.send`, paste and Enter), after the method check.
+pub async fn send(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str) -> Result<Value, RpcError> {
+    send_line(sock, timeout, addr, json!({ "terminal": addr, "text": text })).await
+}
+
+/// `terminal.send` with `params`, bounded by [`input_deadline`].
+///
+/// The core holds a send while someone types at the computer (up to 60 s for a draft). At the
+/// deadline herdlingd closes the connection, and the core cancels a send that has not typed yet:
+/// nothing goes in after the answer, so a resend from the user cannot double the text. A send
+/// that typed just before the close shows a new turn or `working` ([`typing::late_send`]) and
+/// counts as sent.
+pub async fn send_line(sock: &CoreSocket, timeout: Duration, addr: &str, params: Value) -> Result<Value, RpcError> {
+    let deadline = input_deadline();
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.send"]).await?;
+    let before = c.call("terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+    match tokio::time::timeout_at(deadline, c.call("terminal.send", params)).await {
+        Ok(r) => r.map_err(rpc_err),
+        Err(_) => {
+            // The close cancels the send in the core.
+            drop(c);
+            let after = once(sock, AFTER_CHECK, "terminal.get", json!({ "terminal": addr })).await;
+            match after {
+                Ok(after) if typing::late_send(&before, &after) => Ok(json!({ "turn": after.get("turn"), "late": true })),
+                _ => Err(typing::unconfirmed_error()),
+            }
+        }
+    }
+}
+
+/// Types `text`, then presses `keys`, in terminal `addr` at once (see `core::typing`), bounded
+/// by [`input_deadline`]. A core without `terminal.attach` gets the `fallback` call.
+pub async fn type_in(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str, keys: &[String], fallback: Option<route::Plan>) -> Result<Value, RpcError> {
+    use super::term_watch::{type_into, OpenError, Typed};
+    let deadline = input_deadline();
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now()).min(timeout);
+    let t = once(sock, left, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+    let dim = |k: &str| t.get(k).and_then(Value::as_u64).and_then(|n| u16::try_from(n).ok()).filter(|n| *n > 0);
+    let size = (dim("cols").unwrap_or(80), dim("rows").unwrap_or(24));
+    match type_into(sock, deadline, addr, size, text, keys).await {
+        Ok(Typed::All) => Ok(json!({})),
+        Ok(Typed::TextOnly) => keys_by_core(sock, timeout, deadline, addr, keys).await,
+        Err(OpenError::NoAttach) => match fallback {
+            Some(plan) => keys_by_core(sock, timeout, deadline, addr, &plan_keys(&plan)).await,
+            None => Err(RpcError {
+                code: route::UNSUPPORTED.into(),
+                message: "This herdr-core cannot type this text without Enter. Update Herdr 2, or send it as a line.".into(),
+            }),
+        },
+        Err(OpenError::Core(e)) => Err(rpc_err(e)),
+    }
+}
+
+/// The `keys` of a `terminal.keys` plan.
+fn plan_keys(plan: &route::Plan) -> Vec<String> {
+    plan.params["keys"].as_array().map(|a| a.iter().filter_map(|k| k.as_str().map(String::from)).collect()).unwrap_or_default()
+}
+
+/// `terminal.keys` bounded by `deadline`. The core cannot cancel it, so a timeout says that the
+/// keys may still go in.
+async fn keys_by_core(sock: &CoreSocket, timeout: Duration, deadline: tokio::time::Instant, addr: &str, keys: &[String]) -> Result<Value, RpcError> {
+    let mut c = connect(sock, timeout).await?;
+    match tokio::time::timeout_at(deadline, c.call("terminal.keys", json!({ "terminal": addr, "keys": keys }))).await {
+        Ok(r) => r.map_err(rpc_err),
+        Err(_) => Err(RpcError {
+            code: "busy".into(),
+            message: "Not confirmed: someone is typing at the computer. The keys go in when they pause. Look at the terminal before you press them again.".into(),
+        }),
+    }
+}
+
+/// Sets `labels` on terminal `addr`. Only the labels that `core::actions` names come here.
+pub async fn label(sock: &CoreSocket, timeout: Duration, addr: &str, labels: serde_json::Map<String, Value>) -> Result<Value, RpcError> {
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.label"]).await?;
+    c.call("terminal.label", json!({ "terminal": addr, "labels": labels })).await.map_err(rpc_err)
+}
+
+/// Runs one action of [`route::action`].
+pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result<Value, RpcError> {
+    match action {
+        Action::Call(plan) if plan.method == "terminal.send" => {
+            let addr = plan.params["terminal"].as_str().unwrap_or_default().to_string();
+            send_line(sock, timeout, &addr, plan.params).await
+        }
+        Action::Call(plan) if plan.method == "terminal.keys" => {
+            let addr = plan.params["terminal"].as_str().unwrap_or_default().to_string();
+            let keys = plan_keys(&plan);
+            if keys.is_empty() {
+                return Ok(json!({}));
+            }
+            keys_by_core(sock, timeout, input_deadline(), &addr, &keys).await
+        }
+        Action::Call(plan) => {
+            let mut c = connect(sock, timeout).await?;
+            let r = c.call(plan.method, plan.params).await.map_err(rpc_err)?;
+            Ok(route::shape(&plan.shape, r))
+        }
+        Action::Type { addr, text, keys, fallback } => Box::pin(type_in(sock, timeout, &addr, &text, &keys, fallback)).await,
+        Action::Run { kind, workspace, cwd } => {
+            let place = place(sock, timeout, workspace.as_deref()).await?;
+            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
+            Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
+        }
+        Action::Start { addr, kind, args } => {
+            let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            let login = std::env::var("SHELL").ok();
+            let line = actions::agent_line(&kind, &args, actions::family_of_terminal(&t, login.as_deref()))?;
+            send(sock, timeout, &addr, &line).await?;
+            Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
+        }
+        Action::Prompt { addr, text } => {
+            let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            if project::agent_status(&t).is_none() {
+                // The app retries on this text while a new agent starts (`startSession`).
+                return Err(RpcError {
+                    code: "agent_not_ready".into(),
+                    message: format!("not an active named agent yet: {} has reported no agent status", project::pane_id(&addr)),
+                });
+            }
+            send(sock, timeout, &addr, &text).await
+        }
+        Action::Label { addr, labels } => Ok(project::pane_get(&label(sock, timeout, &addr, labels).await?)),
+        Action::Kill(scope, shown) => {
+            let members = actions::close_members(&placed(sock, timeout).await?, &scope, shown.as_deref())?;
+            let mut c = connect(sock, timeout).await?;
+            require(&mut c, &["terminal.kill"]).await?;
+            let mut closed = Vec::new();
+            for addr in members {
+                match c.call("terminal.kill", json!({ "terminal": addr })).await {
+                    Ok(_) => closed.push(project::pane_id(&addr)),
+                    // A terminal that ended meanwhile is closed already.
+                    Err(e) if matches!(e.kind(), Some("not_found" | "finished")) => {}
+                    Err(e) => return Err(rpc_err(e)),
+                }
+            }
+            Ok(json!({ "closed": closed }))
+        }
+        Action::Explain { addr } => {
+            let mut c = connect(sock, timeout).await?;
+            let t = c.call("terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            let screen = c.call("terminal.read", json!({ "terminal": addr, "lines": 0 })).await.map_err(rpc_err)?;
+            Ok(actions::explain(&t, screen.get("text").and_then(Value::as_str).unwrap_or("")))
+        }
+        Action::WorkspaceGet(id) => Ok(actions::workspace_get(&placed(sock, timeout).await?, &id)?),
+    }
 }
 
 /// One preview line per core agent (only `wanted` panes when given). An agent with a known
-/// transcript is read from its log, as herdr 1 agents are. Else the line comes from the 7501
+/// transcript is read from its log. Else the line comes from the 7501
 /// message, else from the last line of the screen.
 pub async fn previews(
     sock: &CoreSocket,
@@ -128,11 +334,16 @@ async fn one_preview(sock: &CoreSocket, timeout: Duration, home: &Path, state: &
         source: "screen".into(),
         background: None,
     };
-    // The log work of one agent is bounded as herdr 1's is. A timeout falls back to the screen.
+    // The log work of one agent is bounded. A timeout falls back to the screen.
     let from_log = tokio::time::timeout(crate::preview::PANE_TIMEOUT, log_preview(home, state, &pane, t)).await;
     let logged = match from_log {
-        Ok(Some(lp)) => {
+        Ok(Some((path, lp))) => {
             crate::preview::fill_from_log(&mut p, status, &lp);
+            // Claude Code also reports the background shells and subagents that still run.
+            if crate::transcript::Agent::of_log(&path.to_string_lossy()) == crate::transcript::Agent::Claude {
+                let info = project::process_info(t);
+                p.background = crate::preview::claude_background(state, &pane, &path, &info["process_info"]).await;
+            }
             true
         }
         _ => false,
@@ -162,9 +373,9 @@ async fn one_preview(sock: &CoreSocket, timeout: Duration, home: &Path, state: &
     p
 }
 
-/// What the transcript of a core terminal says, or None when the agent has no known log.
-/// The log path is cached per pane, as for herdr 1.
-async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Value) -> Option<crate::preview::LogPreview> {
+/// The log of a core terminal and what it says, or None when the agent has no known log.
+/// The log path is cached per pane.
+async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Value) -> Option<(PathBuf, crate::preview::LogPreview)> {
     let kind = project::agent_kind(record)?;
     crate::transcript::Agent::from_kind(&kind)?;
     let path = match state.cached_log(pane) {
@@ -175,5 +386,71 @@ async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Val
             l
         }
     }?;
-    tokio::task::spawn_blocking(move || crate::preview::read_any_log(&path)).await.ok()?.ok()
+    let p = path.clone();
+    let lp = tokio::task::spawn_blocking(move || crate::preview::read_any_log(&p)).await.ok()?.ok()?;
+    Some((path, lp))
+}
+
+/// The result of `session.start`.
+pub struct Started {
+    pub addr: String,
+    pub workspace: String,
+    pub tab: String,
+    pub prompt_error: Option<String>,
+}
+
+/// Starts an agent with the steps of [`super::start`]: a shell at `place` in `cwd`, the agent
+/// command `plan.line`, then the first prompt once the agent reports a status.
+pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: &str, plan: &super::start::Plan) -> Result<Started, RpcError> {
+    use super::start::{begin, step, Effect, Input, Outcome};
+    let (mut state, mut effects) = begin();
+    let mut ids: Option<(String, String)> = None;
+    loop {
+        let mut input = None;
+        for effect in effects {
+            match effect {
+                Effect::Run => {
+                    input = Some(match run_shell(sock, timeout, place, Some(cwd)).await {
+                        Ok((addr, ws, tab)) => {
+                            ids = Some((ws, tab));
+                            Input::Ran(addr)
+                        }
+                        // A refusal before the shell runs keeps its code (unsupported, not found).
+                        Err(e) => return Err(e),
+                    });
+                }
+                Effect::Type { addr, line } => {
+                    input = Some(match send(sock, timeout, &addr, &line).await {
+                        Ok(_) => Input::Typed,
+                        Err(e) => Input::Failed(e.message),
+                    });
+                }
+                Effect::Wait(d) => tokio::time::sleep(d).await,
+                Effect::Get(addr) => {
+                    input = Some(match once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await {
+                        Ok(t) => Input::Record(t),
+                        Err(e) => Input::Failed(rpc_err(e).message),
+                    });
+                }
+                Effect::Send { addr, text } => {
+                    input = Some(match send(sock, timeout, &addr, &text).await {
+                        Ok(_) => Input::Sent,
+                        Err(e) => Input::Failed(e.message),
+                    });
+                }
+                Effect::Kill(addr) => {
+                    let _ = once(sock, timeout, "terminal.kill", json!({ "terminal": addr })).await;
+                }
+                Effect::Finish(Outcome::Started { addr, prompt_error }) => {
+                    let (workspace, tab) = ids.clone().unwrap_or_default();
+                    return Ok(Started { addr, workspace, tab, prompt_error });
+                }
+                Effect::Finish(Outcome::Failed(message)) => return Err(RpcError { code: "start_failed".into(), message }),
+            }
+        }
+        let Some(i) = input else {
+            return Err(RpcError { code: "internal".into(), message: "session.start stopped with no result".into() });
+        };
+        (state, effects) = step(state, i, plan);
+    }
 }

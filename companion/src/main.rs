@@ -5,13 +5,6 @@ use tokio::io::BufReader;
 use std::time::Duration;
 use herdlingd::{config, enroll, install, proxy, rpc, serve, update};
 
-fn herdr_socket(home: &std::path::Path) -> PathBuf {
-    match std::env::var_os("HERDR_SOCKET") {
-        Some(p) if !p.is_empty() => PathBuf::from(p),
-        _ => home.join(".config/herdr/herdr.sock"),
-    }
-}
-
 async fn shutdown_signal() {
     use tokio::signal::unix::{signal, SignalKind};
     match signal(SignalKind::terminate()) {
@@ -240,12 +233,56 @@ async fn update_cmd(ctx: update::UpdateCtx, usage: &str) -> Result<()> {
     Ok(())
 }
 
+/// `herdlingd core status | install | required`: the same as `core.status` and `core.install`.
+/// `required` exits with 0 when this herdlingd needs herdr-core, else with 1 (the installer
+/// script reads it; an older herdlingd fails on the unknown subcommand, which also means "no").
+async fn core_cmd(home: &std::path::Path, cmd: &str, usage: &str) -> Result<()> {
+    use herdlingd::core_install as ci;
+    if cmd == "required" {
+        std::process::exit(if ci::pin::embedded().required { 0 } else { 1 });
+    }
+    let ctx = ci::CoreInstallCtx::new(home, herdlingd::core::endpoint::from_env(home));
+    match cmd {
+        "status" => {
+            let s = tokio::task::spawn_blocking(move || ci::status(&ctx)).await?;
+            let installed = match (&s.installed, s.found) {
+                (Some(v), _) => v.clone(),
+                (None, true) => "installed (version unknown)".into(),
+                (None, false) => "not installed".into(),
+            };
+            println!("herdr-core: {installed}{}", if s.managed { " (package manager)" } else { "" });
+            let running = s.running_version.as_deref().map(|v| format!(" ({v})")).unwrap_or_default();
+            println!("Running:   {}{running}", if s.running { "yes" } else { "no" });
+            println!("Pinned:    {}{}", s.pinned, if s.newer_than_pin { " (the core is newer; herdlingd keeps it)" } else { "" });
+            if s.update_available {
+                println!("Run: herdlingd core install");
+            }
+            Ok(())
+        }
+        "install" => {
+            let pin = ctx.pin.clone();
+            println!("Installing herdr-core {} ...", pin.version);
+            let r = tokio::task::spawn_blocking(move || ci::install(&ctx, &pin))
+                .await?
+                .map_err(|e| anyhow::anyhow!("{} ({})", e.message, e.code))?;
+            println!("{}", ci::as_herdr_update(&r).output);
+            if r.started {
+                println!("herdr-core started.");
+            }
+            Ok(())
+        }
+        _ => bail!("{usage}"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run] | version\n       \
                          herdlingd devices | unpair <device_id>\n       \
                          herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]\n       \
-                         herdlingd proxy <port> <grant>";
+                         herdlingd core status | install | required\n       \
+                         herdlingd proxy <port> <grant>\n       \
+                         herdlingd group <name> | group --clear  (in a Herdr 2 terminal)";
     if matches!(std::env::args().nth(1).as_deref(), Some("version" | "--version" | "-V")) {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -268,13 +305,14 @@ async fn main() -> Result<()> {
             if let Some((port, grant)) = std::env::var("SSH_ORIGINAL_COMMAND").ok().as_deref().and_then(proxy::parse_original_command) {
                 proxy_cmd(&home, port, &grant).await;
             }
-            let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
+            let mut ctx = rpc::Ctx::new(home.clone());
             ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
-            ctx.herdr_update = Some(herdlingd::herdr_update::HerdrUpdateCtx::new(&home));
+            ctx.core_install = Some(herdlingd::core_install::CoreInstallCtx::new(&home, ctx.core_socket.clone()));
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }
             ctx.sys = Some(std::sync::Arc::new(herdlingd::boot::SystemRunner));
+            ctx.tailscale = herdlingd::suggest::find_tailscale(std::env::var("PATH").ok().as_deref());
             let result = rpc::run(BufReader::new(tokio::io::stdin()), tokio::io::stdout(), ctx).await;
             // Exit at once: tokio reads stdin on a blocking thread that cannot be
             // cancelled, so a normal runtime shutdown would wait for the next input line.
@@ -288,9 +326,19 @@ async fn main() -> Result<()> {
         }
         Some("serve") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            // A computer that got this herdlingd from an update that did not know about the core
+            // (0.1.9) has none: install the pinned core now (`core_install::heal`).
+            let ci = herdlingd::core_install::CoreInstallCtx::new(&home, herdlingd::core::endpoint::from_env(&home));
+            tokio::task::spawn_blocking(move || {
+                use herdlingd::core_install::heal;
+                match heal::run(&ci, heal::Trigger::Serve) {
+                    Ok(Some(r)) => eprintln!("herdlingd serve: installed herdr-core {} ({})", r.pinned, r.status),
+                    Ok(None) => {}
+                    Err(e) => eprintln!("herdlingd serve: could not install herdr-core: {} ({})", e.message, e.code),
+                }
+            });
             let ctx = serve::ServeCtx {
                 core_socket: herdlingd::core::endpoint::from_env(&home),
-                herdr_socket: herdr_socket(&home),
                 config_path: config::default_path(&home),
                 home,
                 push_url: "https://exp.host/--/api/v2/push/send".into(),
@@ -348,6 +396,12 @@ async fn main() -> Result<()> {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             update_cmd(update::UpdateCtx::new(home, std::env::current_exe()?.canonicalize()?), USAGE).await
         }
+        Some("core") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let [cmd] = args.as_slice() else { bail!("{USAGE}") };
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            core_cmd(&home, cmd, USAGE).await
+        }
         Some("proxy") => {
             // A host added by hand without a forced command runs the app's command in the shell.
             let args: Vec<String> = std::env::args().skip(2).collect();
@@ -358,6 +412,23 @@ async fn main() -> Result<()> {
             };
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             proxy_cmd(&home, port, &grant).await
+        }
+        Some("group") => {
+            // Sets or removes the `herdling.group` label of the Herdr 2 terminal that runs it.
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let cmd = herdlingd::group_cmd::parse(&args).map_err(|e| anyhow::anyhow!(e))?;
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            let text = herdlingd::group_cmd::run(
+                &cmd,
+                std::env::var("HC_TERMINAL_ID").ok(),
+                std::env::var_os("HC_TERMINAL_SOCKET").map(PathBuf::from),
+                herdlingd::core::endpoint::from_env(&home),
+                rpc::HERDR_TIMEOUT,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+            println!("{text}");
+            Ok(())
         }
         _ => bail!("{USAGE}"),
     }

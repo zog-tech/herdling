@@ -99,7 +99,7 @@ async fn follow_stream_over_rpc() {
 
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let ctx = Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    let ctx = Ctx::new(dir.path().into());
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let mut rx = BufReader::new(client_rx).lines();
 
@@ -141,7 +141,7 @@ async fn follow_stream_ends_when_file_vanishes() {
     append(&log, &user_line("u0", "old"));
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let ctx = Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    let ctx = Ctx::new(dir.path().into());
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let mut rx = BufReader::new(client_rx).lines();
     let req = json!({"id":1,"method":"thread.follow","params":{"log_path":log,"from":0}});

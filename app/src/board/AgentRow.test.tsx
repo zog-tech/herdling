@@ -121,3 +121,29 @@ test("the_hint_close_button_dismisses_it", () => {
   act(() => close.props.onPress());
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+describe("Herdr 2 cards", () => {
+  it("show the group tile, the group and task, the repo line and the helpers", () => {
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <AgentRow
+          item={item({
+            group: "Payments",
+            title: "Fix the login form",
+            repoLine: "api · main",
+            helpers: [
+              { paneId: "hc:t2", title: "Read tests", status: "working" },
+              { paneId: "hc:t3", title: "Lint", status: "idle" },
+            ],
+          })}
+          {...actions()}
+        />,
+      );
+    });
+    const texts = r.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+    expect(texts).toContain("P");
+    expect(texts).toContain("  Fix the login form");
+    expect(texts).toContain("studio.local · claude · api · main · 2 helpers · 1 working");
+  });
+});

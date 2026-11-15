@@ -23,7 +23,8 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 ## Error codes in use
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
-`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`.
+`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
+`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -54,6 +55,43 @@ Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` po
 - The app stops the stream with `rpc.cancel` when the terminal is not on screen. The stream also
   stops when the channel closes.
 - An app that finds no `pane.watch` in `hello.methods` polls `pane.read` as before.
+- Optional `cols` and `rows` (both, or none): the phone grid. On a Herdr 2 pane, herdlingd then
+  attaches as a driver, so the program lays out its output at that size. The terminal on the
+  computer has this size too while the stream lives (the core has one size per terminal). The
+  reply has `drive: true`. The values are clamped to 20–500 columns and 5–200 rows. herdr 1 panes
+  and herdlingd before this change ignore them and give no `drive`.
+
+### Raw terminal stream: `format: "vt"`
+
+Since herdlingd 0.2.0 (`hello.watch_formats` lists `vt`). The app draws the pane in its own
+terminal emulator (xterm.js). An older herdlingd refuses the format with `bad_request`, so the app
+checks `hello.watch_formats` first.
+
+```json
+{"id": 8, "method": "pane.watch", "params": {"pane_id": "t1", "lines": 1000, "format": "vt", "interval_ms": 50}}
+→ {"id": 8, "result": {"stream": "pane:3", "format": "vt"}}
+→ {"method": "event", "params": {"stream": "pane:3", "data": {"vt": "reset", "gen": 1, "seq": 0, "cols": 150, "rows": 46}}}
+→ {"method": "event", "params": {"stream": "pane:3", "data": {"vt": "data", "gen": 1, "seq": 1, "data": "GBtbIXAbW0gbWzJK..."}}}
+```
+
+- herdlingd forwards the bytes of `terminal.attach` with no emulator of its own. The core's first
+  paint (CAN, a soft reset, `lines` history lines pushed into the scrollback, the screen, the modes,
+  the cursor and the title) recreates the terminal in a fresh emulator of `cols` × `rows`.
+- `reset`: a new attach (the first one, or a reattach after the core connection closed). The app
+  makes a fresh emulator of that size. `data`: raw bytes in standard base64, at most 48 KiB of
+  bytes per event. `resize`: the terminal size changed; a paint with no history follows.
+- `seq` counts the events of one `gen` from 0. The app drops events of an older `gen`, and starts
+  the watch again when it finds a gap.
+- Bytes are sent at once after a quiet time, else at most once per `interval_ms`; 256 KiB of
+  waiting bytes go at once.
+- `cols` and `rows` drive the pane as for the other formats (the reply also has `drive: true`).
+  Without them the attach is passive (`observe: true`).
+- The stream is read only: herdlingd sends only CREDIT and CLOSE frames on it. The app does not
+  answer device queries or mouse reports from the bytes; typing goes through `pane.send_input`.
+- A core with no `terminal.attach` gives the call error `unsupported`. `error` and `closed` events
+  end the stream as for the other formats.
+- `pane.get` has no `scroll` field from a `vt` watch: the app reads the alternate screen from its
+  own emulator.
 
 ## herdr events: `herdr.subscribe` and `events_lost`
 
@@ -169,6 +207,19 @@ Result:
 
 `date` is optional. `update_available` is true only when `latest` is newer than `current`.
 
+From the herdlingd after 0.1.9, the result has an optional `core` part: the herdr 1 guard for a
+release that needs Herdr 2 (herdr-core). Show `notice` before the update.
+
+```json
+{"core": {"requires_core": true, "installed": false, "herdr1": true, "install_first": true, "pinned": "0.1.20", "notice": "This herdlingd works only with Herdr 2 ..."}}
+```
+
+- `requires_core`: the release manifest says `requires_core: true`. Older manifests do not.
+- `installed`: a `herdr-core` is on the computer. `herdr1`: a `herdr` is on the computer.
+- `install_first`: `update.apply` installs herdr-core before it replaces herdlingd.
+- `pinned`: the herdr-core version that the update installs (the `core` pin of the release, else
+  the pin of the running herdlingd).
+
 `update.apply` params: `{"version"?: "X.Y.Z", "allow_downgrade"?: false}`. Result:
 
 ```json
@@ -185,6 +236,15 @@ Result:
 - The rpc process keeps the old code until its channel closes. After the reply the app
   reconnects; the new channel runs the new binary, and `hello` shows the new version.
 - The download can take some time. Use a long timeout (the app uses 3 minutes).
+- When the manifest says `requires_core: true`, the method first runs `core.install` with the
+  `core` pin of the manifest (see "Herdr 2 install"). The result then has `core` (a `CoreInstall`)
+  and, for a computer with herdr 1 and no core, `notice`. When the core install fails, the method
+  stops with `core_install_failed`, before it downloads herdlingd: the old herdlingd stays.
+
+The release manifest (`latest.json`) can have two optional fields, from the herdlingd after 0.1.9:
+`requires_core` (boolean) and `core` (the herdr-core pin: `version`, `required` and `sha256` by
+target, a copy of `companion/core-pin.json`). The release key signs them with the rest of the file.
+An older herdlingd ignores them.
 
 Error codes:
 
@@ -198,6 +258,7 @@ Error codes:
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
+| `core_install_failed` | The release needs herdr-core, and its install failed. The message has the reason. herdlingd did not change |
 
 ## Update herdr: `herdr.update`
 
@@ -243,6 +304,91 @@ Error codes:
 | `command_failed` | `herdr update` did not start or exited with an error. The message has the end of its output |
 | `timeout` | `herdr update` ran longer than 180 seconds and herdlingd stopped it |
 | `update_unavailable` | herdr updates are off in this process |
+
+**herdlingd 0.2.0:** the herdr 1 path above is gone. `herdr.update` always updates herdr-core
+to the pin (never down), as `core.install` does. Without an install context the code is
+`update_unavailable`. The text below tells the result.
+
+On a computer with herdr-core and no herdr 1 (from the herdlingd after 0.1.9), `herdr.update`
+updates herdr-core to the pin, as `core.install` does, and gives the result in the same shape:
+`status` `"updated"` when the core was installed or updated, else `"up_to_date"`; `handoff`
+`"complete"` after an update (the new core takes over the running terminals), else `"none"`;
+`output` is one line about the core. The errors are the ones of `core.install`.
+
+## Herdr 2 install: `core.status` and `core.install`
+
+From the herdlingd after 0.1.9. Check `hello.methods` first. herdlingd installs herdr-core
+(Herdr 2) itself, with the version and the SHA-256 that the herdlingd release pins
+(`companion/core-pin.json`, signed with the binary). It does not run the upstream `install.sh`.
+
+`core.status` has no params. It only reads: it runs `herdr-core --version` and asks the core socket.
+
+```json
+{"found": true, "installed": "0.1.19", "managed": false, "running": true, "running_version": "0.1.19",
+ "pinned": "0.1.20", "newer_than_pin": false, "update_available": true, "required": false,
+ "target": "macos-aarch64", "herdr1": true}
+```
+
+- `found` and `installed`: a `herdr-core` in `~/.local/bin`, else in the `PATH` and the usual
+  folders. `installed` is null when it gives no version.
+- `managed`: the core is not in `~/.local/bin` (Homebrew, Nix, conda). herdlingd never replaces it.
+- `newer_than_pin`: the installed or the running core is newer than `pinned`. herdlingd keeps it
+  and works with it (the Herdr app updates the core too).
+- `update_available`: `core.install` would install or update the core.
+- `required`: this herdlingd needs the core. The installer then installs the core and does not
+  need herdr 1.
+- `target`: the upstream build of this computer, null when there is none.
+
+`core.install` has no params. Result:
+
+```json
+{"from": "0.1.19", "to": "0.1.20", "status": "updated", "started": false, "pinned": "0.1.20"}
+```
+
+The steps (a pure state machine in `companion/src/core_install/machine.rs`):
+
+1. Find the core and its version. A core of a package manager, a core newer than the pin and a
+   core with no version stay as they are (`kept_managed`, `kept_newer`, `kept_unknown`). The pin
+   (`up_to_date`) stays too. herdlingd never downgrades.
+2. Else download `https://releases.herdr.dev/core/<pin>/herdr-core-<target>.tar.gz` into
+   `~/.cache/herdling/core.<pid>` and compare its SHA-256 with the pin. A difference stops with
+   `checksum_mismatch`; nothing outside that folder changes.
+3. Unpack it. The unpacked `herdr-core --version` must say the pinned version.
+4. Put it in place as the upstream installer does. macOS: `Herdr Core.app` with
+   `--hc-install-bundle` to `~/.local/bin/herdr-core`, then `server restart` on an update. Linux
+   (and macOS with no app in the tarball): an update runs `herdr-core update --from <file>`
+   (running terminals keep running); a first install copies the file. A `~/.local/bin/hc` link is
+   added when no `hc` exists.
+5. Make sure that the core runs: when no core answers on the socket, run `herdr-core server
+   start` and wait up to 10 seconds. The core runs as its own service (a systemd user service on
+   Linux, a launchd job on macOS). `started` is true when herdlingd started it.
+
+`status` is `installed`, `updated`, `up_to_date`, `kept_newer`, `kept_unknown` or `kept_managed`.
+One install runs at a time (`core-install.lock` in the herdlingd config folder). Use a long timeout
+(3 minutes). Since 0.2.0 the whole install ends within 150 seconds (`install_timeout`), so the
+answer always comes before that timeout. herdlingd starts the place step only with at least 60
+seconds left, so a place is never cut off.
+
+- A `~/.local/bin/herdr-core` that is a symlink counts as the core of herdlingd only when it
+  points into `~/.local/share/herdr-core` (the upstream app bundle install). Any other link
+  (Homebrew, Nix, a link of the user) is `managed`, also when its target is gone.
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `unsupported` | The core install is off in this process |
+| `unsupported_target` | herdr-core has no build for this OS and CPU |
+| `download_failed` | The download failed |
+| `checksum_mismatch` | The download does not match the pinned SHA-256. Nothing was installed |
+| `install_failed` | The tarball, the unpacked core or the install step failed |
+| `core_not_running` | The core did not start, or it does not answer on its socket |
+| `busy` | Another core install runs now |
+| `bad_pin` | The pin is not valid |
+| `install_timeout` | The install used its 150 seconds. The message says whether the core was put in place |
+
+`herdlingd core status`, `herdlingd core install` and `herdlingd core required` do the same on the
+computer. `core required` exits with 0 when this herdlingd needs the core (the installer reads it).
 
 ## Start at boot: `hello.boot`, `boot.check` and `mac.open_settings`
 
@@ -545,6 +691,24 @@ herdlingd reads the Claude log (the last 8 MiB on the first read, then only new 
 - A task ends when it is older than 12 hours, or when it started before the Claude process of the
   pane (the agent started again). A new log (for example after `/clear`) starts with no tasks.
 
+## Suggested computers: `machines.suggest`
+
+Params: none. Result: `{suggestions: [{name, address, user?, port?, sources, online?}]}`. Read
+only. The app shows the list in Add computer, so the user can add more computers after the first.
+herdlingd reads three sources; a source that is missing or fails gives no entries:
+
+- `core`: the herdr-core `machine.list`. The `target` `[user@]host[:port]` gives the address,
+  user and port. A `via` target is a command, so only the machine's host name is used.
+  `online` is true when the machine is `connected`.
+- `ssh_config`: the `Host` entries of `~/.ssh/config` (at most 256 KiB). Patterns (`*`, `?`,
+  `!`), `Match` blocks and `Include` are skipped. Entries with `ProxyJump` or `ProxyCommand` are
+  skipped: the phone cannot use them. Only `HostName`, `User` and `Port` are read.
+- `tailscale`: the peers of `tailscale status --json` (3 seconds at most). The address is the
+  MagicDNS name, else the first IPv4 address. `online` is the peer's state.
+
+The same address (any case) is one entry with joined `sources`. The computer itself is left out.
+The result never holds keys, key paths or other values of the SSH config.
+
 ## Pairing: `POST /pair` and pairing v2
 
 `herdlingd serve` has a small HTTP endpoint on the pairing port (default 7790) for the first
@@ -635,8 +799,15 @@ the phone key fingerprint and asks "Keep this phone?".
 ## Herdr 2 (herdr-core)
 
 Since the herdlingd after 0.1.7. herdlingd joins a running herdr-core (`hc`; checked against
-herdr-core 0.1.19, protocol generation 1). It never starts a core. Old apps see the core entries
+herdr-core 0.1.19, protocol generation 1). It starts a core only in `core.install`, in
+`update.apply` for a release that needs the core, and in the installer. Old apps see the core entries
 because they come in the herdr 1 shapes.
+
+**herdlingd 0.2.0 talks only to Herdr 2.** The herdr 1 client is gone: every `herdr.call`, every
+event stream and every push comes from the core. The entries have plain ids and no `backend`
+field, so the app builds 1.0.0 and 1.0.1 allow every action on them. Each herdr 1 method that
+those builds send gets its Herdr 2 meaning (see "Calls on a core id"). A computer with only
+herdr 1 must stay on herdlingd 0.1.x, or install Herdr 2 (`core.install`).
 
 ### The core socket
 
@@ -650,32 +821,41 @@ folders that has the socket. On macOS the core has no runtime folder: its socket
 
 ### Snapshot entries
 
-`herdr.call {method: "session.snapshot"}` adds the live terminals of this computer to the herdr 1
-lists `workspaces`, `tabs`, `panes` and `agents`. Terminals of other machines (`box/t7`) are left
-out. Every core entry has `backend: "core"`. A herdr 1 entry has no `backend`.
+`herdr.call {method: "session.snapshot"}` gives the live terminals of this computer in the
+herdr 1 lists `workspaces`, `tabs`, `panes` and `agents`. Terminals of other machines (`box/t7`)
+are left out.
 
-| Entry | Id | From |
-|---|---|---|
-| Workspace | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
-| Workspace | `hc:g:<key>` | a fallback group (see "Placement") |
-| Tab | `hc:tab:<id>` | a tab of a space, or the one tab of a fallback group |
-| Tab | `hc:task:<address>` | the task tab of a terminal that has no document tab |
-| Pane | `hc:<address>` (`hc:t7`) | every live terminal |
-| Agent | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
+| Entry | Id (0.2.0) | Id (0.1.x) | From |
+|---|---|---|---|
+| Workspace | `space:<id>` | `hc:space:<id>` | a space of the herdr-app document (`doc.get {name: "herdr-app"}`, read only) |
+| Workspace | `g:<key>` | `hc:g:<key>` | a fallback group (see "Placement") |
+| Tab | `tab:<id>` | `hc:tab:<id>` | a tab of a space, or the one tab of a fallback group |
+| Tab | `task:<address>` | `hc:task:<address>` | the task tab of a terminal that has no document tab |
+| Pane | `<address>` (`t7`) | `hc:<address>` | every live terminal |
+| Agent | `<address>` | `hc:<address>` | a terminal whose program reports an OSC 7501 status |
 
-The id `hc:loose` of the first 0.1.x versions is gone. A call with `hc:loose` or `hc:loose:tab`
-gives the error code `pane_not_found`.
+- A pane id has no `:` and no `/`. Every other id has a kind word and a `:`, so the kinds never
+  collide. herdr 1 ids (`w1:p1`) name nothing.
+- herdlingd 0.1.x merged the core entries with the herdr 1 entries: each core entry had the
+  `hc:` prefix and `backend: "core"`. herdlingd 0.2.0 has neither.
+- herdlingd 0.2.0 removes a `hc:` prefix from each input id once (`pane_id`, `target`, `tab_id`,
+  `workspace_id`, also in the params of `herdr.call`). Saved app state of 0.1.x names the same
+  entries.
+- The id `hc:loose` of the first 0.1.x versions becomes `loose`. It names no pane
+  (`pane_not_found`), no tab (`tab_not_found`) and no workspace (`workspace_not_found`).
+- A space id or a tab id with a `:` or a `/` names nothing.
 
 ### Placement
 
 herdlingd puts each terminal in the first place that fits:
 
 1. The space and tab of the herdr-app layout document that hold the terminal.
-2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
-   document tab holds yet, for example right after the phone starts an agent. The name of the
-   space is the part of the `where` label before the last ` / `.
    A Herdr app space with no name takes the `where` name of its first terminal, else the folder
    name of that terminal, else the folder name of the space.
+2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
+   document tab holds yet, for example right after the phone starts an agent. The name of the
+   space is the part of the `where` label before the last ` / `. When another workspace already
+   holds the tab id (a stale label), the terminal gets its own task tab `task:<address>`.
 3. A helper (a subagent terminal) goes to the task tab of its parent. When the parent is gone,
    finished or on another computer, the helper becomes its own task in its own group.
 4. A fallback group. The group name is the first that exists: the `herdling.group` label, the git
@@ -692,8 +872,10 @@ Core agent and pane entries have these optional fields. An old app ignores them.
 | `repo` | The name of the git repo, when the folder is in one |
 | `repo_root` | The root folder of the repo |
 | `branch` | The branch of the repo, when it has one |
+| `parent_id` | The pane id of the parent terminal (`<address>`), for a helper that a terminal on this computer started. The app shows the helper under its task when the parent is a live agent |
 
-The task name of a terminal is its name, else its 7501 title, else its terminal title. A title
+The task name of a terminal is its `herdling.name` label (a rename from the phone), else its
+name, else its 7501 title, else its terminal title. A title
 that only repeats the reported app or the agent kind (for example "Claude Code") is not a task
 name. The agent `name` and the pane `label` are the task name. When there is none, they are the
 first that exists of: the name of the Herdr app tab that holds the terminal, the terminal name,
@@ -706,58 +888,189 @@ group falls back to the folder name.
 - `agent_status`: 7501 `idle` → `idle`, `working` → `working`, `done` → `done`, `blocked` and
   `error` → `blocked`, other words → `unknown`.
 - `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
-  reported app when the kind is unknown (null for a known kind), `name` the task name,
-  `state_change_seq` the time of the last status change.
-- Each backend fails on its own. When herdr 1 is down and the core is up, the answer has the core
-  entries only. With no core, the answer is the herdr 1 answer, unchanged.
+  reported app when the kind is unknown (null for a known kind), `name` the entry name (see
+  above), `state_change_seq` the time of the last status change.
+- With no core socket or no core answer, the call gives `herdr_unavailable` (old apps show
+  "herdr is not running").
+
+### Typing on Herdr 2
+
+Since herdlingd 0.2.0. The app calls do not change (`pane.send_input`, `pane.send_text`,
+`pane.send_keys`, `agent.prompt`, `pane.answer`).
+
+- A line with Enter (`text` and `keys: ["enter"]`, or `pane.send_text` with a final newline) and
+  `agent.prompt` go through `terminal.send`. The core pastes the text and presses Enter when
+  nobody types at the computer.
+- Text without Enter, and keys, go in at once. herdlingd opens a short `terminal.attach` stream
+  (`observe: false`, `resumed: true`, at the size that the terminal has, so nothing resizes) and
+  writes the bytes, then closes the stream. The text goes as it is, so every character works
+  (punctuation, accents, emoji). Keys get the xterm bytes for the modes of the program (from the
+  first paint, for example application cursor keys). When the core has `automatic_input`
+  (`hello.features` and the attach reply), the bytes go as AUTOMATIC_INPUT frames: they do not
+  count as a person at the computer. Else they go as DATA.
+- A key with no xterm form (for example `shift+enter`) goes through `terminal.keys`.
+- `pane.answer` types its digit in the same way.
+- Every typing call answers within 10 seconds of its arrival, the wait behind earlier calls to
+  the same pane included. The app gives a call 15 seconds. A `terminal.send` that still waits at
+  the deadline (someone types at the computer) is cancelled: herdlingd closes its connection,
+  and the core never types a send that it has not started. The error is `busy` with a text that
+  asks the user to look at the terminal first. A send that went in just before the close (a new
+  turn, or the agent works) counts as sent.
+- When a typing call to a pane fails, the calls to that pane that arrived before the failure do
+  not run. Their error is `dropped` (or `busy` when they ran out of time), and nothing was typed.
+  A later Enter does not run a half-typed command.
 
 ### Calls on a core id
 
-`herdr.call` with a param `target` or `*_id` that starts with `hc:` goes to the core:
+On herdlingd 0.2.0 every `herdr.call` goes to the core. The id is the first non-empty string of
+`pane_id`, `target`, `tab_id` and `workspace_id`. On 0.1.x only a call with an `hc:` id went to
+the core.
 
-| herdr 1 method | core method |
+| herdr 1 method | On the core |
 |---|---|
-| `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0) |
+| `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0). With `format: "ansi"`: one passive `terminal.attach`, see "Terminal view" |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
-| `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
-| `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
-| `agent.prompt` | `terminal.send` (the core refuses it while the agent is blocked) |
-| `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes |
+| `pane.send_keys`, `pane.send_input` with keys, `pane.send_input` or `pane.send_text` without Enter | typed at once as raw bytes on a short `terminal.attach` stream (see "Typing on Herdr 2"). A core without `terminal.attach` gets `terminal.keys`, only when each character has a key |
+| `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
+| `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
+| `tab.create` on `space:<id>` or `g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
+| `workspace.create` | the same, in a new space. 0.1.x apps send `backend: "core"`; old apps send no `backend`. Both go to the core on 0.2.0 |
+| `agent.start` on a pane | types the agent command (`<program> <args>`) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used. Each argument is quoted for the shell in the pane (its foreground program, else the `SHELL` of herdlingd): POSIX quotes for sh, bash, zsh and the like, fish quotes for fish, double quotes for Nushell. Another shell takes only plain words. An argument with a control character, or one that the shell cannot take, gives `bad_request` and types nothing |
+| `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
+| `tab.rename` of `task:<address>` | the same for that terminal |
+| `tab.rename` of `tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
+| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used. Optional `pane_ids` (since 0.2.0): the panes that the app showed; only the panes in both close. Without `pane_ids`, a `workspace.close` of a repo or folder group (`g:<key>` whose terminals have no `herdling.group` label) gives `unsupported` and kills nothing: such a group follows the folder of each terminal, so an older app can have shown other terminals. A space, a tab and a label group close as a whole |
+| `agent.explain` | `terminal.get` and `terminal.read`: the agent reports its status itself, so `screen_detection_skipped` is true, the one rule `osc-7501` matched, and its evidence is the end of the screen |
+| `workspace.get` | the workspace entry of the snapshot, else `workspace_not_found` |
 
-- Every other method gives the error code `unsupported`, also on a core workspace or tab id.
-  A herdlingd that does not reach a core also gives `unsupported`.
+- `session.snapshot`, `workspace.list` and `workspace.create` name no entry. Any other method
+  with no id gives `unsupported`.
+- `workspace.list` gives the core workspaces, as `session.snapshot` does.
+- Restart and resume of the app use these calls: `pane.close`, `workspace.get`, `tab.create`,
+  then `agent.start` with the resume arguments. The new agent is a new tab of the same space.
+- A pane method on an id that is no terminal address gives `pane_not_found`. Every other method
+  gives the error code `unsupported` (for example `pane.split`, `workspace.focus`, `tab.focus`).
+  A herdlingd 0.2.0 that does not reach a core gives `herdr_unavailable`.
+- Before a call that changes the core (`terminal.run`, `terminal.label`, `terminal.kill` of a tab
+  or workspace, `terminal.send` of `agent.start` and `agent.prompt`), herdlingd reads the core
+  `hello.methods`. A core that lacks the method gives `unsupported`, and nothing changes.
 - The core error kinds `not_found` and `finished` become `pane_not_found`. Other kinds are the code.
-- The core waits until nobody types at the computer before it types. A typing call can take up
-  to 75 seconds.
-- `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list` and
-  `ports.list` accept a core `pane_id`. `shell.watch` gives `unsupported`.
+- Typing calls answer within 10 seconds of their arrival. See "Typing on Herdr 2".
+- `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list`,
+  `ports.list` and `shell.watch` accept a core `pane_id`.
 - `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
   herdr 1, and gives its transcript (`log_path`). `agents.preview` of a core pane reads the
   transcript of the agent and sets `source: "log"`. When no transcript exists, `thread.resolve`
   gives `session: null`, and only `agents.preview` falls back to the screen.
 
+### New terminals
+
+herdlingd starts a terminal as the Herdr app does: the login shell of the user (`$SHELL -l`, else
+the core's own shell) with `keep: true` and no parent. Then it types the agent command. It sets
+only these labels:
+
+| Place | Labels |
+|---|---|
+| a space `space:<id>` | `herdr.space=<id>`, `herdr.tab=<new tab id>` |
+| a new space | `herdr.space=<new space id>`, `herdr.tab=<new tab id>` |
+| a label group `g:<key>` | `herdling.group=<group name>` |
+| a repo or folder group | none: the folder places the terminal |
+
+New ids look like the Herdr app ids: `sp` or `tb` and 32 hex digits. Each new agent gets a new tab
+id, so it is its own tab at the desk. herdlingd never writes the herdr-app layout document.
+
+### `groups.list`
+
+Params: none. Result: `{groups: [{workspace_id, label, source, space_id?, terminals, agents,
+agent_status}]}`, one per workspace of the core part of the snapshot. `source` is `space`,
+`label`, `repo` or `folder`. `space_id` is set for a space. Without a core: `unsupported`.
+
+### `pane.move`
+
+Params: `pane_id` (a core pane) and exactly one of `workspace_id` (a space `space:<id>` or a
+label group `g:<key>`), `new_space: true`, or `group` (a name of at most 64 characters; an
+empty name removes the label). Result: `{pane_id, workspace_id, tab_id}`, where the terminal
+shows now.
+
+- A space target sets `herdr.space` and a new `herdr.tab`. The Herdr app then shows the terminal
+  in that space. A group target sets `herdling.group`. No other label changes.
+- Only a terminal in no Herdr app space moves. A terminal in a space gives `unsupported`: it is
+  not known if the Herdr app moves a terminal that it holds when its labels change.
+- A repo or folder group gives `unsupported`: the folder places those terminals.
+- An unknown pane gives `pane_not_found`; a bad target gives `bad_request`.
+
+### `session.start`
+
+Params: `cwd` (an absolute path), `kind` (an agent kind with a known program), optional
+`workspace_id` (`space:<id>` or `g:<key>`; missing makes a new space), `prompt` and `args`.
+Result: `{pane_id, workspace_id, tab_id, prompt_error}`.
+
+herdlingd starts a shell (see "New terminals"), types the agent command, waits up to 60 seconds
+for the agent to report a 7501 status, then sends the prompt. When the command cannot be typed,
+herdlingd kills the new shell and gives `start_failed`. When the prompt does not go in, the agent
+still runs and `prompt_error` says why.
+
+### Worktrees on the core
+
+`git.worktree_add` makes the worktree with git, then starts a shell in a new space in the
+worktree folder. On 0.1.x this needed `backend: "core"`; on 0.2.0 it is the default, and the
+param is still accepted. The result has `via: "herdr"` and the core `workspace_id`,
+`tab_id` and `pane_id`, so the app starts the agent in that pane. herdlingd checks the core
+methods before git runs.
+
+### `herdlingd group`
+
+`herdlingd group <name>` sets the `herdling.group` label of the terminal that runs it, and
+`herdlingd group --clear` removes it. The core sets `HC_TERMINAL_ID` and `HC_TERMINAL_SOCKET` in
+each terminal; outside a core terminal the command fails. A terminal in no Herdr app space then
+shows in that group.
+
+### Terminal view
+
+`pane.watch` on a core pane uses `terminal.attach` on a framed core connection, when `hello.methods`
+of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
+
+- herdlingd attaches as a watcher (`observe: true`, `resize_notifications: true`, `history` =
+  `lines`). The core never takes its size, keys or focus. With `cols` and `rows` it attaches as a
+  driver at that size. In both modes herdlingd sends only CREDIT and CLOSE frames on the stream:
+  typing has its own short streams (see "Typing on Herdr 2").
+- A terminal emulator in herdlingd reads the stream. Each event has the history lines and the
+  screen rows with SGR colors (`format: "ansi"`), as herdr 1 gives them. Trailing blank rows are cut
+  on the main screen; on the alternate screen (a full-screen app) every row stays. `revision` is 0.
+- The first attach runs before the reply: a missing terminal gives `pane_not_found`. A terminal
+  that ends gives `{"error": "pane_not_found"}`. When the core connection closes, herdlingd attaches
+  again (250 ms, then doubled up to 4 s). After 5 failures in a row it sends `{"closed": true}`.
+- `pane.get` of a watched pane has `scroll`: `max_offset_from_bottom` is 0 on the alternate screen,
+  else the number of history lines; `viewport_rows` is the rows. The app uses it to find a
+  full-screen app and show the page keys.
+- `pane.read` with `format: "ansi"` takes the first paint of one passive attach (it waits until no
+  frame came for 40 ms, at most 1 s), then detaches.
+- `pane.watch` with `format: "vt"` sends the attach bytes as they are (see "Raw terminal stream").
+
 ### Events
 
-`herdr.subscribe` with no `events` list also reads the core events. It sends them as herdr 1
-lines with `hc:` ids: a status change as `pane.agent_status_changed`, a cleared status as
+`herdr.subscribe` reads the core events. It sends them as herdr 1 lines with plain ids: a status change as `pane.agent_status_changed`, a cleared status as
 `pane.agent_detected` with `released: true`, `created` as `pane.created`, `finished` and
 `removed` as `pane.closed`. `missed`, `lost` and a change of the herdr-app document give
-`layout.updated` with `backend: "core"`, so the app reads the snapshot again.
+`layout.updated`, so the app reads the snapshot again.
 
-- The stream lives while one backend is connected. When one backend stops and the other runs,
-  the stream sends `layout.updated` and tries to connect again every 3 seconds. A new connection
-  sends `layout.updated` again. When the last backend stops, the stream sends `{"closed": true}`.
-  With no core, the stream works as before.
+- An `events` list keeps only the lines with those event names.
+- When the core stream ends, the app gets `{"closed": true}` and subscribes again.
 
 ### Pushes
+
+`herdlingd serve` also checks the `shell.watch` watches of core panes with `terminal.get`: every
+3 seconds, and early after a core `foreground` or `title` event of a watched pane. The push rules
+are the herdr 1 rules.
 
 `herdlingd serve` also subscribes to the core events, after `hello` shows generation 1. It sends
 "finished" (working → idle or done) and "needs you" (blocked or error) pushes for core agents,
 with the same debounce and prefs. The title is the terminal name, else the 7501 title, else the
 app. After `missed`, serve compares the snapshot with the known statuses. After a reconnect, the
 snapshot is a new baseline. The core does not report desk activity, so "quiet at the computer"
-does not hold back a core push.
+does not hold back a core push. On 0.2.0 `quiet_at_desk` has no effect (the field stays, so old
+apps can send it).
 
 ### `hello.backends`
 
@@ -765,7 +1078,31 @@ does not hold back a core push.
 {"backends": {"herdr": {"version": "0.9.5", "protocol": 22}, "core": {"version": "0.1.19", "generation": 1}}}
 ```
 
-A backend that does not answer is missing. `herdr_ok` still tells about herdr 1 only.
+A backend that does not answer is missing. On 0.1.x `herdr_ok` tells about herdr 1 only.
+
+On 0.2.0 `backends` has only `core`. `herdr_ok` is true when the core answers, `herdr_version` is
+the core version and `herdr_protocol` is missing, so old apps show the runtime as running. The
+app knows a Herdr 2 only host by `herdlingd` 0.2.0 or later, and then treats every entry as a
+Herdr 2 entry (task rename only, phone width, no herdr 1 key fallback).
+
+### `hello.core_setup` and the core self-heal
+
+Since 0.2.0. A herdlingd 0.1.9 that updates to 0.2.0 does not read `requires_core`, so no core
+is installed. 0.2.0 then installs the pinned core itself: when `serve` starts, and when `hello`
+finds that no core answers and none is installed. It is the path of `core.install` (the pinned
+SHA-256, the same lock). It runs only when no `herdr-core` is found, so it never downgrades and
+never touches a core of a package manager. After a failure, `hello` tries again after 10
+minutes; `serve` tries at each start.
+
+When no core answers, `hello` has `core_setup`:
+
+```json
+{"herdr_ok": false, "core_setup": {"state": "installing", "message": "Installing Herdr 2 (herdr-core 0.1.20) on this computer. This takes a minute. Then Herdling shows its terminals."}}
+```
+
+`state` is `installing`, `failed` (the message has the error) or `missing`. The field is missing
+when all is well. A `herdr_unavailable` error gets the same message, because old apps show that
+text. The state is in `core-heal.json` next to `core-install.lock`.
 
 ## Compatibility rules
 

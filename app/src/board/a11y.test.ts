@@ -43,3 +43,11 @@ test("a_herdr_2_card_has_no_restart_action", () => {
   runCardAction("restart", core, h);
   expect(h.onRestart).not.toHaveBeenCalled();
 });
+
+test("card_label_reads_the_group_repo_and_helpers", () => {
+  expect(
+    cardLabel(
+      item({ group: "Payments", title: "Fix login", repoLine: "api · main", helpers: [{ paneId: "hc:t2", title: "x", status: "idle" }], line: undefined, terminalTitle: undefined }),
+    ),
+  ).toBe("Payments, Fix login, needs you, studio · claude · api · main · 1 helper");
+});

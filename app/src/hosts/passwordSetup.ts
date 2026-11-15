@@ -107,7 +107,7 @@ export type SetupOptions = {
    */
   confirmInstall?: (target: { address: string }) => Promise<boolean>;
   /**
-   * Asks the user to install herdr too, when the installer says herdr is missing. True runs the
+   * Asks the user to install Herdr too, when the installer says it is missing (an old herdlingd). True runs the
    * installer again with `--with-herdr`. Missing or false: setup stops with the "no herdr" message.
    */
   confirmHerdrInstall?: (target: { address: string }) => Promise<boolean>;
@@ -175,7 +175,7 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
     o.onProgress?.("installing");
     const install = { host: address, port, user, password: o.password, expectedFingerprint: fingerprint };
     let installed: InstallResult = await runInstaller(deps, install);
-    // herdr is third-party software: install it only when the user says so.
+    // Herdr is third-party software: install it only when the user says so.
     if (!installed.ok && installed.code === "no_herdr" && o.confirmHerdrInstall && (await o.confirmHerdrInstall({ address }))) {
       o.onProgress?.("installing_herdr");
       installed = await runInstaller(deps, { ...install, withHerdr: true });

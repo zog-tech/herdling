@@ -90,7 +90,7 @@ describe("demo host", () => {
     expect(getHostConn(DEMO_HOST_ID).status).toBe("online");
     expectNoNetwork();
     // The scenario asks for local notices only.
-    expect(mockNotice).toHaveBeenCalledWith(expect.objectContaining({ kind: "needs_you", paneId: "p2" }));
+    expect(mockNotice).toHaveBeenCalledWith(expect.objectContaining({ kind: "needs_you", paneId: "t2" }));
     useNotifPrefs.getState().setPref("finished", true);
   });
 

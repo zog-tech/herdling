@@ -1,5 +1,5 @@
 //! `serve` pushes from herdr-core status events: done gives "finished", blocked gives "needs
-//! you", with a fake core and no herdr 1. Also `missed` and reconnects.
+//! you", with a fake core. Also the prefs, an unregistered token, `missed` and reconnects.
 
 #[path = "support/fake_core.rs"]
 mod fake_core;
@@ -19,12 +19,16 @@ use serde_json::{json, Value};
 const TOKEN: &str = "ExponentPushToken[test]";
 
 struct Setup {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     core: FakeCore,
     http: MockHttp,
 }
 
 async fn start(capabilities: &[&str]) -> Setup {
+    start_with(capabilities, Prefs::default(), json!({"data": [{"status": "ok", "id": "r1"}]})).await
+}
+
+async fn start_with(capabilities: &[&str], prefs: Prefs, reply: Value) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let cfg = config::default_path(dir.path());
     config::update(&cfg, |c| {
@@ -35,7 +39,7 @@ async fn start(capabilities: &[&str]) -> Setup {
             public_key: None,
             expo_token: Some(TOKEN.into()),
             capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
-            prefs: Prefs::default(),
+            prefs,
         })
     })
     .unwrap();
@@ -48,11 +52,10 @@ async fn start(capabilities: &[&str]) -> Setup {
             ..State::default()
         },
     );
-    let http = MockHttp::start(json!({"data": [{"status": "ok", "id": "r1"}]})).await;
+    let http = MockHttp::start(reply).await;
     let ctx = ServeCtx {
         core_socket: Some(CoreSocket::fixed(sock)),
         home: dir.path().into(),
-        herdr_socket: dir.path().join("no-herdr.sock"),
         config_path: cfg,
         push_url: http.url.clone(),
         debounce: Duration::from_millis(50),
@@ -63,7 +66,7 @@ async fn start(capabilities: &[&str]) -> Setup {
     tokio::spawn(async move { core_watch::watch(&ctx).await });
     core.wait_subscribes(1).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    Setup { _dir: dir, core, http }
+    Setup { dir, core, http }
 }
 
 impl Setup {
@@ -84,7 +87,7 @@ async fn done_gives_finished() {
     assert_eq!(body[0]["title"], "api finished");
     // The body names the card group: here the folder group of /…/src.
     assert_eq!(body[0]["body"], "src");
-    assert_eq!(body[0]["data"], json!({"hostId": "h_1", "paneId": "hc:t1"}));
+    assert_eq!(body[0]["data"], json!({"hostId": "h_1", "paneId": "t1"}));
     s.assert_no_body(Duration::from_millis(300)).await;
 }
 
@@ -131,4 +134,37 @@ async fn missed_reconciles_and_reconnect_takes_a_new_baseline() {
     s.core.send(Ctl::Event(status_event("t1", "working")));
     s.core.send(Ctl::Event(status_event("t1", "done")));
     assert_eq!(s.next_body().await[0]["title"], "api finished");
+}
+
+#[tokio::test]
+async fn respects_prefs() {
+    let mut s = start_with(&[], Prefs { needs_you: false, ..Prefs::default() }, json!({"data": [{"status": "ok"}]})).await;
+    s.core.send(Ctl::Event(status_event("t1", "blocked")));
+    s.assert_no_body(Duration::from_millis(300)).await;
+}
+
+#[tokio::test]
+async fn needs_you_push_has_no_buttons_for_an_older_app() {
+    let mut s = start(&[]).await;
+    s.core.send(Ctl::Event(status_event("t1", "blocked")));
+    let body = s.next_body().await;
+    assert_eq!(body[0]["title"], "api needs you");
+    assert!(body[0].get("categoryId").is_none());
+    assert!(body[0]["data"].get("choice").is_none());
+}
+
+#[tokio::test]
+async fn clears_unregistered_token() {
+    let reply = json!({"data": [{"status": "error", "message": "not registered", "details": {"error": "DeviceNotRegistered"}}]});
+    let mut s = start_with(&[], Prefs::default(), reply).await;
+    s.core.send(Ctl::Event(status_event("t1", "done")));
+    s.next_body().await;
+    let cfg = config::default_path(s.dir.path());
+    for _ in 0..100 {
+        if config::load(&cfg).unwrap().devices[0].expo_token.is_none() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("token not cleared");
 }

@@ -1,5 +1,7 @@
 import * as Notifications from "expo-notifications";
 
+import { hostPlainId } from "@/herdr/backend";
+
 /**
  * Removes the delivered notifications of one pane from the Notification Center and the Lock Screen.
  * The app calls it when the user opens the session of the pane and after an answer from the
@@ -17,11 +19,15 @@ const defaultDeps: DismissDeps = {
   dismiss: (id) => Notifications.dismissNotificationAsync(id),
 };
 
-/** True when the data of a notification has this `hostId` and `paneId`. */
+/**
+ * True when the data of a notification has this `hostId` and `paneId`. On a Herdr 2 only host an
+ * old `hc:` id of a push from herdlingd 0.1.x names the same pane as the plain id.
+ */
 export function isPaneNotification(data: unknown, hostId: string, paneId: string): boolean {
   if (typeof data !== "object" || data === null) return false;
   const d = data as { hostId?: unknown; paneId?: unknown };
-  return d.hostId === hostId && d.paneId === paneId;
+  if (d.hostId !== hostId || typeof d.paneId !== "string") return false;
+  return hostPlainId(hostId, d.paneId) === hostPlainId(hostId, paneId);
 }
 
 /**

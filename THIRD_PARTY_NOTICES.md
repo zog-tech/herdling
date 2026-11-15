@@ -27,6 +27,7 @@ The versions are the ones in the lock files and build files of this repository.
 | `@ronradtke/react-native-markdown-display` | 8.1.0 | MIT |
 | Lucide (`lucide-react-native`) | 1.64 | ISC |
 | Zustand | 5.0 | MIT |
+| xterm.js (`@xterm/xterm`, `@xterm/addon-search`, `@xterm/addon-unicode11`), inlined into the terminal page | 6.0.0, 0.16.0, 0.9.0 | MIT |
 | `@expo-google-fonts/jetbrains-mono` | 0.4.1 | MIT (package) |
 | JetBrains Mono (the font files) | | SIL Open Font License 1.1 |
 
@@ -84,6 +85,8 @@ FluidInference from Hugging Face. The model is under the
 | if-addrs | 0.13 | MIT OR BSD-3-Clause |
 | qrcode | 0.14 | MIT OR Apache-2.0 |
 | toml | 0.8 | MIT OR Apache-2.0 |
+| vt100 (terminal emulator of the Herdr 2 terminal view) | 0.18 | MIT |
+| vte (through vt100) | 0.15 | Apache-2.0 OR MIT |
 | dirs, fs4, libc, rand, sha2, base64 | | MIT OR Apache-2.0 |
 
 `cargo tree` in `companion/` shows the full list of crates.

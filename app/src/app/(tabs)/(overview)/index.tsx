@@ -13,7 +13,7 @@ import { DemoTag } from "@/demo/DemoTag";
 import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
-import { FilterButton, FilterField, NoMatch } from "@/board/BoardFilter";
+import { FilterButton, FilterField, JumpButton, NoMatch } from "@/board/BoardFilter";
 import { setFilter, setQuery, updateFirstSeen, useBoard } from "@/board/boardStore";
 import { BOARD_GROUPS, collapseSections, collapsible, groupItems, groupLabel, sortItems, sortLabel, SORTS } from "@/board/arrange";
 import { BoardTop } from "@/board/BoardTop";
@@ -24,8 +24,10 @@ import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
 import { filterByText, queryWords } from "@/board/textFilter";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
-import { allows } from "@/herdr/backend";
+import { allows, renameKindsFor } from "@/herdr/backend";
 import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
+import { moveToGroup } from "@/herdr/moveFlow";
+import { canMove } from "@/herdr/moveGroup";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
@@ -49,7 +51,6 @@ import { useKeyCommand } from "@/ui/keyCommands";
 import { BOARD_COLUMN_WIDTH, selectionFromParams, stepKey, useLayoutClass, type PaneRef } from "@/ui/layout";
 import { showActionSheet } from "@/ui/nativeSheet";
 import { StateNotice } from "@/ui/StateNotice";
-import { Tag } from "@/ui/Tag";
 import { Text } from "@/ui/Text";
 
 // A render error on the board shows the error screen in the tab. A session on top stays open.
@@ -194,7 +195,6 @@ function CollapseChevron({ collapsed }: { collapsed: boolean }) {
 function SectionHeader({
   title,
   subtitle,
-  tag,
   count,
   collapsed,
   onToggle,
@@ -202,8 +202,6 @@ function SectionHeader({
 }: {
   title: string;
   subtitle?: string;
-  /** A small label after the title, for example "Herdr 2". */
-  tag?: string;
   count?: number;
   collapsed?: boolean;
   onToggle?: () => void;
@@ -220,7 +218,6 @@ function SectionHeader({
           {subtitle}
         </Text>
       ) : null}
-      {tag ? <Tag label={tag} /> : null}
       {count !== undefined ? (
         <Text variant="section" maxFontSizeMultiplier={denseScale.row} style={{ fontVariant: ["tabular-nums"] }}>
           {count}
@@ -243,7 +240,7 @@ function SectionHeader({
       {onToggle ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${title}${subtitle ? `, ${subtitle}` : ""}${tag ? `, ${tag}` : ""}, ${count ?? 0} ${count === 1 ? "agent" : "agents"}`}
+          accessibilityLabel={`${title}${subtitle ? `, ${subtitle}` : ""}, ${count ?? 0} ${count === 1 ? "agent" : "agents"}`}
           accessibilityHint={collapsed ? "Shows the agents of this group" : "Hides the agents of this group"}
           accessibilityState={{ expanded: !collapsed }}
           onPress={onToggle}
@@ -482,6 +479,8 @@ export default function BoardScreen() {
     else openFilter();
   }, [showFilter, closeFilter, openFilter]);
 
+  const openJump = useCallback(() => router.push("/jump" as never), [router]);
+
   useLayoutEffect(() => {
     // The Dashboard top draws its own brand header with the group and sort menus under the carousel.
     if (dashboard) {
@@ -493,6 +492,7 @@ export default function BoardScreen() {
       // Plain icons: iOS 26 puts them on Liquid Glass in the header.
       headerRight: () => (
         <View style={{ flexDirection: "row" }}>
+          {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
           <FilterButton open={showFilter} onPress={toggleFilter} />
           <Pressable
             accessibilityRole="button"
@@ -512,7 +512,7 @@ export default function BoardScreen() {
         </View>
       ),
     });
-  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter]);
+  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter, hosts.length, openJump]);
 
   // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
   const openPane = useCallback(
@@ -559,8 +559,8 @@ export default function BoardScreen() {
   const onRestart = useCallback(
     async (i: BoardItem) => {
       const { rpc, hello } = getHostConn(i.hostId);
-      // A Herdr 2 agent cannot restart: herdr 1 starts the new agent.
-      if (!rpc || !allows(i.agent, "restart")) return;
+      // A Herdr 2 agent of an older herdlingd cannot restart.
+      if (!rpc || !allows(i.agent, "restart", i.hostId)) return;
       const session = await sessionToKeep(rpc, hello, i.agent);
       const choice = await chooseRestart(!!session);
       if (!choice) return;
@@ -572,6 +572,7 @@ export default function BoardScreen() {
         await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId), {
           session: choice === "keep" ? session : undefined,
           args: rememberedArgs(i.agent.agent),
+          hostId: i.hostId,
         });
       } catch (e) {
         Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
@@ -582,14 +583,23 @@ export default function BoardScreen() {
 
   const onMenu = useCallback(
     (i: BoardItem) => {
-      const { rpc } = getHostConn(i.hostId);
+      const { rpc, hello } = getHostConn(i.hostId);
       const menu: MenuItem[] = [
         { label: "Reply", onPick: () => onReply(i) },
         { label: "Peek", onPick: () => onPeek(i) },
+        {
+          label: "Open space",
+          onPick: () =>
+            router.push({
+              pathname: "/spaces/[hostId]/[workspaceId]",
+              params: { hostId: i.hostId, workspaceId: i.agent.workspace_id, tab: i.agent.tab_id },
+            } as never),
+        },
       ];
       if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
-      if (rpc && allows(i.agent, "rename")) menu.push(...renameItems(rpc, i.hostId, i.agent));
-      if (allows(i.agent, "restart")) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
+      if (rpc && allows(i.agent, "rename", i.hostId)) menu.push(...renameItems(rpc, i.hostId, i.agent));
+      if (rpc && canMove(i.agent, hello)) menu.push({ label: "Move to space…", onPick: () => void moveToGroup(rpc, i.agent) });
+      if (allows(i.agent, "restart", i.hostId)) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
       showActionSheet(
         {
           title: i.title,
@@ -600,7 +610,7 @@ export default function BoardScreen() {
         (k) => menu[k]?.onPick(),
       );
     },
-    [onReply, onPeek, onMarkRead, onRestart],
+    [onReply, onPeek, onMarkRead, onRestart, router],
   );
 
   const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string) => {
@@ -623,6 +633,7 @@ export default function BoardScreen() {
         <BrandHeader
           right={
             <>
+              {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
               {hosts.length > 0 ? <FilterButton open={showFilter} onPress={toggleFilter} /> : null}
               <HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />
             </>
@@ -660,11 +671,10 @@ export default function BoardScreen() {
               <SectionHeader
                 title={section.title}
                 subtitle={section.subtitle}
-                tag={section.tag}
                 count={folds ? section.count : undefined}
                 collapsed={section.collapsed}
                 onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}
-                onMenu={ws && allows(ws.workspaceId, "rename") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
+                onMenu={ws && renameKindsFor(ws.workspaceId, ws.hostId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
               />
             );
           }}

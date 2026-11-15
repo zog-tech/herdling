@@ -22,10 +22,10 @@ Follow and answer your AI coding agents, or open a shell, from your phone.
 ### Full description (max 4000)
 
 ```
-Herdling is a phone app for herdr, the terminal workspace for AI coding agents. Your agents keep working when you leave your desk. Herdling lets you follow them and answer them from anywhere your phone can reach your computers.
+Herdling is a phone app for Herdr 2 (herdr-core), the terminal workspace for AI coding agents. Your agents keep working when you leave your desk. Herdling lets you follow them and answer them from anywhere your phone can reach your computers.
 
 SEE EVERY AGENT
-One board shows the agents on all of your computers. Each tile shows the agent's logo, its status, what it is doing now and its last reply. The ones that need an answer come first. Group the board by folder, by computer or by herdr workspace. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
+One board shows the agents on all of your computers. Each tile shows the agent's logo, its status, what it is doing now and its last reply. The ones that need an answer come first. Group the board by folder, by computer or by Herdr space. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
 
 READ AND REPLY
 Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt. Long pasted text goes in as an attachment, so your prompt stays readable. One status line shows when the agent and its subagents are working; tap it to open a subagent.
@@ -43,13 +43,13 @@ TALK AND LISTEN
 Tap the mic to speak a prompt. Speech can turn into text on your phone or on your own computer. Herdling can also read replies out loud, in full or as a short summary.
 
 WORKS WITH YOUR AGENTS
-Herdling works with the agents that herdr runs, such as Claude Code, Codex, Pi and OpenCode.
+Herdling works with the agents that Herdr 2 (herdr-core) runs, such as Claude Code, Codex, Pi and OpenCode.
 
 PRIVATE BY DESIGN
 Herdling connects straight to your own computers over SSH. Your sessions, prompts, photos and recordings go from your phone to your computer and back, and never pass through our servers. We run none. The SSH key is made on your phone and protected by the Android Keystore. There is no account, no analytics, no ads and no tracking.
 
 WHAT YOU NEED
-- One or more Mac or Linux computers that run herdr.
+- One or more Mac or Linux computers that run Herdr 2 (herdr-core).
 - The free herdlingd companion on each computer. Setup takes a few minutes: install it, run "herdlingd pair" and scan the QR code.
 - A network path from your phone to your computers, such as your home Wi-Fi or a VPN.
 

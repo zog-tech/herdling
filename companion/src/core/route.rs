@@ -1,10 +1,13 @@
 //! `herdr.call` on a core id: which herdr-core method answers a herdr 1 method, and how the
-//! answer gets the herdr 1 shape. Pure; `core::live` does the calls.
+//! answer gets the herdr 1 shape. [`plan`] gives the single-call rows; [`action`] gives every
+//! row, also the ones with more steps. Pure; `core::live` does the calls.
 //!
 //! Methods with no core equivalent give the error code [`UNSUPPORTED`].
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
+use super::actions::{agent_line, rename_labels, ActionError, Scope, ShellFamily};
+use super::ids::{self, Tab};
 use super::project::{self, address};
 
 /// The error code of a herdr method that a core entry cannot do.
@@ -14,14 +17,13 @@ pub const UNSUPPORTED: &str = "unsupported";
 const DEFAULT_LINES: u64 = 200;
 const MAX_LINES: u64 = 1000;
 
-/// The core id that `params` names: the value of `target` or of a key that ends with `_id`,
-/// when it starts with `hc:`. Text params never count.
-pub fn core_target(params: &Value) -> Option<&str> {
-    let obj = params.as_object()?;
-    obj.iter()
-        .filter(|(k, _)| *k == "target" || k.ends_with("_id"))
-        .filter_map(|(_, v)| v.as_str())
-        .find(|v| project::is_core_id(v))
+/// The id of the entry that a herdr 1 call names: the first non-empty string of `pane_id`,
+/// `target`, `tab_id`, `workspace_id`, without the legacy `hc:` prefix. None for a call that
+/// names no entry.
+pub fn target(params: &Value) -> Option<String> {
+    ids::ID_KEYS
+        .iter()
+        .find_map(|k| params.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(|v| ids::strip_legacy(v).to_string()))
 }
 
 /// How the core answer becomes the herdr 1 answer.
@@ -53,7 +55,8 @@ fn unsupported(m: impl Into<String>) -> Unsupported {
     Unsupported(m.into())
 }
 
-/// The core keys that type `text` exactly, when every character has a key. The page sequences
+/// The core keys that type `text` exactly, when every character has a key. Only a core without
+/// `terminal.attach` types text this way; else the text goes in as raw bytes (`core::typing`). The page sequences
 /// of the app (`\x1b[5~`, `\x1b[6~`) are the page keys.
 pub fn text_keys(text: &str) -> Option<Vec<String>> {
     match text {
@@ -92,6 +95,21 @@ fn keys_param(params: &Value) -> Result<Vec<String>, Unsupported> {
     }
 }
 
+/// The text and the keys of a typing call, as [`plan`] reads them: `pane.send_text` with one
+/// final newline is a line and Enter.
+pub fn typed(method: &str, params: &Value) -> Result<(String, Vec<String>), Unsupported> {
+    let text = params.get("text").and_then(Value::as_str).unwrap_or("");
+    Ok(match method {
+        "pane.send_input" => (text.to_string(), keys_param(params)?),
+        "pane.send_text" => match text.strip_suffix('\n').or_else(|| text.strip_suffix('\r')) {
+            Some(line) if !line.is_empty() && !line.contains(['\n', '\r']) => (line.to_string(), vec!["enter".into()]),
+            _ => (text.to_string(), vec![]),
+        },
+        "pane.send_keys" => (String::new(), keys_param(params)?),
+        _ => (String::new(), vec![]),
+    })
+}
+
 /// Typing `text`, then pressing `keys`: one `terminal.send` when it is a line and Enter,
 /// else one `terminal.keys`. `force` types into a blocked program too.
 fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan, Unsupported> {
@@ -103,7 +121,7 @@ fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan
         vec![]
     } else {
         text_keys(text).ok_or_else(|| {
-            unsupported("Herdr 2 cannot type this text without Enter. Send it as a line, or use herdr 1.")
+            unsupported("Herdr 2 cannot type this text without Enter. Send it as a line.")
         })?
     };
     all.extend(keys);
@@ -113,9 +131,12 @@ fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan
     plain("terminal.keys", json!({ "terminal": addr, "keys": all }))
 }
 
+/// The herdr 1 methods of [`plan`]: each names a pane.
+const PANE_METHODS: [&str; 8] = ["pane.read", "pane.send_input", "pane.send_text", "pane.send_keys", "agent.prompt", "pane.get", "pane.process_info", "pane.close"];
+
 /// The core call for the herdr 1 call `method` on the core pane `id`.
 pub fn plan(method: &str, params: &Value, id: &str) -> Result<Plan, Unsupported> {
-    let need_herdr1 = || unsupported(format!("{method} needs herdr 1; Herdr 2 terminals do not support it yet"));
+    let need_herdr1 = || unsupported(format!("{method} has no meaning on Herdr 2"));
     let addr = address(id).ok_or_else(need_herdr1)?;
     let s = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or("");
     let get = |shape| Ok(Plan { method: "terminal.get", params: json!({ "terminal": addr }), shape });
@@ -172,4 +193,100 @@ pub fn shape(shape: &Shape, result: Value) -> Value {
         Shape::ProcessInfo => project::process_info(&result),
         Shape::Plain => result,
     }
+}
+
+/// What a herdr 1 call on a core id does. [`Action::Call`] is one core call; the other actions
+/// need more than one call or a projection (`core::live::run`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// One core call, see [`plan`].
+    Call(Plan),
+    /// `tab.create` (and `workspace.create` for the core): a new shell in a new tab of
+    /// `workspace` (None: a new space). `kind` is the herdr 1 answer type.
+    Run { kind: &'static str, workspace: Option<String>, cwd: Option<String> },
+    /// `agent.start`: type the command of agent `kind` with `args` into the shell of `addr`.
+    /// The line is quoted for the shell family of that terminal (`core::live`).
+    Start { addr: String, kind: String, args: Vec<String> },
+    /// Text without Enter, and keys: typed at once (`core::typing`). `fallback` is the
+    /// `terminal.keys` call of [`plan`] for a core without `terminal.attach`, if the text has keys.
+    Type { addr: String, text: String, keys: Vec<String>, fallback: Option<Plan> },
+    /// `agent.prompt`: send `text` once the terminal reports an agent status.
+    Prompt { addr: String, text: String },
+    /// `agent.rename` and the rename of a task tab: set these labels.
+    Label { addr: String, labels: Map<String, Value> },
+    /// `tab.close`, `workspace.close`: kill the terminals of the scope, only those of `pane_ids`
+    /// when the app sent the list (see [`super::actions::close_members`]).
+    Kill(Scope, Option<Vec<String>>),
+    /// `agent.explain`.
+    Explain { addr: String },
+    /// `workspace.get` of a core workspace.
+    WorkspaceGet(String),
+}
+
+/// The optional `pane_ids` of a close: the panes that the app showed.
+fn pane_ids(params: &Value) -> Result<Option<Vec<String>>, ActionError> {
+    match params.get("pane_ids") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|v| v.as_str().map(String::from))
+            .collect::<Option<_>>()
+            .map(Some)
+            .ok_or_else(|| ActionError::bad("pane_ids must be strings")),
+        Some(_) => Err(ActionError::bad("pane_ids must be an array")),
+    }
+}
+
+/// The action of the herdr 1 call `method` on the core id `id`.
+pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionError> {
+    let s = |k: &str| params.get(k).and_then(Value::as_str);
+    // A pane method on an id that is no terminal address names no pane.
+    let pane = || address(id).map(String::from).ok_or_else(|| ActionError::not_found("pane", id));
+    let owned_names = "The Herdr app owns the names of its spaces and tabs. Rename the task instead.";
+    Ok(match method {
+        "tab.create" => Action::Run { kind: "tab_created", workspace: Some(id.to_string()), cwd: s("cwd").map(String::from) },
+        "agent.start" => {
+            let addr = pane()?;
+            let kind = s("kind").filter(|k| !k.is_empty()).ok_or_else(|| ActionError::bad("agent.start requires kind"))?;
+            let args: Vec<String> = match params.get("args") {
+                None | Some(Value::Null) => vec![],
+                Some(Value::Array(a)) => a
+                    .iter()
+                    .map(|v| v.as_str().map(String::from))
+                    .collect::<Option<_>>()
+                    .ok_or_else(|| ActionError::bad("agent.start: args must be strings"))?,
+                Some(_) => return Err(ActionError::bad("agent.start: args must be an array")),
+            };
+            // The checks of the kind and the arguments come before any call.
+            agent_line(kind, &args, ShellFamily::Posix)?;
+            Action::Start { addr, kind: kind.to_string(), args }
+        }
+        "agent.prompt" => {
+            let text = s("text").filter(|t| !t.is_empty()).ok_or_else(|| ActionError::unsupported("agent.prompt requires text"))?;
+            Action::Prompt { addr: pane()?, text: text.to_string() }
+        }
+        "agent.rename" => Action::Label { addr: pane()?, labels: rename_labels(s("name")) },
+        "tab.rename" => match ids::tab(id) {
+            Some(Tab::Task(addr)) => Action::Label { addr: addr.to_string(), labels: rename_labels(s("label")) },
+            Some(Tab::Space(_)) => return Err(ActionError::unsupported(owned_names)),
+            None => return Err(ActionError::not_found("tab", id)),
+        },
+        "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
+        "tab.close" => Action::Kill(Scope::Tab(id.to_string()), pane_ids(params)?),
+        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string()), pane_ids(params)?),
+        "pane.send_input" | "pane.send_text" | "pane.send_keys" => {
+            let addr = pane()?;
+            let (text, keys) = typed(method, params).map_err(|u| ActionError::unsupported(u.0))?;
+            if (!text.is_empty() && keys == ["enter"]) || (text.is_empty() && keys.is_empty()) {
+                // A line (`terminal.send`), or nothing to type.
+                Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?)
+            } else {
+                Action::Type { addr, text, keys, fallback: plan(method, params, id).ok() }
+            }
+        }
+        "agent.explain" => Action::Explain { addr: pane()? },
+        "workspace.get" => Action::WorkspaceGet(id.to_string()),
+        _ if address(id).is_none() && PANE_METHODS.contains(&method) => return Err(ActionError::not_found("pane", id)),
+        _ => Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?),
+    })
 }

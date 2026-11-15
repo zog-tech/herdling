@@ -1,16 +1,17 @@
-//! `pane.watch`: a streamed screen of one pane. herdlingd reads the pane over the local herdr
-//! socket every `interval_ms` and sends an event only when the screen changed, so the network
+//! `pane.watch`: a streamed screen of one pane. A core with `terminal.attach` streams the screen
+//! with colors ([`crate::core::term_watch`]). An older core is read with `terminal.read` every
+//! `interval_ms`, and herdlingd sends an event only when the screen changed, so the network
 //! carries changes only. It replaces the 1 s `pane.read` polling of the app.
 //!
-//! herdr 0.9.5 (protocol 22) returns `revision: 0` on every read, so the revision alone cannot
-//! tell a change. The gate sends a screen when the revision or the text differs from the last
+//! The core gives no revision, so the gate sends a screen when its text differs from the last
 //! screen sent. An idle screen gives the same text on each read, so it sends nothing.
 
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::herdr::{self, HerdrError};
+use crate::core::client::CoreError;
+use crate::core::endpoint::CoreSocket;
 use crate::rpc::{Ctx, Out};
 use crate::types::RpcError;
 
@@ -57,14 +58,38 @@ impl Gate {
     }
 }
 
+/// The `format` of a `pane.watch` stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Screen text with no escapes.
+    Text,
+    /// Screen text with SGR colors.
+    Ansi,
+    /// The raw bytes of the terminal for an emulator in the app ([`crate::core::vt`]). Herdr 2
+    /// panes with `terminal.attach` only.
+    Vt,
+}
+
+/// The `format` values that `pane.watch` accepts, for `hello.watch_formats`.
+pub const FORMATS: [&str; 3] = ["text", "ansi", "vt"];
+
 /// Validated `pane.watch` params.
 #[derive(Debug, Clone)]
 pub struct WatchParams {
     pub pane_id: String,
     pub lines: u64,
+    /// `format == Ansi`, for the screen paths.
     pub ansi: bool,
+    pub format: Format,
     pub interval: Duration,
+    /// The phone grid `(cols, rows)`, when the app asks to drive a Herdr 2 pane at that size.
+    /// Both params or none.
+    pub size: Option<(u16, u16)>,
 }
+
+/// Bounds for the phone grid of a drive watch.
+pub const DRIVE_COLS: (u64, u64) = (20, 500);
+pub const DRIVE_ROWS: (u64, u64) = (5, 200);
 
 fn bad(message: impl Into<String>) -> RpcError {
     RpcError { code: "bad_request".into(), message: message.into() }
@@ -79,75 +104,39 @@ impl WatchParams {
             .ok_or_else(|| bad("pane.watch requires pane_id"))?
             .to_string();
         let lines = params.get("lines").and_then(Value::as_u64).unwrap_or(DEFAULT_LINES).clamp(1, MAX_LINES);
-        let ansi = match params.get("format").and_then(Value::as_str) {
-            None | Some("text") => false,
-            Some("ansi") => true,
-            Some(_) => return Err(bad("format must be text or ansi")),
+        let format = match params.get("format").and_then(Value::as_str) {
+            None | Some("text") => Format::Text,
+            Some("ansi") => Format::Ansi,
+            Some("vt") => Format::Vt,
+            Some(_) => return Err(bad("format must be text, ansi or vt")),
         };
+        let ansi = format == Format::Ansi;
         let ms = params
             .get("interval_ms")
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_INTERVAL_MS)
             .clamp(MIN_INTERVAL_MS, MAX_INTERVAL_MS);
-        Ok(WatchParams { pane_id, lines, ansi, interval: Duration::from_millis(ms) })
-    }
-
-    fn read_params(&self) -> Value {
-        json!({
-            "pane_id": self.pane_id,
-            "source": "recent",
-            "lines": self.lines,
-            "format": if self.ansi { "ansi" } else { "text" },
-            "strip_ansi": !self.ansi,
-        })
+        let n = |k: &str| params.get(k).and_then(Value::as_u64);
+        let size = match (n("cols"), n("rows")) {
+            (Some(c), Some(r)) => Some((c.clamp(DRIVE_COLS.0, DRIVE_COLS.1) as u16, r.clamp(DRIVE_ROWS.0, DRIVE_ROWS.1) as u16)),
+            _ => None,
+        };
+        Ok(WatchParams { pane_id, lines, ansi, format, interval: Duration::from_millis(ms), size })
     }
 }
 
-fn screen_of(v: &Value) -> Screen {
-    let r = v.get("read").unwrap_or(v);
-    Screen {
-        revision: r.get("revision").and_then(Value::as_u64).unwrap_or(0),
-        text: r.get("text").and_then(Value::as_str).unwrap_or("").to_string(),
-        truncated: r.get("truncated").and_then(Value::as_bool).unwrap_or(false),
-    }
-}
-
-/// Reads the pane on one kept herdr connection. herdr 0.9.0 closes each connection after one
-/// answer, so a failed call on an old connection connects again once before it fails.
+/// Reads the screen of a core pane with `terminal.read` (plain text: an older core has no colors).
 struct Reader {
-    socket: std::path::PathBuf,
+    sock: CoreSocket,
     timeout: Duration,
-    client: Option<herdr::Client>,
-    params: Value,
-    /// Set for a core pane: the core socket and the lines of history. The core gives plain
-    /// text only, so `format: "ansi"` also gives plain text there.
-    core: Option<(crate::core::endpoint::CoreSocket, u64)>,
     pane_id: String,
+    lines: u64,
 }
 
 impl Reader {
-    async fn read(&mut self) -> Result<Screen, HerdrError> {
-        if let Some((sock, lines)) = &self.core {
-            return match crate::core::live::read_text(sock, self.timeout, &self.pane_id, *lines).await {
-                Ok((text, complete)) => Ok(Screen { revision: 0, text, truncated: !complete }),
-                Err(crate::core::client::CoreError::Unavailable(m)) => Err(HerdrError::Unavailable(m)),
-                Err(e) => {
-                    let e = crate::core::live::rpc_err(e);
-                    Err(HerdrError::Remote { code: e.code, message: e.message })
-                }
-            };
-        }
-        if let Some(c) = self.client.as_mut() {
-            match c.call("pane.read", self.params.clone()).await {
-                Ok(v) => return Ok(screen_of(&v)),
-                Err(e @ HerdrError::Remote { .. }) => return Err(e),
-                Err(HerdrError::Unavailable(_)) => self.client = None,
-            }
-        }
-        let mut c = herdr::Client::connect(&self.socket, self.timeout).await?;
-        let v = c.call("pane.read", self.params.clone()).await?;
-        self.client = Some(c);
-        Ok(screen_of(&v))
+    async fn read(&mut self) -> Result<Screen, CoreError> {
+        let (text, complete) = crate::core::live::read_text(&self.sock, self.timeout, &self.pane_id, self.lines).await?;
+        Ok(Screen { revision: 0, text, truncated: !complete })
     }
 }
 
@@ -160,29 +149,23 @@ fn screen_data(s: &Screen) -> Value {
 }
 
 /// Starts a `pane.watch` stream. The first read happens before the reply, so the app gets
-/// herdr errors (for example `pane_not_found`) as the call error. The first event is that screen.
+/// core errors (for example `pane_not_found`) as the call error. The first event is that screen.
 pub async fn pane_watch(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError> {
     let p = WatchParams::parse(&params)?;
-    let core = if crate::core::project::is_core_id(&p.pane_id) {
-        let Some(sock) = ctx.core_socket.clone() else {
-            return Err(RpcError { code: crate::core::route::UNSUPPORTED.into(), message: "this herdlingd does not reach herdr-core".into() });
-        };
-        Some((sock, p.lines))
-    } else {
-        None
+    let Some(sock) = ctx.core_socket.clone() else {
+        return Err(RpcError { code: "herdr_unavailable".into(), message: "herdr-core: no core socket on this computer".into() });
     };
-    let mut reader = Reader {
-        socket: ctx.herdr_socket.clone(),
-        timeout: ctx.herdr_timeout,
-        client: None,
-        params: p.read_params(),
-        core,
-        pane_id: p.pane_id.clone(),
-    };
-    let first = reader.read().await.map_err(|e| match e {
-        HerdrError::Unavailable(m) => RpcError { code: "herdr_unavailable".into(), message: m },
-        HerdrError::Remote { code, message } => RpcError { code, message },
-    })?;
+    // A core with `terminal.attach` streams the screen with colors. An older core is read with
+    // `terminal.read` (plain text) below.
+    if let Some(r) = crate::core::term_watch::pane_watch(ctx, out, &p, &sock).await {
+        return r;
+    }
+    // The raw stream needs `terminal.attach`: the app shows its classic view.
+    if p.format == Format::Vt {
+        return Err(RpcError { code: "unsupported".into(), message: "herdr-core has no terminal.attach: format vt is not available".into() });
+    }
+    let mut reader = Reader { sock, timeout: ctx.herdr_timeout, pane_id: p.pane_id.clone(), lines: p.lines };
+    let first = reader.read().await.map_err(crate::core::live::rpc_err)?;
     let out = out.clone();
     let interval = p.interval;
     let stream = ctx.streams.spawn("pane", move |id| async move {
@@ -200,14 +183,15 @@ pub async fn pane_watch(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, Rp
                     }
                     screen_data(&s)
                 }
-                // The pane closed or herdr refused the read: tell the app and end.
-                Err(HerdrError::Remote { code, message }) => {
-                    let _ = out.send(event(&id, json!({ "error": code, "message": message }))).await;
+                // The core stopped: the same end as a closed `herdr.subscribe` stream.
+                Err(CoreError::Unavailable(_)) => {
+                    let _ = out.send(event(&id, json!({ "closed": true }))).await;
                     return;
                 }
-                // herdr stopped: the same end as a closed `herdr.subscribe` stream.
-                Err(HerdrError::Unavailable(_)) => {
-                    let _ = out.send(event(&id, json!({ "closed": true }))).await;
+                // The pane closed or the core refused the read: tell the app and end.
+                Err(e) => {
+                    let e = crate::core::live::rpc_err(e);
+                    let _ = out.send(event(&id, json!({ "error": e.code, "message": e.message }))).await;
                     return;
                 }
             };

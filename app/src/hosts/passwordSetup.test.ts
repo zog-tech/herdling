@@ -182,7 +182,7 @@ describe("setUpWithPassword", () => {
         setUpWithPassword({ ...base, confirm: yes, confirmInstall: async () => true, confirmHerdrInstall: async () => true }, d),
       );
       expect(e.code).toBe("install_failed");
-      expect(e.message).toContain("herdr could not be installed: The herdr installer failed: no build");
+      expect(e.message).toContain("Herdr could not be installed: The herdr installer failed: no build");
       expect(useHosts.getState().hosts).toEqual([]);
     });
   });

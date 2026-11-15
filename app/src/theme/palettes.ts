@@ -10,7 +10,12 @@ import type { Colors } from "./tokens";
 
 export type ThemeId = "nightWatch" | "midnight" | "graphite";
 export type AccentId = "lantern" | "ember" | "seaGlass" | "iris" | "ivory";
-export type ThemeChoice = { theme: ThemeId; accent: AccentId };
+export type TerminalThemeId = "app" | "paper";
+/**
+ * `terminal` is the terminal theme. Missing means "app": the terminal keeps the colors of the
+ * theme. A choice saved by an older app has no `terminal`.
+ */
+export type ThemeChoice = { theme: ThemeId; accent: AccentId; terminal?: TerminalThemeId };
 
 export const DEFAULT_CHOICE: ThemeChoice = { theme: "nightWatch", accent: "lantern" };
 
@@ -135,6 +140,57 @@ export const ACCENTS: readonly AccentDef[] = [
   { id: "ivory", label: "Ivory", accent: "#E9E4D8", accentPressed: "#C7C1B4", onAccent: "#0A0A0B", matchBg: "#615F5B" },
 ];
 
+export type TerminalThemeDef = {
+  id: TerminalThemeId;
+  label: string;
+  detail: string;
+  /** Only `terminal` and `ansi`. Empty: the colors of the app theme. */
+  colors: { terminal?: { bg: string; fg: string }; ansi?: readonly string[] };
+};
+
+/**
+ * Terminal themes: the screen of the terminal view only. "Paper" is a light screen: warm paper and
+ * ink. Every ANSI entry is 4:1 or more on the paper; "white" is a mid grey, so text that a program
+ * prints in white stays readable. The rest of the app stays dark.
+ */
+export const TERMINAL_THEMES: readonly TerminalThemeDef[] = [
+  { id: "app", label: "Same as the app", detail: "The dark screen of the theme.", colors: {} },
+  {
+    id: "paper",
+    label: "Paper",
+    detail: "A light screen with dark text, for bright places.",
+    colors: {
+      terminal: { bg: "#F7F4EC", fg: "#24211C" },
+      ansi: [
+        "#24211C",
+        "#B3261E",
+        "#2E6B30",
+        "#7A5A00",
+        "#1F5BB5",
+        "#8A3FA0",
+        "#0F6E7A",
+        "#6F6A61",
+        "#5C574F",
+        "#C4372B",
+        "#3A7D3C",
+        "#8C6900",
+        "#2D6BCF",
+        "#9C4DB4",
+        "#16808D",
+        "#4A463F",
+      ],
+    },
+  },
+];
+
+export function isTerminalThemeId(v: unknown): v is TerminalThemeId {
+  return TERMINAL_THEMES.some((t) => t.id === v);
+}
+
+export function terminalThemeDef(id: TerminalThemeId | undefined): TerminalThemeDef {
+  return TERMINAL_THEMES.find((t) => t.id === id) ?? TERMINAL_THEMES[0];
+}
+
 export function isThemeId(v: unknown): v is ThemeId {
   return THEMES.some((t) => t.id === v);
 }
@@ -179,7 +235,7 @@ function tint(hex: string, alpha: number): string {
 
 export function buildColors(base: Colors, choice: ThemeChoice): Colors {
   const a = accentDef(choice.accent);
-  const themed = merge(base, themeDef(choice.theme).colors);
+  const themed = merge(merge(base, themeDef(choice.theme).colors), terminalThemeDef(choice.terminal).colors);
   return merge(themed, {
     accent: a.accent,
     accentPressed: a.accentPressed,

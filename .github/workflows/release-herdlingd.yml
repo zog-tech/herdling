@@ -153,11 +153,24 @@ jobs:
               sha, name = line.split()
               target = name.removeprefix("herdlingd-").removesuffix(".tar.gz")
               assets[target] = {"url": f"{base}/{name}", "sha256": sha}
+          # The herdr-core pin of this herdlingd (companion/core-pin.json). An older herdlingd
+          # reads it to install the core first when this release needs it (requires_core).
+          pin = json.load(open("../companion/core-pin.json"))
+          notes = open("notes.md").read().strip()
+          # Old apps show `notes` before the update. A release that needs the core says so first.
+          if pin.get("required", False):
+              notice = (
+                  f"This update needs Herdr 2 (herdr-core). herdlingd installs herdr-core {pin['version']} "
+                  "on this computer when it is missing. herdr 1 sessions do not show in Herdling after the update."
+              )
+              notes = notice + "\n\n" + notes
           manifest = {
               "version": version,
               "date": datetime.date.today().isoformat(),
-              "notes": open("notes.md").read().strip(),
+              "notes": notes,
               "assets": assets,
+              "requires_core": bool(pin.get("required", False)),
+              "core": pin,
           }
           with open("latest.json", "w") as f:
               json.dump(manifest, f, indent=2)

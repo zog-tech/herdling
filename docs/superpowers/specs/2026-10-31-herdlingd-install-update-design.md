@@ -115,6 +115,11 @@ herdr installer URL, and `HERDLING_BOOT_STATE` replaces the boot check, for test
 Error codes: `unsupported_os`, `unsupported_arch`, `no_herdr`, `herdr_install_failed`,
 `no_downloader`, `no_checksum_tool`, `download_failed`, `checksum_mismatch`, `install_failed`.
 
+Added with the herdr-core install (plan B of the Herdr 2 migration): the step `core` and the error
+code `core_install_failed`. The script unpacks herdlingd before the herdr check. When
+`herdlingd core required` exits with 0, it runs `herdlingd core install` before `herdlingd install`
+and does not check for herdr 1. See "Herdr 2 install" in `docs/protocol.md`.
+
 ## C. Update RPC
 
 The phone key is restricted: `command="<exe> rpc"`. So the phone cannot run the installer with

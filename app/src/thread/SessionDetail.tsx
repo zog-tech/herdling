@@ -20,6 +20,7 @@ import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
+import { tabPanes } from "@/herdr/tabPanes";
 import { markSeen } from "@/herdr/seen";
 import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
@@ -41,6 +42,7 @@ import { sendKey } from "@/terminal/keys";
 import { NOTIFY_LABEL, STOP_NOTIFY_LABEL, useShellWatch } from "@/terminal/shellWatch";
 import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
+import { PanePager } from "@/thread/PanePager";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
 import { PendingBubbles } from "@/thread/items/PendingBubble";
@@ -116,7 +118,7 @@ function useSessionMenu(
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
-  const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent && allows(paneId, "shellWatch"));
+  const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent && allows(paneId, "shellWatch", hostId));
 
   const run = useCallback(
     async (label: string, failTitle: string, action: () => Promise<void>) => {
@@ -143,7 +145,7 @@ function useSessionMenu(
       // herdlingd removes the watch after the push: ask again for the next time the menu opens.
       shellWatch.refresh();
     }
-    if (agent && allows(agent, "restart")) {
+    if (agent && allows(agent, "restart", hostId)) {
       items.push({
         label: "Restart",
         destructive: true,
@@ -161,7 +163,7 @@ function useSessionMenu(
         },
       });
     }
-    if (agent?.agent && allows(agent, "resume") && canResume(hello, agent.agent)) {
+    if (agent?.agent && allows(agent, "resume", hostId) && canResume(hello, agent.agent)) {
       items.push({
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${paneId}` as never),
@@ -179,10 +181,10 @@ function useSessionMenu(
       });
     }
     // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
-    if (agent && allows(agent, "explain") && herdrSupports(hostId, EXPLAIN_METHOD)) {
+    if (agent && allows(agent, "explain", hostId) && herdrSupports(hostId, EXPLAIN_METHOD)) {
       items.push({ label: EXPLAIN_LABEL, onPick: () => router.push(`/explain/${hostId}/${paneId}` as never) });
     }
-    if (agent && allows(agent, "rename")) items.push(...renameItems(rpc, hostId, agent));
+    if (agent && allows(agent, "rename", hostId)) items.push(...renameItems(rpc, hostId, agent));
     const [what, detail] = agent
       ? ["Close this agent?", "The agent stops and its pane closes."]
       : ["Close this terminal?", "The shell and the programs in it stop, and the pane closes."];
@@ -194,7 +196,7 @@ function useSessionMenu(
         if (!ok) return;
         // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
         // A Herdr 2 pane has no worktree group: it never closes a whole workspace.
-        const workspaceId = !allows(paneId, "closeGroup")
+        const workspaceId = !allows(paneId, "closeGroup", hostId)
           ? undefined
           : agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
         run("Closing…", "Can't close", async () => {
@@ -582,8 +584,8 @@ export function SessionDetail({
   // A terminal: a pane with no agent, or the new shell that the snapshot does not show yet.
   const terminal = showsTerminal(snapshot, paneId, expected);
   const termPane = terminal ? terminalPane(snapshot, paneId) : undefined;
-  // A Herdr 2 agent has no transcript yet: it shows only its terminal, like a shell.
-  const threadOk = allows(agent ?? paneId, "thread");
+  // A Herdr 2 agent of an older herdlingd has no transcript: it shows only its terminal, like a shell.
+  const threadOk = allows(agent ?? paneId, "thread", hostId);
   const view: Mode = terminal || !threadOk ? "terminal" : mode;
   const folder = termPane ? terminalFolder(termPane) : undefined;
   // A terminal shows "Idle" or "Running: <command>" under its title. Agent panes are never polled.
@@ -635,6 +637,8 @@ export function SessionDetail({
   // ⌘F opens the search of the thread or the terminal.
   useKeyCommand("find", () => setSearchOpen(true), { enabled: focused });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
+  // The other panes of this tab: page dots, a swipe and the tab map. Null for a tab with one pane.
+  const tab = useMemo(() => tabPanes(snapshot, paneId), [snapshot, paneId]);
   useKeyCommand("prevAgent", () => neighbors.prev && onOpenPane(neighbors.prev), { enabled: focused && neighborShortcuts });
   useKeyCommand("nextAgent", () => neighbors.next && onOpenPane(neighbors.next), { enabled: focused && neighborShortcuts });
 
@@ -675,6 +679,7 @@ export function SessionDetail({
             <Search size={icon.md} color={searchOpen ? colors.accent : colors.text} />
           </Pressable>
         </View>
+        {tab ? <PanePager tab={tab} onOpen={onOpenPane} /> : null}
         {searchOpen ? (
           view === "thread" ? (
             <SearchBar

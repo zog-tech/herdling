@@ -8,42 +8,34 @@ Web version: https://herdling.zog-tech.com/docs
 
 - **A phone.** iPhone with iOS 17 or later, or Android 8.0 or later. Herdling is made for phones in portrait (no iPad layout).
 - **One or more computers** with macOS or Linux. Each computer runs:
-  - **herdr**, the terminal workspace for coding agents (https://herdr.dev). Herdling shows the agents that herdr runs.
+  - **Herdr 2 (herdr-core)**, the terminal core of herdr, the workspace for coding agents (https://herdr.dev). Herdling shows the agents that run in it. The herdlingd installer installs it for you.
   - **An SSH server.** The app connects to the computer over SSH.
   - **herdlingd**, the free Herdling companion. It is a single program that answers the app, pairs phones and sends notifications.
 - **A network path** from the phone to the computer: the same Wi-Fi, or a VPN such as WireGuard or Tailscale.
 
 There is no account. Zog Tech runs no server for Herdling. The phone talks only to your computers.
 
-<<<<<<< HEAD
 Herdling is made for herdr. If you do not use herdr, or you want only a terminal, another tool can fit better. The README has a dated comparison with other mobile agent apps: https://github.com/zog-tech/herdling#how-herdling-compares
-=======
+
 ## Before you start
 
 Check these three things on each computer. Most setup problems come from one of them.
 
-1. **herdr is installed and runs.** Open a terminal and run `herdr`. If it is not installed, see step 1. The app can also install it for you.
+1. **Herdr 2 (herdr-core) runs.** The herdlingd installer installs and starts it (step 1 and step 3). The Herdr app runs the same core.
 2. **SSH is on.** On a Mac this setting is **Remote Login**. It is off on a new Mac. See step 2.
 3. **The phone can reach the computer.** Both are on the same network (the same Wi-Fi), or both are on the same VPN.
 
 After a restart, herdlingd starts when you log in on the computer. To make it start at boot, with no login, see "Start at boot" in step 3.
->>>>>>> worktree-agent-a0a944c0ff93c7e9f
 
-## 1. Install herdr
+## 1. Herdr 2 (herdr-core)
 
-herdr is the terminal workspace that Herdling works with. It is made by its own project, not by Zog Tech. Install it with its official installer:
+Herdling works with Herdr 2: herdr-core (`hc`), the terminal core that the Herdr app also runs. herdr is made by its own project, not by Zog Tech.
 
-```sh
-curl -fsSL https://herdr.dev/install.sh | sh
-```
+You do not install it yourself. The herdlingd installer (step 3) installs the herdr-core version that its herdlingd release pins, checks its SHA-256, puts it in `~/.local/bin` and starts it. It uses no sudo. A newer core, or a core from a package manager, stays as it is.
 
-The installer puts `herdr` in `~/.local/bin`. It uses no sudo. Other ways (Homebrew, mise, Nix) are on https://herdr.dev/tui. If you set up the computer from the app and herdr is missing, the app offers **Install herdr and herdlingd**: it runs the same installer (see step 3).
+Run your agents (Claude Code, Codex, Pi, OpenCode and others) in the Herdr app, or in a terminal of the core (`hc`). herdlingd finds the core socket with the rules of `hc` (`HC_SOCKET`, then the config and the runtime folder).
 
-Herdling works with herdr, the terminal app (herdr.dev also calls it "Herdr TUI"). The newer Herdr desktop app (from `releases.herdr.dev/app`) runs agents in a different program, herdr-core. Herdling does not see those agents.
-
-Run your agents (Claude Code, Codex, Pi, OpenCode and others) inside herdr. herdlingd talks to herdr through its socket, `~/.config/herdr/herdr.sock`. If you run herdr with a different socket, set the `HERDR_SOCKET` environment variable for herdlingd.
-
-herdr must run when you use Herdling. Start it in a terminal with `herdr`. You can then close the terminal window: herdr keeps running in the background. herdr does not start by itself after a restart: run `herdr` again after each restart. (`herdr server` runs only its background server, with no window.)
+**herdr 1.** herdlingd 0.2.0 and later work only with Herdr 2. The older herdr terminal app ("herdr TUI", with the socket `~/.config/herdr/herdr.sock`) needs herdlingd 0.1.x. To keep a herdr 1 computer on 0.1.x, install with `--version 0.1.9` (see step 3).
 
 ## 2. Turn on SSH
 
@@ -97,7 +89,7 @@ When herdlingd is not on the computer, the app asks **Install herdlingd now?** a
 
 It takes about a minute. It needs no admin rights and uses no sudo. The app uses the password only for these logins. It does not keep the password.
 
-When herdr is not on the computer, the app shows **herdr is not on <computer>**, with a link to https://herdr.dev. herdr is made by its own project, so the app installs it only when you tap **Install herdr and herdlingd**. Then it runs the installer with `--with-herdr` over the same login: the official herdr installer (https://herdr.dev/install.sh) puts herdr in `~/.local/bin`, then herdlingd is installed and the phone is paired. Tap **Cancel** to stop. After the install, start herdr on the computer (`herdr` in a terminal).
+The installer also installs and starts Herdr 2 (herdr-core), so the computer needs no herdr install first.
 
 When herdlingd starts only after a login on the computer, the app says so once, after **Install and pair**, with **How to start at boot**.
 
@@ -110,18 +102,14 @@ curl -fsSL https://herdling.zog-tech.com/install.sh | sh
 The script is at https://herdling.zog-tech.com/install.sh. Read it before you run it, if you like. It does this:
 
 1. It finds your system: macOS or Linux, on arm64 or x86_64. Windows is not supported.
-2. It checks that herdr is installed. It does not install herdr, unless you add `--with-herdr`.
-3. It downloads the newest herdlingd release from https://github.com/zog-tech/herdling/releases and compares its SHA-256 with the `SHA256SUMS` file of the release.
+2. It downloads the newest herdlingd release from https://github.com/zog-tech/herdling/releases and compares its SHA-256 with the `SHA256SUMS` file of the release.
+3. It installs and starts the herdr-core version that the release pins, and checks its SHA-256. When this fails, it stops and herdlingd does not change.
 4. It runs `herdlingd install` (see below) and prints the version.
 5. It tells you when herdlingd starts: at boot, or after you log in. It prints the step to start it at boot (see "Start at boot").
 
 It never uses sudo. Run it again to update or repair herdlingd. To install one version, add `--version`: `curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --version 0.1.0`.
 
-To install herdr too when it is missing, add `--with-herdr`. The script then runs the official herdr installer (https://herdr.dev/install.sh) first:
-
-```sh
-curl -fsSL https://herdling.zog-tech.com/install.sh | sh -s -- --with-herdr
-```
+`--with-herdr` is for herdlingd 0.1.x (herdr 1) only. It runs the official herdr installer (https://herdr.dev/install.sh) when herdr is missing.
 
 ### Build from source
 
@@ -160,7 +148,7 @@ All three ways end with `herdlingd install`. It does this:
 
 To see what it would do without a change to the service, run `herdlingd install --dry-run`.
 
-The service needs no root rights. It runs as your user. herdr must be installed, and it must run when you use Herdling: herdlingd reads its socket (see step 1). Then go to step 4 and run `herdlingd pair`. If `herdlingd` is not found, add `~/.local/bin` to your PATH, or run `~/.local/bin/herdlingd pair`.
+The service needs no root rights. It runs as your user. Herdr 2 (herdr-core) must be installed: run `herdlingd core install` once, if you did not use the installer (see step 1). Then go to step 4 and run `herdlingd pair`. If `herdlingd` is not found, add `~/.local/bin` to your PATH, or run `~/.local/bin/herdlingd pair`.
 
 ### Check that herdlingd runs
 
@@ -198,7 +186,7 @@ sudo loginctl enable-linger $USER
 
 Check it: `loginctl show-user $USER -p Linger` prints `Linger=yes`.
 
-**herdr after a restart.** herdr has no service of its own, so it does not start at boot. After each restart, open a terminal on the computer and run `herdr`. Until then, the app shows **herdr is not running** for that computer.
+**Herdr 2 after a restart.** When the app shows **herdr is not running** after a restart, open the Herdr app on the computer, or run `herdlingd core install` (it starts the core).
 
 ## 4. Pair your phone
 
@@ -330,7 +318,7 @@ Herdling sends a notification when an agent:
 
 herdlingd waits 5 seconds before it sends, so a quick status change does not send a notification. Tap a notification to open that session.
 
-**Quiet at the computer** (on by default): no notifications while you use herdr on the computer, and for 5 minutes after your last activity there (focus changes and typing in herdr). A message that you send from the phone does not count as activity at the computer.
+**Quiet at the computer:** only herdr 1 (herdlingd 0.1.x) reports activity at the computer. With herdlingd 0.2.0 this setting has no effect: every notification comes at once.
 
 What must be true for notifications to arrive:
 
@@ -357,7 +345,7 @@ To remove a computer, open it and tap the trash button. The app deletes the comp
 |---|---|---|
 | Finished | On | A notification when an agent finished its turn. |
 | Needs you | On | A notification when an agent waits for your input. |
-| Quiet at the computer | On | No notifications while you use herdr on the computer, until 5 minutes after your last activity. |
+| Quiet at the computer | On | herdlingd 0.1.x with herdr 1 only: no notifications while you use herdr on the computer, until 5 minutes after your last activity. No effect with herdlingd 0.2.0. |
 
 These switches are saved on each computer (in its config file) when the phone connects.
 
@@ -522,7 +510,7 @@ herdlingd starts when you log in on the computer, not at boot. Log in on the com
 
 ### The computer shows "herdr is not running"
 
-herdlingd runs, but herdr does not. Open a terminal on that computer and run `herdr`. You can close the terminal window after: herdr keeps running in the background. herdr does not start by itself after a restart, so do this after each restart.
+herdlingd runs, but Herdr 2 (herdr-core) does not. Open the Herdr app on that computer, or run `herdlingd core install` there: it installs the pinned core when it is missing, and starts it.
 
 ### The computer shows Offline
 
@@ -564,8 +552,8 @@ Shown by **Set up with password**. Tap **Install and pair** to install it from t
 
 The app shows the reason:
 
-- **herdr is not installed.** Tap **Install herdr and herdlingd**, or install herdr yourself (step 1) and try again.
-- **herdr could not be installed.** The official herdr installer failed. The app shows its last lines. Install herdr yourself (step 1), then try again.
+- **herdr-core could not be installed.** The Herdr 2 install failed, and herdlingd did not change. The app shows the reason. Check the network to `releases.herdr.dev`, then try again.
+- **herdr is not installed** (herdlingd 0.1.x only). Tap **Install herdr and herdlingd**, or install herdr yourself and try again.
 - **Neither curl nor wget is installed.** Install one of them on the computer.
 - **Cannot download.** The computer needs internet access to github.com. Check the network, a proxy or a firewall.
 - **Windows is not supported.** herdlingd runs on macOS and Linux.
@@ -573,13 +561,13 @@ The app shows the reason:
 
 ### "Can't read herdr"
 
-herdr does not run on the computer, or herdlingd cannot reach its socket. Start herdr (`herdr` in a terminal). If herdr uses a custom socket, set `HERDR_SOCKET` for the service. If you use the Herdr desktop app, note that Herdling works with herdr, the terminal app (see step 1).
+Herdr 2 (herdr-core) does not run on the computer, or herdlingd cannot find its socket. Open the Herdr app, or run `herdlingd core install`. If the core uses a custom socket, set `HC_SOCKET` for the service. A computer with only herdr 1 needs herdlingd 0.1.x (see step 1).
 
 ### No notifications
 
 - Allow notifications for Herdling in the phone's settings.
 - Check the **Finished** and **Needs you** switches in Settings > Notifications.
-- If **Quiet at the computer** is on, notifications wait until 5 minutes after your last activity in herdr.
+- With herdlingd 0.1.x and herdr 1: if **Quiet at the computer** is on, notifications wait until 5 minutes after your last activity in herdr.
 - Open the app once with the computer online, so it registers the push token.
 - The computer needs internet access.
 

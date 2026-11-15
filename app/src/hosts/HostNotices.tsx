@@ -7,12 +7,13 @@ import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 import { LOGIN_HINT, startsAtLogin } from "./boot";
+import { runtimeDownText } from "./coreInstall";
 import { useHostConn } from "./connection";
 import { useHosts } from "./store";
 
 /** The text when herdlingd runs but cannot reach herdr. */
 export function herdrNotRunningText(name: string): string {
-  return `herdr is not running on ${name}. Start herdr in a terminal on that computer.`;
+  return runtimeDownText(name, {});
 }
 
 /**
@@ -32,10 +33,12 @@ export function HostNotices({ hostId }: { hostId: string }) {
     <Card>
       {herdrDown ? (
         <>
-          <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message={herdrNotRunningText(host.name)} />
-          <Text variant="small" muted>
-            In a terminal, run herdr. Then you can close the terminal window: herdr keeps running in the background.
-          </Text>
+          <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message={runtimeDownText(host.name, hello)} />
+          {hello.core_setup ? null : (
+            <Text variant="small" muted>
+              In a terminal, run herdr. Then you can close the terminal window: herdr keeps running in the background.
+            </Text>
+          )}
         </>
       ) : null}
       {login ? (

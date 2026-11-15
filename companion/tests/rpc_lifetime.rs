@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use herdlingd::rpc::{self, Ctx, MAX_LINE};
 
 fn ctx(dir: &tempfile::TempDir) -> Ctx {
-    Ctx::new(dir.path().join("none.sock"), dir.path().into())
+    Ctx::new(dir.path().into())
 }
 
 #[tokio::test]

@@ -78,7 +78,8 @@ export class RpcClient {
     return this.request(method, params, undefined, timeoutMs) as Promise<T>;
   }
 
-  async stream<T>(method: string, params: object, onData: (d: T) => void): Promise<() => void> {
+  /** `onResult` gets the whole result of the call (the stream id and any other fields), once. */
+  async stream<T>(method: string, params: object, onData: (d: T) => void, onResult?: (result: unknown) => void): Promise<() => void> {
     let streamId: string | undefined;
     const handler = onData as Handler;
     this.subscribing++;
@@ -87,6 +88,7 @@ export class RpcClient {
       const id = (result as { stream?: unknown } | null)?.stream;
       if (typeof id !== "string") return;
       streamId = id;
+      onResult?.(result);
       this.handlers.set(id, handler);
       const buffered = this.early.get(id);
       if (buffered) {

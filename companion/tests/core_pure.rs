@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use herdlingd::core::client::Notice;
 use herdlingd::core::endpoint::{self, CoreSocket, Inputs};
-use herdlingd::core::merge::{Action, Leg, Merge, Side};
 use herdlingd::core::groups::{RepoInfo, Repos};
 use herdlingd::core::project::{self, Projection};
 use herdlingd::core::route::{self, Shape};
@@ -99,16 +98,16 @@ fn projection_places_terminals_by_the_layout_document() {
         json!({"address": "t5", "state": "finished", "status": null}),
     ];
     let p = project::project(&terminals, Some(&doc), &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:g:a"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["space:s1", "g:a"]);
     assert_eq!(p.workspaces[0]["label"], "api");
     assert_eq!(p.workspaces[0]["agent_status"], "working");
     assert_eq!(p.workspaces[1]["label"], "a", "the folder name when no repo is known");
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:task:t3"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["tab:a", "tab:b", "task:t3"]);
     assert_eq!(p.tabs[1]["label"], "Tab 2");
-    assert_eq!(ids(&p.panes, "pane_id"), ["hc:t1", "hc:t2", "hc:t3"]);
-    assert_eq!(p.panes[1]["tab_id"], "hc:tab:a");
+    assert_eq!(ids(&p.panes, "pane_id"), ["t1", "t2", "t3"]);
+    assert_eq!(p.panes[1]["tab_id"], "tab:a");
     assert_eq!(p.panes[1]["agent"], Value::Null, "no 7501 status: a terminal, not an agent");
-    assert_eq!(ids(&p.agents, "pane_id"), ["hc:t1", "hc:t3"]);
+    assert_eq!(ids(&p.agents, "pane_id"), ["t1", "t3"]);
     let a = &p.agents[0];
     assert_eq!(a["agent"], "claude");
     assert_eq!(a["display_agent"], Value::Null, "a known kind has no display name");
@@ -117,15 +116,15 @@ fn projection_places_terminals_by_the_layout_document() {
     assert_eq!(a["group_source"], "space");
     assert_eq!(a["cwd"], "/home/sam/proj/a");
     assert_eq!(a["state_change_seq"], 5000);
-    assert_eq!(a["backend"], "core");
     assert_eq!(p.agents[1]["agent_status"], "blocked", "error asks for the user");
-    assert!(p.panes.iter().chain(&p.tabs).chain(&p.workspaces).all(|e| e["backend"] == "core"));
+    // Old apps hide actions on an entry with `backend: "core"`: no entry has the field.
+    assert!(p.agents.iter().chain(&p.panes).chain(&p.tabs).chain(&p.workspaces).all(|e| e.get("backend").is_none()));
 }
 
 #[test]
 fn projection_without_a_document_groups_by_folder() {
     let p = project::project(&[term("t1", None, Some("done"))], None, &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:a"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["g:a"]);
     assert_eq!(p.agents[0]["agent_status"], "done");
     assert_eq!(p.agents[0]["group_source"], "folder");
     assert_eq!(p.agents[0].get("repo"), None, "no repo field when the repo is not known");
@@ -154,11 +153,11 @@ fn all_ids(p: &Projection) -> Vec<String> {
 fn loose_terminal_groups_by_repo() {
     let repos = Repos::from([("/home/sam/proj/api".to_string(), repo("/home/sam/proj", "proj", Some("main")))]);
     let p = project::project(&[agent_in("t8", Some("/home/sam/proj/api"), "fix tests")], None, &repos);
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:proj"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["g:proj"]);
     assert_eq!(p.workspaces[0]["label"], "proj");
     assert_eq!(p.workspaces[0]["number"], 1);
     assert_eq!(p.workspaces[0]["tab_count"], 1);
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t8"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["task:t8"]);
     assert_eq!(p.tabs[0]["label"], "fix tests");
     let a = &p.agents[0];
     assert_eq!(a["group"], "proj");
@@ -169,11 +168,11 @@ fn loose_terminal_groups_by_repo() {
     assert_eq!(a["name"], "fix tests");
     assert_eq!(a["display_agent"], Value::Null);
     assert_eq!(a["agent"], "claude");
-    assert_eq!(a["tab_id"], "hc:task:t8");
+    assert_eq!(a["tab_id"], "task:t8");
     assert_eq!(p.panes[0]["label"], "fix tests");
     assert_eq!(p.panes[0]["group_source"], "repo");
     assert_eq!(p.panes[0]["branch"], "main");
-    assert!(all_ids(&p).iter().all(|id| !id.starts_with("hc:loose")));
+    assert!(all_ids(&p).iter().all(|id| !id.starts_with("loose")));
 }
 
 #[test]
@@ -184,14 +183,14 @@ fn label_space_not_in_doc() {
     u["labels"] = json!({"herdr.space": "sp9"});
     let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": []}]});
     let p = project::project(&[t, u], Some(&doc), &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:space:sp9"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["space:s1", "space:sp9"]);
     assert_eq!(p.workspaces[1]["label"], "web");
     assert_eq!(p.workspaces[1]["number"], 2);
     assert_eq!(p.workspaces[1]["tab_count"], 2, "one entry for the space, two tabs");
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:tb9", "hc:task:t4"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["tab:tb9", "task:t4"]);
     assert_eq!(p.agents[0]["group"], "web");
     assert_eq!(p.agents[0]["group_source"], "space");
-    assert_eq!(p.agents[1]["workspace_id"], "hc:space:sp9");
+    assert_eq!(p.agents[1]["workspace_id"], "space:sp9");
 }
 
 #[test]
@@ -199,7 +198,7 @@ fn label_space_without_where_takes_the_folder_name() {
     let mut t = agent_in("t3", Some("/home/sam/proj/web"), "build");
     t["labels"] = json!({"herdr.space": "sp9"});
     let p = project::project(&[t], None, &Repos::new());
-    assert_eq!(p.workspaces[0]["workspace_id"], "hc:space:sp9");
+    assert_eq!(p.workspaces[0]["workspace_id"], "space:sp9");
     assert_eq!(p.workspaces[0]["label"], "web");
 }
 
@@ -209,10 +208,10 @@ fn helper_goes_into_parent_tab() {
     let mut helper = agent_in("t2", Some("/home/sam/other"), "sub task");
     helper["parent"] = json!("t1");
     let p = project::project(&[helper, parent], None, &Repos::new());
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t1"]);
-    assert_eq!(ids(&p.panes, "tab_id"), ["hc:task:t1", "hc:task:t1"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["task:t1"]);
+    assert_eq!(ids(&p.panes, "tab_id"), ["task:t1", "task:t1"]);
     assert_eq!(ids(&p.agents, "pane_id").len(), 2);
-    assert!(p.agents.iter().all(|a| a["workspace_id"] == "hc:g:proj"));
+    assert!(p.agents.iter().all(|a| a["workspace_id"] == "g:proj"));
     assert_eq!(p.workspaces.len(), 1);
 }
 
@@ -224,8 +223,8 @@ fn helper_of_space_terminal_is_own_task() {
     let mut helper = agent_in("t2", Some("/home/sam/other"), "sub task");
     helper["parent"] = json!("t1");
     let p = project::project(&[parent, helper], Some(&doc), &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1", "hc:g:other"]);
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:task:t2"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["space:s1", "g:other"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["tab:a", "task:t2"]);
     assert_eq!(p.agents[1]["group_source"], "folder");
 }
 
@@ -233,9 +232,9 @@ fn helper_of_space_terminal_is_own_task() {
 fn no_folder_terminal_is_kept() {
     let t = json!({"address": "t5", "state": "live"});
     let p = project::project(&[t], None, &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:g:terminals"]);
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["g:terminals"]);
     assert_eq!(p.workspaces[0]["label"], "Terminals");
-    assert_eq!(ids(&p.panes, "pane_id"), ["hc:t5"]);
+    assert_eq!(ids(&p.panes, "pane_id"), ["t5"]);
     assert_eq!(p.tabs[0]["label"], "t5", "no name and no agent: the address");
 }
 
@@ -274,20 +273,6 @@ fn status_map() {
 }
 
 #[test]
-fn snapshot_merge_each_side_alone() {
-    let herdr = json!({"snapshot": {"version": "0.9.5", "agents": [{"pane_id": "w1:p1"}], "panes": [], "workspaces": [], "tabs": []}});
-    let core = project::project(&[term("t1", None, Some("idle"))], None, &Repos::new());
-    // No core: exactly herdr 1.
-    assert_eq!(project::merge_snapshots::<()>(Ok(herdr.clone()), None), Ok(herdr.clone()));
-    let both = project::merge_snapshots::<()>(Ok(herdr.clone()), Some(core.clone())).unwrap();
-    assert_eq!(both["snapshot"]["version"], "0.9.5");
-    assert_eq!(ids(both["snapshot"]["agents"].as_array().unwrap(), "pane_id"), ["w1:p1", "hc:t1"]);
-    let core_only = project::merge_snapshots(Err("down"), Some(core)).unwrap();
-    assert_eq!(ids(core_only["snapshot"]["agents"].as_array().unwrap(), "pane_id"), ["hc:t1"]);
-    assert_eq!(project::merge_snapshots::<&str>(Err("down"), None), Err("down"));
-}
-
-#[test]
 fn push_text_uses_name_title_then_app() {
     assert_eq!(project::push_text(&term("t1", Some("api"), Some("done"))), ("api".into(), "Claude Code · m".into()));
     assert_eq!(project::push_text(&term("t1", None, Some("done"))), ("fix".into(), "Claude Code · m".into()));
@@ -311,14 +296,18 @@ fn push_text_placed_uses_the_card_name_and_the_group() {
 
 #[test]
 fn ids_and_targets() {
-    assert_eq!(project::address("hc:t7"), Some("t7"));
-    assert_eq!(project::address("hc:space:s1"), None);
-    assert_eq!(project::address("hc:box/t7"), None);
+    assert_eq!(project::address("t7"), Some("t7"));
+    assert_eq!(project::address("space:s1"), None);
+    assert_eq!(project::address("box/t7"), None);
     assert_eq!(project::address("w1:p1"), None);
-    assert_eq!(route::core_target(&json!({"pane_id": "hc:t1"})), Some("hc:t1"));
-    assert_eq!(route::core_target(&json!({"target": "hc:t1", "text": "x"})), Some("hc:t1"));
-    assert_eq!(route::core_target(&json!({"workspace_id": "hc:space:s"})), Some("hc:space:s"));
-    assert_eq!(route::core_target(&json!({"pane_id": "w1:p1", "text": "hc:t1"})), None, "text never routes");
+    let t = |p: serde_json::Value| route::target(&p);
+    assert_eq!(t(json!({"pane_id": "t1"})).as_deref(), Some("t1"));
+    assert_eq!(t(json!({"target": "t1", "text": "x"})).as_deref(), Some("t1"));
+    assert_eq!(t(json!({"workspace_id": "space:s"})).as_deref(), Some("space:s"));
+    // The pane wins over the workspace; text never names an entry; an empty id does not count.
+    assert_eq!(t(json!({"workspace_id": "space:s", "pane_id": "t2"})).as_deref(), Some("t2"));
+    assert_eq!(t(json!({"text": "t1"})), None, "text never routes");
+    assert_eq!(t(json!({"pane_id": "", "tab_id": "tab:x"})).as_deref(), Some("tab:x"));
 }
 
 #[test]
@@ -335,7 +324,7 @@ fn text_keys_map_only_what_has_a_key() {
 
 #[test]
 fn plan_translates_herdr_methods() {
-    let p = |m: &str, params: Value| route::plan(m, &params, "hc:t1");
+    let p = |m: &str, params: Value| route::plan(m, &params, "t1");
     let read = p("pane.read", json!({"source": "visible", "format": "ansi"})).unwrap();
     assert_eq!((read.method, read.params.clone()), ("terminal.read", json!({"terminal": "t1", "lines": 0})));
     let recent = p("pane.read", json!({"source": "recent", "lines": 5000})).unwrap();
@@ -351,7 +340,7 @@ fn plan_translates_herdr_methods() {
     assert_eq!(text.method, "terminal.send");
     let digit = p("pane.send_keys", json!({"keys": ["1"]})).unwrap();
     assert_eq!(digit.params, json!({"terminal": "t1", "keys": ["1"]}));
-    let prompt = p("agent.prompt", json!({"target": "hc:t1", "text": "go"})).unwrap();
+    let prompt = p("agent.prompt", json!({"target": "t1", "text": "go"})).unwrap();
     assert_eq!(prompt.params, json!({"terminal": "t1", "text": "go"}));
     assert_eq!(p("pane.get", json!({})).unwrap().shape, Shape::PaneGet);
     assert_eq!(p("pane.process_info", json!({})).unwrap().shape, Shape::ProcessInfo);
@@ -359,16 +348,16 @@ fn plan_translates_herdr_methods() {
     for m in ["pane.rename", "agent.start", "tab.create", "workspace.close", "agent.rename"] {
         assert!(p(m, json!({})).is_err(), "{m}");
     }
-    assert!(route::plan("tab.create", &json!({}), "hc:space:s1").is_err(), "a workspace id has no terminal");
+    assert!(route::plan("tab.create", &json!({}), "space:s1").is_err(), "a workspace id has no terminal");
 }
 
 #[test]
 fn shapes_match_herdr_one() {
-    let r = route::shape(&Shape::Read { pane_id: "hc:t1".into() }, json!({"text": "hi", "complete": false, "how": "screen"}));
-    assert_eq!(r["read"], json!({"pane_id": "hc:t1", "text": "hi", "revision": 0, "truncated": true, "format": "text"}));
+    let r = route::shape(&Shape::Read { pane_id: "t1".into() }, json!({"text": "hi", "complete": false, "how": "screen"}));
+    assert_eq!(r["read"], json!({"pane_id": "t1", "text": "hi", "revision": 0, "truncated": true, "format": "text"}));
     let t = term("t1", Some("n"), Some("working"));
     let g = route::shape(&Shape::PaneGet, t.clone());
-    assert_eq!(g["pane"]["pane_id"], "hc:t1");
+    assert_eq!(g["pane"]["pane_id"], "t1");
     assert_eq!(g["pane"]["agent_status"], "working");
     assert_eq!(g["pane"]["foreground_cwd"], "/home/sam/proj/a");
     let pi = route::shape(&Shape::ProcessInfo, t);
@@ -382,14 +371,14 @@ fn events_translate_to_herdr_lines() {
     let ev = |kind: &str, data: Value| Notice::Event(json!({"seq": 1, "type": kind, "terminal": "t1", "data": data}));
     let s = translate(&ev("status", json!({"status": {"state": "error"}}))).unwrap();
     assert_eq!(s["event"], "pane.agent_status_changed");
-    assert_eq!(s["data"]["pane_id"], "hc:t1");
+    assert_eq!(s["data"]["pane_id"], "t1");
     assert_eq!(s["data"]["agent_status"], "blocked");
     let cleared = translate(&ev("status", json!({"status": null}))).unwrap();
     assert_eq!(cleared["event"], "pane.agent_detected");
     assert_eq!(cleared["data"]["released"], true);
     assert_eq!(translate(&ev("created", json!({}))).unwrap()["event"], "pane.created");
     assert_eq!(translate(&ev("finished", json!({}))).unwrap()["event"], "pane.closed");
-    assert_eq!(translate(&ev("removed", json!({}))).unwrap()["data"]["pane_id"], "hc:t1");
+    assert_eq!(translate(&ev("removed", json!({}))).unwrap()["data"]["pane_id"], "t1");
     assert_eq!(translate(&ev("lost", json!({}))).unwrap()["event"], "layout.updated");
     assert!(translate(&ev("title", json!({"title": "x"}))).is_none());
     assert!(translate(&ev("foreground", json!(null))).is_none());
@@ -407,40 +396,17 @@ fn events_translate_to_herdr_lines() {
 fn tracker_effects() {
     let mut t = Tracker::default();
     let start = t.reset(&[term("t2", None, Some("idle")), term("t1", None, Some("working")), term("t3", None, None)]);
-    assert_eq!(start, vec![Effect::Observe("hc:t1".into(), AgentStatus::Working), Effect::Observe("hc:t2".into(), AgentStatus::Idle)]);
+    assert_eq!(start, vec![Effect::Observe("t1".into(), AgentStatus::Working), Effect::Observe("t2".into(), AgentStatus::Idle)]);
     let ev = |kind: &str, term: &str, data: Value| json!({"type": kind, "terminal": term, "data": data});
-    assert_eq!(t.apply(&ev("status", "t1", json!({"status": {"state": "done"}}))), vec![Effect::Observe("hc:t1".into(), AgentStatus::Done)]);
+    assert_eq!(t.apply(&ev("status", "t1", json!({"status": {"state": "done"}}))), vec![Effect::Observe("t1".into(), AgentStatus::Done)]);
     assert!(t.apply(&ev("status", "t1", json!({"status": null}))).is_empty(), "a cleared status keeps the notice");
     assert!(t.apply(&ev("status", "t9", json!({"status": {"state": "done"}}))).is_empty(), "unknown terminal");
-    assert_eq!(t.apply(&ev("created", "t4", term("t4", None, Some("working")))), vec![Effect::Observe("hc:t4".into(), AgentStatus::Working)]);
+    assert_eq!(t.apply(&ev("created", "t4", term("t4", None, Some("working")))), vec![Effect::Observe("t4".into(), AgentStatus::Working)]);
     t.apply(&ev("title", "t4", json!({"title": "new"})));
-    assert_eq!(t.record("hc:t4").unwrap()["title"], "new");
-    assert_eq!(t.apply(&ev("finished", "t4", json!({}))), vec![Effect::Forget("hc:t4".into())]);
-    assert!(t.record("hc:t4").is_none());
+    assert_eq!(t.record("t4").unwrap()["title"], "new");
+    assert_eq!(t.apply(&ev("finished", "t4", json!({}))), vec![Effect::Forget("t4".into())]);
+    assert!(t.record("t4").is_none());
     assert!(t.apply(&ev("status", "box/t1", json!({"status": {"state": "done"}}))).is_empty());
-}
-
-#[test]
-fn merge_state_machine() {
-    assert!(Merge::start(Leg::Down, Leg::Down).is_none());
-    assert!(Merge::start(Leg::Down, Leg::Off).is_none());
-    // No core: the herdr 1 end closes the stream, as before.
-    let mut m = Merge::start(Leg::Up, Leg::Off).unwrap();
-    assert!(m.to_retry().is_empty());
-    assert_eq!(m.ended(Side::Herdr), Action::Close);
-    // Core absent at the start: retried; herdr 1 alone still closes.
-    let mut m = Merge::start(Leg::Up, Leg::Down).unwrap();
-    assert_eq!(m.to_retry(), vec![Side::Core]);
-    assert_eq!(m.ended(Side::Herdr), Action::Close);
-    // Both up: one end gives a hint and a retry, the reconnect gives a hint.
-    let mut m = Merge::start(Leg::Up, Leg::Up).unwrap();
-    assert_eq!(m.ended(Side::Core), Action::Hint);
-    assert_eq!(m.to_retry(), vec![Side::Core]);
-    assert_eq!(m.connected(Side::Core), Action::Hint);
-    assert_eq!(m.connected(Side::Core), Action::None, "an impossible second connect");
-    assert_eq!(m.ended(Side::Herdr), Action::Hint);
-    assert_eq!(m.ended(Side::Herdr), Action::None, "an impossible second end");
-    assert_eq!(m.ended(Side::Core), Action::Close);
 }
 
 #[test]
@@ -451,16 +417,16 @@ fn helpers_of_helpers_and_parent_loops() {
     let mut h2 = agent_in("t3", Some("/home/sam/y"), "h2");
     h2["parent"] = json!("t2");
     let p = project::project(&[h2, h1, root], None, &Repos::new());
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t1"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["task:t1"]);
     assert_eq!(ids(&p.panes, "pane_id").len(), 3);
-    assert!(p.agents.iter().all(|a| a["group"] == "proj" && a["tab_id"] == "hc:task:t1"));
+    assert!(p.agents.iter().all(|a| a["group"] == "proj" && a["tab_id"] == "task:t1"));
     // A loop of parents: nobody is dropped, each gets its own task.
     let mut a = agent_in("t4", Some("/home/sam/a"), "a");
     a["parent"] = json!("t5");
     let mut b = agent_in("t5", Some("/home/sam/b"), "b");
     b["parent"] = json!("t4");
     let p = project::project(&[a, b], None, &Repos::new());
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:task:t4", "hc:task:t5"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["task:t4", "task:t5"]);
 }
 
 #[test]
@@ -477,13 +443,13 @@ fn label_space_in_doc_but_not_in_a_tab() {
     let mut no_tab = agent_in("t4", Some("/home/sam/proj"), "fourth");
     no_tab["labels"] = json!({"herdr.space": "s1"});
     let p = project::project(&[in_tab, same_tab, new_tab, no_tab], Some(&doc), &Repos::new());
-    assert_eq!(ids(&p.workspaces, "workspace_id"), ["hc:space:s1"], "one entry for the space");
+    assert_eq!(ids(&p.workspaces, "workspace_id"), ["space:s1"], "one entry for the space");
     assert_eq!(p.workspaces[0]["tab_count"], 3);
     assert_eq!(p.workspaces[0]["agent_status"], "blocked");
-    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert_eq!(ids(&p.tabs, "tab_id"), ["tab:a", "tab:b", "task:t4"]);
     assert_eq!(p.tabs[0]["label"], "main", "the document tab is reused");
     assert_eq!(p.tabs[0]["agent_status"], "blocked");
-    assert_eq!(ids(&p.panes, "tab_id"), ["hc:tab:a", "hc:tab:a", "hc:tab:b", "hc:task:t4"]);
+    assert_eq!(ids(&p.panes, "tab_id"), ["tab:a", "tab:a", "tab:b", "task:t4"]);
     assert!(p.agents.iter().all(|a| a["group"] == "api" && a["group_source"] == "space"));
 }
 
@@ -564,4 +530,48 @@ fn real_title_wins() {
     t["title"] = json!("Fix the login form");
     let p = project::project(&[t], Some(&doc), &Repos::new());
     assert_eq!(p.agents[0]["name"], "Fix the login form");
+}
+
+#[test]
+fn herdling_name_is_the_task_name() {
+    let mut t = term("t1", Some("api-agent"), Some("idle"));
+    t["labels"] = json!({"herdling.name": " Fix login "});
+    let p = project::project(std::slice::from_ref(&t), None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Fix login");
+    assert_eq!(p.panes[0]["label"], "Fix login");
+    assert_eq!(p.tabs[0]["label"], "Fix login");
+    assert_eq!(project::push_text(&t).0, "Fix login");
+    t["labels"] = json!({"herdling.name": ""});
+    assert_eq!(project::project(std::slice::from_ref(&t), None, &Repos::new()).agents[0]["name"], "api-agent");
+}
+
+#[test]
+fn stale_tab_label_gets_a_task_tab() {
+    // Tab `a` belongs to space s1 in the document. A terminal with a stale label names tab `a` in
+    // space s2: it must not show the same tab id in two workspaces.
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": [
+        {"id": "a", "name": "main", "root": {"type": "block", "content": {"terminal": "t1"}}}]}]});
+    let mut stale = agent_in("t2", Some("/home/sam/web"), "web work");
+    stale["labels"] = json!({"herdr.space": "s2", "herdr.tab": "a", "where": "web / 1"});
+    let p = project::project(&[agent_in("t1", Some("/home/sam/api"), "main"), stale], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.tabs, "tab_id"), ["tab:a", "task:t2"]);
+    assert_eq!(p.panes[1]["workspace_id"], "space:s2");
+}
+
+#[test]
+fn helper_entries_name_their_parent() {
+    let parent = agent_in("t1", Some("/home/sam/proj"), "main task");
+    let mut helper = agent_in("t2", Some("/home/sam/proj"), "sub task");
+    helper["parent"] = json!("t1");
+    let mut remote = agent_in("t3", Some("/home/sam/proj"), "remote child");
+    remote["parent"] = json!("box/t1");
+    let mut own = agent_in("t4", Some("/home/sam/proj"), "own parent");
+    own["parent"] = json!("t4");
+    let p = project::project(&[parent, helper, remote, own], None, &Repos::new());
+    let parent_of = |list: &[Value], id: &str| list.iter().find(|v| v["pane_id"] == id).map(|v| v["parent_id"].clone());
+    assert_eq!(parent_of(&p.agents, "t2"), Some(json!("t1")));
+    assert_eq!(parent_of(&p.panes, "t2"), Some(json!("t1")));
+    assert_eq!(parent_of(&p.agents, "t1"), Some(Value::Null), "no parent: no field");
+    assert_eq!(parent_of(&p.agents, "t3"), Some(Value::Null), "a parent on another machine is left out");
+    assert_eq!(parent_of(&p.agents, "t4"), Some(Value::Null), "a terminal is not its own parent");
 }

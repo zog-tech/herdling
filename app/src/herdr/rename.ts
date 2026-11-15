@@ -5,7 +5,7 @@ import { RpcError, type RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
 import { promptText } from "@/ui/nativeSheet";
 
-import { assertAllows } from "./backend";
+import { assertAllows, isCoreEntry, renameKindsFor } from "./backend";
 import { renameAgent } from "./sessionActions";
 import type { AgentInfo, Snapshot } from "./snapshot";
 import { useSnapshots } from "./snapshotStore";
@@ -93,7 +93,7 @@ function patchStore(hostId: string, fn: (s: Snapshot) => Snapshot): void {
  */
 export async function rename(rpc: Rpc, hostId: string, kind: RenameKind, t: RenameTarget, text: string): Promise<boolean> {
   // A Herdr 2 entry has no rename: fail before the store changes.
-  assertAllows(kind === "session" ? t.pane_id : kind === "tab" ? t.tab_id : t.workspace_id, "rename");
+  assertAllows(kind === "session" ? t.pane_id : kind === "tab" ? t.tab_id : t.workspace_id, "rename", hostId);
   const value = text.trim();
   if (!value && kind !== "session") return false;
   const snap = useSnapshots.getState().byHost[hostId];
@@ -102,7 +102,7 @@ export async function rename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
   patchStore(hostId, (s) => withName(s, kind, t, value || null));
   try {
     if (kind === "session") {
-      if (value) await renameAgent(rpc, t.pane_id, value);
+      if (value) await renameAgent(rpc, t.pane_id, value, hostId);
       else await rpc.call("herdr.call", { method: "agent.rename", params: { target: t.pane_id, name: null } });
     } else if (kind === "tab") {
       await rpc.call("herdr.call", { method: "tab.rename", params: { tab_id: t.tab_id, label: value } });
@@ -127,13 +127,16 @@ const PROMPT_TEXT: Record<RenameKind, string> = {
   workspace: "The workspace name in herdr.",
 };
 
+/** The prompt text for the task name of a Herdr 2 agent: free text. */
+const TASK_PROMPT_TEXT = "The task name. Empty removes the name.";
+
 /** Native prompt with the current name; sends the rename and reports the result. */
 export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: RenameTarget): void {
   const snap = useSnapshots.getState().byHost[hostId];
   const current = snap ? currentName(snap, kind, t) : "";
   promptText(
     RENAME_LABEL[kind],
-    PROMPT_TEXT[kind],
+    kind === "session" && isCoreEntry(t.pane_id, hostId) ? TASK_PROMPT_TEXT : PROMPT_TEXT[kind],
     [
       { text: "Cancel", style: "cancel" },
       {
@@ -156,6 +159,6 @@ export function promptRename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
 export type MenuItem = { label: string; destructive?: boolean; onPick: () => void };
 
 /** Rename items for one agent, without the ones its host does not support. */
-export function renameItems(rpc: Rpc, hostId: string, t: RenameTarget, kinds: RenameKind[] = ["session", "tab", "workspace"]): MenuItem[] {
+export function renameItems(rpc: Rpc, hostId: string, t: RenameTarget, kinds: RenameKind[] = renameKindsFor(t, hostId)): MenuItem[] {
   return kinds.filter((k) => renameSupported(hostId, k)).map((k) => ({ label: RENAME_LABEL[k], onPick: () => promptRename(rpc, hostId, k, t) }));
 }

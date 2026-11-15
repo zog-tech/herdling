@@ -19,6 +19,7 @@ const saved = () => {
 };
 
 afterEach(() => {
+  useThemePrefs.getState().setTerminal("app");
   useThemePrefs.getState().setTheme("nightWatch");
   useThemePrefs.getState().setAccent("lantern");
 });
@@ -76,4 +77,25 @@ test("the_saved_choice_is_read_from_the_persist_json", () => {
   expect(parseChoice(JSON.stringify({ state: { theme: "graphite", accent: "iris" }, version: 0 }))).toEqual({ theme: "graphite", accent: "iris" });
   // A theme from a newer app falls back; the known accent stays.
   expect(parseChoice(JSON.stringify({ state: { theme: "daylight", accent: "ember" } }))).toEqual({ theme: "nightWatch", accent: "ember" });
+});
+
+test("a_terminal_theme_changes_only_the_terminal_and_is_saved", async () => {
+  const bg = colors.bg;
+  useThemePrefs.getState().setTerminal("paper");
+  await Promise.resolve();
+  expect(colors.terminal.bg).toBe("#F7F4EC");
+  expect(colors.ansi[1]).toBe("#B3261E");
+  expect(colors.bg).toBe(bg);
+  expect(saved()).toEqual({ theme: "nightWatch", accent: "lantern", terminal: "paper" });
+  // A theme change keeps the terminal theme.
+  useThemePrefs.getState().setTheme("graphite");
+  expect(colors.terminal.bg).toBe("#F7F4EC");
+});
+
+test("parse_choice_reads_the_terminal_theme", () => {
+  const raw = (state: object) => JSON.stringify({ state, version: 0 });
+  expect(parseChoice(raw({ theme: "midnight", accent: "iris", terminal: "paper" }))).toEqual({ theme: "midnight", accent: "iris", terminal: "paper" });
+  // An unknown or default terminal theme gives no field: the theme's own terminal.
+  expect(parseChoice(raw({ theme: "midnight", accent: "iris", terminal: "neon" }))).toEqual({ theme: "midnight", accent: "iris" });
+  expect(parseChoice(raw({ theme: "midnight", accent: "iris", terminal: "app" }))).toEqual({ theme: "midnight", accent: "iris" });
 });

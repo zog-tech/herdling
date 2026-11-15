@@ -1,9 +1,8 @@
 //! `git.status`, `git.diff` and `git.worktree_add`, on temporary repos made by the tests.
 
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -13,10 +12,10 @@ use herdlingd::rpc::{self, Ctx};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-async fn call_with(sock: &Path, home: &Path, method: &str, params: Value) -> Value {
+async fn call_with(ctx: Ctx, method: &str, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 20);
     let (server_out, client_rx) = tokio::io::duplex(1 << 22);
-    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock.into(), home.into())));
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let req = json!({"id": 1, "method": method, "params": params});
     tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();
     let mut lines = BufReader::new(client_rx).lines();
@@ -25,7 +24,7 @@ async fn call_with(sock: &Path, home: &Path, method: &str, params: Value) -> Val
 }
 
 async fn call(home: &Path, method: &str, params: Value) -> Value {
-    call_with(&home.join("none.sock"), home, method, params).await
+    call_with(Ctx::new(home.into()), method, params).await
 }
 
 fn sh(dir: &Path, args: &[&str]) {
@@ -126,11 +125,9 @@ async fn status_finds_the_folder_of_a_pane() {
     std::fs::create_dir_all(&dir).unwrap();
     repo(&dir);
     std::fs::write(dir.join("a.txt"), "changed\n").unwrap();
-    let sock = home.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("pane.get".to_string(), json!({"pane": {"pane_id": "p1", "cwd": dir.to_string_lossy(), "agent": "claude"}}));
-    fake_herdr::spawn(&sock, m);
-    let r = call_with(&sock, home.path(), "git.status", json!({"pane_id": "p1"})).await;
+    let t = fake_core::agent_at("t1", "Claude Code", "idle", &dir.to_string_lossy(), 0);
+    let (ctx, _core) = fake_core::with_ctx(home.path(), home.path().into(), fake_core::State { terminals: vec![t], ..Default::default() });
+    let r = call_with(ctx, "git.status", json!({"pane_id": "t1"})).await;
     assert_eq!(r["result"]["files"][0]["path"], "a.txt", "{r}");
 }
 

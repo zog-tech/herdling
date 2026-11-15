@@ -1,13 +1,11 @@
-//! `herdr.update`: updates herdr (the terminal workspace) on this computer for the phone.
+//! Process helpers for the programs that herdlingd runs on this computer: the search folders,
+//! a clean child environment, the version text and a runner with a time limit. The herdr-core
+//! install ([`crate::core_install`]) uses them, and the herdr 1 guard finds a `herdr` with them.
 //!
-//! The phone sends no command text. herdlingd runs exactly `<herdr> update --handoff`, without a
-//! shell. `--handoff` makes herdr try a live handoff to the new server, so the panes can keep
-//! running. `herdr update` refuses to run inside a herdr session, so the child gets no herdr
-//! session variables. The rpc process runs from sshd with a short PATH, so herdlingd searches the
-//! usual install folders for the binary.
+//! herdlingd 0.1.x used this module for `herdr update` of herdr 1. herdlingd 0.2.0 has no herdr 1
+//! update: `herdr.update` updates herdr-core.
 //!
-//! The rules (argv, environment, version text, result) are pure functions. The process runner
-//! is a parameter: tests never run a real herdr.
+//! The rules are pure functions. The process runner is a parameter: tests never run a real program.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -17,20 +15,13 @@ use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::types::{HerdrUpdate, RpcError};
 
-/// The program name.
+/// The program name of herdr 1.
 pub const BIN: &str = "herdr";
-/// The arguments of the update. herdlingd adds nothing from the phone.
-pub const UPDATE_ARGS: &[&str] = &["update", "--handoff"];
 /// The arguments of the version check.
 pub const VERSION_ARGS: &[&str] = &["--version"];
-/// Longest wait for `herdr update`: a download, an install and a live handoff.
-pub const UPDATE_TIMEOUT: Duration = Duration::from_secs(180);
-/// Longest wait for `herdr --version`.
+/// Longest wait for `<program> --version`.
 pub const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
-/// Most bytes of output in the result. herdlingd keeps the end: it has the outcome.
-pub const OUTPUT_LIMIT: usize = 16 * 1024;
 /// Most bytes read from each output stream. The rest is read and dropped, so the child never blocks.
 const READ_LIMIT: usize = 256 * 1024;
 /// How long to wait for the output pipes to close after the child exits. A server that herdr
@@ -44,10 +35,6 @@ pub const KEEP_VARS: &[&str] = &["HERDR_HOME", "HERDR_CONFIG_PATH", "HERDR_INSTA
 
 /// System folders that the PATH of the child always has, for the tools that herdr calls.
 const SYSTEM_DIRS: &[&str] = &["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-
-fn err(code: &str, message: impl Into<String>) -> RpcError {
-    RpcError { code: code.into(), message: message.into() }
-}
 
 /// The folders searched for `herdr`, in order: every `PATH` entry, then `~/.local/bin`,
 /// `~/.cargo/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. No duplicates.
@@ -110,49 +97,6 @@ pub fn parse_version(stdout: &str) -> Option<String> {
     let word = line.split_whitespace().last()?;
     let v = word.strip_prefix('v').unwrap_or(word);
     crate::update::parse_version(v).map(|_| v.to_string())
-}
-
-/// What the output says about the live handoff.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Handoff {
-    /// "live handoff complete": the panes moved to the new server.
-    Complete,
-    /// "live handoff failed": the old server keeps running, or herdr restarts.
-    Failed,
-    /// No handoff line.
-    None,
-}
-
-impl Handoff {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Handoff::Complete => "complete",
-            Handoff::Failed => "failed",
-            Handoff::None => "none",
-        }
-    }
-}
-
-/// Reads the handoff outcome from the herdr output. A failure line wins over a success line.
-pub fn handoff_of(output: &str) -> Handoff {
-    let o = output.to_ascii_lowercase();
-    if o.contains("live handoff failed") || o.contains("failed handoff") {
-        Handoff::Failed
-    } else if o.contains("live handoff complete") {
-        Handoff::Complete
-    } else {
-        Handoff::None
-    }
-}
-
-/// True when herdr says that a package manager (Homebrew, mise or Nix) owns the install.
-pub fn is_managed(output: &str) -> bool {
-    output.to_ascii_lowercase().contains("self-update is disabled")
-}
-
-/// True when herdr says that it is already up to date.
-pub fn says_up_to_date(output: &str) -> bool {
-    output.to_ascii_lowercase().contains("already up to date")
 }
 
 /// The last `limit` bytes of `s`, cut at a character boundary, with a mark when text is cut.
@@ -279,116 +223,4 @@ impl HerdrRunner for SystemHerdrRunner {
         let text = |b: &Arc<Mutex<Vec<u8>>>| b.lock().map(|v| String::from_utf8_lossy(&v).into_owned()).unwrap_or_default();
         RunOut { exit, stdout: text(&out_buf), stderr: text(&err_buf) }
     }
-}
-
-/// Everything `herdr.update` needs. Pass a fake runner in tests.
-#[derive(Clone)]
-pub struct HerdrUpdateCtx {
-    /// The folder of the lock file `herdr-update.lock`.
-    pub lock_dir: PathBuf,
-    /// The folders searched for `herdr`, see [`search_dirs`].
-    pub dirs: Vec<PathBuf>,
-    /// The environment of this process. The child gets [`child_env`] of it.
-    pub env: Vec<(OsString, OsString)>,
-    pub runner: Arc<dyn HerdrRunner>,
-    pub timeout: Duration,
-    /// Finds `herdr` in `dirs`. Production: [`find`].
-    pub finder: fn(&[PathBuf]) -> Option<PathBuf>,
-}
-
-impl HerdrUpdateCtx {
-    /// The real values for this process.
-    pub fn new(home: &Path) -> HerdrUpdateCtx {
-        HerdrUpdateCtx {
-            lock_dir: crate::config::default_path(home).parent().map(Path::to_path_buf).unwrap_or_else(|| home.join(".config/herdling")),
-            dirs: search_dirs(home, std::env::var_os("PATH").as_deref()),
-            env: std::env::vars_os().collect(),
-            runner: Arc::new(SystemHerdrRunner),
-            timeout: UPDATE_TIMEOUT,
-            finder: find,
-        }
-    }
-}
-
-/// Holds `herdr-update.lock` while an update runs.
-pub struct UpdateLock(#[allow(dead_code)] fs::File);
-
-/// Takes the lock of `dir`. The error `busy` when another update holds it.
-pub fn take_lock(dir: &Path) -> Result<UpdateLock, RpcError> {
-    let io = |e: std::io::Error| err("io_error", format!("herdr update lock: {e}"));
-    // The folder holds the config and the pairing window: only this user may list it.
-    std::os::unix::fs::DirBuilderExt::mode(fs::DirBuilder::new().recursive(true), 0o700).create(dir).map_err(io)?;
-    let file = std::os::unix::fs::OpenOptionsExt::mode(fs::OpenOptions::new().create(true).truncate(false).write(true), 0o600)
-        .open(dir.join("herdr-update.lock"))
-        .map_err(io)?;
-    match fs4::fs_std::FileExt::try_lock_exclusive(&file) {
-        Ok(true) => Ok(UpdateLock(file)),
-        Ok(false) => Err(err("busy", "a herdr update is already running on this computer")),
-        Err(e) => Err(io(e)),
-    }
-}
-
-/// The last lines of `output` for an error message.
-fn tail_for_message(output: &str) -> String {
-    let t = cap_tail(output.trim(), 600);
-    if t.is_empty() { String::new() } else { format!(": {t}") }
-}
-
-/// Turns the run of `herdr update` into the result or an error. `from` and `to` are the versions
-/// before and after (None when `herdr --version` gave none).
-pub fn shape(from: Option<String>, to: Option<String>, run: &RunOut) -> Result<HerdrUpdate, RpcError> {
-    let output = run.combined();
-    match &run.exit {
-        Exit::SpawnFailed(e) => return Err(err("command_failed", format!("herdr update did not start: {e}"))),
-        Exit::TimedOut => {
-            return Err(err(
-                "timeout",
-                format!("herdr update ran longer than the time limit and was stopped{}", tail_for_message(&output)),
-            ))
-        }
-        Exit::Exited { success: false, code } => {
-            if is_managed(&output) {
-                return Err(err(
-                    "managed_install",
-                    format!("herdr is installed with a package manager. Update it there{}", tail_for_message(&output)),
-                ));
-            }
-            let code = code.map(|c| c.to_string()).unwrap_or_else(|| "a signal".into());
-            return Err(err("command_failed", format!("herdr update exited with {code}{}", tail_for_message(&output))));
-        }
-        Exit::Exited { success: true, .. } => {}
-    }
-    // Some versions can print the package manager line and still exit with 0.
-    if is_managed(&output) {
-        return Err(err("managed_install", format!("herdr is installed with a package manager. Update it there{}", tail_for_message(&output))));
-    }
-    let same = matches!((&from, &to), (Some(a), Some(b)) if a == b);
-    let status = if says_up_to_date(&output) || same { "up_to_date" } else { "updated" };
-    Ok(HerdrUpdate {
-        from,
-        to,
-        status: status.into(),
-        handoff: handoff_of(&output).as_str().into(),
-        output: cap_tail(&output, OUTPUT_LIMIT),
-    })
-}
-
-fn version_of(ctx: &HerdrUpdateCtx, bin: &Path, env: &[(OsString, OsString)]) -> Option<String> {
-    let r = ctx.runner.run(bin, VERSION_ARGS, env, VERSION_TIMEOUT);
-    match r.exit {
-        Exit::Exited { success: true, .. } => parse_version(&r.stdout),
-        _ => None,
-    }
-}
-
-/// `herdr.update`: finds herdr, takes the lock, reads the version, runs `herdr update --handoff`,
-/// reads the version again and shapes the result. Blocking: call it from a blocking task.
-pub fn run(ctx: &HerdrUpdateCtx) -> Result<HerdrUpdate, RpcError> {
-    let bin = (ctx.finder)(&ctx.dirs).ok_or_else(|| err("not_installed", "herdr is not installed on this computer, or not in PATH, ~/.local/bin, ~/.cargo/bin, /opt/homebrew/bin or /usr/local/bin"))?;
-    let _lock = take_lock(&ctx.lock_dir)?;
-    let env = child_env(ctx.env.iter().cloned(), &ctx.dirs);
-    let from = version_of(ctx, &bin, &env);
-    let r = ctx.runner.run(&bin, UPDATE_ARGS, &env, ctx.timeout);
-    let to = version_of(ctx, &bin, &env);
-    shape(from, to, &r)
 }

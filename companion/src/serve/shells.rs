@@ -1,23 +1,44 @@
 //! Checks the shell panes that the phone watches (`shell.watch`) and sends one push when the
 //! command in a pane finishes. The rules are in [`crate::shell_watch`]; this module does the I/O.
+//!
+//! The core loop (`core_watch`) checks each watched pane with `terminal.get`.
 
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use super::watch::{deliver, snapshot};
+use super::core_watch::deliver;
 use super::ServeCtx;
 use crate::config;
-use crate::herdr::{self, HerdrError};
+use crate::core::client::CoreError;
+use crate::core::endpoint::CoreSocket;
+use crate::core::{groups, project};
 use crate::push;
 use crate::rpc::HERDR_TIMEOUT;
 use crate::shell_watch::{self, Probe, Step, Watch};
 
+/// The check result from a core `terminal.get` answer. A terminal that the core does not know,
+/// or that is not live, is gone. The folder of a busy command is the foreground folder.
+pub fn core_probe(r: Result<Value, CoreError>) -> Probe {
+    let t = match r {
+        Ok(t) => t,
+        Err(e) if matches!(e.kind(), Some("not_found" | "finished")) => return Probe::Gone,
+        Err(_) => return Probe::Unknown,
+    };
+    if t.get("state").and_then(Value::as_str).is_some_and(|s| s != "live") {
+        return Probe::Gone;
+    }
+    let info = project::process_info(&t);
+    match shell_watch::probe(info.get("process_info").unwrap_or(&Value::Null)) {
+        Probe::Busy { command, cwd } => Probe::Busy { command, cwd: cwd.or_else(|| groups::folder_of(&t).map(String::from)) },
+        p => p,
+    }
+}
+
 /// One round: checks every live watch, saves the changes and sends the pushes of the finished
-/// commands. A missing watch file costs one `stat`. While the user is `at_desk`, devices with
-/// `quiet_at_desk` get nothing. Returns the panes of the watches that the round read, for
-/// [`shell_watch::Nudge`]. `None` when the watch file cannot be read.
-pub async fn poll(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool) -> Option<Vec<String>> {
+/// commands. A missing watch file costs one `stat`. Returns the panes of the watches that the
+/// round read, for [`shell_watch::Nudge`]. `None` when the watch file cannot be read.
+pub async fn poll(ctx: &ServeCtx, client: &reqwest::Client, sock: &CoreSocket) -> Option<Vec<String>> {
     let path = shell_watch::path(&ctx.home);
     if !path.exists() {
         return Some(Vec::new());
@@ -26,26 +47,17 @@ pub async fn poll(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool) -> Op
     let watches = blocking(path.clone(), move |p| shell_watch::list(&p, now)).await?;
     let panes: Vec<String> = watches.iter().map(|w| w.pane_id.clone()).collect();
     if !watches.is_empty() {
-        check(ctx, client, at_desk, path, now, watches).await;
+        check(ctx, client, sock, path, now, watches).await;
     }
     Some(panes)
 }
 
 /// Checks `watches` once and sends the pushes of the finished commands.
-async fn check(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool, path: PathBuf, now: u64, watches: Vec<Watch>) {
-    // herdr not there: try again next round. Expired watches still go.
-    let mut herdr = herdr::Client::connect(&ctx.herdr_socket, HERDR_TIMEOUT).await.ok();
+async fn check(ctx: &ServeCtx, client: &reqwest::Client, sock: &CoreSocket, path: PathBuf, now: u64, watches: Vec<Watch>) {
     let mut results: Vec<(Watch, Option<Watch>)> = Vec::new();
     let mut finished: Vec<(Watch, String, Option<String>)> = Vec::new();
     for w in watches {
-        let probe = match herdr.as_mut() {
-            Some(c) => match c.call("pane.process_info", json!({ "pane_id": w.pane_id })).await {
-                Ok(r) => shell_watch::probe(r.get("process_info").unwrap_or(&r)),
-                Err(HerdrError::Remote { code, .. }) if code == "pane_not_found" => Probe::Gone,
-                Err(_) => Probe::Unknown,
-            },
-            None => Probe::Unknown,
-        };
+        let probe = core_probe(crate::core::live::record(sock, HERDR_TIMEOUT, &w.pane_id).await);
         match shell_watch::step(&w, &probe, now) {
             Step::Keep => {}
             Step::Update(n) => results.push((w, Some(n))),
@@ -74,14 +86,9 @@ async fn check(ctx: &ServeCtx, client: &reqwest::Client, at_desk: bool, path: Pa
             return;
         }
     };
-    let snap = snapshot(ctx).await.unwrap_or(Value::Null);
     for (w, command, cwd) in finished {
-        let folder = pane_folder(&snap, &w.pane_id).or(cwd);
-        let (title, body) = shell_watch::push_text(folder.as_deref(), &command);
-        let msgs = push::shell_messages(&cfg, w.device_id.as_deref(), &w.pane_id, &title, &body, at_desk);
-        if msgs.is_empty() && at_desk {
-            eprintln!("herdlingd serve: user is at the computer, skipped the command push for pane {}", w.pane_id);
-        }
+        let (title, body) = shell_watch::push_text(cwd.as_deref(), &command);
+        let msgs = push::shell_messages(&cfg, w.device_id.as_deref(), &w.pane_id, &title, &body, false);
         deliver(ctx, client, &msgs).await;
     }
 }
@@ -99,13 +106,4 @@ async fn blocking<T: Send + 'static>(
         }
         Err(_) => None,
     }
-}
-
-/// The folder of `pane` in the snapshot: `cwd`, else `foreground_cwd`.
-fn pane_folder(snap: &Value, pane: &str) -> Option<String> {
-    let p = snap.get("panes")?.as_array()?.iter().find(|p| p.get("pane_id").and_then(Value::as_str) == Some(pane))?;
-    ["cwd", "foreground_cwd"]
-        .iter()
-        .find_map(|k| p.get(*k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()))
-        .map(String::from)
 }

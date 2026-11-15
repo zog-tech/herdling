@@ -5,12 +5,94 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [Unreleased herdlingd]
+## [herdlingd 0.2.0] - 2026-11-15
+
+herdlingd 0.2.0 needs Herdr 2 (herdr-core). When no herdr-core is installed, it installs the pinned
+version itself (also after an update from 0.1.9). herdr 1 sessions do not show in Herdling any more.
+
+### Breaking
+
+- herdlingd 0.2.0 talks only to Herdr 2 (herdr-core). The herdr 1 client is gone. A computer with
+  only herdr 1 (the herdr TUI and its socket) must stay on herdlingd 0.1.x, or install Herdr 2
+  first. The pin is now required (`core-pin.json` `"required": true`): the installer,
+  `herdlingd update` and `update.apply` install the pinned herdr-core.
+- Herdr 2 entries have plain ids: panes `t7`, workspaces `space:<id>` and `g:<key>`, tabs
+  `tab:<id>` and `task:<address>`. The `hc:` prefix and the `backend` field are gone, so the app
+  builds 1.0.0 and 1.0.1 allow every action on them. An input id loses an `hc:` prefix once, so
+  saved app state names the same entries. `hc:loose` names nothing.
+- `hello.backends` has only `core`. `herdr_ok` is true when the core answers, and
+  `herdr_version` is the core version.
+- `workspace.create` and `git.worktree_add` use the core by default. `backend: "core"` is still
+  accepted.
+- `herdr.subscribe` reads only the core stream. An `events` list filters the lines by name.
+- `herdr.update` always updates herdr-core to the pin. The `herdr update --handoff` path is gone.
+- Desk activity is gone (only herdr 1 reported it): `quiet_at_desk` has no effect.
+- A pane method on an id that is no terminal address gives `pane_not_found`. A method with no
+  Herdr 2 meaning (`pane.split`, `workspace.focus`, `tab.focus`) gives `unsupported`. No core
+  gives `herdr_unavailable`.
+
+### Also in 0.2.0
+
+- Self-heal: when `serve` starts, and when `hello` finds no core, herdlingd installs the pinned
+  herdr-core if none is installed (the `core.install` path, the same lock, never down, never a
+  package manager core). An update from 0.1.9 (which ignores `requires_core`) no longer leaves the
+  app with no runtime. New `hello.core_setup` (`installing`, `failed`, `missing`, with a message);
+  `herdr_unavailable` errors carry the same message. The app shows it on the host screens.
+- The release workflow puts a core notice in front of the notes of a release that needs the core.
+
+- `core.install` (and the core step of `herdr.update`) ends within 150 seconds, under the 180
+  seconds that the app waits (error `install_timeout`). The place step starts only with 60 seconds
+  left, so it is never cut off.
+
+- Typing on Herdr 2: text without Enter and keys go in at once as raw bytes on a short attach
+  stream, so punctuation, accents and emoji work in "Type directly" (also from the app builds
+  1.0.0 and 1.0.1). Every typing call answers within 10 seconds. A line that waits for quiet at
+  the computer longer is cancelled and never types later (error `busy`), so a resend cannot
+  double it. The calls behind a failed call to the same pane do not run (error `dropped`).
+
+- `tab.close` and `workspace.close` take an optional `pane_ids`: only the panes that the app showed
+  close. Without it, the close of a repo or folder group gives `unsupported`, because the group
+  follows the folders of its terminals. The app sends the list.
+- `agent.start` and `session.start` quote the agent arguments for the shell in the pane (POSIX,
+  fish or Nushell). Another shell takes only plain words. An argument with a control character
+  gives `bad_request`.
+- `herdlingd` keeps a `~/.local/bin/herdr-core` symlink that points outside the upstream bundle
+  folder (Homebrew, Nix): it is a package manager core, never replaced.
+
+- Herdr 2 actions: on a core entry, `tab.create`, `agent.start`, `agent.prompt`, `agent.rename`,
+  `tab.close`, `workspace.close`, `agent.explain`, `workspace.get` and `workspace.list` work.
+  The app's restart and resume work through them. Space and tab renames give `unsupported`.
+  `workspace.create` and `git.worktree_add` open a new Herdr app space.
+- New methods `groups.list`, `pane.move` and `session.start`. A new terminal is a login shell
+  with the Herdr app labels `herdr.space` and `herdr.tab`, so the Herdr app shows it at the desk.
+- `shell.watch` works on Herdr 2 terminals.
+- `herdlingd group <name>` and `herdlingd group --clear` set or remove the `herdling.group` label
+  of the Herdr 2 terminal that runs them.
+- The `herdling.name` label is the task name of a Herdr 2 terminal.
+- herdlingd installs herdr-core (Herdr 2). It pins one version and its SHA-256 per release
+  (`companion/core-pin.json`, now herdr-core 0.1.20). It never downgrades a core and never replaces
+  a core of a package manager. New methods `core.status` and `core.install`, and the commands
+  `herdlingd core status`, `install` and `required`.
+- The release manifest can say `requires_core` and carry the core pin. `update.check` then tells the
+  app (`core`, with a notice for herdr 1 users), and `update.apply` installs the core first. When
+  that fails, the update stops with `core_install_failed` and the old herdlingd stays.
+- The installer asks the new herdlingd `core required`. When it says yes, the installer installs
+  herdr-core first (step `core`, error `core_install_failed`) and does not need herdr 1. The herdr 1
+  check now comes after the download.
+- The terminal view of a Herdr 2 pane has colors and scrollback, as a herdr 1 pane has.
+  `pane.watch` attaches to the core terminal as a watcher (it never types or resizes), and an
+  emulator in herdlingd makes the herdr 1 screen text. A core restart attaches again. `pane.get`
+  of a watched pane has `scroll`, so the app shows the page keys for a full-screen app. An ANSI
+  `pane.read` takes one paint. New dependency: `vt100`.
+- `pane.watch` has the optional params `cols` and `rows`: on a Herdr 2 pane, herdlingd lays the
+  terminal out at the phone grid while the stream lives, and the reply has `drive: true`.
+- New read-only method `machines.suggest`: other computers that the user can add, from the
+  herdr-core machine list, the `Host` entries of `~/.ssh/config` and `tailscale status --json`.
+  It gives only names, addresses, users and ports, never keys or other SSH config values.
 
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
-  the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.
-  `hc:loose` is gone: an old id gives `pane_not_found`.
+  the folder (ids: see "Breaking").
 - Core agents and panes have the optional fields `group`, `group_source`, `repo`, `repo_root` and
   `branch`. The agent `name` is the task name. A title that only repeats the agent app or kind
   (for example "Claude Code") is not a task name. The entry name then is the Herdr app tab name,
@@ -18,9 +100,17 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `display_agent` is null for a known kind.
 - A Herdr app space with no name takes the `where` name of its first terminal, else the folder
   name of that terminal, else the folder name of the space.
+- Core agents and panes of a helper terminal have the optional field `parent_id`: the pane id of
+  the parent terminal on this computer.
 - `thread.resolve` and `agents.preview` read the transcript of a core agent (`source: "log"`).
   When no transcript exists, `thread.resolve` gives `session: null`. Only `agents.preview` falls
   back to the screen.
+
+### Added
+
+- `pane.watch` takes `format: "vt"`: the raw bytes of a Herdr 2 terminal as base64 events
+  (`reset`, `data`, `resize`, with `gen` and `seq`), for a terminal emulator in the app.
+  `hello.watch_formats` lists the formats.
 
 ## [herdlingd 0.1.9] - 2026-11-09
 
@@ -112,17 +202,70 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- The terminal view of a computer with herdlingd 0.2.0 or later is a real terminal (xterm.js in a
+  web view, on the raw `pane.watch` stream): an exact cell grid, full-width background colors, the
+  cursor, full-screen apps, wide characters and emoji, in the terminal theme. Fit, Scroll sideways
+  and Phone width work on it; Wrap shows as Fit. Search, the page keys of a full-screen app, "Jump
+  to end", a long press for "Select text" and the latency badge stay. Settings, Terminal,
+  "Renderer" goes back to "Classic". A build without the web view or an older herdlingd keeps the
+  classic view. xterm.js is bundled in the app (no network fetch).
+- On a computer with herdlingd 0.2.0, an old `hc:` pane id from a delivered push, a route or the
+  saved "seen" state names the same pane as its plain id, so such a push opens the pane and its
+  notifications go away when the pane opens.
+- "Close space" on a Herdr 2 space closes only the panes that the screen showed (`pane_ids`).
+- The host screens show what herdlingd does when Herdr 2 is missing ("Installing Herdr 2…" or the
+  install error, from `hello.core_setup`).
+
+- On a computer with herdlingd 0.2.0 or later, every entry is a Herdr 2 entry (plain ids): the
+  task rename, the phone width mode and "Move to space" work, and the herdr 1 key fallback is off.
+  A 0.1.x computer keeps the old rules for its herdr 1 panes.
+- One board: Herdr 2 agents are normal cards. The "Herdr 2" sections and labels are gone.
+- On a computer whose herdlingd has the Herdr 2 actions (`session.start` in `hello.methods`), a
+  Herdr 2 agent has every action again: the chat view, rename (a free task name), restart,
+  resume, "Why this status?", the close of a space, new tabs and "Notify me when it finishes".
+  An older herdlingd keeps the old rule.
+- A Herdr 2 card shows a letter tile of its group, the group and the task name, and a second line
+  with the computer, the agent, the repo and branch, and its helpers ("2 helpers · 1 working").
+  A helper is under its task, not a card of its own; a helper that needs you is a card too.
+  Rows show the age next to the status ("Working · 3m"). The Overview tab shows the count of
+  agents that need you.
+- "Jump to a terminal": a search over every agent and terminal on every computer, grouped by
+  task with the helpers under it.
+- A new Spaces tab: the spaces of each computer with a small map of their tabs and what needs
+  you. A space screen shows the panes of a tab as live thumbnails, and opens a new terminal or a
+  new agent in the space. The card menu has "Open space".
+- New session on Herdr 2: pick a space or "New space"; the agent starts with `session.start`.
+  Shells, worktrees and resumes go to the picked space too.
+- "Move to space…" moves a Herdr 2 terminal in no space to a space, a new space or a group.
+- The demo shows spaces, groups, a helper and a terminal that can move.
+- Session screen: with more than one pane in the tab, page dots under the header show the place.
+  A swipe on the dots or a tap opens another pane, and the tab map button lists every pane.
+- An in-app banner shows when another agent needs you or finishes while the app is open. A tap
+  opens it. The open session gets no banner, and the notification settings apply. While the app
+  is open, a push shows as this banner, not as a system banner.
+- A new terminal key bar: Esc, Ctrl and Alt (one tap for the next key from the bar or the keyboard,
+  a long press keeps them on), Tab, Shift-Tab, ^C, Enter, arrows, a drag pad for the arrow keys and
+  custom keys. The bar pages sideways with page dots. Settings, Key bar edits the custom keys and
+  text keys such as `/new`, `yes` and `1`; they stay on the phone.
+- Settings, Theme, Terminal: a light "Paper" screen for the terminal view.
+- A "Phone width" terminal mode for Herdr 2 panes: the pane lays out its output at the phone
+  width. The pane on the computer gets the phone's size while the phone watches it. It needs a
+  herdlingd with `pane.watch` `cols` and `rows`; else the view stays at "Fit to screen".
+- Add computer suggests more computers from a paired one (`machines.suggest`). A tap opens "Set up
+  with password" with the details filled in.
+- The host screen shows Herdr 2 (`core.status`) and offers **Install Herdr 2** or **Update Herdr 2**
+  (`core.install`). Before a herdlingd update that needs Herdr 2, the app says that the core
+  installs first and shows the herdr 1 notice.
+
 - The host screen has a herdr card with the herdr version and **Update herdr**, when the
   computer runs a herdlingd with `herdr.update`. The confirmation tells that herdr tries to keep
   the sessions running, and that running commands and agents stop if it cannot. The result says
   "Sessions kept running" only when herdr reports a complete live handoff. Otherwise it shows the
   herdr output. A Homebrew, mise or Nix install gets a message to update herdr there.
-- Herdr 2 (herdr-core) agents and terminals show on the board. In the workspace grouping, a Herdr 2
-  workspace has its own section with a "Herdr 2" label; other groupings add "Herdr 2" to the row.
-  A Herdr 2 agent opens in the terminal view. The app hides the actions that need herdr 1 for
-  these entries: rename, restart, resume, "Why this status?", the close of a whole tab or
-  workspace, and "Notify me when it finishes". New session offers only herdr 1 workspaces. The
-  demo has two Herdr 2 agents.
+- Herdr 2 (herdr-core) agents and terminals show on the board. On a herdlingd without the Herdr 2
+  actions, a Herdr 2 agent opens in the terminal view, and the app hides rename, restart, resume,
+  "Why this status?", the close of a whole tab or workspace, and "Notify me when it finishes" for
+  these entries.
 - Saved prompts: while the prompt box is empty and has the focus, chips show your quick replies
   ("Continue", "Yes, go ahead", "Run the tests", "Explain the change", "Commit and push"). A tap
   puts the text in the box; it does not send. A long press offers "Send now". Settings, "Saved

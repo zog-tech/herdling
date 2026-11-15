@@ -1,5 +1,5 @@
 //! Core notifications as herdr 1 event lines, so the app stream of `herdr.subscribe` carries
-//! them with `hc:` pane ids. Pure.
+//! them with plain pane ids (`core::ids`). Pure.
 //!
 //! | core | herdr 1 line |
 //! |---|---|
@@ -19,7 +19,7 @@ use super::project::{self, LAYOUT_DOC};
 
 /// An event that makes every app read the snapshot again, and that no other part acts on.
 pub fn refetch_hint() -> Value {
-    json!({ "event": "layout.updated", "data": { "type": "layout_updated", "backend": project::BACKEND } })
+    json!({ "event": "layout.updated", "data": { "type": "layout_updated" } })
 }
 
 /// The local terminal address of event params, when the event is about one.
@@ -48,19 +48,32 @@ pub fn translate(n: &Notice) -> Option<Value> {
     match kind {
         "status" => Some(match project::map_status(data.get("status").filter(|s| !s.is_null())) {
             Some(s) => json!({ "event": "pane.agent_status_changed", "data": {
-                "type": "pane_agent_status_changed", "pane_id": pane, "agent_status": s, "backend": project::BACKEND,
+                "type": "pane_agent_status_changed", "pane_id": pane, "agent_status": s,
             }}),
             None => json!({ "event": "pane.agent_detected", "data": {
-                "type": "pane_agent_detected", "pane_id": pane, "agent": null, "released": true, "backend": project::BACKEND,
+                "type": "pane_agent_detected", "pane_id": pane, "agent": null, "released": true,
             }}),
         }),
         "created" | "restarted" => Some(json!({ "event": "pane.created", "data": {
-            "type": "pane_created", "pane": { "pane_id": pane, "backend": project::BACKEND },
+            "type": "pane_created", "pane": { "pane_id": pane },
         }})),
         "finished" | "removed" => Some(json!({ "event": "pane.closed", "data": {
-            "type": "pane_closed", "pane_id": pane, "backend": project::BACKEND,
+            "type": "pane_closed", "pane_id": pane,
         }})),
         "lost" => Some(refetch_hint()),
         _ => None,
     }
+}
+
+/// Event name with `.` replaced by `_` (herdr 1 lines use both spellings).
+pub fn event_name(ev: &Value) -> Option<String> {
+    ev.get("event").and_then(Value::as_str).map(|n| n.replace('.', "_"))
+}
+
+/// Pane id of a `pane_closed` event line, if it is one.
+pub fn closed_pane_id(ev: &Value) -> Option<&str> {
+    if event_name(ev)? != "pane_closed" {
+        return None;
+    }
+    ev.get("data")?.get("pane_id").and_then(Value::as_str)
 }

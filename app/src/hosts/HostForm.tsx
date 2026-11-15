@@ -16,10 +16,12 @@ import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { authorizedKeysCommand } from "./authorizedKeys";
 import { LOGIN_HINT, startsAtLogin } from "./boot";
-import { herdrNotRunningText, HostNotices } from "./HostNotices";
+import { runtimeDownText } from "./coreInstall";
+import { HostNotices } from "./HostNotices";
 import { IntegrationsRow } from "./IntegrationsRow";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
+import { CoreCard } from "./CoreCard";
 import { HerdrUpdateCard } from "./HerdrUpdateCard";
 import { UpdateCard } from "./UpdateCard";
 import { editPatch } from "./editPatch";
@@ -134,6 +136,7 @@ export function HostForm({ host }: { host?: Host }) {
     <Screen>
       {host ? <UpdateCard hostId={host.id} /> : null}
       {host ? <HerdrUpdateCard hostId={host.id} /> : null}
+      {host ? <CoreCard hostId={host.id} /> : null}
       {host ? <HostNotices hostId={host.id} /> : null}
       {host ? <IntegrationsRow hostId={host.id} card /> : null}
       <Card>
@@ -183,7 +186,7 @@ export function HostForm({ host }: { host?: Host }) {
               <Text>
                 {hello.herdr_ok
                   ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}`
-                  : herdrNotRunningText(hello.host)}
+                  : runtimeDownText(hello.host, hello)}
               </Text>
               {/* A new host has no host notices above: show the boot hint here. */}
               {!host && startsAtLogin(hello) && savedId ? (

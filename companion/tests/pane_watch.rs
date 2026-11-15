@@ -1,10 +1,9 @@
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
+//! `pane.watch` on a core with no `terminal.attach` (the `terminal.read` poll), the gate, and the
+//! order of typing calls.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+#[path = "support/fake_core.rs"]
+mod fake_core;
+
 use std::time::{Duration, Instant};
 
 use herdlingd::rpc::{self, Ctx};
@@ -18,10 +17,10 @@ struct Session {
 }
 
 impl Session {
-    fn start(sock: PathBuf, home: PathBuf) -> Session {
+    fn start(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(1 << 20);
         let (server_out, client_rx) = tokio::io::duplex(1 << 20);
-        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: Some(client_tx), rx: BufReader::new(client_rx).lines() }
     }
     async fn send(&mut self, line: &str) {
@@ -48,46 +47,22 @@ impl Session {
     }
 }
 
-/// A fake herdr pane whose screen the test changes. Counts `pane.read` calls.
-#[derive(Clone)]
-struct Pane {
-    text: Arc<Mutex<String>>,
-    revision: Arc<AtomicU64>,
-    reads: Arc<AtomicU64>,
-    gone: Arc<AtomicBool>,
-    last_params: Arc<Mutex<Value>>,
-}
-
-impl Pane {
-    fn spawn(sock: &std::path::Path) -> Pane {
-        let pane = Pane {
-            text: Arc::new(Mutex::new("$ ".into())),
-            revision: Arc::new(AtomicU64::new(0)),
-            reads: Arc::new(AtomicU64::new(0)),
-            gone: Arc::new(AtomicBool::new(false)),
-            last_params: Arc::new(Mutex::new(Value::Null)),
-        };
-        let p = pane.clone();
-        fake_herdr::spawn_fn(sock, move |method, params| {
-            if method != "pane.read" || p.gone.load(Ordering::SeqCst) {
-                return None;
-            }
-            p.reads.fetch_add(1, Ordering::SeqCst);
-            *p.last_params.lock().unwrap() = params.clone();
-            Some(json!({"type": "pane_read", "read": {
-                "pane_id": "w1:p1", "text": *p.text.lock().unwrap(),
-                "revision": p.revision.load(Ordering::SeqCst), "truncated": false,
-            }}))
-        });
-        pane
-    }
-    fn set(&self, text: &str) {
-        *self.text.lock().unwrap() = text.into();
-    }
+/// A fake core with one shell terminal `t1` whose screen is `$ `.
+fn core(dir: &std::path::Path) -> (Ctx, fake_core::FakeCore) {
+    let t = fake_core::terminal("t1", None, None);
+    fake_core::with_ctx(dir, dir.into(), fake_core::State { terminals: vec![t], screen: "$ ".into(), ..Default::default() })
 }
 
 fn screen(revision: u64, text: &str) -> Screen {
     Screen { revision, text: text.into(), truncated: false }
+}
+
+fn set_screen(c: &fake_core::FakeCore, text: &str) {
+    c.state.lock().unwrap().screen = text.into();
+}
+
+fn reads(c: &fake_core::FakeCore) -> usize {
+    c.calls_of("terminal.read").len()
 }
 
 #[test]
@@ -125,54 +100,61 @@ fn watch_params_defaults_and_clamps() {
     assert_eq!(p.interval, Duration::from_millis(1000));
     assert_eq!(WatchParams::parse(&json!({})).unwrap_err().code, "bad_request");
     assert_eq!(WatchParams::parse(&json!({"pane_id": "w1:p1", "format": "html"})).unwrap_err().code, "bad_request");
+    let p = WatchParams::parse(&json!({"pane_id": "w1:p1", "format": "vt"})).unwrap();
+    assert_eq!((p.format, p.ansi), (herdlingd::watch::Format::Vt, false));
+}
+
+#[test]
+fn watch_params_phone_grid() {
+    let p = WatchParams::parse(&json!({"pane_id": "t1"})).unwrap();
+    assert_eq!(p.size, None);
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 45, "rows": 30})).unwrap();
+    assert_eq!(p.size, Some((45, 30)));
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 5, "rows": 9999})).unwrap();
+    assert_eq!(p.size, Some((20, 200)));
+    let p = WatchParams::parse(&json!({"pane_id": "t1", "cols": 9999, "rows": 1})).unwrap();
+    assert_eq!(p.size, Some((500, 5)));
+    // One of the two alone is no grid.
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "t1", "cols": 45})).unwrap().size, None);
+    assert_eq!(WatchParams::parse(&json!({"pane_id": "t1", "rows": 30})).unwrap().size, None);
 }
 
 #[tokio::test]
 async fn watch_sends_first_screen_then_only_changes() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let pane = Pane::spawn(&sock);
-    let mut s = Session::start(sock, dir.path().into());
-    let r = s.watch(1, json!({"pane_id": "w1:p1", "format": "ansi", "lines": 50, "interval_ms": 50})).await;
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
+    let r = s.watch(1, json!({"pane_id": "t1", "format": "ansi", "lines": 50, "interval_ms": 50})).await;
     let stream = r["result"]["stream"].as_str().unwrap_or_else(|| panic!("no stream: {r}")).to_string();
     assert!(stream.starts_with("pane:"));
-    assert_eq!(
-        *pane.last_params.lock().unwrap(),
-        json!({"pane_id": "w1:p1", "source": "recent", "lines": 50, "format": "ansi", "strip_ansi": false})
-    );
+    assert_eq!(c.calls_of("terminal.read")[0], json!({"terminal": "t1", "lines": 50}));
     let first = s.recv().await;
     assert_eq!(first["method"], "event");
     assert_eq!(first["params"]["stream"], stream.as_str());
     assert_eq!(first["params"]["data"], json!({"revision": 0, "text": "$ ", "truncated": false}));
 
     // Unchanged screen: herdlingd keeps reading but sends nothing.
-    let before = pane.reads.load(Ordering::SeqCst);
+    let before = reads(&c);
     assert!(s.maybe(300).await.is_none(), "an unchanged screen was sent");
-    assert!(pane.reads.load(Ordering::SeqCst) >= before + 3, "herdlingd did not poll herdr");
+    assert!(reads(&c) >= before + 3, "herdlingd did not poll the core");
 
-    pane.set("$ ls\nfile\n$ ");
+    set_screen(&c, "$ ls\nfile\n$ ");
     let ev = s.recv().await;
     assert_eq!(ev["params"]["data"]["text"], "$ ls\nfile\n$ ");
-
-    pane.revision.store(5, Ordering::SeqCst);
-    let ev = s.recv().await;
-    assert_eq!(ev["params"]["data"]["revision"], 5);
     assert!(s.maybe(200).await.is_none());
 }
 
 #[tokio::test]
-async fn watch_reports_herdr_errors_as_the_call_error() {
+async fn watch_reports_core_errors_as_the_call_error() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let pane = Pane::spawn(&sock);
-    pane.gone.store(true, Ordering::SeqCst);
-    let mut s = Session::start(sock, dir.path().into());
-    let r = s.watch(1, json!({"pane_id": "w1:p1"})).await;
-    assert_eq!(r["error"]["code"], "unknown_method");
+    let (ctx, _c) = core(dir.path());
+    let mut s = Session::start(ctx);
+    let r = s.watch(1, json!({"pane_id": "t9"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found");
 
     let dir2 = tempfile::tempdir().unwrap();
-    let mut s2 = Session::start(dir2.path().join("none.sock"), dir2.path().into());
-    let r = s2.watch(1, json!({"pane_id": "w1:p1"})).await;
+    let mut s2 = Session::start(Ctx::new(dir2.path().into()));
+    let r = s2.watch(1, json!({"pane_id": "t1"})).await;
     assert_eq!(r["error"]["code"], "herdr_unavailable");
     let r = s2.watch(2, json!({})).await;
     assert_eq!(r["error"]["code"], "bad_request");
@@ -181,121 +163,87 @@ async fn watch_reports_herdr_errors_as_the_call_error() {
 #[tokio::test]
 async fn watch_ends_with_an_error_event_when_the_pane_goes() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let pane = Pane::spawn(&sock);
-    let mut s = Session::start(sock, dir.path().into());
-    s.watch(1, json!({"pane_id": "w1:p1", "interval_ms": 50})).await;
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
+    s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     s.recv().await;
-    pane.gone.store(true, Ordering::SeqCst);
+    let gone = c.state.lock().unwrap().terminals.pop().unwrap();
     let ev = s.recv().await;
-    assert_eq!(ev["params"]["data"]["error"], "unknown_method");
-    let reads = pane.reads.load(Ordering::SeqCst);
-    pane.gone.store(false, Ordering::SeqCst);
+    assert_eq!(ev["params"]["data"]["error"], "pane_not_found");
+    let n = reads(&c);
+    c.state.lock().unwrap().terminals.push(gone);
     assert!(s.maybe(200).await.is_none());
-    assert_eq!(pane.reads.load(Ordering::SeqCst), reads, "the stream kept reading after its end");
+    assert_eq!(reads(&c), n, "the stream kept reading after its end");
 }
 
 #[tokio::test]
 async fn watch_stops_reading_on_cancel() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let pane = Pane::spawn(&sock);
-    let mut s = Session::start(sock, dir.path().into());
-    let r = s.watch(1, json!({"pane_id": "w1:p1", "interval_ms": 50})).await;
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
+    let r = s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     let stream = r["result"]["stream"].as_str().unwrap().to_string();
     s.recv().await;
     s.send(&json!({"id": 2, "method": "rpc.cancel", "params": {"stream": stream}}).to_string()).await;
     assert_eq!(s.recv().await["result"]["cancelled"], true);
     tokio::time::sleep(Duration::from_millis(60)).await;
-    let reads = pane.reads.load(Ordering::SeqCst);
-    pane.set("changed");
+    let n = reads(&c);
+    set_screen(&c, "changed");
     assert!(s.maybe(250).await.is_none(), "event after cancel");
-    assert_eq!(pane.reads.load(Ordering::SeqCst), reads, "herdr reads after cancel");
+    assert_eq!(reads(&c), n, "core reads after cancel");
 }
 
 #[tokio::test]
 async fn watch_stops_reading_when_the_channel_closes() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let pane = Pane::spawn(&sock);
-    let mut s = Session::start(sock, dir.path().into());
-    s.watch(1, json!({"pane_id": "w1:p1", "interval_ms": 50})).await;
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
+    s.watch(1, json!({"pane_id": "t1", "interval_ms": 50})).await;
     s.recv().await;
     // The SSH channel closes: stdin reaches EOF.
     drop(s.tx.take());
     tokio::time::sleep(Duration::from_millis(150)).await;
-    let reads = pane.reads.load(Ordering::SeqCst);
+    let n = reads(&c);
     tokio::time::sleep(Duration::from_millis(250)).await;
-    assert_eq!(pane.reads.load(Ordering::SeqCst), reads, "herdr reads after the channel closed");
+    assert_eq!(reads(&c), n, "core reads after the channel closed");
 }
 
 #[tokio::test]
-async fn watch_works_with_one_shot_herdr() {
-    // herdr 0.9.0 closes each connection after one answer: the stream connects again.
+async fn send_input_types_text_and_enter_as_one_send() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("pane.read".to_string(), json!({"read": {"text": "idle", "revision": 0, "truncated": false}}));
-    fake_herdr::spawn_one_shot(&sock, m);
-    let mut s = Session::start(sock, dir.path().into());
-    s.watch(1, json!({"pane_id": "w1:p1", "interval_ms": 50})).await;
-    assert_eq!(s.recv().await["params"]["data"]["text"], "idle");
-    assert!(s.maybe(300).await.is_none(), "the stream ended or resent an unchanged screen");
-}
-
-#[tokio::test]
-async fn send_input_passes_text_and_keys_and_marks_phone_input() {
-    let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let got = Arc::new(Mutex::new(Vec::<Value>::new()));
-    let g = got.clone();
-    fake_herdr::spawn_fn(&sock, move |method, params| {
-        (method == "pane.send_input").then(|| {
-            g.lock().unwrap().push(params.clone());
-            json!({"type": "ok"})
-        })
-    });
-    let mut s = Session::start(sock, dir.path().into());
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
     let call = json!({"id": 1, "method": "herdr.call", "params": {"method": "pane.send_input",
-        "params": {"pane_id": "w1:p1", "text": "ls -la", "keys": ["enter"]}}});
+        "params": {"pane_id": "t1", "text": "ls -la", "keys": ["enter"]}}});
     s.send(&call.to_string()).await;
-    assert_eq!(s.recv().await["result"], json!({"type": "ok"}));
-    assert_eq!(*got.lock().unwrap(), vec![json!({"pane_id": "w1:p1", "text": "ls -la", "keys": ["enter"]})]);
-    assert!(herdlingd::phone_input::last(dir.path(), "w1:p1").is_some());
+    assert!(s.recv().await.get("result").is_some());
+    assert_eq!(c.calls_of("terminal.send"), vec![json!({"terminal": "t1", "text": "ls -la", "force": true})]);
 }
 
 // Many worker threads, as in `herdlingd rpc`, so request tasks can run in parallel.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn pipelined_typing_calls_reach_herdr_in_order() {
+async fn pipelined_typing_calls_reach_the_core_in_order() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = dir.path().join("herdr.sock");
-    let got = Arc::new(Mutex::new(Vec::<String>::new()));
-    let g = got.clone();
-    fake_herdr::spawn_fn(&sock, move |method, params| {
-        if method != "pane.send_input" && method != "pane.send_keys" {
-            return None;
-        }
-        let what = params.get("text").and_then(Value::as_str).map(String::from).unwrap_or_else(|| params["keys"][0].to_string());
-        g.lock().unwrap().push(what);
-        Some(json!({"type": "ok"}))
-    });
-    let mut s = Session::start(sock, dir.path().into());
+    let (ctx, c) = core(dir.path());
+    let mut s = Session::start(ctx);
     const N: usize = 60;
     let mut want = Vec::new();
     for i in 0..N {
         let line = if i % 3 == 2 {
-            want.push("\"enter\"".to_string());
-            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_keys", "params": {"pane_id": "w1:p1", "keys": ["enter"]}}})
+            want.push(json!(["enter"]));
+            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_keys", "params": {"pane_id": "t1", "keys": ["enter"]}}})
         } else {
-            want.push(format!("t{i}"));
-            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_input", "params": {"pane_id": "w1:p1", "text": format!("t{i}")}}})
+            let text = format!("t{i}");
+            want.push(json!(text.chars().map(|c| c.to_string()).collect::<Vec<_>>()));
+            json!({"id": i, "method": "herdr.call", "params": {"method": "pane.send_input", "params": {"pane_id": "t1", "text": text}}})
         };
         s.send(&line.to_string()).await;
     }
     for _ in 0..N {
         assert!(s.recv().await.get("result").is_some());
     }
-    assert_eq!(*got.lock().unwrap(), want);
+    let got: Vec<Value> = c.calls_of("terminal.keys").into_iter().map(|p| p["keys"].clone()).collect();
+    assert_eq!(got, want);
 }
 
 #[tokio::test]
@@ -317,4 +265,20 @@ async fn input_order_lanes_are_per_pane_and_a_dropped_turn_frees_the_next() {
     assert!(order.take_for("herdr.call", &call("pane.send_input")).is_some());
     assert!(order.take_for("herdr.call", &call("pane.read")).is_none());
     assert!(order.take_for("pane.watch", &call("pane.send_input")).is_none());
+}
+
+#[test]
+fn calls_that_arrived_before_a_failure_are_dropped() {
+    use herdlingd::input_order::InputOrder;
+    let order = InputOrder::default();
+    let first = order.take("t1");
+    let second = order.take("t1");
+    let other = order.take("t2");
+    std::thread::sleep(Duration::from_millis(2));
+    first.fail();
+    assert!(second.dropped(), "came before the failure");
+    assert!(!other.dropped(), "another pane");
+    std::thread::sleep(Duration::from_millis(2));
+    let later = order.take("t1");
+    assert!(!later.dropped(), "came after the failure");
 }

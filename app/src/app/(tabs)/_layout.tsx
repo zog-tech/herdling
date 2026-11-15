@@ -1,6 +1,10 @@
 import { NativeTabs } from "expo-router/native-tabs";
 import { Platform } from "react-native";
 
+import { needsYouCount } from "@/board/tasks";
+import { useSnapshots } from "@/herdr/snapshotStore";
+import { useOnlineHostKey } from "@/hosts/connection";
+import { useHosts } from "@/hosts/store";
 import { withAlpha } from "@/theme/contrast";
 import { colors } from "@/theme/tokens";
 
@@ -26,7 +30,15 @@ const androidBar = () =>
  * `sidebarAdaptable` (iOS 18+): on iPad the tab bar can turn into a sidebar. iPhone keeps the
  * tab bar (iOS 27 shows the sidebar only on large iPhones in landscape, and Herdling is portrait).
  */
+/** The count of agents that need the user on the online computers: the badge of the board tab. */
+function useNeedsYou(): number {
+  const ids = useHosts((s) => s.hosts.map((h) => h.id).join(","));
+  const online = useOnlineHostKey(ids ? ids.split(",") : []);
+  return useSnapshots((s) => needsYouCount((online ? online.split(",") : []).map((id) => s.byHost[id])));
+}
+
 export default function TabsLayout() {
+  const needsYou = useNeedsYou();
   return (
     <NativeTabs
       sidebarAdaptable
@@ -42,6 +54,16 @@ export default function TabsLayout() {
           src={{ default: require("../../../assets/images/tabs/overview.png"), selected: require("../../../assets/images/tabs/overview-fill.png") }}
         />
         <NativeTabs.Trigger.Label>Overview</NativeTabs.Trigger.Label>
+        {/* The count of agents that need you, as on the app icon of a mail app. */}
+        <NativeTabs.Trigger.Badge hidden={needsYou === 0}>{String(needsYou)}</NativeTabs.Trigger.Badge>
+      </NativeTabs.Trigger>
+      {/* Spaces: the Herdr app spaces of each computer. Second, next to the board: the second way to find an agent. */}
+      <NativeTabs.Trigger name="spaces">
+        <NativeTabs.Trigger.Icon
+          sf={{ default: "rectangle.3.group", selected: "rectangle.3.group.fill" }}
+          src={{ default: require("../../../assets/images/tabs/spaces.png"), selected: require("../../../assets/images/tabs/spaces-fill.png") }}
+        />
+        <NativeTabs.Trigger.Label>Spaces</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="usage">
         <NativeTabs.Trigger.Icon

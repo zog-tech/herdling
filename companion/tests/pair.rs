@@ -65,7 +65,6 @@ async fn start() -> Setup {
     let ctx = ServeCtx {
         core_socket: None,
         home: dir.path().into(),
-        herdr_socket: dir.path().join("herdr.sock"),
         config_path: config::default_path(dir.path()),
         push_url: "http://127.0.0.1:9/unused".into(),
         debounce: Duration::from_millis(50),
@@ -342,7 +341,7 @@ async fn revoke_after_repair_leaves_no_line() {
 async fn rpc_call(home: &Path, method: &str, params: Value) -> Value {
     let (mut client_tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = rpc::Ctx::new(home.join("none.sock"), home.into());
+    let mut ctx = rpc::Ctx::new(home.into());
     ctx.config_path = config::default_path(home);
     ctx.authorized_keys = home.join(".ssh/authorized_keys");
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));

@@ -1,7 +1,8 @@
 import { timeAgo } from "@/hosts/ConnBadge";
 
 import type { RowStyle } from "./boardPrefs";
-import type { Bucket, BoardItem } from "./buckets";
+import { BUCKET_LABEL, type Bucket, type BoardItem } from "./buckets";
+import { helperSummary, sameName } from "./tasks";
 
 /** The muted line of an idle agent with no latest line, in the styles that show where to tap. */
 export const IDLE_PLACEHOLDER = "Waiting for your next prompt";
@@ -41,4 +42,36 @@ export function footerMeta(bucket: Bucket, elapsedS: number | undefined, sinceKn
     default:
       return sinceKnown ? `Last active ${timeAgo(0, elapsedS * 1000)}` : undefined;
   }
+}
+
+/** A short age for a row status: "now", "3m", "2h", "4d". */
+export function shortAgo(seconds: number): string {
+  const m = Math.floor(Math.max(0, seconds) / 60);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+}
+
+/** The status word of a row with its age: "Working · 3m". With no age, the word only. */
+export function statusWithAge(bucket: Bucket, elapsedS: number | undefined): string {
+  return elapsedS === undefined ? BUCKET_LABEL[bucket] : `${BUCKET_LABEL[bucket]} · ${shortAgo(elapsedS)}`;
+}
+
+/**
+ * The title of a card as two parts: the group in bold, then the task name. A card with no group
+ * (herdr 1, an older herdlingd) or a task with the name of the group has only the task. A title
+ * that starts with the group ("api · tests", the workspace and tab names) keeps only the rest.
+ */
+export function titleParts(item: Pick<BoardItem, "group" | "title">): { group?: string; task: string } {
+  const group = item.group;
+  if (!group || sameName(group, item.title)) return { task: item.title };
+  const prefix = `${group.trim()} · `;
+  const rest = item.title.toLowerCase().startsWith(prefix.toLowerCase()) ? item.title.slice(prefix.length).trim() : item.title;
+  return { group, task: rest || item.title };
+}
+
+/** The second line of a card: "<computer> · <kind>", then the repo line and the helpers. */
+export function cardSubtitle(item: Pick<BoardItem, "subtitle" | "repoLine" | "helpers">): string {
+  return [item.subtitle, item.repoLine, helperSummary(item.helpers ?? [])].filter(Boolean).join(" · ");
 }

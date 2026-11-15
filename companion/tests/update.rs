@@ -89,6 +89,11 @@ async fn fixture(version: &str, current: &str, sha: Option<&str>, url_base: Opti
 }
 
 async fn fixture_signed(version: &str, current: &str, sha: Option<&str>, url_base: Option<&str>, sig: Sig) -> Fixture {
+    fixture_full(version, current, sha, url_base, sig, json!({})).await
+}
+
+/// [`fixture_signed`] with `extra` fields in the manifest (for example `requires_core`).
+async fn fixture_full(version: &str, current: &str, sha: Option<&str>, url_base: Option<&str>, sig: Sig, extra: serde_json::Value) -> Fixture {
     let key = test_key();
     let other = test_key();
     let dir = tempfile::tempdir().unwrap();
@@ -99,13 +104,16 @@ async fn fixture_signed(version: &str, current: &str, sha: Option<&str>, url_bas
     files.insert(asset_path.clone(), tar);
     let manifest = |base: &str| {
         let url = format!("{}/{asset_path}", url_base.unwrap_or(base));
-        serde_json::to_vec(&json!({
+        let mut m = json!({
             "version": version,
             "date": "2026-11-02",
             "notes": "Fixes.",
             "assets": { TARGET: { "url": url, "sha256": sha.unwrap_or(&real_sha) } }
-        }))
-        .unwrap()
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            m[k] = v.clone();
+        }
+        serde_json::to_vec(&m).unwrap()
     };
     // Bind first: the manifest URLs need the address of the server.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -145,6 +153,7 @@ async fn fixture_signed(version: &str, current: &str, sha: Option<&str>, url_bas
         current: current.into(),
         runner: runner.clone(),
         release_keys: vec![key.public_key().as_ref().to_vec()],
+        core: None,
     };
     Fixture { _dir: dir, ctx, runner, exe }
 }
@@ -371,7 +380,7 @@ async fn second_update_at_the_same_time_is_refused() {
 async fn rpc_without_update_settings_downloads_nothing() {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let dir = tempfile::tempdir().unwrap();
-    let ctx = herdlingd::rpc::Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    let ctx = herdlingd::rpc::Ctx::new(dir.path().into());
     let (mut tx, server_in) = tokio::io::duplex(4096);
     let (server_out, rx) = tokio::io::duplex(4096);
     tokio::spawn(herdlingd::rpc::run(BufReader::new(server_in), server_out, ctx));
@@ -441,4 +450,150 @@ async fn production_keys_refuse_a_release_of_another_key() {
     f.ctx.release_keys = update::release_keys();
     assert_eq!(update::apply(&f.ctx, None, false).await.unwrap_err().code, "bad_signature");
     assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
+}
+
+// ---- the herdr-core step (the herdr 1 guard) ----
+
+mod core_step {
+    use super::*;
+    use herdlingd::core_install::pin::CorePin;
+    use herdlingd::core_install::CoreInstallCtx;
+    use herdlingd::herdr_update::{Exit, HerdrRunner, RunOut};
+    use std::collections::BTreeMap;
+    use std::ffi::OsString;
+    use std::time::Duration;
+
+    const CORE: &str = "0.1.20";
+
+    /// A fake core: the staged core says the pin, `server start` makes it run.
+    struct FakeCore {
+        running: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl HerdrRunner for FakeCore {
+        fn run(&self, _bin: &Path, args: &[&str], _env: &[(OsString, OsString)], _t: Duration) -> RunOut {
+            let out = match args {
+                ["--version"] => format!("hc {CORE}"),
+                ["server", "start"] => {
+                    self.running.store(true, std::sync::atomic::Ordering::SeqCst);
+                    String::new()
+                }
+                _ => String::new(),
+            };
+            RunOut { exit: Exit::Exited { success: true, code: Some(0) }, stdout: out, stderr: String::new() }
+        }
+    }
+
+    fn core_tarball(dir: &Path) -> Vec<u8> {
+        let src = dir.join("core-src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("herdr-core"), "core").unwrap();
+        let out = dir.join("core.tar.gz");
+        assert!(std::process::Command::new("tar").arg("-czf").arg(&out).arg("-C").arg(&src).arg("herdr-core").status().unwrap().success());
+        std::fs::read(out).unwrap()
+    }
+
+    /// Adds a fake core install to `f`. `serve`: the bytes of the fake core download.
+    /// `herdr1`: put a `herdr` (herdr 1) in `~/.local/bin`.
+    fn with_core(f: &mut Fixture, serve: Vec<u8>, pin_sha: &str, herdr1: bool) {
+        let home = f.ctx.home.clone();
+        let bin = home.join(".local/bin");
+        if herdr1 {
+            std::fs::write(bin.join("herdr"), "herdr 1").unwrap();
+            std::fs::set_permissions(bin.join("herdr"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let r = running.clone();
+        f.ctx.core = Some(CoreInstallCtx {
+            home: home.clone(),
+            dirs: vec![bin],
+            env: vec![],
+            runner: Arc::new(FakeCore { running }),
+            fetch: Arc::new(move |_| Ok(serve.clone())),
+            probe: Arc::new(move |_| r.load(std::sync::atomic::Ordering::SeqCst).then(|| CORE.to_string())),
+            mac: false,
+            target: Some("linux-x86_64".into()),
+            pin: CorePin { version: CORE.into(), required: false, sha256: BTreeMap::from([("linux-x86_64".into(), pin_sha.into())]) },
+            lock_dir: home.join(".config/herdling"),
+        });
+    }
+
+    fn needs_core(sha: &str) -> serde_json::Value {
+        json!({ "requires_core": true, "core": { "version": CORE, "required": true, "sha256": { "linux-x86_64": sha } } })
+    }
+
+    #[tokio::test]
+    async fn an_old_manifest_needs_no_core() {
+        let mut f = fixture("0.2.0", "0.1.0", None, None).await;
+        with_core(&mut f, Vec::new(), &"0".repeat(64), true);
+        let c = update::check(&f.ctx, None).await.unwrap();
+        let core = c.core.unwrap();
+        assert!(!core.requires_core && !core.install_first && core.herdr1 && !core.installed);
+        assert_eq!(core.notice, None);
+        let r = update::apply(&f.ctx, None, false).await.unwrap();
+        assert_eq!(r.status, "updated");
+        assert!(r.core.is_none() && r.notice.is_none());
+        assert!(!f.ctx.home.join(".local/bin/herdr-core").exists());
+    }
+
+    #[tokio::test]
+    async fn check_tells_the_app_that_the_core_comes_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let sha = update::sha256_hex(&core_tarball(dir.path()));
+        let mut f = fixture_full("0.2.0", "0.1.9", None, None, Sig::Good, needs_core(&sha)).await;
+        with_core(&mut f, Vec::new(), &sha, true);
+        let core = update::check(&f.ctx, None).await.unwrap().core.unwrap();
+        assert!(core.requires_core && core.install_first && core.herdr1 && !core.installed);
+        assert_eq!(core.pinned, CORE);
+        assert!(core.notice.unwrap().contains("herdr 1 sessions do not show"));
+    }
+
+    #[tokio::test]
+    async fn the_core_is_installed_before_herdlingd() {
+        let dir = tempfile::tempdir().unwrap();
+        let tar = core_tarball(dir.path());
+        let sha = update::sha256_hex(&tar);
+        // The own pin has another checksum: the update must use the pin of the release.
+        let mut f = fixture_full("0.2.0", "0.1.9", None, None, Sig::Good, needs_core(&sha)).await;
+        with_core(&mut f, tar, &"1".repeat(64), true);
+        let r = update::apply(&f.ctx, None, false).await.unwrap();
+        assert_eq!(r.status, "updated");
+        let core = r.core.unwrap();
+        assert_eq!((core.status.as_str(), core.to.as_deref()), ("installed", Some(CORE)));
+        assert!(core.started);
+        assert!(r.notice.unwrap().contains("herdr 1"));
+        assert!(f.ctx.home.join(".local/bin/herdr-core").exists());
+        assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), NEW);
+    }
+
+    #[tokio::test]
+    async fn a_failed_core_install_keeps_the_old_herdlingd() {
+        let dir = tempfile::tempdir().unwrap();
+        let sha = update::sha256_hex(&core_tarball(dir.path()));
+        let mut f = fixture_full("0.2.0", "0.1.9", None, None, Sig::Good, needs_core(&sha)).await;
+        with_core(&mut f, b"a changed download".to_vec(), &sha, true);
+        let e = update::apply(&f.ctx, None, false).await.unwrap_err();
+        assert_eq!(e.code, "core_install_failed");
+        assert!(e.message.contains("checksum_mismatch") && e.message.contains("herdlingd did not change"), "{}", e.message);
+        assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
+        assert!(!f.ctx.home.join(".local/bin/herdr-core").exists());
+        assert!(f.runner.calls.lock().unwrap().is_empty(), "no service restart");
+    }
+
+    #[tokio::test]
+    async fn without_a_core_install_a_release_that_needs_the_core_is_refused() {
+        let f = fixture_full("0.2.0", "0.1.9", None, None, Sig::Good, needs_core(&"2".repeat(64))).await;
+        let e = update::apply(&f.ctx, None, false).await.unwrap_err();
+        assert_eq!(e.code, "core_install_failed");
+        assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
+    }
+
+    #[tokio::test]
+    async fn a_bad_core_pin_in_the_manifest_is_refused() {
+        let mut f = fixture_full("0.2.0", "0.1.9", None, None, Sig::Good, needs_core("not hex")).await;
+        with_core(&mut f, Vec::new(), &"0".repeat(64), false);
+        let e = update::apply(&f.ctx, None, false).await.unwrap_err();
+        assert_eq!(e.code, "core_install_failed");
+        assert_eq!(std::fs::read_to_string(&f.exe).unwrap(), OLD);
+    }
 }

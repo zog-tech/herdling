@@ -2,6 +2,8 @@ import * as Notifications from "expo-notifications";
 import { usePathname, useRootNavigationState, useRouter, type Href } from "expo-router";
 import { useEffect, useRef } from "react";
 
+import { hostPlainId } from "@/herdr/backend";
+
 import { answerChoiceTap, choiceTap } from "./choiceActions";
 import { dismissPaneNotifications } from "./dismiss";
 import { useLayoutClass } from "@/ui/layout";
@@ -11,7 +13,8 @@ function pushPane(data: unknown): { hostId: string; paneId: string } | null {
   if (typeof data !== "object" || data === null) return null;
   const { hostId, paneId } = data as { hostId?: unknown; paneId?: unknown };
   if (typeof hostId !== "string" || typeof paneId !== "string" || !hostId || !paneId) return null;
-  return { hostId, paneId };
+  // A push from herdlingd 0.1.x can name the pane with its old `hc:` id.
+  return { hostId, paneId: hostPlainId(hostId, paneId) };
 }
 
 /** True for a "command finished" push of a shell pane (`data.kind` "shell", from `shell.watch`). */

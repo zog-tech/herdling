@@ -13,7 +13,9 @@ import { useStartOptionsMemory } from "./startOptionsMemory";
 // The screen with the demo host behind it: real `fs.dirs`, `agents.installed` and `sessions.recent` answers.
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
+let mockParams: { host?: string; workspace?: string } = {};
 jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => mockParams,
   useRouter: () => ({ replace: mockReplace, push: mockPush, dismiss: jest.fn() }),
   useNavigation: () => ({ dispatch: jest.fn(), setOptions: jest.fn() }),
   usePreventRemove: () => {},
@@ -42,7 +44,10 @@ beforeEach(async () => {
   const rpc = new RpcClient(transport);
   const hello = rpc.call<Hello>("hello");
   await jest.advanceTimersByTimeAsync(100);
-  mockConn = { status: "online", rpc, hello: await hello };
+  // These tests use the flow of a herdlingd without the plan C methods. The Herdr 2 tests put them back.
+  const full = await hello;
+  mockConn = { status: "online", rpc, hello: { ...full, methods: full.methods?.filter((m) => m !== "session.start") } };
+  mockParams = {};
   useAgentMemory.setState({ byHost: {} });
   useStartOptionsMemory.setState({ byKind: {} });
   mockReplace.mockClear();
@@ -411,5 +416,60 @@ describe("long pastes in the first prompt", () => {
     act(() => box(t, "Command (optional)").props.onChangeText(block));
     expect(box(t, "Command (optional)").props.value).toBe(block);
     expect(has(t, "Pasted text #1 · 30 lines")).toBe(false);
+  });
+});
+
+describe("Herdr 2 spaces", () => {
+  /** The full demo hello: a herdlingd with the plan C methods and a core. */
+  async function coreHost() {
+    const hello = await mockConn.rpc!.call<Hello>("hello");
+    mockConn = { ...mockConn, hello };
+  }
+
+  it("starts the agent with session.start in the picked space", async () => {
+    const pending = coreHost();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    await pending;
+    const call = jest.spyOn(mockConn.rpc!, "call");
+    const t = await render();
+    // The spaces of groups.list: New space and each space; a repo group is not a choice.
+    expect(has(t, "New space")).toBe(true);
+    expect(has(t, "research")).toBe(true);
+    await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "research").props.onPress());
+    await act(async () => byLabel(t, "Start Claude Code here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    const start = call.mock.calls.find(([m]) => m === "session.start");
+    expect(start?.[1]).toMatchObject({ cwd: "/home/demo/projects/webapp", kind: "claude", workspace_id: "space:r1" });
+    // No herdr 1 workspace.
+    expect(call.mock.calls.filter(([m]) => m === "herdr.call").map(([, p]) => (p as { method: string }).method)).not.toContain("workspace.create");
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/h1\/t\d+$/));
+  });
+
+  it("selects the space from the space screen, and a shell in a new space asks for the core", async () => {
+    const pending = coreHost();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    await pending;
+    mockParams = { host: "h1", workspace: "space:r1" };
+    const call = jest.spyOn(mockConn.rpc!, "call");
+    const t = await render();
+    expect(t.root.find((n) => n.props.accessibilityLabel === "research" && n.props.accessibilityState).props.accessibilityState).toMatchObject({ selected: true });
+    await act(async () => byLabel(t, "New space").props.onPress());
+    await act(async () => byLabel(t, "Shell").props.onPress());
+    await act(async () => byLabel(t, "Recent folder ~/projects/webapp").props.onPress());
+    await settle();
+    await act(async () => byLabel(t, "Open shell here").props.onPress());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
+    const create = call.mock.calls.find(([m, p]) => m === "herdr.call" && (p as { method: string }).method === "workspace.create");
+    expect((create?.[1] as { params: unknown }).params).toMatchObject({ backend: "core" });
   });
 });

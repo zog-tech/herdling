@@ -7,10 +7,12 @@
 #
 # What it does:
 #   1. Finds the OS and the CPU. macOS and Linux only.
-#   2. Checks that herdr is installed. It installs herdr only with --with-herdr.
-#   3. Downloads the herdlingd release from github.com/zog-tech/herdling over HTTPS.
-#   4. Compares the SHA-256 of the download with SHA256SUMS of the same release. When openssl can
+#   2. Downloads the herdlingd release from github.com/zog-tech/herdling over HTTPS.
+#   3. Compares the SHA-256 of the download with SHA256SUMS of the same release. When openssl can
 #      check Ed25519 signatures, it also checks SHA256SUMS.sig with the Herdling release key.
+#   4. When this herdlingd needs Herdr 2 ("herdlingd core required"), runs "herdlingd core install":
+#      it installs the herdr-core version that herdlingd pins, checks its SHA-256 and starts it.
+#      Else it checks that herdr is installed. It installs herdr only with --with-herdr.
 #   5. Runs "herdlingd install": copies the binary to ~/.local/bin and starts a user service.
 #   6. Tells when the service starts: at boot, or only after the user logs in.
 # It never uses sudo. Run it again to update or repair herdlingd.
@@ -19,9 +21,10 @@
 #   --version X.Y.Z   install this version, not the latest release
 #   --with-herdr      when herdr is missing, first run the official herdr installer
 #                     (https://herdr.dev/install.sh). It puts herdr in ~/.local/bin, with no sudo.
-#                     herdr is made by its own project, not by Zog Tech.
+#                     herdr is made by its own project, not by Zog Tech. A herdlingd that needs
+#                     Herdr 2 does not use herdr 1: then the script ignores this option.
 #   --quiet           print only lines for the Herdling app:
-#                       HERDLINGD_STEP <step>
+#                       HERDLINGD_STEP <step>   (check, herdr, core, download, verify, install)
 #                       HERDLINGD_BOOT boot|login|unknown (when the service starts)
 #                       HERDLINGD_INSTALLED <version>     (success, last line)
 #                       HERDLINGD_ERROR <code> <text>     (failure, exit 1)
@@ -191,12 +194,6 @@ install_herdr() {
     fail herdr_install_failed "The herdr installer ran, but herdr is not in ~/.local/bin or on the PATH."
 }
 
-if ! find_herdr; then
-  [ "$WITH_HERDR" = 1 ] ||
-    fail no_herdr "herdr is not installed on this computer. Install herdr first (https://herdr.dev), or run this again with --with-herdr."
-  install_herdr
-fi
-
 if command -v curl >/dev/null 2>&1; then
   dl() { curl -fsSL --proto '=https' --tlsv1.2 --retry 2 -o "$2" "$1"; }
   # A test base on localhost uses plain HTTP.
@@ -289,12 +286,36 @@ actual=$(sha256 "$TMP/$file")
 [ "$actual" = "$expected" ] ||
   fail checksum_mismatch "The download of $file does not match SHA256SUMS. Nothing was installed."
 
-step install "Installing herdlingd..."
 mkdir "$TMP/x" && tar -xzf "$TMP/$file" -C "$TMP/x" herdlingd ||
   fail install_failed "Cannot unpack $file."
 chmod 0755 "$TMP/x/herdlingd"
 "$TMP/x/herdlingd" version >/dev/null 2>&1 ||
   fail install_failed "The unpacked herdlingd cannot run from $TMP. The file system may be mounted with noexec."
+
+# A herdlingd that works only with Herdr 2 says so with "core required" (exit 0). An older
+# herdlingd does not know the command and fails: it uses herdr 1.
+NEEDS_CORE=0
+if "$TMP/x/herdlingd" core required >/dev/null 2>&1; then
+  NEEDS_CORE=1
+fi
+
+if [ "$NEEDS_CORE" = 1 ]; then
+  # Before herdlingd: when the core install fails, nothing of herdlingd changes.
+  step core "Installing Herdr 2 (herdr-core), the version that herdlingd pins..."
+  if [ "$QUIET" = 1 ]; then
+    cout=$("$TMP/x/herdlingd" core install 2>&1) ||
+      fail core_install_failed "herdr-core could not be installed: $(printf '%s' "$cout" | tail -n 3 | tr '\n' ' ')"
+  else
+    "$TMP/x/herdlingd" core install ||
+      fail core_install_failed "herdr-core could not be installed. herdlingd was not installed."
+  fi
+elif ! find_herdr; then
+  [ "$WITH_HERDR" = 1 ] ||
+    fail no_herdr "herdr is not installed on this computer. Install herdr first (https://herdr.dev), or run this again with --with-herdr."
+  install_herdr
+fi
+
+step install "Installing herdlingd..."
 if [ "$QUIET" = 1 ]; then
   out=$("$TMP/x/herdlingd" install 2>&1) ||
     fail install_failed "herdlingd install failed: $(printf '%s' "$out" | tail -n 3 | tr '\n' ' ')"
@@ -349,7 +370,11 @@ else
     say "herdlingd starts when you log in on this computer. To start it at boot, with no login, run once:"
     say "  sudo loginctl enable-linger $(id -un 2>/dev/null || echo '$USER')"
   fi
-  say "herdr must run too. Start it in a terminal with: herdr"
+  if [ "$NEEDS_CORE" = 1 ]; then
+    say "Herdr 2 (herdr-core) runs on this computer. Start agents in the Herdr app, or with: hc"
+  else
+    say "herdr must run too. Start it in a terminal with: herdr"
+  fi
   say ""
   say "Next: open Herdling on your phone and add this computer, or run: $bin pair"
 fi

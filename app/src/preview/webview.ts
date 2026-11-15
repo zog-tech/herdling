@@ -7,8 +7,8 @@ import type { ComponentType, Ref } from "react";
 import { TurboModuleRegistry } from "react-native";
 import type { WebViewProps } from "react-native-webview";
 
-/** The parts of the web view handle that the preview screen calls. */
-export type WebViewHandle = { goBack(): void; goForward(): void; reload(): void };
+/** The parts of the web view handle that the preview screen and the terminal view call. */
+export type WebViewHandle = { goBack(): void; goForward(): void; reload(): void; postMessage(data: string): void };
 
 export type WebViewComponent = ComponentType<WebViewProps & { ref?: Ref<WebViewHandle> }>;
 

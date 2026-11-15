@@ -15,7 +15,7 @@ fn b64(data: &[u8]) -> String {
 async fn call(home: &Path, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 20);
     let (server_out, client_rx) = tokio::io::duplex(1 << 20);
-    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(home.join("none.sock"), home.into())));
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(home.into())));
     let req = json!({"id": 1, "method": "files.put", "params": params});
     tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();
     serde_json::from_str(&BufReader::new(client_rx).lines().next_line().await.unwrap().unwrap()).unwrap()

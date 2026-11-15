@@ -1,6 +1,6 @@
 import { contrast, mix, rgb, withAlpha } from "./contrast";
 import fixture from "./nightWatch.fixture.json";
-import { ACCENTS, DEFAULT_CHOICE, THEMES, buildColors, type ThemeChoice } from "./palettes";
+import { ACCENTS, DEFAULT_CHOICE, TERMINAL_THEMES, THEMES, buildColors, type ThemeChoice } from "./palettes";
 import { NIGHT_WATCH, colors, elevation, state, type Colors } from "./tokens";
 
 jest.mock("expo-secure-store", () => ({ getItem: jest.fn(() => null) }));
@@ -35,6 +35,11 @@ test("every_theme_has_every_token", () => {
 describe.each(combos.map((c) => [name(c), c] as const))("%s", (_n, choice) => {
   const c: Colors = buildColors(NIGHT_WATCH, choice);
   const surfaces = { bg: c.bg, card: c.card, raised: c.raised } as const;
+
+  test("group_tile_letters_pass_on_their_tile", () => {
+    // The tile is the tone at 18% over `card` (`ui/GroupTile`); its letter has the tone.
+    for (const tone of c.groupTile) expect(contrast(tone, mix(tone, c.card, 0.18))).toBeGreaterThanOrEqual(4.5);
+  });
 
   test("text_and_muted_text_pass_on_every_surface", () => {
     for (const bg of Object.values(surfaces)) {
@@ -94,4 +99,28 @@ test("a_theme_does_not_change_night_watch", () => {
   const before = JSON.stringify(NIGHT_WATCH);
   buildColors(NIGHT_WATCH, { theme: "graphite", accent: "iris" });
   expect(JSON.stringify(NIGHT_WATCH)).toBe(before);
+});
+
+describe.each(THEMES.map((t) => [t.id] as const))("paper terminal on %s", (theme) => {
+  const c = buildColors(NIGHT_WATCH, { theme, accent: "lantern", terminal: "paper" });
+  const app = buildColors(NIGHT_WATCH, { theme, accent: "lantern" });
+
+  test("paper_terminal_passes", () => {
+    expect(contrast(c.terminal.fg, c.terminal.bg)).toBeGreaterThanOrEqual(7);
+    for (const fg of c.ansi) expect(contrast(fg, c.terminal.bg)).toBeGreaterThanOrEqual(4);
+    // Search marks keep their own fill on the light screen.
+    expect(contrast(c.search.matchFg, c.search.matchBg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("paper_changes_only_the_terminal", () => {
+    const { terminal: _a, ansi: _b, ...rest } = c;
+    const { terminal: _c, ansi: _d, ...restApp } = app;
+    expect(rest).toEqual(restApp);
+    expect(c.ansi).toHaveLength(16);
+  });
+});
+
+test("the_app_terminal_theme_is_the_theme_itself", () => {
+  expect(TERMINAL_THEMES[0].id).toBe("app");
+  expect(buildColors(NIGHT_WATCH, { ...DEFAULT_CHOICE, terminal: "app" })).toEqual(fixture);
 });
