@@ -14,7 +14,7 @@ Herdling has no sign-up and no login. The app contains no analytics, no crash re
 
 ## How Herdling works
 
-Herdling works with herdr, a terminal program for AI coding agents. You install a companion program called herdlingd on your own computers. The app connects straight to those computers over SSH, on your network or through your own VPN. Everything you see and send in the app travels between your phone and your computer, encrypted by SSH. This includes agent sessions, terminal output, your prompts, photos you attach and voice recordings you choose to send to your computer. None of it passes through Zog Tech.
+Herdling works with Herdr 2 (herdr-core), a terminal program for AI coding agents. You install a companion program called herdlingd on your own computers. The app connects straight to those computers over SSH, on your network or through your own VPN. Everything you see and send in the app travels between your phone and your computer, encrypted by SSH. This includes agent sessions, terminal output, your prompts, photos you attach and voice recordings you choose to send to your computer. None of it passes through Zog Tech.
 
 ## What stays on your phone
 

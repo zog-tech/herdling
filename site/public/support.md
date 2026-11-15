@@ -21,7 +21,7 @@ Please tell us your phone model, your computer's system and what you tried.
 
 ### What is herdlingd?
 
-herdlingd is the companion program for Herdling. It runs on your computer next to herdr. When the app connects over SSH, herdlingd answers its questions: which agents run, what they said and how much usage is left. It also pairs phones and sends the notifications. herdlingd only accepts the keys of phones that you paired, and those keys can only run `herdlingd rpc`.
+herdlingd is the companion program for Herdling. It runs on your computer next to Herdr 2 (herdr-core). When the app connects over SSH, herdlingd answers its questions: which agents run, what they said and how much usage is left. It also pairs phones and sends the notifications. herdlingd only accepts the keys of phones that you paired, and those keys can only run `herdlingd rpc`.
 
 ### Do I need an account?
 
@@ -29,11 +29,11 @@ No. There is no sign-up and no login. You pair each phone with each computer dir
 
 ### How do I set it up?
 
-Install herdr, turn on SSH, then build herdlingd from source (https://github.com/zog-tech/herdling) and run `herdlingd install`. Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
+Turn on SSH, then build herdlingd from source (https://github.com/zog-tech/herdling) and run `herdlingd install` and `herdlingd core install` (it installs Herdr 2). Run `herdlingd pair` and scan the QR code in the app (Settings > Hosts > Add host). The guide has each step: https://herdling.zog-tech.com/docs.md
 
 ### What must be ready before I start?
 
-Three things on each computer: herdr is installed and runs (start it with `herdr` in a terminal); SSH is on (on a Mac: System Settings > General > Sharing > Remote Login, which is off on a new Mac); and the phone can reach the computer (the same Wi-Fi, or the same VPN). If herdr is missing, the app can install it with its official installer when you set up the computer with its SSH password.
+Three things on each computer: Herdr 2 (herdr-core) runs (the herdlingd installer installs and starts it); SSH is on (on a Mac: System Settings > General > Sharing > Remote Login, which is off on a new Mac); and the phone can reach the computer (the same Wi-Fi, or the same VPN).
 
 ### The app cannot connect: "Can't reach <address>:22".
 
@@ -41,7 +41,7 @@ SSH is off on the computer, or the phone is on another network. Tap **Turn on SS
 
 ### The computer shows "herdr is not running".
 
-herdlingd runs, but herdr does not. Open a terminal on that computer and run `herdr`. You can close the window after: herdr keeps running in the background. herdr does not start by itself after a restart.
+herdlingd runs, but Herdr 2 (herdr-core) does not. Open the Herdr app on that computer, or run `herdlingd core install` there: it starts the core. herdlingd 0.2.0 does not work with herdr 1 (the herdr TUI); keep such a computer on herdlingd 0.1.x.
 
 ### The computer is offline after a restart.
 
@@ -65,7 +65,7 @@ Update herdlingd (`git pull`, `cargo build --release` in the `companion` folder)
 
 ### I do not get notifications.
 
-Allow notifications for Herdling in your phone's settings. In Herdling, open Settings and check the **Finished** and **Needs you** switches. If **Quiet at the computer** is on, Herdling stays silent while you are active in herdr at your computer and for 5 minutes after. Your computer needs an internet connection to send a notification.
+Allow notifications for Herdling in your phone's settings. In Herdling, open Settings and check the **Finished** and **Needs you** switches. Your computer needs an internet connection to send a notification.
 
 ### Voice input or read aloud does not work.
 

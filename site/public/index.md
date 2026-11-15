@@ -4,7 +4,7 @@
 
 Web version: https://herdling.zog-tech.com/
 
-Your coding agents keep working when you leave your desk. Herdling is a phone app for herdr, the terminal workspace for coding agents. It shows every agent on every computer you own, tells you when one finishes or needs an answer, and lets you reply in a few taps.
+Your coding agents keep working when you leave your desk. Herdling is a phone app for Herdr 2 (herdr-core), the terminal workspace for coding agents. It shows every agent on every computer you own, tells you when one finishes or needs an answer, and lets you reply in a few taps.
 
 ## How it works
 
@@ -18,9 +18,8 @@ Step-by-step guide: https://herdling.zog-tech.com/docs.md
 
 - **One board for every agent.** Agents on all your computers in one list, grouped by status: Needs you, Ready, Working, Idle. The ones that need an answer come first. Peek at the last reply with a long press.
 - **A chat view for your agents.** Read a session as a clean chat, with formatted replies, tool calls and subagents. Works with Claude Code, Codex, Pi and OpenCode. Type `/` for commands, `$` for Codex skills and `@` for OpenCode skills.
-- **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, arrow keys and Enter. Works with every agent that herdr runs.
+- **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, arrow keys and Enter. Works with every agent that Herdr 2 runs.
 - **A notification when it matters.** Herdling tells you when an agent finishes or needs you. Tap the notification to open that session.
-- **Quiet while you are at the computer.** No notifications while you use herdr at your desk, and for 5 minutes after.
 - **Voice in and out.** Speak a prompt; speech becomes text on your phone (including a private on-device model) or on your own computer. Herdling can read replies out loud, in full or as a short summary.
 - **Start new work.** Start an agent in any folder on any computer, resume an earlier session, and review automations.
 - **Usage meters.** See how much of your Claude or Codex plan is left, and the CPU and memory of each computer.
@@ -30,16 +29,16 @@ Step-by-step guide: https://herdling.zog-tech.com/docs.md
 ## Questions
 
 **What do I need?**
-An iPhone (iOS 17 or later) or an Android phone (Android 8.0 or later), and one or more Mac or Linux computers that run herdr, an SSH server and herdlingd.
+An iPhone (iOS 17 or later) or an Android phone (Android 8.0 or later), and one or more Mac or Linux computers that run Herdr 2 (herdr-core), an SSH server and herdlingd.
 
 **What does it cost?**
 Herdling and herdlingd are free. There are no ads and no in-app purchases.
 
 **Which agents work?**
-Every agent that herdr runs shows on the board, with its status, its terminal and notifications. Claude Code, Codex, Pi and OpenCode also get the chat view, command lists and session resume.
+Every agent that Herdr 2 runs shows on the board, with its status, its terminal and notifications. Claude Code, Codex, Pi and OpenCode also get the chat view, command lists and session resume.
 
 **Do I need herdr first?**
-Yes. Herdling shows the agents that herdr (https://herdr.dev) runs. herdr is made by its own project. When you set up a computer with its SSH password and herdr is missing, the app offers to install herdr with its official installer, only when you tap **Install herdr and herdlingd**. herdr must run when you use Herdling: start it with `herdr` in a terminal.
+No. Herdling shows the agents that run in Herdr 2 (herdr-core, https://herdr.dev). herdr is made by its own project. The herdlingd installer installs and starts the herdr-core version that its release pins. The Herdr app runs the same core. The older herdr TUI (herdr 1) needs herdlingd 0.1.x.
 
 **The app cannot connect to my new Mac.**
 On a new Mac, SSH is off. Turn on Remote Login: System Settings > General > Sharing > Remote Login. The phone and the Mac must also be on the same network or VPN. The app shows these steps when it cannot connect. The guide has them too: https://herdling.zog-tech.com/docs.md
