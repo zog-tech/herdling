@@ -129,7 +129,8 @@ fn squash(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace() && !matches!(c, '-' | '_')).flat_map(char::to_lowercase).collect()
 }
 
-/// The task name of a terminal: the name, else the status title, else the terminal title.
+/// The task name of a terminal: the `herdling.name` label (a rename from the phone), else the
+/// name, else the status title, else the terminal title.
 /// A candidate that only repeats the reported app or the agent kind (for example the title
 /// "Claude Code" of a new agent) is skipped. None when no candidate is left.
 pub fn task_name(t: &Value) -> Option<String> {
@@ -141,7 +142,7 @@ pub fn task_name(t: &Value) -> Option<String> {
         .chain(agent_kind(t))
         .map(|g| squash(&g))
         .collect();
-    [text(t, "name"), t.get("status").and_then(|s| text(s, "title")), text(t, "title")]
+    [label(t, super::actions::NAME_LABEL), text(t, "name"), t.get("status").and_then(|s| text(s, "title")), text(t, "title")]
         .into_iter()
         .flatten()
         .map(str::trim)

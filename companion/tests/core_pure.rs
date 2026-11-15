@@ -565,3 +565,29 @@ fn real_title_wins() {
     let p = project::project(&[t], Some(&doc), &Repos::new());
     assert_eq!(p.agents[0]["name"], "Fix the login form");
 }
+
+#[test]
+fn herdling_name_is_the_task_name() {
+    let mut t = term("t1", Some("api-agent"), Some("idle"));
+    t["labels"] = json!({"herdling.name": " Fix login "});
+    let p = project::project(std::slice::from_ref(&t), None, &Repos::new());
+    assert_eq!(p.agents[0]["name"], "Fix login");
+    assert_eq!(p.panes[0]["label"], "Fix login");
+    assert_eq!(p.tabs[0]["label"], "Fix login");
+    assert_eq!(project::push_text(&t).0, "Fix login");
+    t["labels"] = json!({"herdling.name": ""});
+    assert_eq!(project::project(std::slice::from_ref(&t), None, &Repos::new()).agents[0]["name"], "api-agent");
+}
+
+#[test]
+fn stale_tab_label_gets_a_task_tab() {
+    // Tab `a` belongs to space s1 in the document. A terminal with a stale label names tab `a` in
+    // space s2: it must not show the same tab id in two workspaces.
+    let doc = json!({"spaces": [{"id": "s1", "name": "api", "tabs": [
+        {"id": "a", "name": "main", "root": {"type": "block", "content": {"terminal": "t1"}}}]}]});
+    let mut stale = agent_in("t2", Some("/home/sam/web"), "web work");
+    stale["labels"] = json!({"herdr.space": "s2", "herdr.tab": "a", "where": "web / 1"});
+    let p = project::project(&[agent_in("t1", Some("/home/sam/api"), "main"), stale], Some(&doc), &Repos::new());
+    assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:task:t2"]);
+    assert_eq!(p.panes[1]["workspace_id"], "hc:space:s2");
+}

@@ -73,7 +73,7 @@ pub fn map_status(status: Option<&Value>) -> Option<AgentStatus> {
     })
 }
 
-fn status_word(s: AgentStatus) -> &'static str {
+pub(crate) fn status_word(s: AgentStatus) -> &'static str {
     match s {
         AgentStatus::Idle => "idle",
         AgentStatus::Working => "working",
@@ -113,12 +113,16 @@ fn title(t: &Value) -> Option<&str> {
     t.get("status").and_then(|s| text(s, "title")).or_else(|| text(t, "title"))
 }
 
-/// Push title and body for terminal `t`. Title: the terminal name, else the 7501 title, else
-/// the app, else the address. Body: the app and the 7501 message.
+/// Push title and body for terminal `t`. Title: the `herdling.name` label, else the terminal
+/// name, else the 7501 title, else the app, else the address. Body: the app and the 7501 message.
 pub fn push_text(t: &Value) -> (String, String) {
     let status = t.get("status").unwrap_or(&Value::Null);
     let app = text(status, "app");
-    let title = text(t, "name")
+    let title = t
+        .get("labels")
+        .and_then(|l| text(l, super::actions::NAME_LABEL))
+        .map(str::trim)
+        .or_else(|| text(t, "name"))
         .or_else(|| text(status, "title"))
         .or(app)
         .or_else(|| text(t, "address"))
@@ -410,7 +414,14 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
         let wi = b.ws(format!("{PREFIX}space:{}", ls.space), || {
             ls.name.clone().or_else(|| folder_name(t)).unwrap_or_else(|| groups::NO_FOLDER_LABEL.into())
         });
-        let tab_id = ls.tab.as_ref().map_or_else(|| format!("{PREFIX}task:{addr}"), |tab| format!("{PREFIX}tab:{tab}"));
+        // A stale `herdr.tab` label can name a tab of another workspace: then the terminal gets
+        // its own task tab, so no tab id shows in two workspaces.
+        let tab_id = ls
+            .tab
+            .as_ref()
+            .map(|tab| format!("{PREFIX}tab:{tab}"))
+            .filter(|id| !b.ws.iter().enumerate().any(|(i, w)| i != wi && w.tabs.iter().any(|t| &t.id == id)))
+            .unwrap_or_else(|| format!("{PREFIX}task:{addr}"));
         let tix = b.tab(wi, tab_id, || task_label(t));
         let g = Grouping { label: b.ws[wi].label.clone(), source: GroupSource::Space };
         placed.insert(addr.to_string());
