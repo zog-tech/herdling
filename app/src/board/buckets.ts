@@ -4,6 +4,7 @@ import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
 import { backgroundLine, hasBackground } from "./background";
+import { groupOf, helperParents, repoLine, type HelperInfo } from "./tasks";
 
 /** Where an agent sits on the Board. */
 export type Bucket = "needs_you" | "ready" | "working" | "background" | "idle";
@@ -69,6 +70,12 @@ export type BoardItem = {
   sinceKnown?: boolean;
   /** The line under the title: activity, question or last reply. */
   line?: string;
+  /** The Herdr 2 group of the agent (a Herdr app space or a fallback group). */
+  group?: string;
+  /** "repo · branch" (`repoLine`). */
+  repoLine?: string;
+  /** The helpers under this task (spec goal 4). A blocked helper is also a card of its own. */
+  helpers?: HelperInfo[];
 };
 
 /**
@@ -102,6 +109,8 @@ export type BoardHost = {
  * Cards from the live snapshots plus the latest previews. A preview fetched while the agent
  * had another status is ignored (it describes the old state). `firstSeen` holds the app's own
  * start time per pane (epoch ms) for when the companion does not know `status_since`.
+ * A helper (`parent_id`, see `helperParents`) shows under its task, not as a card. A blocked
+ * helper is a card too: it needs the user.
  */
 export function mergeBoard(
   hosts: BoardHost[],
@@ -112,13 +121,26 @@ export function mergeBoard(
 ): BoardItem[] {
   const out: BoardItem[] = [];
   for (const h of hosts) {
+    const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
+    const parents = helperParents(h.agents);
+    const helpers = new Map<string, HelperInfo[]>();
     for (const agent of h.agents) {
+      const task = parents.get(agent.pane_id);
+      if (!task) continue;
+      const list = helpers.get(task) ?? [];
+      list.push({ paneId: agent.pane_id, title: agentTitle(names, agent), status: agent.agent_status });
+      helpers.set(task, list);
+    }
+    for (const agent of h.agents) {
+      if (parents.has(agent.pane_id) && agent.agent_status !== "blocked") continue;
       const key = `${h.hostId}:${agent.pane_id}`;
       const raw = previews[key];
       const p = raw && raw.status === agent.agent_status ? raw : undefined;
       const bucket = withBackground(bucketOf(agent, seen ? seen[key] : Number.POSITIVE_INFINITY), p);
       const local = firstSeen[key]?.status === agent.agent_status ? firstSeen[key].at : undefined;
-      const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
+      const group = groupOf(agent);
+      const line = repoLine(agent);
+      const mine = helpers.get(agent.pane_id);
       out.push({
         key,
         hostId: h.hostId,
@@ -132,6 +154,9 @@ export function mergeBoard(
         since: p?.status_since != null ? p.status_since * 1000 : local,
         sinceKnown: p?.status_since != null,
         line: previewLine(bucket, p),
+        ...(group ? { group } : {}),
+        ...(line ? { repoLine: line } : {}),
+        ...(mine ? { helpers: mine } : {}),
       });
     }
   }

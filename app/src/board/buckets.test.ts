@@ -268,3 +268,40 @@ test("herdr_2_agents_share_one_board_with_no_tag", () => {
   expect(s.map((x) => [x.key, x.title, x.subtitle])).toEqual([["ws:api", "api", "A"]]);
   expect(s[0].data).toHaveLength(2);
 });
+
+test("helpers_fold_under_their_task_and_cards_get_the_group_and_repo", () => {
+  const core = (id: string, status: AgentInfo["agent_status"], over: Partial<AgentInfo> = {}): AgentInfo => ({
+    ...agent(id, status, 1, "hc:space:1"),
+    tab_id: "hc:tab:1",
+    backend: "core",
+    group: "Payments",
+    repo: "api",
+    branch: "fix-login",
+    ...over,
+  });
+  const h: BoardHost = {
+    hostId: "a",
+    hostName: "A",
+    agents: [
+      core("hc:t1", "working", { name: "Fix the login form" }),
+      core("hc:t2", "working", { parent_id: "hc:t1", name: "Read the tests" }),
+      core("hc:t3", "blocked", { parent_id: "hc:t1", name: "Run the suite" }),
+      core("hc:t4", "idle", { parent_id: "hc:gone" }),
+    ],
+    workspaces: [{ workspace_id: "hc:space:1", label: "Payments" }],
+  };
+  const items = mergeBoard([h], {}, {}, {});
+  // t2 is under t1. The blocked helper t3 is under t1 and a card too. t4 has no live parent.
+  expect(items.map((i) => i.agent.pane_id).sort()).toEqual(["hc:t1", "hc:t3", "hc:t4"]);
+  const task = items.find((i) => i.agent.pane_id === "hc:t1")!;
+  expect(task.helpers).toEqual([
+    { paneId: "hc:t2", title: "Read the tests", status: "working" },
+    { paneId: "hc:t3", title: "Run the suite", status: "blocked" },
+  ]);
+  expect(task).toMatchObject({ group: "Payments", repoLine: "api · fix-login", title: "Fix the login form" });
+  // A herdr 1 agent has no group fields.
+  const old = mergeBoard([host("h1", [agent("p1", "idle")])], {}, {}, {})[0];
+  expect(old.group).toBeUndefined();
+  expect(old.repoLine).toBeUndefined();
+  expect(old.helpers).toBeUndefined();
+});
