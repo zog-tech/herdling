@@ -173,9 +173,8 @@ Web version: https://herdling.zog-tech.com/docs
 
 There is no account. Zog Tech runs no server for Herdling. The phone talks only to your computers.
 
-<<<<<<< HEAD
 Herdling is made for herdr. If you do not use herdr, or you want only a terminal, another tool can fit better. The README has a dated comparison with other mobile agent apps: https://github.com/zog-tech/herdling#how-herdling-compares
-=======
+
 ### Before you start
 
 Check these three things on each computer. Most setup problems come from one of them.
@@ -185,7 +184,6 @@ Check these three things on each computer. Most setup problems come from one of 
 3. **The phone can reach the computer.** Both are on the same network (the same Wi-Fi), or both are on the same VPN.
 
 After a restart, herdlingd starts when you log in on the computer. To make it start at boot, with no login, see "Start at boot" in step 3.
->>>>>>> worktree-agent-a0a944c0ff93c7e9f
 
 ### 1. Install herdr
 
