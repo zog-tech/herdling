@@ -152,7 +152,7 @@ async fn run_stream(
             _ = shell_tick.tick() => shell_check = true,
         }
         if shell_check || nudge.ready(Instant::now()) {
-            if let Some(panes) = super::shells::poll(ctx, client, desk.active(Instant::now())).await {
+            if let Some(panes) = super::shells::poll(ctx, client, desk.active(Instant::now()), super::shells::Backend::Herdr).await {
                 nudge.set_watched(panes);
             }
             nudge.checked(Instant::now());

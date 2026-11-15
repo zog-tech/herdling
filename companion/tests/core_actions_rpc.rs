@@ -437,3 +437,15 @@ async fn worktree_for_the_core_opens_a_new_space() {
     assert_eq!(r["result"]["via"], "git", "{r}");
     assert_eq!(s.core.calls_of("terminal.run").len(), 1);
 }
+
+#[tokio::test]
+async fn shell_watch_accepts_a_core_pane() {
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("shell.watch", json!({"pane_id": "hc:t2"})).await;
+    assert_eq!(r["result"]["pane_id"], "hc:t2", "{r}");
+    let r = sess.call("shell.watches", json!({})).await;
+    assert_eq!(r["result"]["watches"][0]["pane_id"], "hc:t2");
+    let r = sess.call("shell.unwatch", json!({"pane_id": "hc:t2"})).await;
+    assert_eq!(r["result"]["removed"], true);
+}

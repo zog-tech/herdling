@@ -204,8 +204,6 @@ async fn methods_with_no_core_equivalent_are_unsupported() {
         let r = sess.herdr(i as u64 + 1, m, p).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
     }
-    let r = sess.call(10, "shell.watch", json!({"pane_id": "hc:t2"})).await;
-    assert_eq!(r["error"]["code"], "unsupported");
     // Without a core socket, a core id is unsupported too.
     let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
     let r = no_core.herdr(1, "pane.read", json!({"pane_id": "hc:t1"})).await;

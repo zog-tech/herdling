@@ -1385,9 +1385,6 @@ fn watch_json(w: &crate::shell_watch::Watch) -> Value {
 /// With `device_id`, only that device gets the push. See [`crate::shell_watch`].
 async fn shell_watch(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = watch_pane(&params, "shell.watch")?.to_string();
-    if crate::core::project::is_core_id(&pane) {
-        return Err(err(crate::core::route::UNSUPPORTED, "shell.watch needs herdr 1; Herdr 2 terminals do not support it yet"));
-    }
     let device = match params.get("device_id") {
         None | Some(Value::Null) => None,
         Some(Value::String(d)) if !d.is_empty() && d.len() <= crate::shell_watch::MAX_ID => Some(d.clone()),
