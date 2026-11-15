@@ -585,6 +585,14 @@ export default function BoardScreen() {
       const menu: MenuItem[] = [
         { label: "Reply", onPick: () => onReply(i) },
         { label: "Peek", onPick: () => onPeek(i) },
+        {
+          label: "Open space",
+          onPick: () =>
+            router.push({
+              pathname: "/spaces/[hostId]/[workspaceId]",
+              params: { hostId: i.hostId, workspaceId: i.agent.workspace_id, tab: i.agent.tab_id },
+            } as never),
+        },
       ];
       if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
       if (rpc && allows(i.agent, "rename", i.hostId)) menu.push(...renameItems(rpc, i.hostId, i.agent));
@@ -599,7 +607,7 @@ export default function BoardScreen() {
         (k) => menu[k]?.onPick(),
       );
     },
-    [onReply, onPeek, onMarkRead, onRestart],
+    [onReply, onPeek, onMarkRead, onRestart, router],
   );
 
   const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string) => {

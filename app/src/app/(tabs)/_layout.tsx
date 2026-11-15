@@ -57,6 +57,14 @@ export default function TabsLayout() {
         {/* The count of agents that need you, as on the app icon of a mail app. */}
         <NativeTabs.Trigger.Badge hidden={needsYou === 0}>{String(needsYou)}</NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
+      {/* Spaces: the Herdr app spaces of each computer. Second, next to the board: the second way to find an agent. */}
+      <NativeTabs.Trigger name="spaces">
+        <NativeTabs.Trigger.Icon
+          sf={{ default: "rectangle.3.group", selected: "rectangle.3.group.fill" }}
+          src={{ default: require("../../../assets/images/tabs/spaces.png"), selected: require("../../../assets/images/tabs/spaces-fill.png") }}
+        />
+        <NativeTabs.Trigger.Label>Spaces</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="usage">
         <NativeTabs.Trigger.Icon
           sf="gauge.with.dots.needle.67percent"
