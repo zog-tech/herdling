@@ -6,6 +6,7 @@
 pub mod client;
 pub mod endpoint;
 pub mod events;
+pub mod frame;
 pub mod groups;
 pub mod live;
 pub mod merge;
