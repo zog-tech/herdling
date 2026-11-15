@@ -114,6 +114,50 @@ export type HerdrUpdate = {
   output: string;
 };
 
+/**
+ * Result of `core.status` (no params): herdr-core (Herdr 2) on the computer. Only reads.
+ * Check `hello.methods` for `core.status` first.
+ */
+export type CoreStatus = {
+  /** True when a `herdr-core` is on the computer. */
+  found: boolean;
+  /** Version of the installed `herdr-core`. Null when none is found or it gave no version. */
+  installed?: string | null;
+  /** True when a package manager owns the core (not in `~/.local/bin`). herdlingd never replaces it. */
+  managed: boolean;
+  /** True when a core answers on its socket. */
+  running: boolean;
+  /** Version of the running core, when it says one. */
+  running_version?: string | null;
+  /** The herdr-core version that this herdlingd installs. */
+  pinned: string;
+  /** True when the installed or running core is newer than the pin. herdlingd keeps it. */
+  newer_than_pin: boolean;
+  /** True when `core.install` would install or update the core. */
+  update_available: boolean;
+  /** True when this herdlingd needs the core to work. */
+  required: boolean;
+  /** Upstream build target, for example `macos-aarch64`. Null: no build for this computer. */
+  target?: string | null;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+};
+
+/**
+ * Result of `core.install` (no params): installs the pinned herdr-core when it is missing, updates
+ * herdlingd's own core when it is older (never down), and makes sure that the core runs.
+ * Errors: `unsupported_target`, `download_failed`, `checksum_mismatch`, `install_failed`,
+ * `core_not_running`, `busy`.
+ */
+export type CoreInstall = {
+  from?: string | null;
+  to?: string | null;
+  status: "installed" | "updated" | "up_to_date" | "kept_newer" | "kept_unknown" | "kept_managed";
+  /** True when herdlingd started the core. */
+  started: boolean;
+  pinned: string;
+};
+
 export type ThreadItem =
   | { kind: "user"; id: string; ts: number; text: string; images?: number }
   | { kind: "assistant"; id: string; ts: number; markdown: string }

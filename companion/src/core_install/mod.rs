@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::herdr_update::{self, Exit, HerdrRunner, RunOut};
-use crate::types::{CoreInstall, CoreStatus, RpcError};
+use crate::types::{CoreInstall, CoreStatus, HerdrUpdate, RpcError};
 use machine::{Effect, Found, Input, Outcome, Plan, PlaceMode, State, Step, Where};
 use pin::CorePin;
 
@@ -441,4 +441,25 @@ pub fn status(ctx: &CoreInstallCtx) -> CoreStatus {
     let found = io.find_installed();
     let running = io.running(false);
     status_of(&found, running, &ctx.pin, ctx.target.as_deref(), herdr1_found(ctx))
+}
+
+/// A `core.install` result in the shape of `herdr.update`, for old apps that call
+/// `herdr.update` on a computer with herdr-core. Pure.
+pub fn as_herdr_update(r: &CoreInstall) -> HerdrUpdate {
+    let changed = r.status == "installed" || r.status == "updated";
+    let output = match r.status.as_str() {
+        "installed" => format!("herdr-core {} installed.", r.pinned),
+        "updated" => format!("herdr-core updated to {}. Running terminals keep running.", r.pinned),
+        "kept_newer" => format!("herdr-core {} is newer than {}. Nothing changed.", r.to.as_deref().unwrap_or("?"), r.pinned),
+        "kept_managed" => "herdr-core is installed with a package manager. Update it there.".to_string(),
+        _ => format!("herdr-core {} is up to date.", r.to.as_deref().unwrap_or(&r.pinned)),
+    };
+    HerdrUpdate {
+        from: r.from.clone(),
+        to: r.to.clone(),
+        status: if changed { "updated" } else { "up_to_date" }.into(),
+        // An updated core takes over its terminals, as a herdr live handoff does.
+        handoff: if r.status == "updated" { "complete" } else { "none" }.into(),
+        output,
+    }
 }
