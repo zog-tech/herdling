@@ -88,9 +88,17 @@ fn data_within_the_interval_waits_for_a_tick() {
 }
 
 #[test]
-fn resize_resizes_and_emits() {
+fn resize_before_the_first_paint_does_not_emit() {
     let t0 = Instant::now();
     let s = step(live(1, None), Input::Resize { gen: 1, cols: 45, rows: 30 }, t0, &CFG);
+    assert_eq!(s.effects, vec![Effect::Resize { cols: 45, rows: 30 }]);
+    assert_eq!(s.state, live(1, None));
+}
+
+#[test]
+fn resize_after_a_paint_resizes_and_emits() {
+    let t0 = Instant::now();
+    let s = step(live(1, Some(t0)), Input::Resize { gen: 1, cols: 45, rows: 30 }, ms(t0, 100), &CFG);
     assert_eq!(s.effects, vec![Effect::Resize { cols: 45, rows: 30 }, Effect::Emit]);
 }
 

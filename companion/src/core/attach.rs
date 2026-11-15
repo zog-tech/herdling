@@ -174,6 +174,11 @@ pub fn step(state: State, input: Input, now: Instant, cfg: &Config) -> Step {
             let n = bytes.len() as u32;
             changed(gen, channel, last_emit, vec![Effect::Feed(bytes), Effect::Credit { channel, n }], now, cfg)
         }
+        // Before the first paint there is nothing to show: no emit of an empty screen.
+        (State::Live { gen, channel, dirty, last_emit: None }, Input::Resize { cols, rows, .. }) => Step {
+            state: State::Live { gen, channel, dirty, last_emit: None },
+            effects: vec![Effect::Resize { cols, rows }],
+        },
         (State::Live { gen, channel, last_emit, .. }, Input::Resize { cols, rows, .. }) => {
             changed(gen, channel, last_emit, vec![Effect::Resize { cols, rows }], now, cfg)
         }

@@ -167,6 +167,11 @@ pub async fn pane_watch(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, Rp
         let Some(sock) = ctx.core_socket.clone() else {
             return Err(RpcError { code: crate::core::route::UNSUPPORTED.into(), message: "this herdlingd does not reach herdr-core".into() });
         };
+        // A core with `terminal.attach` streams the screen with colors. An older core is read
+        // with `terminal.read` (plain text) below.
+        if let Some(r) = crate::core::term_watch::pane_watch(ctx, out, &p, &sock).await {
+            return r;
+        }
         Some((sock, p.lines))
     } else {
         None

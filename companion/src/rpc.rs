@@ -86,6 +86,8 @@ pub struct Ctx {
     /// The herdr-core (Herdr 2) socket. None turns the core off: `Ctx::new` leaves it unset, so
     /// a test never reaches a real core. `main` sets it.
     pub core_socket: Option<crate::core::endpoint::CoreSocket>,
+    /// What the running `pane.watch` streams of core panes know (full-screen app, rows).
+    pub term_facts: crate::core::term_watch::Facts,
 }
 
 impl Ctx {
@@ -116,6 +118,7 @@ impl Ctx {
             input_order: crate::input_order::InputOrder::default(),
             ports_cache: crate::ports::PortsCache::default(),
             core_socket: None,
+            term_facts: Default::default(),
         }
     }
 }

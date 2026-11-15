@@ -1,5 +1,7 @@
 //! A fake herdr-core for tests: JSON-RPC 2.0, one message per line, with scripted terminals,
-//! a herdr-app document, a screen and event notifications. It never touches a real core.
+//! a herdr-app document, a screen and event notifications. With `State.attach`, `hello` with
+//! `framed: true` switches a connection to framed mode, where `terminal.attach` streams the
+//! scripted paint and the [`Ctl`] output. It never touches a real core.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -7,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::broadcast;
 
@@ -20,9 +22,18 @@ pub enum Ctl {
     Missed(Value),
     /// A `heartbeat`.
     Heartbeat,
-    /// Close every subscription connection.
+    /// Close every subscription connection and every framed connection.
     Drop,
+    /// DATA with these bytes on every open attach channel.
+    Output(Vec<u8>),
+    /// CLOSE with this JSON reason on every open attach channel.
+    CloseStream(Value),
+    /// RESIZE `(cols, rows)` on every open attach channel.
+    Resize(u16, u16),
 }
+
+/// The frames that clients sent: `(channel, kind, payload)`.
+pub type FrameLog = Arc<Mutex<Vec<(u32, u8, Vec<u8>)>>>;
 
 #[derive(Default)]
 pub struct State {
@@ -32,6 +43,10 @@ pub struct State {
     pub generation: u64,
     /// `data.kind` and message of an error per method.
     pub errors: HashMap<String, (String, String)>,
+    /// The core has framed mode and `terminal.attach`.
+    pub attach: bool,
+    /// The first paint of each attach.
+    pub paint: Vec<u8>,
 }
 
 pub struct FakeCore {
@@ -39,9 +54,27 @@ pub struct FakeCore {
     /// Every request as `(method, params)`.
     pub calls: Arc<Mutex<Vec<(String, Value)>>>,
     pub ctl: broadcast::Sender<Ctl>,
+    /// Every frame that a client sent in framed mode: `(channel, kind, payload)`.
+    pub frames: FrameLog,
 }
 
 impl FakeCore {
+    /// The frames that clients sent on attach channels (not channel 0).
+    pub fn stream_frames(&self) -> Vec<(u32, u8, Vec<u8>)> {
+        self.frames.lock().unwrap().iter().filter(|f| f.0 != 0).cloned().collect()
+    }
+
+    /// Waits until `method` was called `n` times.
+    pub async fn wait_calls(&self, method: &str, n: usize) {
+        for _ in 0..250 {
+            if self.calls_of(method).len() >= n {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("no {method} number {n}");
+    }
+
     pub fn send(&self, c: Ctl) {
         let _ = self.ctl.send(c);
     }
@@ -108,8 +141,12 @@ fn answer(st: &State, method: &str, params: &Value) -> Result<Value, (String, St
             .ok_or_else(|| ("not_found".to_string(), format!("no terminal {a}")))
     };
     match method {
-        "hello" => Ok(json!({"generation": st.generation, "version": "0.1.19", "core": {"id": "c1", "name": "studio"},
-                             "framed": false, "methods": [], "features": []})),
+        "hello" => {
+            let methods: Vec<&str> = if st.attach { vec!["terminal.read", "terminal.attach"] } else { vec![] };
+            let framed = st.attach && params["framed"] == true;
+            Ok(json!({"generation": st.generation, "version": "0.1.19", "core": {"id": "c1", "name": "studio"},
+                      "framed": framed, "methods": methods, "features": if st.attach { json!(["framed", "attach"]) } else { json!([]) }}))
+        }
         "terminal.list" => Ok(json!({"terminals": st.terminals, "hidden_finished": 0, "machines": []})),
         "terminal.get" => find(),
         "terminal.read" => find().map(|_| json!({"text": st.screen, "complete": true, "how": "screen"})),
@@ -129,17 +166,24 @@ fn note(method: &str, params: Value) -> String {
 pub fn spawn(path: &Path, state: State) -> FakeCore {
     let state = Arc::new(Mutex::new(State { generation: if state.generation == 0 { 1 } else { state.generation }, ..state }));
     let calls = Arc::new(Mutex::new(Vec::new()));
+    let frames = Arc::new(Mutex::new(Vec::new()));
     let (ctl, _) = broadcast::channel(256);
     let listener = UnixListener::bind(path).unwrap();
-    let (st, cl, tx) = (state.clone(), calls.clone(), ctl.clone());
+    let (st, cl, tx, frames2) = (state.clone(), calls.clone(), ctl.clone(), frames.clone());
     tokio::spawn(async move {
+        let frames = frames2;
         loop {
             let Ok((stream, _)) = listener.accept().await else { return };
             let (st, cl, tx) = (st.clone(), cl.clone(), tx.clone());
+            let fr = frames.clone();
             tokio::spawn(async move {
                 let (r, mut w) = stream.into_split();
-                let mut lines = BufReader::new(r).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
+                let mut reader = BufReader::new(r);
+                loop {
+                    let mut line = String::new();
+                    if !matches!(reader.read_line(&mut line).await, Ok(n) if n > 0) {
+                        return;
+                    }
                     let req: Value = serde_json::from_str(&line).unwrap();
                     let method = req["method"].as_str().unwrap_or("").to_string();
                     let params = req["params"].clone();
@@ -147,7 +191,13 @@ pub fn spawn(path: &Path, state: State) -> FakeCore {
                     let mut bus = (method == "events.subscribe").then(|| tx.subscribe());
                     cl.lock().unwrap().push((method.clone(), params.clone()));
                     let resp = { answer(&st.lock().unwrap(), &method, &params) };
+                    let framed = method == "hello" && resp.as_ref().is_ok_and(|r| r["framed"] == true);
+                    let framed_bus = framed.then(|| tx.subscribe());
                     let _ = w.write_all(format!("{}\n", reply(&req["id"], resp)).as_bytes()).await;
+                    if let Some(bus) = framed_bus {
+                        framed_loop(reader, w, bus, st, cl, fr).await;
+                        return;
+                    }
                     if let Some(bus) = bus.as_mut() {
                         while let Ok(c) = bus.recv().await {
                             let text = match c {
@@ -155,6 +205,7 @@ pub fn spawn(path: &Path, state: State) -> FakeCore {
                                 Ctl::Missed(p) => note("missed", p),
                                 Ctl::Heartbeat => note("heartbeat", json!({"seq": 1})),
                                 Ctl::Drop => return,
+                                _ => continue,
                             };
                             if w.write_all(text.as_bytes()).await.is_err() {
                                 return;
@@ -166,5 +217,99 @@ pub fn spawn(path: &Path, state: State) -> FakeCore {
             });
         }
     });
-    FakeCore { state, calls, ctl }
+    FakeCore { state, calls, ctl, frames }
+}
+
+fn frame(channel: u32, kind: u8, payload: &[u8]) -> Vec<u8> {
+    let mut out = channel.to_le_bytes().to_vec();
+    out.push(kind);
+    out.extend((payload.len() as u32).to_le_bytes());
+    out.extend(payload);
+    out
+}
+
+async fn read_frame(r: &mut BufReader<tokio::net::unix::OwnedReadHalf>) -> Option<(u32, u8, Vec<u8>)> {
+    let mut h = [0u8; 9];
+    r.read_exact(&mut h).await.ok()?;
+    let len = u32::from_le_bytes([h[5], h[6], h[7], h[8]]) as usize;
+    let mut p = vec![0u8; len];
+    r.read_exact(&mut p).await.ok()?;
+    Some((u32::from_le_bytes([h[0], h[1], h[2], h[3]]), h[4], p))
+}
+
+/// A connection in framed mode: JSON-RPC on channel 0, attach streams on their channels.
+async fn framed_loop(
+    mut reader: BufReader<tokio::net::unix::OwnedReadHalf>,
+    mut w: tokio::net::unix::OwnedWriteHalf,
+    mut bus: broadcast::Receiver<Ctl>,
+    st: Arc<Mutex<State>>,
+    cl: Arc<Mutex<Vec<(String, Value)>>>,
+    frames: FrameLog,
+) {
+    let mut open: Vec<u32> = vec![];
+    let mut next = 1u32;
+    loop {
+        let mut out: Vec<u8> = vec![];
+        tokio::select! {
+            f = read_frame(&mut reader) => {
+                let Some((channel, kind, payload)) = f else { return };
+                frames.lock().unwrap().push((channel, kind, payload.clone()));
+                if channel == 0 && kind == 0 {
+                    let req: Value = serde_json::from_slice(&payload).unwrap();
+                    let method = req["method"].as_str().unwrap_or("").to_string();
+                    let params = req["params"].clone();
+                    cl.lock().unwrap().push((method.clone(), params.clone()));
+                    let st = st.lock().unwrap();
+                    if method == "terminal.attach" {
+                        let mut found = answer(&st, "terminal.get", &params);
+                        if let Some(e) = st.errors.get("terminal.attach") {
+                            found = Err(e.clone());
+                        }
+                        match found {
+                            Ok(t) => {
+                                let ch = next;
+                                next += 1;
+                                open.push(ch);
+                                let r = json!({"channel": ch, "terminal": t, "resize_notifications": true, "automatic_input": false});
+                                out.extend(frame(0, 0, reply(&req["id"], Ok(r)).to_string().as_bytes()));
+                                let (c, r) = if params["observe"] == true {
+                                    (t["cols"].as_u64().unwrap_or(80) as u16, t["rows"].as_u64().unwrap_or(24) as u16)
+                                } else {
+                                    (params["cols"].as_u64().unwrap_or(80) as u16, params["rows"].as_u64().unwrap_or(24) as u16)
+                                };
+                                out.extend(frame(ch, 3, &[c.to_le_bytes(), r.to_le_bytes()].concat()));
+                                out.extend(frame(ch, 0, &st.paint));
+                            }
+                            Err(e) => out.extend(frame(0, 0, reply(&req["id"], Err(e)).to_string().as_bytes())),
+                        }
+                    } else {
+                        let resp = answer(&st, &method, &params);
+                        out.extend(frame(0, 0, reply(&req["id"], resp).to_string().as_bytes()));
+                    }
+                } else if kind == 2 && open.contains(&channel) {
+                    open.retain(|c| *c != channel);
+                    out.extend(frame(channel, 2, &[]));
+                }
+            }
+            c = bus.recv() => {
+                let Ok(c) = c else { return };
+                for ch in &open {
+                    match &c {
+                        Ctl::Output(b) => out.extend(frame(*ch, 0, b)),
+                        Ctl::CloseStream(reason) => out.extend(frame(*ch, 2, reason.to_string().as_bytes())),
+                        Ctl::Resize(c, r) => out.extend(frame(*ch, 3, &[c.to_le_bytes(), r.to_le_bytes()].concat())),
+                        _ => {}
+                    }
+                }
+                match c {
+                    Ctl::Drop => return,
+                    Ctl::CloseStream(_) => open.clear(),
+                    _ => {}
+                }
+            }
+        }
+        if !out.is_empty() && w.write_all(&out).await.is_err() {
+            return;
+        }
+    }
 }

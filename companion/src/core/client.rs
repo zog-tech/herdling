@@ -59,7 +59,7 @@ async fn read_json(reader: &mut BufReader<OwnedReadHalf>) -> Result<Option<Value
 }
 
 /// The error of a JSON-RPC error object.
-fn remote(err: &Value) -> CoreError {
+pub(crate) fn remote(err: &Value) -> CoreError {
     let kind = err.pointer("/data/kind").and_then(Value::as_str).map(String::from).unwrap_or_else(|| {
         match err.get("code").and_then(Value::as_i64) {
             Some(-32601) => "unknown_method".into(),

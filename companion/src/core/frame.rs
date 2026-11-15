@@ -78,7 +78,7 @@ impl Decoder {
     }
 
     /// The next complete frame, `Ok(None)` when more bytes are necessary.
-    pub fn next(&mut self) -> Result<Option<Frame>, TooLarge> {
+    pub fn next_frame(&mut self) -> Result<Option<Frame>, TooLarge> {
         if self.buf.len() < HEADER {
             return Ok(None);
         }
