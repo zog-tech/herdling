@@ -27,6 +27,7 @@ The versions are the ones in the lock files and build files of this repository.
 | `@ronradtke/react-native-markdown-display` | 8.1.0 | MIT |
 | Lucide (`lucide-react-native`) | 1.64 | ISC |
 | Zustand | 5.0 | MIT |
+| xterm.js (`@xterm/xterm`, `@xterm/addon-search`, `@xterm/addon-unicode11`), inlined into the terminal page | 6.0.0, 0.16.0, 0.9.0 | MIT |
 | `@expo-google-fonts/jetbrains-mono` | 0.4.1 | MIT (package) |
 | JetBrains Mono (the font files) | | SIL Open Font License 1.1 |
 

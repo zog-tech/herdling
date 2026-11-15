@@ -61,6 +61,38 @@ Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` po
   reply has `drive: true`. The values are clamped to 20–500 columns and 5–200 rows. herdr 1 panes
   and herdlingd before this change ignore them and give no `drive`.
 
+### Raw terminal stream: `format: "vt"`
+
+Since herdlingd 0.2.0 (`hello.watch_formats` lists `vt`). The app draws the pane in its own
+terminal emulator (xterm.js). An older herdlingd refuses the format with `bad_request`, so the app
+checks `hello.watch_formats` first.
+
+```json
+{"id": 8, "method": "pane.watch", "params": {"pane_id": "t1", "lines": 1000, "format": "vt", "interval_ms": 50}}
+→ {"id": 8, "result": {"stream": "pane:3", "format": "vt"}}
+→ {"method": "event", "params": {"stream": "pane:3", "data": {"vt": "reset", "gen": 1, "seq": 0, "cols": 150, "rows": 46}}}
+→ {"method": "event", "params": {"stream": "pane:3", "data": {"vt": "data", "gen": 1, "seq": 1, "data": "GBtbIXAbW0gbWzJK..."}}}
+```
+
+- herdlingd forwards the bytes of `terminal.attach` with no emulator of its own. The core's first
+  paint (CAN, a soft reset, `lines` history lines pushed into the scrollback, the screen, the modes,
+  the cursor and the title) recreates the terminal in a fresh emulator of `cols` × `rows`.
+- `reset`: a new attach (the first one, or a reattach after the core connection closed). The app
+  makes a fresh emulator of that size. `data`: raw bytes in standard base64, at most 48 KiB of
+  bytes per event. `resize`: the terminal size changed; a paint with no history follows.
+- `seq` counts the events of one `gen` from 0. The app drops events of an older `gen`, and starts
+  the watch again when it finds a gap.
+- Bytes are sent at once after a quiet time, else at most once per `interval_ms`; 256 KiB of
+  waiting bytes go at once.
+- `cols` and `rows` drive the pane as for the other formats (the reply also has `drive: true`).
+  Without them the attach is passive (`observe: true`).
+- The stream is read only: herdlingd sends only CREDIT and CLOSE frames on it. The app does not
+  answer device queries or mouse reports from the bytes; typing goes through `pane.send_input`.
+- A core with no `terminal.attach` gives the call error `unsupported`. `error` and `closed` events
+  end the stream as for the other formats.
+- `pane.get` has no `scroll` field from a `vt` watch: the app reads the alternate screen from its
+  own emulator.
+
 ## herdr events: `herdr.subscribe` and `events_lost`
 
 `herdr.subscribe` streams the herdr event lines (`{"event": "...", "data": {...}}`). When herdr
@@ -982,6 +1014,7 @@ of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
   full-screen app and show the page keys.
 - `pane.read` with `format: "ansi"` takes the first paint of one passive attach (it waits until no
   frame came for 40 ms, at most 1 s), then detaches.
+- `pane.watch` with `format: "vt"` sends the attach bytes as they are (see "Raw terminal stream").
 
 ### Events
 

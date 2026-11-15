@@ -77,6 +77,12 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   When no transcript exists, `thread.resolve` gives `session: null`. Only `agents.preview` falls
   back to the screen.
 
+### Added
+
+- `pane.watch` takes `format: "vt"`: the raw bytes of a Herdr 2 terminal as base64 events
+  (`reset`, `data`, `resize`, with `gen` and `seq`), for a terminal emulator in the app.
+  `hello.watch_formats` lists the formats.
+
 ## [herdlingd 0.1.9] - 2026-11-09
 
 - New method `herdr.update`: updates herdr (herdr 1) on this computer from the phone. herdlingd
@@ -167,6 +173,13 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- The terminal view of a computer with herdlingd 0.2.0 or later is a real terminal (xterm.js in a
+  web view, on the raw `pane.watch` stream): an exact cell grid, full-width background colors, the
+  cursor, full-screen apps, wide characters and emoji, in the terminal theme. Fit, Scroll sideways
+  and Phone width work on it; Wrap shows as Fit. Search, the page keys of a full-screen app, "Jump
+  to end", a long press for "Select text" and the latency badge stay. Settings, Terminal,
+  "Renderer" goes back to "Classic". A build without the web view or an older herdlingd keeps the
+  classic view. xterm.js is bundled in the app (no network fetch).
 - On a computer with herdlingd 0.2.0 or later, every entry is a Herdr 2 entry (plain ids): the
   task rename, the phone width mode and "Move to space" work, and the herdr 1 key fallback is off.
   A 0.1.x computer keeps the old rules for its herdr 1 panes.

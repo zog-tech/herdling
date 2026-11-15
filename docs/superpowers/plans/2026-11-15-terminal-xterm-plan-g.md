@@ -108,8 +108,8 @@ TypeScript strict, `react-native-webview` 14.0.1 (already in the 1.0.1 binary), 
     Scroll, Phone.
 - **Features.** Search: the search addon (`findNext`/`findPrevious` with decorations in the search
   tokens; the page reports `index` and `count`). Page keys: on the alternate screen the page
-  buttons send Page Up and Page Down to the app (as today); on the main screen they scroll the
-  buffer one page. Follow: xterm.js keeps the view at the end while it is there; a "Jump to end"
+  buttons send Page Up and Page Down to the app (as today); on the main screen the history scrolls
+  by touch (the bridge also has `scrollPages` for a later button). Follow: xterm.js keeps the view at the end while it is there; a "Jump to end"
   button shows when it is not; the keyboard opening jumps to the end. Copy: a long press opens
   "Select text" with the buffer text. The latency badge stays. Themes: `xtermTheme(colors)` maps
   `terminal.bg`, `terminal.fg`, the 16 `ansi` colors and the selection; a theme change remounts the
