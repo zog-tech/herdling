@@ -38,8 +38,14 @@ fn the_embedded_pin_is_valid_and_has_every_unix_target() {
     for t in ["macos-aarch64", "macos-x86_64", "linux-aarch64", "linux-x86_64"] {
         assert!(p.sha_for(t).is_some(), "no checksum for {t}");
     }
-    // Plan E turns it on for 0.2.0. Until then the installer keeps herdr 1.
-    assert!(!p.required);
+}
+
+#[test]
+fn pin_is_required() {
+    // herdlingd 0.2.0 talks only to herdr-core: the installer and `herdlingd core required` must
+    // install the core.
+    assert!(pin::embedded().required);
+    assert!(env!("CARGO_PKG_VERSION").starts_with("0.2."), "the core-only release is 0.2.x");
 }
 
 #[test]
