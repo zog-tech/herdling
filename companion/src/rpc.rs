@@ -1160,6 +1160,23 @@ async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let cwd = git_cwd(ctx, &params, "git.worktree_add").await?;
     let branch = str_param(&params, "branch", "git.worktree_add")?;
     let plan = crate::git::worktree_plan(&cwd, branch).await?;
+    // Herdr 2: git makes the worktree, then a shell opens in a new space in it. `via: "herdr"`
+    // tells the app to start the agent in that pane, as for a herdr 1 worktree workspace.
+    if params.get("backend").and_then(Value::as_str) == Some(crate::core::project::BACKEND) {
+        let sock = core_sock(ctx)?;
+        // Check the core first, so a core that cannot start the shell leaves no worktree behind.
+        let mut c = crate::core::client::Client::connect(&sock.current(), ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)?;
+        crate::core::live::require(&mut c, &["terminal.run"]).await?;
+        drop(c);
+        let mut w = crate::git::worktree_add_git(&plan).await?;
+        let place = crate::core::actions::Place::NewSpace;
+        let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path)).await?;
+        w.via = "herdr";
+        w.workspace_id = Some(ws);
+        w.tab_id = Some(tab);
+        w.pane_id = Some(crate::core::project::pane_id(&addr));
+        return serde_json::to_value(w).map_err(|e| err("internal", e.to_string()));
+    }
     let w = match crate::worktree::create(&ctx.herdr_socket, &plan).await.map_err(herdr_err)? {
         Some(w) => w,
         None => crate::git::worktree_add_git(&plan).await?,

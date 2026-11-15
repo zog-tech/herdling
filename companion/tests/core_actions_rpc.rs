@@ -405,3 +405,35 @@ async fn session_start_refusals() {
     let r = no_core.call("session.start", json!({"cwd": "/home/sam", "kind": "claude"})).await;
     assert_eq!(r["error"]["code"], "unsupported");
 }
+
+fn git_ok(dir: &std::path::Path, args: &[&str]) -> bool {
+    std::process::Command::new("git").arg("-C").arg(dir).args(args).status().map(|s| s.success()).unwrap_or(false)
+}
+
+#[tokio::test]
+async fn worktree_for_the_core_opens_a_new_space() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path().canonicalize().unwrap();
+    let committed = git_ok(&root, &["init", "-b", "main"])
+        && git_ok(&root, &["-c", "user.name=sam", "-c", "user.email=sam@example.com", "commit", "--allow-empty", "-m", "x"]);
+    if !committed {
+        eprintln!("skipped: git is not available");
+        return;
+    }
+    let s = setup();
+    let mut sess = Session::start(s.ctx());
+    let r = sess.call("git.worktree_add", json!({"cwd": root, "branch": "fix-x", "backend": "core"})).await;
+    let res = &r["result"];
+    let path = root.join(".worktrees/fix-x");
+    assert!(path.is_dir(), "{r}");
+    assert_eq!(res["via"], "herdr");
+    assert_eq!(res["pane_id"], "hc:t4");
+    let run = &s.core.calls_of("terminal.run")[0];
+    assert_eq!(run["cwd"], path.to_string_lossy().as_ref());
+    assert!(is_id(&run["labels"]["herdr.space"], "sp") && is_id(&run["labels"]["herdr.tab"], "tb"), "{run}");
+    assert_eq!(res["workspace_id"], format!("hc:space:{}", run["labels"]["herdr.space"].as_str().unwrap()));
+    // Without the marker no core terminal starts (herdr 1 is not running, so git makes it).
+    let r = sess.call("git.worktree_add", json!({"cwd": root, "branch": "fix-y"})).await;
+    assert_eq!(r["result"]["via"], "git", "{r}");
+    assert_eq!(s.core.calls_of("terminal.run").len(), 1);
+}
