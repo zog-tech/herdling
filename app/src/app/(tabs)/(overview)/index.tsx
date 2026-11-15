@@ -13,7 +13,7 @@ import { DemoTag } from "@/demo/DemoTag";
 import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
 import { BoardChips } from "@/board/BoardChips";
-import { FilterButton, FilterField, NoMatch } from "@/board/BoardFilter";
+import { FilterButton, FilterField, JumpButton, NoMatch } from "@/board/BoardFilter";
 import { setFilter, setQuery, updateFirstSeen, useBoard } from "@/board/boardStore";
 import { BOARD_GROUPS, collapseSections, collapsible, groupItems, groupLabel, sortItems, sortLabel, SORTS } from "@/board/arrange";
 import { BoardTop } from "@/board/BoardTop";
@@ -477,6 +477,8 @@ export default function BoardScreen() {
     else openFilter();
   }, [showFilter, closeFilter, openFilter]);
 
+  const openJump = useCallback(() => router.push("/jump" as never), [router]);
+
   useLayoutEffect(() => {
     // The Dashboard top draws its own brand header with the group and sort menus under the carousel.
     if (dashboard) {
@@ -488,6 +490,7 @@ export default function BoardScreen() {
       // Plain icons: iOS 26 puts them on Liquid Glass in the header.
       headerRight: () => (
         <View style={{ flexDirection: "row" }}>
+          {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
           <FilterButton open={showFilter} onPress={toggleFilter} />
           <Pressable
             accessibilityRole="button"
@@ -507,7 +510,7 @@ export default function BoardScreen() {
         </View>
       ),
     });
-  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter]);
+  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter, hosts.length, openJump]);
 
   // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
   const openPane = useCallback(
@@ -619,6 +622,7 @@ export default function BoardScreen() {
         <BrandHeader
           right={
             <>
+              {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
               {hosts.length > 0 ? <FilterButton open={showFilter} onPress={toggleFilter} /> : null}
               <HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />
             </>
