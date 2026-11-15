@@ -19,3 +19,4 @@ pub mod start;
 pub mod stream;
 pub mod term_watch;
 pub mod tracker;
+pub mod vt;
