@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd 0.2.0] - unreleased
+## [herdlingd 0.2.0] - 2026-11-15
 
 herdlingd 0.2.0 needs Herdr 2 (herdr-core). When no herdr-core is installed, it installs the pinned
 version itself (also after an update from 0.1.9). herdr 1 sessions do not show in Herdling any more.

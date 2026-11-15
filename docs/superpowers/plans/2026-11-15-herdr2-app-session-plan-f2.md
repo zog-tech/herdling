@@ -8,7 +8,7 @@
 
 **Tech Stack:** Expo SDK 58, React 19.3, TypeScript strict, zustand persist (`secureJSONStorage`), react-native-gesture-handler and reanimated (already in the build). Rust (tokio, serde_json) for `herdlingd`.
 
-**Spec:** The task brief of plan F2 and `/Volumes/MiniSSD/dev/ref/herdr-mobile-shots/NOTES.md` (session screen, "after the first computer connects"). Earlier plans: A (groups), C (actions, `docs/superpowers/plans/2026-11-15-herdr2-actions-plan-c.md`). Parallel: F1 (inbox, spaces tab, search, New session, Move to group: `app/src/board/`, `app/src/newSession/`, `app/src/herdr/backend.ts`, tab layout). Later: D (terminal view in the companion with a column count).
+**Spec:** The task brief of plan F2 and notes on the public Herdr mobile app page (session screen, "after the first computer connects"). Earlier plans: A (groups), C (actions, `docs/superpowers/plans/2026-11-15-herdr2-actions-plan-c.md`). Parallel: F1 (inbox, spaces tab, search, New session, Move to group: `app/src/board/`, `app/src/newSession/`, `app/src/herdr/backend.ts`, tab layout). Later: D (terminal view in the companion with a column count).
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
 - Tokens only (`app/src/theme/tokens.ts`); gold only for the primary action, working and selected.
 - `machines.suggest` returns names, host names, addresses, users and ports only. Never keys, `IdentityFile`, `ProxyCommand` or other file content.
 - Companion tests never read the real `~/.ssh/config` or run the real `tailscale`: `Ctx` carries the paths.
-- Builds: `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target`, `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`; in `app/`: `pnpm exec tsc --noEmit`, `nice -n 15 pnpm test --maxWorkers=2`. No `cargo fmt` over the crate.
+- Builds: `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`; in `app/`: `pnpm exec tsc --noEmit`, `nice -n 15 pnpm test --maxWorkers=2`. No `cargo fmt` over the crate.
 - Test data: `sam`, `studio.local`, `/home/sam/proj`, IP ranges 192.0.2.0/24 and 100.64.0.0/10 (`100.64.0.x`). ASD-STE100 for comments, docs and UI text.
 - Commits: `zog-tech`, prefix `thread:`, `terminal:`, `companion:`, `app:`, `docs:`; a blank line, the reason, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 

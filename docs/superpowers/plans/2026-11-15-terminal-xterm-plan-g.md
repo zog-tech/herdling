@@ -154,7 +154,7 @@ TypeScript strict, `react-native-webview` 14.0.1 (already in the 1.0.1 binary), 
 - Add fields and params only. Old apps never send `format: "vt"`; nothing changes for them.
 - No new native dependency. `react-native-webview` loads only through `loadWebView()`.
 - herdlingd sends only CREDIT and CLOSE frames on a stream channel, in every format.
-- Cargo: `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target`, `nice -n 15 cargo test -j 2`,
+- Cargo: `nice -n 15 cargo test -j 2`,
   `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`, no `cargo fmt` over the crate.
   App: `pnpm exec tsc --noEmit`, `nice -n 15 pnpm test --maxWorkers=2`.
 - TypeScript strict, no `any`, design tokens only, ASD-STE100 for comments and UI text.
