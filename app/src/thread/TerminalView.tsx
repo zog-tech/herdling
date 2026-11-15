@@ -318,7 +318,8 @@ export function TerminalView({
   const body = shown ? (
     <AnsiText lines={shown} style={{ fontSize, lineHeight }} />
   ) : (
-    <Text mono variant="caption" muted>
+    // `terminal.fg`, not `textMuted`: the terminal theme can be light.
+    <Text mono variant="caption" color={colors.terminal.fg}>
       {error ? `Can't read the terminal: ${error}` : "Loading…"}
     </Text>
   );

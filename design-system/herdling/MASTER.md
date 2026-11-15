@@ -108,6 +108,11 @@ Rules:
   so it never looks like the working lantern.
 - Only dark themes. A light theme needs light variants of every token, light native controls
   (headers, glass, keyboard, status bar) and a check on a device.
+- **Terminal themes** (Settings, Theme, "Terminal"; `TERMINAL_THEMES` in `palettes.ts`) change only
+  `terminal.bg`, `terminal.fg` and `ansi`: the screen of the terminal view. "Same as the app" keeps
+  the theme's values. "Paper" is the one light surface: `#F7F4EC` with ink `#24211C` (14.6:1), and
+  every ANSI entry 4:1 or more on it ("white" is a mid grey `#6F6A61`, so white text stays
+  readable). Text drawn on the terminal screen uses `terminal.fg`, never `text` or `textMuted`.
 - Code reads `colors.*` at render time. Never copy a color into a module constant: a theme change
   replaces the values in place and mounts the screens again. For a `StyleSheet.create` at module
   level, use `themed(() => StyleSheet.create(...))`.

@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { secureJSONStorage } from "@/secureStorage";
 
-import { buildColors, type AccentId, type ThemeChoice, type ThemeId } from "./palettes";
+import { buildColors, type AccentId, type TerminalThemeId, type ThemeChoice, type ThemeId } from "./palettes";
 import { THEME_PREFS_KEY, parseChoice, savedChoice } from "./savedChoice";
 import { NIGHT_WATCH, applyColors, colors } from "./tokens";
 
@@ -12,7 +12,11 @@ type ThemePrefsStore = ThemeChoice & {
   applied: number;
   setTheme: (theme: ThemeId) => void;
   setAccent: (accent: AccentId) => void;
+  setTerminal: (terminal: TerminalThemeId) => void;
 };
+
+/** The choice part of the store. */
+const current = (s: ThemeChoice): ThemeChoice => ({ theme: s.theme, accent: s.accent, ...(s.terminal && s.terminal !== "app" ? { terminal: s.terminal } : {}) });
 
 /** True when the live colors already show `choice`. */
 function showing(choice: ThemeChoice): boolean {
@@ -40,23 +44,27 @@ export const useThemePrefs = create<ThemePrefsStore>()(
       ...savedChoice(),
       applied: 0,
       setTheme: (theme) => {
-        if (applyChoice({ theme, accent: get().accent })) set({ theme, applied: get().applied + 1 });
+        if (applyChoice({ ...current(get()), theme })) set({ theme, applied: get().applied + 1 });
         else set({ theme });
       },
       setAccent: (accent) => {
-        if (applyChoice({ theme: get().theme, accent })) set({ accent, applied: get().applied + 1 });
+        if (applyChoice({ ...current(get()), accent })) set({ accent, applied: get().applied + 1 });
         else set({ accent });
+      },
+      setTerminal: (terminal) => {
+        if (applyChoice({ ...current(get()), terminal })) set({ terminal, applied: get().applied + 1 });
+        else set({ terminal });
       },
     }),
     {
       name: THEME_PREFS_KEY,
       storage: secureJSONStorage(),
-      partialize: (s): ThemeChoice => ({ theme: s.theme, accent: s.accent }),
+      partialize: (s): ThemeChoice => current(s),
       // A value from a newer app (an unknown theme or accent) falls back to the default.
       merge: (saved, current) => ({ ...current, ...parseChoice(JSON.stringify({ state: saved })) }),
       // The launch read can fail (a locked keychain) while the later read works: apply the loaded value.
       onRehydrateStorage: () => (s) => {
-        if (s && applyChoice({ theme: s.theme, accent: s.accent })) {
+        if (s && applyChoice(current(s))) {
           useThemePrefs.setState({ applied: useThemePrefs.getState().applied + 1 });
         }
       },

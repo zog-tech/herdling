@@ -1,7 +1,7 @@
 import { Check } from "lucide-react-native";
 import { View } from "react-native";
 
-import { ACCENTS, THEMES, buildColors } from "@/theme/palettes";
+import { ACCENTS, TERMINAL_THEMES, THEMES, buildColors } from "@/theme/palettes";
 import { useThemePrefs } from "@/theme/themePrefs";
 import { NIGHT_WATCH, colors, icon, radius, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
@@ -66,12 +66,15 @@ function Preview() {
 /**
  * Settings, "Theme": the palette and the accent color. A change applies at once: the screens
  * mount again in the new colors (see `ui/useThemeRemount`). Only dark themes; see MASTER.md, "Themes".
+ * The terminal theme changes only the screen of the terminal view (a light "Paper" screen).
  */
 export default function ThemeScreen() {
   const theme = useThemePrefs((s) => s.theme);
   const accent = useThemePrefs((s) => s.accent);
   const setTheme = useThemePrefs((s) => s.setTheme);
   const setAccent = useThemePrefs((s) => s.setAccent);
+  const terminal = useThemePrefs((s) => s.terminal ?? "app");
+  const setTerminal = useThemePrefs((s) => s.setTerminal);
   return (
     <Screen flush>
       <Section title="Preview">
@@ -116,6 +119,29 @@ export default function ThemeScreen() {
                 leading={<AccentSwatch color={a.accent} />}
                 title={a.label}
                 detail={a.blocked ? "Needs you turns rose, so it is not the same as working." : undefined}
+                trailing={on ? <Check size={icon.md} color={colors.accent} /> : null}
+              />
+            );
+          })}
+        </Group>
+      </Section>
+      <Section title="Terminal" footer="The screen of the terminal view. The rest of the app keeps the theme.">
+        <Group>
+          {TERMINAL_THEMES.map((t) => {
+            const c = buildColors(NIGHT_WATCH, { theme, accent, terminal: t.id });
+            const on = t.id === terminal;
+            return (
+              <Row
+                key={t.id}
+                accessibilityLabel={`Terminal ${t.label}${on ? ", selected" : ""}`}
+                onPress={() => {
+                  if (on) return;
+                  haptics.tap();
+                  setTerminal(t.id);
+                }}
+                leading={<ThemeSwatch bg={c.terminal.bg} text={c.terminal.fg} />}
+                title={t.label}
+                detail={t.detail}
                 trailing={on ? <Check size={icon.md} color={colors.accent} /> : null}
               />
             );
