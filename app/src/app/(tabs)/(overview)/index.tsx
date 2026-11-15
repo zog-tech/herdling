@@ -26,6 +26,8 @@ import { filterByText, queryWords } from "@/board/textFilter";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
 import { allows, renameKindsFor } from "@/herdr/backend";
 import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
+import { moveToGroup } from "@/herdr/moveFlow";
+import { canMove } from "@/herdr/moveGroup";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
@@ -581,7 +583,7 @@ export default function BoardScreen() {
 
   const onMenu = useCallback(
     (i: BoardItem) => {
-      const { rpc } = getHostConn(i.hostId);
+      const { rpc, hello } = getHostConn(i.hostId);
       const menu: MenuItem[] = [
         { label: "Reply", onPick: () => onReply(i) },
         { label: "Peek", onPick: () => onPeek(i) },
@@ -596,6 +598,7 @@ export default function BoardScreen() {
       ];
       if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
       if (rpc && allows(i.agent, "rename", i.hostId)) menu.push(...renameItems(rpc, i.hostId, i.agent));
+      if (rpc && canMove(i.agent, hello)) menu.push({ label: "Move to space…", onPick: () => void moveToGroup(rpc, i.agent) });
       if (allows(i.agent, "restart", i.hostId)) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
       showActionSheet(
         {
