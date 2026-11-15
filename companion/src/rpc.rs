@@ -607,6 +607,9 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         let Some(sock) = &ctx.core_socket else {
             return Err(err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"));
         };
+        if let Some(r) = crate::core::term_watch::herdr_call(ctx, sock, &method, &p, &id).await {
+            return r;
+        }
         return crate::core::live::call(sock, ctx.herdr_timeout, &method, &p, &id).await;
     }
     if method == "session.snapshot" {

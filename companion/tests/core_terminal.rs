@@ -222,3 +222,74 @@ async fn old_core_polls_read() {
     assert!(s.core.calls_of("terminal.attach").is_empty());
     assert_eq!(s.core.calls_of("terminal.read")[0], json!({"terminal": "t1", "lines": 50}));
 }
+
+#[tokio::test]
+async fn pane_get_reports_a_full_screen_app_during_a_watch() {
+    let s = setup(true, b"\x18\x1b[?1049h\x1b[H\x1b[2J\x1b[7m less \x1b[0m");
+    let mut sess = Session::start(s.ctx());
+    // No watch: no scroll field.
+    let r = sess.herdr(1, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    assert!(r["result"]["pane"].is_object(), "{r}");
+    assert!(r["result"]["pane"].get("scroll").is_none(), "{r}");
+    sess.call(2, "pane.watch", watch_params()).await;
+    let e = sess.event().await;
+    // The alternate screen keeps every row, so the app sees a full screen.
+    assert_eq!(e["text"].as_str().unwrap().split('\n').count(), 24, "{e}");
+    let r = sess.herdr(3, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    assert_eq!(r["result"]["pane"]["scroll"], json!({"max_offset_from_bottom": 0, "viewport_rows": 24}), "{r}");
+}
+
+#[tokio::test]
+async fn pane_get_of_a_shell_reports_its_history() {
+    // 30 lines on 24 rows: 6 lines go into the history.
+    let paint: Vec<u8> = (1..=30).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\r\n").into_bytes();
+    let s = setup(true, &paint);
+    let mut sess = Session::start(s.ctx());
+    sess.call(1, "pane.watch", watch_params()).await;
+    sess.event().await;
+    let r = sess.herdr(2, "pane.get", json!({"pane_id": "hc:t1"})).await;
+    assert_eq!(r["result"]["pane"]["scroll"], json!({"max_offset_from_bottom": 6, "viewport_rows": 24}), "{r}");
+}
+
+#[tokio::test]
+async fn ansi_read_takes_one_paint_and_detaches() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "recent", "lines": 100, "format": "ansi", "strip_ansi": false})).await;
+    assert_eq!(r["result"]["read"]["text"], "\x1b[0;31mred\x1b[0m", "{r}");
+    assert_eq!(r["result"]["read"]["format"], "ansi");
+    assert_eq!(r["result"]["type"], "pane_read");
+    let attach = &s.core.calls_of("terminal.attach")[0];
+    assert_eq!((attach["observe"].clone(), attach["history"].clone()), (json!(true), json!(100)));
+    // The fake core reads the CLOSE frame a moment after the reply.
+    for _ in 0..50 {
+        if s.core.stream_frames().iter().any(|f| f.1 == 2) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let frames = s.core.stream_frames();
+    assert!(frames.iter().any(|f| f.1 == 2), "no CLOSE: {frames:?}");
+    assert!(frames.iter().all(|f| f.1 == 1 || f.1 == 2));
+    assert!(s.core.calls_of("terminal.read").is_empty());
+}
+
+#[tokio::test]
+async fn text_read_still_uses_terminal_read() {
+    let s = setup(true, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "visible", "format": "text"})).await;
+    assert_eq!(r["result"]["read"]["text"], "plain screen", "{r}");
+    assert!(s.core.calls_of("terminal.attach").is_empty());
+    // An ANSI read of a missing terminal is pane_not_found.
+    let r = sess.herdr(2, "pane.read", json!({"pane_id": "hc:t9", "format": "ansi"})).await;
+    assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
+}
+
+#[tokio::test]
+async fn ansi_read_on_an_old_core_is_plain_text() {
+    let s = setup(false, PAINT);
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "format": "ansi"})).await;
+    assert_eq!(r["result"]["read"]["text"], "plain screen", "{r}");
+}

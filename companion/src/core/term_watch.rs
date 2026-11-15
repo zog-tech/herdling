@@ -411,3 +411,94 @@ pub async fn pane_watch(
         Mode::Drive { .. } => json!({ "stream": stream, "drive": true }),
     }))
 }
+
+/// How long a one-shot read waits for more paint after a frame.
+const PAINT_QUIET: Duration = Duration::from_millis(40);
+/// The longest one-shot read.
+const PAINT_MAX: Duration = Duration::from_secs(1);
+
+/// The screen and `lines` of history of terminal `addr` with SGR, from one passive attach: the
+/// first paint, until no frame came for 40 ms (at most 1 s). Then herdlingd detaches.
+pub async fn snapshot(sock: &CoreSocket, timeout: Duration, addr: &str, lines: usize) -> Result<String, OpenError> {
+    let mut a = open(sock, timeout, addr, lines, Mode::Watch).await?;
+    let mut emu = Emulator::new(a.cols, a.rows, lines);
+    let end = tokio::time::Instant::now() + PAINT_MAX;
+    let mut frames: VecDeque<Frame> = std::mem::take(&mut a.early).into();
+    let mut painted = false;
+    loop {
+        let f = match frames.pop_front() {
+            Some(f) => f,
+            None => {
+                let wait = if painted { PAINT_QUIET } else { end.saturating_duration_since(tokio::time::Instant::now()) };
+                match tokio::time::timeout(wait.min(end.saturating_duration_since(tokio::time::Instant::now())), a.conn.frame()).await {
+                    Ok(Ok(Some(f))) => f,
+                    _ => break,
+                }
+            }
+        };
+        let Some(input) = frame_input(0, a.channel, f) else { continue };
+        let ok = match input {
+            Input::Data { bytes, .. } => {
+                painted = true;
+                let _ = a.conn.write(&frame::credit(a.channel, bytes.len() as u32)).await;
+                catch_unwind(AssertUnwindSafe(|| emu.feed(&bytes))).is_ok()
+            }
+            Input::Resize { cols, rows, .. } => catch_unwind(AssertUnwindSafe(|| emu.resize(cols, rows))).is_ok(),
+            _ => break,
+        };
+        if !ok {
+            return Err(CoreError::Unavailable("the terminal output could not be read".into()).into());
+        }
+    }
+    let _ = a.conn.write(&frame::close(a.channel)).await;
+    catch_unwind(AssertUnwindSafe(|| emu.render(true).text))
+        .map_err(|_| CoreError::Unavailable("the terminal output could not be read".into()).into())
+}
+
+/// `pane.get` of a watched core pane gets the herdr 1 `scroll` field, so the app finds a
+/// full-screen app: offset 0 on the alternate screen, else the history lines. No watch: no field.
+pub fn add_scroll(result: &mut Value, facts: &Facts, pane: &str) {
+    let Some(f) = facts.get(pane) else { return };
+    if let Some(p) = result.get_mut("pane").and_then(Value::as_object_mut) {
+        let offset = if f.alternate { 0 } else { f.history };
+        p.insert("scroll".into(), json!({ "max_offset_from_bottom": offset, "viewport_rows": f.rows }));
+    }
+}
+
+/// The `herdr.call` methods that the terminal view answers for a core id: `pane.read` with
+/// `format: "ansi"` (one attach) and `pane.get` (plus `scroll`). None for every other call, and
+/// for an ANSI read on a core with no `terminal.attach`: the caller uses `core::live::call`.
+pub async fn herdr_call(
+    ctx: &crate::rpc::Ctx,
+    sock: &CoreSocket,
+    method: &str,
+    params: &Value,
+    id: &str,
+) -> Option<Result<Value, crate::types::RpcError>> {
+    match method {
+        "pane.read" if params.get("format").and_then(Value::as_str) == Some("ansi") => {
+            let addr = super::project::address(id)?;
+            let lines = if params.get("source").and_then(Value::as_str) == Some("visible") {
+                0
+            } else {
+                params.get("lines").and_then(Value::as_u64).unwrap_or(200).min(1000) as usize
+            };
+            match snapshot(sock, ctx.herdr_timeout, addr, lines).await {
+                Ok(text) => Some(Ok(json!({
+                    "type": "pane_read",
+                    "read": { "pane_id": id, "text": text, "revision": 0, "truncated": false, "format": "ansi" },
+                }))),
+                Err(OpenError::NoAttach) => None,
+                Err(OpenError::Core(e)) => Some(Err(super::live::rpc_err(e))),
+            }
+        }
+        "pane.get" => {
+            let r = super::live::call(sock, ctx.herdr_timeout, method, params, id).await;
+            Some(r.map(|mut v| {
+                add_scroll(&mut v, &ctx.term_facts, id);
+                v
+            }))
+        }
+        _ => None,
+    }
+}
