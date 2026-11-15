@@ -30,6 +30,10 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ### Also in 0.2.0
 
+- `core.install` (and the core step of `herdr.update`) ends within 150 seconds, under the 180
+  seconds that the app waits (error `install_timeout`). The place step starts only with 60 seconds
+  left, so it is never cut off.
+
 - Typing on Herdr 2: text without Enter and keys go in at once as raw bytes on a short attach
   stream, so punctuation, accents and emoji work in "Type directly" (also from the app builds
   1.0.0 and 1.0.1). Every typing call answers within 10 seconds. A line that waits for quiet at

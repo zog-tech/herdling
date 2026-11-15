@@ -24,7 +24,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
-`core_not_running`, `core_install_failed`, `bad_pin`.
+`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -333,7 +333,13 @@ The steps (a pure state machine in `companion/src/core_install/machine.rs`):
 
 `status` is `installed`, `updated`, `up_to_date`, `kept_newer`, `kept_unknown` or `kept_managed`.
 One install runs at a time (`core-install.lock` in the herdlingd config folder). Use a long timeout
-(3 minutes).
+(3 minutes). Since 0.2.0 the whole install ends within 150 seconds (`install_timeout`), so the
+answer always comes before that timeout. herdlingd starts the place step only with at least 60
+seconds left, so a place is never cut off.
+
+- A `~/.local/bin/herdr-core` that is a symlink counts as the core of herdlingd only when it
+  points into `~/.local/share/herdr-core` (the upstream app bundle install). Any other link
+  (Homebrew, Nix, a link of the user) is `managed`, also when its target is gone.
 
 Error codes:
 
@@ -347,6 +353,7 @@ Error codes:
 | `core_not_running` | The core did not start, or it does not answer on its socket |
 | `busy` | Another core install runs now |
 | `bad_pin` | The pin is not valid |
+| `install_timeout` | The install used its 150 seconds. The message says whether the core was put in place |
 
 `herdlingd core status`, `herdlingd core install` and `herdlingd core required` do the same on the
 computer. `core required` exits with 0 when this herdlingd needs the core (the installer reads it).

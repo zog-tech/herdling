@@ -668,3 +668,80 @@ fn a_plain_file_in_local_bin_is_ours() {
     exe(&f.home().join(".local/bin/herdr-core"), "core");
     assert_eq!(ci::find_core(&f.ctx).unwrap().0, Where::Ours);
 }
+
+/// A `CoreIo` whose time runs out: `left` is the time left before each effect, in order.
+struct Late {
+    left: Vec<Duration>,
+    effects: Vec<&'static str>,
+}
+
+impl Late {
+    fn tick(&mut self, e: &'static str) {
+        self.effects.push(e);
+    }
+}
+
+impl CoreIo for Late {
+    fn left(&self) -> Option<Duration> {
+        self.left.get(self.effects.len()).copied()
+    }
+    fn find_installed(&mut self) -> Found {
+        self.tick("find");
+        found(Where::Missing, None)
+    }
+    fn download(&mut self, _url: &str) -> Result<String, String> {
+        self.tick("download");
+        Ok(SHA.into())
+    }
+    fn unpack(&mut self) -> Result<bool, String> {
+        self.tick("unpack");
+        Ok(false)
+    }
+    fn check_unpacked(&mut self) -> Result<Option<String>, String> {
+        self.tick("check");
+        Ok(Some(PIN.into()))
+    }
+    fn place(&mut self, _m: PlaceMode) -> Result<(), String> {
+        self.tick("place");
+        Ok(())
+    }
+    fn running(&mut self, _w: bool) -> Option<String> {
+        self.tick("running");
+        Some(PIN.into())
+    }
+    fn start(&mut self) -> Result<(), String> {
+        self.tick("start");
+        Ok(())
+    }
+}
+
+#[test]
+fn the_install_stops_at_its_deadline_and_never_starts_a_late_place() {
+    let s = Duration::from_secs;
+    // Time is up before the download.
+    let mut io = Late { left: vec![s(100), s(0)], effects: vec![] };
+    let e = ci::drive(&plan(), "u", &mut io).unwrap_err();
+    assert_eq!(e.code, "install_timeout");
+    assert!(e.message.contains("Nothing was installed"), "{}", e.message);
+    assert_eq!(io.effects, ["find"]);
+    // Too little time left to place the core safely: stop before the place.
+    let mut io = Late { left: vec![s(100), s(90), s(80), s(70), ci::PLACE_MIN - s(1)], effects: vec![] };
+    let e = ci::drive(&plan(), "u", &mut io).unwrap_err();
+    assert_eq!(e.code, "install_timeout");
+    assert_eq!(io.effects, ["find", "download", "unpack", "check"]);
+    // After the place the core is there: the text says so.
+    let mut io = Late { left: vec![s(100), s(90), s(80), s(70), s(60), s(0)], effects: vec![] };
+    let e = ci::drive(&plan(), "u", &mut io).unwrap_err();
+    assert_eq!(e.code, "install_timeout");
+    assert!(e.message.contains("is installed"), "{}", e.message);
+    // Enough time: the whole flow.
+    let mut io = Late { left: vec![s(150); 9], effects: vec![] };
+    assert_eq!(ci::drive(&plan(), "u", &mut io).unwrap().status, Status::Installed);
+}
+
+#[test]
+fn the_install_budget_is_under_the_app_timeout() {
+    // The app waits 180 s for `core.install`; the place keeps its own time inside the budget.
+    assert!(ci::INSTALL_BUDGET <= Duration::from_secs(150));
+    assert!(ci::PLACE_MIN < ci::INSTALL_BUDGET);
+}
