@@ -13,9 +13,6 @@ import { RpcError } from "@/rpc/RpcClient";
 /** The id prefix of every Herdr 2 entry (pane, tab and workspace). */
 export const CORE_ID_PREFIX = "hc:";
 
-/** The short label of a Herdr 2 entry on the board. */
-export const CORE_LABEL = "Herdr 2";
-
 /** The error code of a herdr method that a Herdr 2 pane does not have. */
 export const CORE_UNSUPPORTED = "unsupported";
 
@@ -105,11 +102,6 @@ export const CORE_UNSUPPORTED_TEXT = "Update herdlingd on this computer to do th
  */
 export function assertAllows(t: BackendTarget, action: HerdrOneAction, hostId?: string): void {
   if (!allows(t, action, hostId)) throw new RpcError(CORE_UNSUPPORTED, CORE_UNSUPPORTED_TEXT);
-}
-
-/** The backend label for an entry: "Herdr 2" for a core entry, else undefined (herdr 1 shows none). */
-export function backendLabel(t: BackendTarget): string | undefined {
-  return isCore(t) ? CORE_LABEL : undefined;
 }
 
 /**

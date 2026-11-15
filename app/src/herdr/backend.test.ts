@@ -3,8 +3,6 @@ import { RpcError } from "@/rpc/RpcClient";
 import {
   allows,
   assertAllows,
-  backendLabel,
-  CORE_LABEL,
   CORE_UNSUPPORTED,
   coreActions,
   isCore,
@@ -106,13 +104,5 @@ describe("renameKindsFor", () => {
   it("gives a Herdr 2 entry only the task name", () => {
     expect(renameKindsFor("hc:t1")).toEqual(["session"]);
     expect(renameKindsFor({ pane_id: "w1:p1" })).toEqual(["session", "tab", "workspace"]);
-  });
-});
-
-describe("backendLabel", () => {
-  it("labels only Herdr 2 entries", () => {
-    expect(backendLabel({ workspace_id: "hc:space:1", backend: "core" })).toBe(CORE_LABEL);
-    expect(CORE_LABEL).toBe("Herdr 2");
-    expect(backendLabel({ workspace_id: "w1" })).toBeUndefined();
   });
 });
