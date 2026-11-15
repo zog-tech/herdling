@@ -54,7 +54,7 @@
   new error code (`core_install_failed`); old apps show an unknown code as `install_failed` with its text.
 - Tests never download, never touch the live core and never write outside temp folders.
 - `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`,
-  `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target`. No `cargo fmt` over the crate.
+  a `CARGO_TARGET_DIR` on the build volume. No `cargo fmt` over the crate.
 - Plan C works in `core/route.rs` and near it; plan D in the terminal view. This plan adds its own
   module and keeps edits in shared files (`rpc.rs`, `protocol/src/index.ts`, `docs/protocol.md`,
   `CHANGELOG.md`) small.
@@ -81,8 +81,8 @@
 - `pub fn target(os: &str, arch: &str) -> Option<&'static str>` (`macos`/`linux` × `aarch64`/`x86_64` → `macos-aarch64` …).
 - `impl CorePin { pub fn valid(&self) -> bool; pub fn sha_for(&self, target) -> Option<String>; pub fn url(&self, target) -> String }`. `valid`: a version that `update::parse_version` takes, every sha 64 hex digits.
 
-- [ ] Tests: the embedded pin is valid and has the four Unix targets; `target` maps; `url` is `RELEASES/<v>/herdr-core-<t>.tar.gz`; a bad version or bad sha is not valid.
-- [ ] Implement, run `cargo test --test core_install`, commit `companion: pin herdr-core 0.1.20 with its checksums`.
+- [x] Tests: the embedded pin is valid and has the four Unix targets; `target` maps; `url` is `RELEASES/<v>/herdr-core-<t>.tar.gz`; a bad version or bad sha is not valid.
+- [x] Implement, run `cargo test --test core_install`, commit `companion: pin herdr-core 0.1.20 with its checksums`.
 
 ### Task 2: The pure install state machine
 
@@ -97,8 +97,8 @@
 - `pub struct Outcome { pub from: Option<String>, pub to: Option<String>, pub status: Status, pub started: bool }`, `pub enum Status { Installed, Updated, UpToDate, KeptNewer, KeptUnknown, KeptManaged }`.
 - `pub struct Failure { pub code: &'static str, pub message: String }`. Codes: `download_failed`, `checksum_mismatch`, `install_failed`, `core_not_running`, `internal` (an impossible event).
 
-- [ ] Tests: each decision; a newer core goes straight to `ProbeRunning` with no `Download` (never downgrade); a checksum mismatch fails with `checksum_mismatch`; an unpacked core of another version fails; a missing core goes Download → Unpack → Check → Place(Copy) → Probe → Start → Probe → Done; a core that does not start fails `core_not_running`; an impossible event fails `internal`.
-- [ ] Implement, test, commit `companion: pure state machine for the herdr-core install`.
+- [x] Tests: each decision; a newer core goes straight to `ProbeRunning` with no `Download` (never downgrade); a checksum mismatch fails with `checksum_mismatch`; an unpacked core of another version fails; a missing core goes Download → Unpack → Check → Place(Copy) → Probe → Start → Probe → Done; a core that does not start fails `core_not_running`; an impossible event fails `internal`.
+- [x] Implement, test, commit `companion: pure state machine for the herdr-core install`.
 
 ### Task 3: The I/O driver, status and the lock
 
@@ -112,42 +112,42 @@
 - `pub fn status(ctx) -> CoreStatus`, `pub fn install(ctx, pin: &CorePin) -> Result<CoreInstall, RpcError>` (takes `core-install.lock`, error `busy`).
 - Types in `types.rs`: `CoreStatus`, `CoreInstall`.
 
-- [ ] Tests with a temp home, a fake `HerdrRunner` and a fake fetch: a fresh Linux install puts `~/.local/bin/herdr-core` and the `hc` link and starts the core; a mismatch leaves `~/.local/bin` empty and removes the stage folder; a newer core is not fetched; a managed core is not replaced; status fields; a second install while the lock is held gives `busy`.
-- [ ] Implement, test, commit `companion: install, update and status of herdr-core`.
+- [x] Tests with a temp home, a fake `HerdrRunner` and a fake fetch: a fresh Linux install puts `~/.local/bin/herdr-core` and the `hc` link and starts the core; a mismatch leaves `~/.local/bin` empty and removes the stage folder; a newer core is not fetched; a managed core is not replaced; status fields; a second install while the lock is held gives `busy`.
+- [x] Implement, test, commit `companion: install, update and status of herdr-core`.
 
 ### Task 4: RPC methods and the CLI
 
 **Files:** `companion/src/rpc.rs` (METHODS, dispatch, `Ctx.core_install`), `companion/src/main.rs` (`herdlingd core status|install|required`), `protocol/src/index.ts`. Test: `companion/tests/core_install_rpc.rs`.
 
-- [ ] `core.status` → `CoreStatus`. `core.install` → `CoreInstall`. Both give `unsupported` when `Ctx.core_install` is `None`.
-- [ ] `herdr.update`: pure `herdr_update_target(herdr1: bool, core: bool)`; on `Core` it runs `core.install` and shapes a `HerdrUpdate` (`handoff: "complete"` when the core was swapped, else `"none"`).
-- [ ] `herdlingd core required` exits 0 when the pin says `required`, else 1 (the installer reads it).
-- [ ] Tests through `rpc::run` with fakes. Commit `companion: core.status and core.install methods`.
+- [x] `core.status` → `CoreStatus`. `core.install` → `CoreInstall`. Both give `unsupported` when `Ctx.core_install` is `None`.
+- [x] `herdr.update`: pure `herdr_update_target(herdr1: bool, core: bool)`; on `Core` it runs `core.install` and shapes a `HerdrUpdate` (`handoff: "complete"` when the core was swapped, else `"none"`).
+- [x] `herdlingd core required` exits 0 when the pin says `required`, else 1 (the installer reads it).
+- [x] Tests through `rpc::run` with fakes. Commit `companion: core.status and core.install methods`.
 
 ### Task 5: The herdr 1 guard and update.check / update.apply
 
 **Files:** Create `companion/src/core_install/guard.rs`; modify `companion/src/update.rs`, `companion/src/types.rs`, `companion/tests/update.rs`, `.github/workflows/release-herdlingd.yml`.
 
-- [ ] `pub enum Guard { Proceed, InstallCoreFirst { herdr1: bool } }`, `pub fn guard(requires_core, core_installed, herdr1) -> Guard`, `pub const HERDR1_NOTICE`.
-- [ ] `Manifest` gets `#[serde(default)] requires_core: bool` and `core: Option<CorePin>`. `UpdateCtx` gets `core: Option<CoreInstallCtx>`.
-- [ ] `update.check` adds `core: { requires_core, installed, herdr1, install_first, pinned, notice? }`.
-- [ ] `update.apply`: when the manifest says `requires_core`, install the core (the manifest pin, else the own pin) before the download of herdlingd. A failure gives `core_install_failed` and changes nothing else. The result adds `core` and `notice`.
-- [ ] Tests: guard table; apply with `requires_core` and a failing core install keeps the old binary; a manifest without the new fields works as before.
-- [ ] The workflow adds `requires_core` and `core` from `companion/core-pin.json`. Commit `companion: install herdr-core first when a release needs it`.
+- [x] `pub enum Guard { Proceed, InstallCoreFirst { herdr1: bool } }`, `pub fn guard(requires_core, core_installed, herdr1) -> Guard`, `pub const HERDR1_NOTICE`.
+- [x] `Manifest` gets `#[serde(default)] requires_core: bool` and `core: Option<CorePin>`. `UpdateCtx` gets `core: Option<CoreInstallCtx>`.
+- [x] `update.check` adds `core: { requires_core, installed, herdr1, install_first, pinned, notice? }`.
+- [x] `update.apply`: when the manifest says `requires_core`, install the core (the manifest pin, else the own pin) before the download of herdlingd. A failure gives `core_install_failed` and changes nothing else. The result adds `core` and `notice`.
+- [x] Tests: guard table; apply with `requires_core` and a failing core install keeps the old binary; a manifest without the new fields works as before.
+- [x] The workflow adds `requires_core` and `core` from `companion/core-pin.json`. Commit `companion: install herdr-core first when a release needs it`.
 
 ### Task 6: The installer script
 
 **Files:** `site/public/install.sh`, `app/src/hosts/installer.ts` (comment and the new code in `SCRIPT_CODES` with a message), its test.
 
-- [ ] Unpack before the herdr check. When `herdlingd core required` exits 0: no herdr 1 check, step `core`, `herdlingd core install`, failure → `HERDLINGD_ERROR core_install_failed`. Else the old herdr 1 check (`--with-herdr`).
-- [ ] `sh -n`; a local run with `HERDLING_RELEASE_BASE` on a loopback server with fake releases in a temp `HOME` (one release that requires the core with a fake herdlingd, one that does not).
-- [ ] Commit `site: install herdr-core in the installer when herdlingd needs it`.
+- [x] Unpack before the herdr check. When `herdlingd core required` exits 0: no herdr 1 check, step `core`, `herdlingd core install`, failure → `HERDLINGD_ERROR core_install_failed`. Else the old herdr 1 check (`--with-herdr`).
+- [x] `sh -n`; a local run with `HERDLING_RELEASE_BASE` on a loopback server with fake releases in a temp `HOME` (one release that requires the core with a fake herdlingd, one that does not).
+- [x] Commit `site: install herdr-core in the installer when herdlingd needs it`.
 
 ### Task 7: Docs, privacy check and a live read-only check
 
-- [ ] `docs/protocol.md` (`core.status`, `core.install`, new fields), `CHANGELOG.md`, `AGENTS.md` (map and section 6), site docs when the user text changes.
-- [ ] `git diff main` privacy search. Debug build; `herdlingd rpc` with `core.status` on this computer (read only).
-- [ ] Commit `docs: herdr-core install, status and update`.
+- [x] `docs/protocol.md` (`core.status`, `core.install`, new fields), `CHANGELOG.md`, `AGENTS.md` (map and section 6), site docs when the user text changes.
+- [x] `git diff main` privacy search. Debug build; `herdlingd rpc` with `core.status` on this computer (read only).
+- [x] Commit `docs: herdr-core install, status and update`.
 
 ## Follow-ups for plans E and F
 
@@ -156,3 +156,17 @@
 - E: remove the herdr 1 branch of `herdr.update`.
 - F: host screen: `core.status` (installed, running, pinned, newer than the pin), an "Install
   Herdr 2" button (`core.install`), and the `update.check.core.notice` before an update.
+
+## Open questions for the maintainer
+
+- **Trust in the upstream checksums.** herdr-core releases have no signature. herdlingd trusts the
+  SHA-256 that it pins, which the maintainer copies from the upstream manifest. The release key of
+  Herdling then signs it. Check the downloads before a pin change (Task 1 did this for 0.1.20).
+  The upstream installer also checks the Apple signature of `Herdr Core.app`; herdlingd does not
+  (the pinned SHA-256 is stronger), and `--hc-install-bundle` checks the bundle itself.
+- **Which version to pin.** 0.1.20 is the version that the spec records as checked. 0.1.21 is out.
+- **herdr 1 detection.** "herdr 1" means a `herdr` executable. If the Herdr app ever ships a
+  `herdr` command, the guard must check `herdr --version` instead.
+- **A core started over SSH on macOS.** herdlingd runs `herdr-core server start` from the SSH
+  login, as upstream `hc machine add --install` does. Upstream does not move such a core into a
+  launchd job. Check on a Mac that it keeps running after the SSH login closes.
