@@ -64,6 +64,13 @@ never the only cue. The tints are never gold and never the ember of "needs you".
 | gemini | `#7FA7F0` sky | 7.0:1 |
 | other kinds | `#A39E93` stone | 6.4:1 |
 
+**Group tiles.** `ui/GroupTile` shows a Herdr 2 group as its first letter in a muted tone on the
+tone at 18% over `card` (`colors.groupTile`, 8 tones). A hash of the group name picks the tone, so
+a group keeps its color on every screen. The group name is always next to the tile. The tones are
+never gold and never ember. Each letter is 5.1:1 or more on its tile in every theme (the theme
+test checks it). The Spaces tab draws a tab map of small pane cells: ember for needs you, the
+lantern for working, sage for done, `raisedHigh` for the rest; the row also says the count.
+
 **Status colors.** A status always shows a word + color: a small dot and the word (`ui/StatusDot`), no outlined pill. Color alone never carries the meaning. The session status row keeps its icon.
 
 | Status | Color | Icon | Label |

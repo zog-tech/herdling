@@ -47,6 +47,8 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   `display_agent` is null for a known kind.
 - A Herdr app space with no name takes the `where` name of its first terminal, else the folder
   name of that terminal, else the folder name of the space.
+- Core agents and panes of a helper terminal have the optional field `parent_id`: the pane id of
+  the parent terminal on this computer.
 - `thread.resolve` and `agents.preview` read the transcript of a core agent (`source: "log"`).
   When no transcript exists, `thread.resolve` gives `session: null`. Only `agents.preview` falls
   back to the screen.
@@ -141,17 +143,35 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased app]
 
+- One board: Herdr 2 agents are normal cards. The "Herdr 2" sections and labels are gone.
+- On a computer whose herdlingd has the Herdr 2 actions (`session.start` in `hello.methods`), a
+  Herdr 2 agent has every action again: the chat view, rename (a free task name), restart,
+  resume, "Why this status?", the close of a space, new tabs and "Notify me when it finishes".
+  An older herdlingd keeps the old rule.
+- A Herdr 2 card shows a letter tile of its group, the group and the task name, and a second line
+  with the computer, the agent, the repo and branch, and its helpers ("2 helpers · 1 working").
+  A helper is under its task, not a card of its own; a helper that needs you is a card too.
+  Rows show the age next to the status ("Working · 3m"). The Overview tab shows the count of
+  agents that need you.
+- "Jump to a terminal": a search over every agent and terminal on every computer, grouped by
+  task with the helpers under it.
+- A new Spaces tab: the spaces of each computer with a small map of their tabs and what needs
+  you. A space screen shows the panes of a tab as live thumbnails, and opens a new terminal or a
+  new agent in the space. The card menu has "Open space".
+- New session on Herdr 2: pick a space or "New space"; the agent starts with `session.start`.
+  Shells, worktrees and resumes go to the picked space too.
+- "Move to space…" moves a Herdr 2 terminal in no space to a space, a new space or a group.
+- The demo shows spaces, groups, a helper and a terminal that can move.
+
 - The host screen has a herdr card with the herdr version and **Update herdr**, when the
   computer runs a herdlingd with `herdr.update`. The confirmation tells that herdr tries to keep
   the sessions running, and that running commands and agents stop if it cannot. The result says
   "Sessions kept running" only when herdr reports a complete live handoff. Otherwise it shows the
   herdr output. A Homebrew, mise or Nix install gets a message to update herdr there.
-- Herdr 2 (herdr-core) agents and terminals show on the board. In the workspace grouping, a Herdr 2
-  workspace has its own section with a "Herdr 2" label; other groupings add "Herdr 2" to the row.
-  A Herdr 2 agent opens in the terminal view. The app hides the actions that need herdr 1 for
-  these entries: rename, restart, resume, "Why this status?", the close of a whole tab or
-  workspace, and "Notify me when it finishes". New session offers only herdr 1 workspaces. The
-  demo has two Herdr 2 agents.
+- Herdr 2 (herdr-core) agents and terminals show on the board. On a herdlingd without the Herdr 2
+  actions, a Herdr 2 agent opens in the terminal view, and the app hides rename, restart, resume,
+  "Why this status?", the close of a whole tab or workspace, and "Notify me when it finishes" for
+  these entries.
 - Saved prompts: while the prompt box is empty and has the focus, chips show your quick replies
   ("Continue", "Yes, go ahead", "Run the tests", "Explain the change", "Commit and push"). A tap
   puts the text in the box; it does not send. A long press offers "Send now". Settings, "Saved

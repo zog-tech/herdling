@@ -17,10 +17,11 @@ import Animated, {
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { scheduleOnRN } from "react-native-worklets";
 
-import { colors, denseScale, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, radius, space, state, textRole } from "@/theme/tokens";
 import { allows } from "@/herdr/backend";
 import { agentKind } from "@/herdr/names";
 import { AgentMark } from "@/ui/AgentMark";
+import { GroupTile } from "@/ui/GroupTile";
 import * as haptics from "@/ui/haptics";
 import { useElapsed } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
@@ -33,7 +34,7 @@ import { BucketStatus } from "./BucketStatus";
 import { cardActionsFor, cardLabel, runCardAction } from "./a11y";
 import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
-import { footerMeta, placeholderLine } from "./rowText";
+import { cardSubtitle, footerMeta, placeholderLine, statusWithAge, titleParts } from "./rowText";
 
 const ACTION_W = 84;
 /** Row title: room it keeps beside the status, and its Dynamic Type cap (a dense row). */
@@ -276,12 +277,17 @@ export const AgentRow = memo(function AgentRow({
   const { color } = BUCKET_META[bucket];
   const line = item.line ?? item.terminalTitle;
   const placeholder = placeholderLine(item, rowStyle);
-  const elapsed = useElapsed(item.since, cards, META_TICK_MS);
+  const elapsed = useElapsed(item.since, true, META_TICK_MS);
   const meta = cards ? footerMeta(bucket, elapsed, item.sinceKnown === true) : undefined;
+  // A row with no footer shows the age next to the status: "Working · 3m". An idle agent's own
+  // first sighting is the app launch, so its age shows only when the host gave the time.
+  const age = !cards && (bucket !== "idle" || item.sinceKnown) ? elapsed : undefined;
+  const { group, task } = titleParts(item);
+  const subtitle = cardSubtitle(item);
   const close = () => swipe.current?.close();
   const label = cardLabel(item);
-  // A Herdr 2 agent cannot restart: herdr 1 starts the new agent.
-  const canRestart = allows(item.agent, "restart");
+  // A Herdr 2 agent of an older herdlingd cannot restart.
+  const canRestart = allows(item.agent, "restart", item.hostId);
 
   return (
     <Animated.View style={[enterStyle, cards ? { marginHorizontal: CARD_MARGIN } : null]}>
@@ -393,15 +399,23 @@ export const AgentRow = memo(function AgentRow({
               <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.md, rowGap: space.xs }}>
                 {/* The agent mark, then the title: two lines before it truncates (Dynamic Type makes long names wrap). */}
                 <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, flexGrow: 1, flexShrink: 1, flexBasis: TITLE_MIN }}>
-                  <AgentMark kind={agentKind(item.agent)} size={MARK_SIZE} />
+                  {/* A Herdr 2 card shows its group tile; the agent kind is in the line under the title. */}
+                  {item.group ? <GroupTile name={item.group} size={MARK_SIZE} /> : <AgentMark kind={agentKind(item.agent)} size={MARK_SIZE} />}
                   <Text variant="headline" numberOfLines={2} maxFontSizeMultiplier={TITLE_SCALE} style={{ flexShrink: 1 }}>
-                    {item.title}
+                    {group ? (
+                      <>
+                        {group}
+                        <Text variant="headline" color={colors.textMuted} style={{ fontWeight: textRole.body.weight }}>{`  ${task}`}</Text>
+                      </>
+                    ) : (
+                      task
+                    )}
                   </Text>
                 </View>
-                <BucketStatus bucket={bucket} />
+                <BucketStatus bucket={bucket} label={statusWithAge(bucket, age)} />
               </View>
               <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-                {item.subtitle}
+                {subtitle}
               </Text>
               {line ? (
                 <Text

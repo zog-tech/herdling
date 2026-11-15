@@ -1,3 +1,5 @@
+import type { SessionStart, SessionStartParams } from "@herdling/protocol";
+
 import type { RpcClient } from "@/rpc/RpcClient";
 import { sendLine } from "@/terminal/keys";
 
@@ -15,6 +17,10 @@ export type StartOptions = {
   args?: string[];
   /** Called before each step with a short progress label. */
   onProgress?: (label: string) => void;
+  /** The host: it decides if a Herdr 2 workspace can take a new tab (`allows`). */
+  hostId?: string;
+  /** A new workspace is a new Herdr 2 space (`workspace.create {backend: "core"}`), not a herdr 1 workspace. */
+  core?: boolean;
 };
 
 /**
@@ -74,13 +80,19 @@ const herdr = <T>(rpc: Pick<RpcClient, "call">, method: string, params: object, 
  */
 async function paneFor(
   rpc: Pick<RpcClient, "call">,
-  { cwd, workspaceId, fresh, onProgress }: { cwd: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void },
+  {
+    cwd,
+    workspaceId,
+    fresh,
+    onProgress,
+    core,
+  }: { cwd: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void; core?: boolean },
 ): Promise<Created> {
   if (fresh) return { workspace: { workspace_id: fresh.workspaceId }, root_pane: { pane_id: fresh.paneId } };
-  onProgress?.(workspaceId ? "Creating tab…" : "Creating workspace…");
+  onProgress?.(workspaceId ? "Creating tab…" : core ? "Creating space…" : "Creating workspace…");
   return workspaceId
     ? await herdr<Created>(rpc, "tab.create", { workspace_id: workspaceId, cwd, focus: false })
-    : await herdr<Created>(rpc, "workspace.create", { cwd, label: basename(cwd), focus: false });
+    : await herdr<Created>(rpc, "workspace.create", { cwd, label: basename(cwd), focus: false, ...(core ? { backend: "core" } : {}) });
 }
 
 /**
@@ -90,11 +102,11 @@ async function paneFor(
  */
 export async function startSession(
   rpc: Pick<RpcClient, "call">,
-  { cwd, kind, prompt, workspaceId: asked, fresh, args, onProgress }: StartOptions,
+  { cwd, kind, prompt, workspaceId: asked, fresh, args, onProgress, hostId, core }: StartOptions,
 ): Promise<{ paneId: string; promptError?: string }> {
-  // herdr 1 cannot add a tab to a Herdr 2 workspace: the agent gets a new herdr 1 workspace.
-  const workspaceId = asked && allows(asked, "newTab") ? asked : undefined;
-  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
+  // An older herdlingd cannot add a tab to a Herdr 2 workspace: the agent gets a new workspace.
+  const workspaceId = asked && allows(asked, "newTab", hostId) ? asked : undefined;
+  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress, core });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");
 
@@ -164,11 +176,13 @@ export async function startShell(
     workspaceId: asked,
     fresh,
     onProgress,
-  }: { cwd: string; command?: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void },
+    hostId,
+    core,
+  }: { cwd: string; command?: string; workspaceId?: string; fresh?: FreshPane; onProgress?: (label: string) => void; hostId?: string; core?: boolean },
 ): Promise<{ paneId: string; commandError?: string }> {
   // The same rule as `startSession`: a Herdr 2 workspace gets no herdr 1 tab.
-  const workspaceId = asked && allows(asked, "newTab") ? asked : undefined;
-  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress });
+  const workspaceId = asked && allows(asked, "newTab", hostId) ? asked : undefined;
+  const created = await paneFor(rpc, { cwd, workspaceId, fresh, onProgress, core });
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr did not return a pane");
 
@@ -193,4 +207,33 @@ export async function workspaceExists(rpc: Pick<RpcClient, "call">, workspaceId:
   } catch {
     return false;
   }
+}
+
+/**
+ * `session.start` waits up to 60 s for the agent, and typing can wait up to 75 s for the desk to be
+ * quiet. Wait longer than herdlingd, so its error arrives first.
+ */
+export const SESSION_START_TIMEOUT_MS = 150_000;
+
+/**
+ * Starts an agent on the Herdr 2 core in one call (`session.start`, spec goal 5): a new tab in the
+ * space `workspaceId`, or a new space. herdlingd sends the first prompt when the agent is ready; a
+ * prompt that did not go in comes back as `promptError`, and the agent runs.
+ */
+export async function startOnCore(
+  rpc: Pick<RpcClient, "call">,
+  { cwd, kind, prompt, workspaceId, args, onProgress }: Pick<StartOptions, "cwd" | "kind" | "prompt" | "workspaceId" | "args" | "onProgress">,
+): Promise<{ paneId: string; promptError?: string }> {
+  onProgress?.(`Starting ${kind}…`);
+  const text = prompt?.trim();
+  const params: SessionStartParams = {
+    cwd,
+    kind,
+    ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    ...(text ? { prompt: text } : {}),
+    ...(args?.length ? { args } : {}),
+  };
+  const r = await rpc.call<SessionStart>("session.start", params, SESSION_START_TIMEOUT_MS);
+  if (!r?.pane_id) throw new Error("herdlingd did not return a pane");
+  return r.prompt_error ? { paneId: r.pane_id, promptError: r.prompt_error } : { paneId: r.pane_id };
 }

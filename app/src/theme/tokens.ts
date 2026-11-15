@@ -123,6 +123,13 @@ const nightWatch = {
     cline: "#D8C9A8",
     other: "#A39E93",
   },
+  /**
+   * The letter tiles of Herdr 2 groups (`ui/GroupTile`): one tone per group, chosen by a hash of the
+   * name. Muted tints, never gold (the primary action) and never the ember of "needs you". The
+   * letter has the tone on the tone at 18% over `card`; the group name is always next to the tile,
+   * so the tone is never the only cue. Each letter is 5.1:1 or more on its tile (all themes).
+   */
+  groupTile: ["#7FB5A8", "#8EA3D9", "#B892C9", "#A7B86F", "#D18C8C", "#6FB0C9", "#C98FA8", "#9E9BD8"],
   /** Terminal view: screen background and default text color (15.7:1). */
   terminal: {
     bg: "#070708",

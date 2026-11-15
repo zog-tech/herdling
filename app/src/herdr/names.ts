@@ -1,4 +1,3 @@
-import { backendLabel } from "./backend";
 import type { AgentInfo, Snapshot } from "./snapshot";
 
 /**
@@ -43,12 +42,12 @@ export function agentKind(agent: Pick<AgentInfo, "agent" | "display_agent">): st
   return nonEmpty(agent.display_agent) ?? agent.agent ?? "";
 }
 
-/** "<host> · <agent kind>", plus " · Herdr 2" for a Herdr 2 agent. */
+/** "<host> · <agent kind>". A Herdr 2 agent has no own mark: the board is one board. */
 export function agentSubtitle(
   hostName: string,
   agent: Pick<AgentInfo, "agent" | "display_agent"> & Partial<Pick<AgentInfo, "backend" | "pane_id">>,
 ): string {
-  return [hostName, agentKind(agent), backendLabel(agent) ?? ""].filter(Boolean).join(" · ");
+  return [hostName, agentKind(agent)].filter(Boolean).join(" · ");
 }
 
 /** The terminal title, when it adds something the title does not already say. */

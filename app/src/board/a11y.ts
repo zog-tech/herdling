@@ -2,10 +2,12 @@ import { allows } from "@/herdr/backend";
 
 import type { BoardItem } from "./buckets";
 import { pillText } from "./elapsed";
+import { cardSubtitle, titleParts } from "./rowText";
 
-/** What VoiceOver reads for a card: title, status, host · kind, the preview line, unread. */
+/** What VoiceOver reads for a card: group and title, status, host · kind (repo, helpers), the preview line, unread. */
 export function cardLabel(item: BoardItem): string {
-  const parts = [item.title, pillText(item.bucket), item.subtitle];
+  const t = titleParts(item);
+  const parts = [t.group ? `${t.group}, ${t.task}` : t.task, pillText(item.bucket), cardSubtitle(item)];
   const line = item.line ?? item.terminalTitle;
   if (line) parts.push(line);
   if (item.bucket === "ready") parts.push("unread");
@@ -23,7 +25,7 @@ export const CARD_ACTIONS = [
 
 /** The VoiceOver actions of one card: a Herdr 2 agent has no Restart. */
 export function cardActionsFor(item: BoardItem): typeof CARD_ACTIONS {
-  return allows(item.agent, "restart") ? CARD_ACTIONS : CARD_ACTIONS.filter((a) => a.name !== "restart");
+  return allows(item.agent, "restart", item.hostId) ? CARD_ACTIONS : CARD_ACTIONS.filter((a) => a.name !== "restart");
 }
 
 type Handlers = {
@@ -41,7 +43,7 @@ export function runCardAction(name: string, item: BoardItem, h: Handlers): void 
     longpress: h.onPeek,
     markRead: h.onMarkRead,
     reply: h.onReply,
-    restart: allows(item.agent, "restart") ? h.onRestart : undefined,
+    restart: allows(item.agent, "restart", item.hostId) ? h.onRestart : undefined,
   };
   map[name]?.(item);
 }
