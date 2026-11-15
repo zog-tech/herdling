@@ -4,7 +4,7 @@
 
 **Goal:** The session screen gets the patterns of a terminal remote (pages for the panes of a tab, a tab map, an in-app banner, a key bar with modifiers, a drag pad, custom keys and text macros, terminal themes), and Add computer suggests more computers from a paired one (`machines.suggest`).
 
-**Architecture:** Each rule is a pure module with tests: `herdr/tabPanes.ts`, `push/banner.ts`, `terminal/keyBar.ts`, `terminal/customKeys.ts`, `hosts/suggest.ts` in the app, and `suggest.rs` in the companion. Thin hooks and components use them. Async flows (the banner queue, the suggestion load) are reducers with effects and generation numbers. The companion method only reads: the core `machine.list`, the Host entries of `~/.ssh/config` and `tailscale status --json`.
+**Architecture:** Each rule is a pure module with tests: `herdr/tabPanes.ts`, `push/banner.ts`, `terminal/keyRules.ts`, `terminal/customKeys.ts`, `hosts/suggest.ts` in the app, and `suggest.rs` in the companion. Thin hooks and components use them. Async flows (the banner queue, the suggestion load) are reducers with effects and generation numbers. The companion method only reads: the core `machine.list`, the Host entries of `~/.ssh/config` and `tailscale status --json`.
 
 **Tech Stack:** Expo SDK 58, React 19.3, TypeScript strict, zustand persist (`secureJSONStorage`), react-native-gesture-handler and reanimated (already in the build). Rust (tokio, serde_json) for `herdlingd`.
 

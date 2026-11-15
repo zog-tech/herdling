@@ -252,7 +252,7 @@ test("Remove in the chip menu removes the command", async () => {
 
 /** Gives the terminal scroll view a size: a view of 600 pt and content of `contentHeight` pt. */
 async function measure(contentHeight: number) {
-  const view = tree!.root.find((n) => !!n.props.onContentSizeChange && !!n.props.onLayout);
+  const view = tree!.root.find((n) => !!n.props.onContentSizeChange && !!n.props.onLayout && !n.props.horizontal);
   await act(async () => view.props.onLayout({ nativeEvent: { layout: { width: 360, height: 600 } } }));
   await act(async () => view.props.onContentSizeChange(360, contentHeight));
   await flush();
@@ -305,4 +305,56 @@ test("no_page_buttons_without_controls", async () => {
   await mount(false);
   await measure(100);
   expect(pageButtons()).toHaveLength(0);
+});
+
+test("ctrl_then_a_bar_key_sends_the_combo_once", async () => {
+  await mount();
+  await act(async () => pressable("Control").props.onPress());
+  await act(async () => pressable("Left arrow").props.onPress());
+  await flush();
+  await act(async () => pressable("Left arrow").props.onPress());
+  await flush();
+  expect(sends().map((c) => c.params.keys)).toEqual([["ctrl+left"], ["left"]]);
+});
+
+test("ctrl_then_a_typed_letter_sends_ctrl_and_leaves_the_box_empty", async () => {
+  await mount();
+  await act(async () => pressable("Control").props.onPress());
+  await act(async () => input().props.onChangeText("D"));
+  await flush();
+  expect(sends()).toEqual([{ method: "pane.send_input", params: { pane_id: "w1:p1", keys: ["ctrl+d"] } }]);
+  expect(input().props.value).toBe("");
+  // Ctrl is off again: the next letter goes in the box.
+  await act(async () => input().props.onChangeText("x"));
+  expect(input().props.value).toBe("x");
+});
+
+test("alt_then_a_typed_letter_sends_escape_first", async () => {
+  await mount();
+  await act(async () => pressable("Alt").props.onPress());
+  await act(async () => input().props.onChangeText("b"));
+  await flush();
+  expect(sends()).toEqual([{ method: "pane.send_input", params: { pane_id: "w1:p1", text: "\x1bb" } }]);
+});
+
+test("a_text_macro_types_its_text_and_enter", async () => {
+  await mount();
+  await act(async () => pressable("Type yes and press Enter").props.onPress());
+  await flush();
+  expect(sends()).toEqual([{ method: "pane.send_input", params: { pane_id: "w1:p1", text: "yes", keys: ["enter"] } }]);
+});
+
+test("shift_tab_falls_back_to_text_when_herdr_refuses_the_name", async () => {
+  let n = 0;
+  mockSend = async (p) => {
+    if (p.params.keys?.[0] === "shift+tab" && n++ === 0) throw err("bad_request");
+    return { type: "ok" };
+  };
+  await mount();
+  await act(async () => pressable("Shift Tab").props.onPress());
+  await flush();
+  expect(sends().map((c) => c.params)).toEqual([
+    { pane_id: "w1:p1", keys: ["shift+tab"] },
+    { pane_id: "w1:p1", text: "\x1b[Z" },
+  ]);
 });

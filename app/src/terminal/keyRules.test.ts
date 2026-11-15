@@ -1,4 +1,4 @@
-import { encode, modReducer, NO_MOD, padStep, pageCount, pageOf, PAD_STEP, type ModState } from "./keyBar";
+import { encode, modReducer, NO_MOD, padStep, pageCount, pageOf, PAD_STEP, type ModState } from "./keyRules";
 
 const ctrl: ModState = { mod: "ctrl", locked: false };
 const alt: ModState = { mod: "alt", locked: false };

@@ -8,7 +8,7 @@ import {
   WrapText,
   MoveHorizontal,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentRef } from "react";
 import {
   Keyboard,
   Platform,
@@ -42,12 +42,13 @@ import {
   widestCols,
   type WidthMode,
 } from "@/terminal/fit";
-import { KeyRow } from "@/terminal/KeyRow";
+import { KeyBar } from "@/terminal/KeyBar";
+import { encode, modReducer, NO_MOD, type BarInput } from "@/terminal/keyRules";
 import { forgetCommand, rememberCommand, useHostCommands } from "@/terminal/recentCommands";
 import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
 import { useTerminalWidth } from "@/terminal/widthMode";
-import { sendInput, sendInputWorks } from "@/terminal/keys";
+import { sendInputWithFallback, sendInputWorks } from "@/terminal/keys";
 import { fullScreenApp, overflows, PAGE_TEXT, paneScroll, type PageDirection } from "@/terminal/pageScroll";
 import { LatencyBadge, useSrtt } from "@/terminal/latency";
 import {
@@ -135,6 +136,8 @@ export function TerminalView({
   active?: boolean;
 }) {
   const focused = useIsFocused() && active;
+  // Plan D adds the phone's column count to these options (and to `pane.watch`), so a Herdr 2
+  // pane can be laid out at the width of this view.
   const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
     format: "ansi",
   });
@@ -195,7 +198,7 @@ export function TerminalView({
   const queue = useMemo(
     () =>
       rpc
-        ? new SendQueue((op) => sendInput(rpc, paneId, op), {
+        ? new SendQueue((op) => sendInputWithFallback(rpc, paneId, op), {
             pipeline: () => ordered && sendInputWorks(rpc),
             onError: (e) => setSendError(message(e)),
           })
@@ -500,6 +503,10 @@ function TerminalControls({
   const commands = useHostCommands(hostId);
   const keyboard = useKeyboardShown();
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  // Ctrl and Alt of the key bar: one-shot, for the next key from the bar or the keyboard.
+  const [mods, modEvent] = useReducer(modReducer, NO_MOD);
+  const modsRef = useRef(mods);
+  modsRef.current = mods;
 
   const key = (k: string) => {
     if (!queue || !typist || !online) return;
@@ -507,6 +514,21 @@ function TerminalControls({
     setPredict(endEpoch);
     const sent = direct ? typist.key(k) : queue.push({ keys: [k] });
     sent.then(onSent, () => {});
+  };
+
+  /** A key of the bar, or a typed character while a modifier is on: encoded with the modifier. */
+  const barInput = (input: BarInput) => {
+    if (!queue || !online) return;
+    const { op, state } = encode(modsRef.current, input);
+    if (state !== modsRef.current) {
+      modsRef.current = state;
+      modEvent({ type: "used" });
+    }
+    setError(undefined);
+    setPredict(endEpoch);
+    // The waiting typed text goes first, then this item as its own call.
+    typist?.flush();
+    queue.push(op).then(onSent, () => {});
   };
 
   const send = () => {
@@ -563,8 +585,22 @@ function TerminalControls({
     let same = 0;
     while (same < buf.length && same < t.length && buf[same] === t[same]) same++;
     const removed = Array.from(buf.slice(same)).length;
-    const added = t.slice(same).replace(/\u200B/g, "");
+    let added = t.slice(same).replace(/\u200B/g, "");
     if (removed > 0 || added) setError(undefined);
+    // A modifier is on: the first typed character goes with it.
+    if (added && modsRef.current.mod !== null) {
+      const [ch, ...rest] = Array.from(added);
+      for (let i = 0; i < removed; i++) void typist.key("backspace");
+      barInput({ kind: "char", ch });
+      added = rest.join("");
+      if (added) {
+        typist.type(added);
+        const now = Date.now();
+        setPredict((p) => onType(p, added, now));
+      }
+      setBuf(resetBuf);
+      return;
+    }
     for (let i = 0; i < removed; i++) {
       void typist.key("backspace");
       setPredict(onBackspace);
@@ -605,7 +641,7 @@ function TerminalControls({
           onRemove={(cmd) => forgetCommand(hostId, cmd)}
         />
       ) : null}
-      <KeyRow onKey={key} disabled={!online} />
+      <KeyBar mods={mods} disabled={!online} onMod={modEvent} onInput={barInput} />
       {error ? (
         <Text
           variant="small"
@@ -651,6 +687,11 @@ function TerminalControls({
           value={direct ? buf : line}
           onChangeText={(t) => {
             if (direct) return typeDirect(t);
+            // A modifier is on and one character came at the end: it goes to the pane with the modifier.
+            if (modsRef.current.mod !== null && t.length === line.length + 1 && t.startsWith(line)) {
+              barInput({ kind: "char", ch: t.slice(-1) });
+              return;
+            }
             setLine(t);
             if (error) setError(undefined);
           }}

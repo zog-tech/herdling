@@ -1,4 +1,4 @@
-import { KEYS, keyFallbackText, sendInput, sendInputWithFallback, sendInputWorks, sendKey, sendLine } from "./keys";
+import { keyFallbackText, sendInput, sendInputWithFallback, sendInputWorks, sendKey, sendLine } from "./keys";
 
 const err = (code: string) => Object.assign(new Error(code), { code });
 
@@ -17,10 +17,6 @@ const fakeRpc = (fail?: (method: string) => Error | undefined) => {
     },
   };
 };
-
-test("key_row_has_herdr_names", () => {
-  expect(KEYS.map((k) => k.key)).toEqual(["esc", "tab", "ctrl+c", "up", "down", "left", "right", "enter"]);
-});
 
 test("a_key_is_one_send_input", async () => {
   const { calls, rpc } = fakeRpc();

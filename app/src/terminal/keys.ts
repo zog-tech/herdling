@@ -6,18 +6,6 @@ import type { SendOp } from "./sendQueue";
 
 type Rpc = Pick<RpcClient, "call">;
 
-/** Key row buttons, left to right, with herdr `pane.send_keys` key names. */
-export const KEYS: readonly { label: string; key: string }[] = [
-  { label: "Esc", key: "esc" },
-  { label: "Tab", key: "tab" },
-  { label: "Ctrl-C", key: "ctrl+c" },
-  { label: "Up", key: "up" },
-  { label: "Down", key: "down" },
-  { label: "Left", key: "left" },
-  { label: "Right", key: "right" },
-  { label: "Enter", key: "enter" },
-];
-
 /** Connections whose herdr has no `pane.send_input` (an older herdr). */
 const noSendInput = new WeakSet<object>();
 /** Connections where `pane.send_input` worked at least once. */
