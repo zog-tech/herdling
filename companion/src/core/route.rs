@@ -55,7 +55,8 @@ fn unsupported(m: impl Into<String>) -> Unsupported {
     Unsupported(m.into())
 }
 
-/// The core keys that type `text` exactly, when every character has a key. The page sequences
+/// The core keys that type `text` exactly, when every character has a key. Only a core without
+/// `terminal.attach` types text this way; else the text goes in as raw bytes (`core::typing`). The page sequences
 /// of the app (`\x1b[5~`, `\x1b[6~`) are the page keys.
 pub fn text_keys(text: &str) -> Option<Vec<String>> {
     match text {
