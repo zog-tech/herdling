@@ -167,7 +167,7 @@ async fn suggest_reads_the_given_config_and_tailscale() {
     let out = json!({"Peer": {"k": {"HostName": "lab", "DNSName": "lab.example.ts.net.", "Online": true}}});
     std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1 $2\" = \"status --json\" ] || exit 2\ncat <<'X'\n{out}\nX\n")).unwrap();
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut ctx = Ctx::new(home.join("none.sock"), home.to_path_buf());
+    let mut ctx = Ctx::new(home.to_path_buf());
     ctx.tailscale = Some(bin);
     let r = call(ctx).await;
     assert_eq!(suggestion_names(&r), ["studio", "lab"]);
@@ -179,7 +179,7 @@ async fn suggest_reads_the_given_config_and_tailscale() {
 #[tokio::test]
 async fn suggest_without_sources_is_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().to_path_buf());
+    let mut ctx = Ctx::new(dir.path().to_path_buf());
     // A tailscale that fails gives no peers and no error.
     ctx.tailscale = Some(dir.path().join("missing-tailscale"));
     let r = call(ctx).await;
@@ -197,7 +197,7 @@ async fn suggest_adds_core_machines() {
             ..Default::default()
         },
     );
-    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().to_path_buf());
+    let mut ctx = Ctx::new(dir.path().to_path_buf());
     ctx.core_socket = Some(CoreSocket::fixed(&sock));
     let r = call(ctx).await;
     assert_eq!(suggestion_names(&r), ["box"]);
