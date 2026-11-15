@@ -211,3 +211,42 @@ pub fn merge(lists: Vec<Vec<Suggestion>>, own_names: &[String]) -> Vec<Suggestio
     }
     out
 }
+
+/// The places where `tailscale` can be: each folder of `PATH`, the usual install folders, then
+/// the macOS app. The first file that exists wins.
+pub fn find_tailscale(path_var: Option<&str>) -> Option<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = path_var.unwrap_or("").split(':').filter(|d| !d.is_empty()).map(Into::into).collect();
+    dirs.extend(["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"].map(std::path::PathBuf::from));
+    dirs.iter()
+        .map(|d| d.join("tailscale"))
+        .chain(std::iter::once("/Applications/Tailscale.app/Contents/MacOS/Tailscale".into()))
+        .find(|p| p.is_file())
+}
+
+/// The longest wait for `tailscale status --json`.
+pub const TAILSCALE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The peers from `<bin> status --json`. A missing program, a failure, a time-out or bad JSON
+/// gives no peers.
+pub async fn read_tailscale(bin: &std::path::Path, timeout: std::time::Duration) -> Vec<Suggestion> {
+    let run = tokio::process::Command::new(bin)
+        .args(["status", "--json"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(timeout, run).await {
+        Ok(Ok(out)) if out.status.success() => serde_json::from_slice(&out.stdout).map(|v| from_tailscale(&v)).unwrap_or_default(),
+        _ => vec![],
+    }
+}
+
+/// The Host entries of the SSH config at `path`. A missing or too large file gives none.
+pub fn read_ssh_config(path: &std::path::Path) -> Vec<Suggestion> {
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_file() && m.len() <= MAX_SSH_CONFIG => {
+            std::fs::read_to_string(path).map(|t| from_ssh_config(&t)).unwrap_or_default()
+        }
+        _ => vec![],
+    }
+}

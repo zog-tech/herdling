@@ -10,6 +10,7 @@ import type {
   GitDiff,
   GitStatus,
   GroupsList,
+  MachinesSuggest,
   GitWorktree,
   Hello,
   MacOpenSettings,
@@ -287,6 +288,10 @@ describe("DemoTransport", () => {
     answered.add("pane.move");
     expect(await callError("session.start", { cwd: "/home/demo", kind: "claude" })).toMatchObject({ code: "unsupported" });
     answered.add("session.start");
+
+    // Suggested computers: names and addresses only.
+    const suggested = await call<MachinesSuggest>("machines.suggest").then(ok("machines.suggest"));
+    expect(suggested.suggestions.map((x) => x.name)).toEqual(["lab", "build-box"]);
 
     expect([...answered].sort()).toEqual([...DEMO_METHODS].sort());
   });

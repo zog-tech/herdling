@@ -12,6 +12,7 @@ import type {
   Hello,
   HerdrUpdate,
   MacOpenSettings,
+  MachinesSuggest,
   MacSettingsPane,
   PaneAnswer,
   PortsList,
@@ -389,6 +390,14 @@ export class DemoTransport implements LineTransport {
           }));
         return { groups } satisfies GroupsList;
       }
+      // Two made-up computers, so the demo shows "Suggested" in Add computer.
+      case "machines.suggest":
+        return {
+          suggestions: [
+            { name: "lab", address: "lab.example.ts.net", sources: ["tailscale"], online: true },
+            { name: "build-box", address: "192.0.2.20", user: "demo", sources: ["ssh_config"] },
+          ],
+        } satisfies MachinesSuggest;
       case "pane.move":
         need(p, "pane_id", method);
         throw new DemoError("unsupported", "this terminal is in a Herdr app space; move it in the Herdr app");

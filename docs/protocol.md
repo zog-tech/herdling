@@ -545,6 +545,24 @@ herdlingd reads the Claude log (the last 8 MiB on the first read, then only new 
 - A task ends when it is older than 12 hours, or when it started before the Claude process of the
   pane (the agent started again). A new log (for example after `/clear`) starts with no tasks.
 
+## Suggested computers: `machines.suggest`
+
+Params: none. Result: `{suggestions: [{name, address, user?, port?, sources, online?}]}`. Read
+only. The app shows the list in Add computer, so the user can add more computers after the first.
+herdlingd reads three sources; a source that is missing or fails gives no entries:
+
+- `core`: the herdr-core `machine.list`. The `target` `[user@]host[:port]` gives the address,
+  user and port. A `via` target is a command, so only the machine's host name is used.
+  `online` is true when the machine is `connected`.
+- `ssh_config`: the `Host` entries of `~/.ssh/config` (at most 256 KiB). Patterns (`*`, `?`,
+  `!`), `Match` blocks and `Include` are skipped. Entries with `ProxyJump` or `ProxyCommand` are
+  skipped: the phone cannot use them. Only `HostName`, `User` and `Port` are read.
+- `tailscale`: the peers of `tailscale status --json` (3 seconds at most). The address is the
+  MagicDNS name, else the first IPv4 address. `online` is the peer's state.
+
+The same address (any case) is one entry with joined `sources`. The computer itself is left out.
+The result never holds keys, key paths or other values of the SSH config.
+
 ## Pairing: `POST /pair` and pairing v2
 
 `herdlingd serve` has a small HTTP endpoint on the pairing port (default 7790) for the first

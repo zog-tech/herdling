@@ -37,12 +37,14 @@ pub struct State {
     /// A `terminal.send` to a terminal with no status gives it an idle agent status, as if the
     /// typed command started an agent.
     pub send_starts_agent: bool,
+    /// The `machines` of `machine.list`.
+    pub machines: Vec<Value>,
 }
 
 /// The methods that the fake answers.
 pub const METHODS: &[&str] = &[
     "hello", "terminal.list", "terminal.get", "terminal.read", "terminal.send", "terminal.keys", "terminal.kill",
-    "terminal.run", "terminal.label", "doc.get", "events.subscribe",
+    "terminal.run", "terminal.label", "doc.get", "events.subscribe", "machine.list",
 ];
 
 pub struct FakeCore {
@@ -126,6 +128,7 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
         }
         "terminal.list" => Ok(json!({"terminals": st.terminals, "hidden_finished": 0, "machines": []})),
         "terminal.get" => find(),
+        "machine.list" => Ok(json!({"machines": st.machines})),
         "terminal.read" => find().map(|_| json!({"text": st.screen, "complete": true, "how": "screen"})),
         "terminal.send" | "terminal.keys" => {
             let t = find()?;

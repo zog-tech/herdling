@@ -276,6 +276,7 @@ async fn main() -> Result<()> {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }
             ctx.sys = Some(std::sync::Arc::new(herdlingd::boot::SystemRunner));
+            ctx.tailscale = herdlingd::suggest::find_tailscale(std::env::var("PATH").ok().as_deref());
             let result = rpc::run(BufReader::new(tokio::io::stdin()), tokio::io::stdout(), ctx).await;
             // Exit at once: tokio reads stdin on a blocking thread that cannot be
             // cancelled, so a normal runtime shutdown would wait for the next input line.

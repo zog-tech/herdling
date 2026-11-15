@@ -129,3 +129,78 @@ fn merge_joins_sources_and_drops_self() {
     assert_eq!(list[0].user.as_deref(), Some("sam"));
     assert_eq!(list[0].online, Some(true));
 }
+
+// --- The method in a `herdlingd rpc` session. ---
+
+#[path = "support/fake_core.rs"]
+mod fake_core;
+
+use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
+
+use herdlingd::core::endpoint::CoreSocket;
+use herdlingd::rpc::{self, Ctx};
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+async fn call(ctx: Ctx) -> Value {
+    let (mut tx, server_in) = tokio::io::duplex(65536);
+    let (server_out, client_rx) = tokio::io::duplex(1 << 20);
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
+    let mut rx = BufReader::new(client_rx).lines();
+    tx.write_all(format!("{}\n", json!({"id": 1, "method": "machines.suggest"})).as_bytes()).await.unwrap();
+    let line = tokio::time::timeout(Duration::from_secs(10), rx.next_line()).await.unwrap().unwrap().unwrap();
+    serde_json::from_str(&line).unwrap()
+}
+
+fn suggestion_names(r: &Value) -> Vec<String> {
+    r["result"]["suggestions"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap().to_string()).collect()
+}
+
+#[tokio::test]
+async fn suggest_reads_the_given_config_and_tailscale() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    std::fs::create_dir_all(home.join(".ssh")).unwrap();
+    std::fs::write(home.join(".ssh/config"), "Host studio\n  HostName studio.local\n  User sam\n  IdentityFile ~/.ssh/id_x\n").unwrap();
+    let bin = home.join("tailscale");
+    let out = json!({"Peer": {"k": {"HostName": "lab", "DNSName": "lab.example.ts.net.", "Online": true}}});
+    std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1 $2\" = \"status --json\" ] || exit 2\ncat <<'X'\n{out}\nX\n")).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut ctx = Ctx::new(home.join("none.sock"), home.to_path_buf());
+    ctx.tailscale = Some(bin);
+    let r = call(ctx).await;
+    assert_eq!(suggestion_names(&r), ["studio", "lab"]);
+    assert_eq!(r["result"]["suggestions"][0]["sources"], json!(["ssh_config"]));
+    assert_eq!(r["result"]["suggestions"][1]["sources"], json!(["tailscale"]));
+    assert!(!r.to_string().contains("id_x"));
+}
+
+#[tokio::test]
+async fn suggest_without_sources_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().to_path_buf());
+    // A tailscale that fails gives no peers and no error.
+    ctx.tailscale = Some(dir.path().join("missing-tailscale"));
+    let r = call(ctx).await;
+    assert_eq!(r["result"]["suggestions"], json!([]));
+}
+
+#[tokio::test]
+async fn suggest_adds_core_machines() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("core.sock");
+    let _core = fake_core::spawn(
+        &sock,
+        fake_core::State {
+            machines: vec![json!({"name": "box", "target": "sam@box.example", "id": "c9", "host": "box", "version": "0.1.19", "state": "connected"})],
+            ..Default::default()
+        },
+    );
+    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().to_path_buf());
+    ctx.core_socket = Some(CoreSocket::fixed(&sock));
+    let r = call(ctx).await;
+    assert_eq!(suggestion_names(&r), ["box"]);
+    assert_eq!(r["result"]["suggestions"][0]["user"], "sam");
+    assert_eq!(r["result"]["suggestions"][0]["online"], true);
+}
