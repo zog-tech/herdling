@@ -16,7 +16,7 @@
 - A parallel agent (plan F2) changes `app/src/thread/`, `app/src/terminal/`, `app/src/hosts/`, themes and adds one companion method (`machines.suggest`). Keep `rpc.rs` `METHODS`/`dispatch` edits to removals and small changes. App edits only in `app/src/board/`, `app/src/newSession/`, `app/src/herdr/`.
 - Anti-goals (a failure even when tests pass): an old app loses Herdr 2 agents or gets broken titles; an old app's herdr 1 call crashes or hangs (it gets an answer or a clear `unsupported`); a herdr 1 user silently loses the app.
 - No test touches the live core. Fakes in `companion/tests/support/`. Delete a herdr 1 test only when its feature is gone; port a test that still describes a behaviour.
-- `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target`, `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate. App: `pnpm exec tsc --noEmit`, `nice -n 15 pnpm test --maxWorkers=2`.
+- A `CARGO_TARGET_DIR` on the build volume, `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate. App: `pnpm exec tsc --noEmit`, `nice -n 15 pnpm test --maxWorkers=2`.
 - Test data `sam`, `/home/sam/proj`, `studio.local`. ASD-STE100 in comments, docs and UI text.
 - The installer's `--quiet` lines and the release asset names do not change.
 
@@ -146,3 +146,36 @@ Rows and tests:
 ## Release order (for the maintainer)
 
 Computers on 0.1.x run the core-install guard of plan B only when their herdlingd has it. So a 0.1.10 from `main` with the guard ships first, then 0.2.0. The maintainer decides. The 0.1.10 cherry-pick list from `herdr2-only` is in "Follow-ups" below (checked with `git merge-tree`).
+
+## Follow-ups
+
+### 0.1.10 cherry-pick list (from `herdr2-only`, onto `main`)
+
+Plan B (the herdr-core install, `core.status`, `core.install`, and the install-first step of
+`update.apply` for a release with `requires_core`). A 0.1.x computer needs it before it updates to
+0.2.0: without it, `herdlingd update` replaces the binary and no core is installed.
+
+In this order (each applies with no conflict on `main` at 8193c81, and `cargo test` passes after the seven: 680 passed, 0 failed; checked in a scratch worktree):
+
+1. `db4226d` docs: plan B for the herdr-core install and update
+2. `58b6a01` companion: install, update and status of herdr-core
+3. `084499d` companion: core.status and core.install methods
+4. `f665232` companion: install herdr-core first when a release needs it
+5. `8cb0e7a` site: install herdr-core in the installer when herdlingd needs it
+6. `2c70ad2` docs: herdr-core install, status and update
+7. `583a09e` docs: mark plan B done and list its open questions
+
+Then bump `companion/Cargo.toml` to 0.1.10 with a CHANGELOG entry. Keep `core-pin.json`
+`"required": false` in 0.1.10, so 0.1.10 still works with herdr 1. Plans C, D and F2 are not
+needed for the guard. The 0.2.0 manifest must say `requires_core: true`.
+
+### Open points
+
+- The site (`site/public/`) now describes 0.2.0. Deploy it only with the 0.2.0 release.
+- The app demo host (`app/src/demo/`) still uses `hc:` ids, as a 0.1.x host does. The demo works;
+  a 0.2.0 demo is a later change.
+- The app's password setup still offers "Install herdr and herdlingd" (herdr 1) when herdr is
+  missing. On 0.2.0 the installer installs the core, so the herdr 1 offer is not needed. Change
+  it in the app (a JS change) after 0.2.0 ships.
+- `hello` of 0.2.0 reports the core version as `herdr_version`. An old app shows it as the herdr
+  version (for example "0.1.20").

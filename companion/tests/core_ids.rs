@@ -66,8 +66,8 @@ fn address_rejects_ids_of_other_kinds_and_machines() {
     assert_eq!(ids::address("hc:"), None);
     assert_eq!(ids::address("space:sp1"), None);
     assert_eq!(ids::address("task:t1"), None);
-    assert_eq!(ids::address("mini/t1"), None);
+    assert_eq!(ids::address("box/t1"), None);
     assert_eq!(ids::workspace("space:a:b"), None);
     assert_eq!(ids::workspace("space:"), None);
-    assert_eq!(ids::tab("task:mini/t1"), None);
+    assert_eq!(ids::tab("task:box/t1"), None);
 }
