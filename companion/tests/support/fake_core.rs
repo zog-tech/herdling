@@ -32,7 +32,15 @@ pub struct State {
     pub generation: u64,
     /// `data.kind` and message of an error per method.
     pub errors: HashMap<String, (String, String)>,
+    /// `hello.methods`. None: every method that the fake answers.
+    pub methods: Option<Vec<String>>,
 }
+
+/// The methods that the fake answers.
+pub const METHODS: &[&str] = &[
+    "hello", "terminal.list", "terminal.get", "terminal.read", "terminal.send", "terminal.keys", "terminal.kill",
+    "terminal.run", "terminal.label", "doc.get", "events.subscribe",
+];
 
 pub struct FakeCore {
     pub state: Arc<Mutex<State>>,
@@ -95,7 +103,7 @@ fn reply(id: &Value, r: Result<Value, (String, String)>) -> Value {
     }
 }
 
-fn answer(st: &State, method: &str, params: &Value) -> Result<Value, (String, String)> {
+fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String, String)> {
     if let Some(e) = st.errors.get(method) {
         return Err(e.clone());
     }
@@ -108,13 +116,46 @@ fn answer(st: &State, method: &str, params: &Value) -> Result<Value, (String, St
             .ok_or_else(|| ("not_found".to_string(), format!("no terminal {a}")))
     };
     match method {
-        "hello" => Ok(json!({"generation": st.generation, "version": "0.1.19", "core": {"id": "c1", "name": "studio"},
-                             "framed": false, "methods": [], "features": []})),
+        "hello" => {
+            let methods = st.methods.clone().unwrap_or_else(|| METHODS.iter().map(|m| m.to_string()).collect());
+            Ok(json!({"generation": st.generation, "version": "0.1.19", "core": {"id": "c1", "name": "studio"},
+                      "framed": false, "methods": methods, "features": []}))
+        }
         "terminal.list" => Ok(json!({"terminals": st.terminals, "hidden_finished": 0, "machines": []})),
         "terminal.get" => find(),
         "terminal.read" => find().map(|_| json!({"text": st.screen, "complete": true, "how": "screen"})),
         "terminal.send" | "terminal.keys" => find().map(|_| json!({"turn": 3, "status": "idle"})),
-        "terminal.kill" => find(),
+        "terminal.kill" => {
+            let t = find()?;
+            let a = t["address"].clone();
+            let rec = st.terminals.iter_mut().find(|t| t["address"] == a).unwrap();
+            rec["state"] = json!("finished");
+            Ok(rec.clone())
+        }
+        "terminal.run" => {
+            let address = format!("t{}", st.terminals.len() + 1);
+            let t = json!({
+                "address": address, "name": null, "argv": params["argv"], "cwd": params["cwd"], "state": "live",
+                "labels": params.get("labels").cloned().unwrap_or(json!({})), "pid": 500,
+                "foreground": {"pid": 500, "name": "zsh", "argv": ["zsh"], "cwd": params["cwd"]},
+                "status": null, "title": "zsh", "keep": params["keep"],
+            });
+            st.terminals.push(t.clone());
+            Ok(t)
+        }
+        "terminal.label" => {
+            let t = find()?;
+            let a = t["address"].clone();
+            let rec = st.terminals.iter_mut().find(|t| t["address"] == a).unwrap();
+            for (k, v) in params["labels"].as_object().cloned().unwrap_or_default() {
+                if v == "" {
+                    rec["labels"].as_object_mut().unwrap().remove(&k);
+                } else {
+                    rec["labels"][k] = v;
+                }
+            }
+            Ok(rec.clone())
+        }
         "doc.get" => Ok(json!({"value": st.doc, "version": 1})),
         "events.subscribe" => Ok(json!({"seq": 0, "terminals": st.terminals})),
         _ => Err(("unknown_method".into(), method.into())),
@@ -146,7 +187,7 @@ pub fn spawn(path: &Path, state: State) -> FakeCore {
                     // Subscribe to the control bus before the reply, so no notification is lost.
                     let mut bus = (method == "events.subscribe").then(|| tx.subscribe());
                     cl.lock().unwrap().push((method.clone(), params.clone()));
-                    let resp = { answer(&st.lock().unwrap(), &method, &params) };
+                    let resp = { answer(&mut st.lock().unwrap(), &method, &params) };
                     let _ = w.write_all(format!("{}\n", reply(&req["id"], resp)).as_bytes()).await;
                     if let Some(bus) = bus.as_mut() {
                         while let Ok(c) = bus.recv().await {

@@ -195,7 +195,7 @@ async fn methods_with_no_core_equivalent_are_unsupported() {
     for (i, (m, p)) in [
         ("pane.rename", json!({"pane_id": "hc:t1", "label": "x"})),
         ("agent.start", json!({"workspace_id": "hc:g:src", "agent": "claude"})),
-        ("tab.create", json!({"workspace_id": "hc:space:s1"})),
+        ("workspace.rename", json!({"workspace_id": "hc:space:s1", "label": "x"})),
         ("pane.send_text", json!({"pane_id": "hc:t1", "text": "€"})),
     ]
     .into_iter()

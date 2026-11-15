@@ -609,6 +609,16 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     if method == "session.snapshot" {
         return session_snapshot(ctx, p).await;
     }
+    // A new space on the core, only when the app asks for it. Plan E makes the core the default.
+    if method == "workspace.create" && p.get("backend").and_then(Value::as_str) == Some(crate::core::project::BACKEND) {
+        let sock = core_sock(ctx)?;
+        let cwd = p.get("cwd").and_then(Value::as_str).map(String::from);
+        let action = crate::core::route::Action::Run { kind: "workspace_created", workspace: None, cwd };
+        return crate::core::live::run(sock, ctx.herdr_timeout, action).await;
+    }
+    if method == "workspace.list" {
+        return workspace_list(ctx, p).await;
+    }
     let mut c = herdr::Client::connect(&ctx.herdr_socket, timeout).await.map_err(herdr_err)?;
     c.call(&method, p).await.map_err(herdr_err)
 }
@@ -622,6 +632,22 @@ async fn session_snapshot(ctx: &Ctx, p: Value) -> Result<Value, RpcError> {
     };
     let (herdr, core) = tokio::join!(herdr, core_projection(ctx));
     crate::core::project::merge_snapshots(herdr, core).map_err(herdr_err)
+}
+
+/// `workspace.list` of herdr 1 with the core workspaces added. Each backend fails on its own.
+async fn workspace_list(ctx: &Ctx, p: Value) -> Result<Value, RpcError> {
+    let (herdr, core) = tokio::join!(herdr_once(ctx, "workspace.list", p), core_projection(ctx));
+    match (herdr, core) {
+        (Ok(h), None) => Ok(h),
+        (Ok(h), Some(c)) => Ok(crate::core::actions::merge_workspace_list(Some(h), &c)),
+        (Err(_), Some(c)) => Ok(crate::core::actions::merge_workspace_list(None, &c)),
+        (Err(e), None) => Err(herdr_err(e)),
+    }
+}
+
+/// The core socket, or `unsupported` when this herdlingd does not reach a core.
+fn core_sock(ctx: &Ctx) -> Result<&crate::core::endpoint::CoreSocket, RpcError> {
+    ctx.core_socket.as_ref().ok_or_else(|| err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"))
 }
 
 /// The core entries, when a core answers.

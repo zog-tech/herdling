@@ -298,3 +298,16 @@ pub fn groups(p: &Projection) -> Value {
         .collect();
     json!({ "groups": list })
 }
+
+/// Adds the core workspaces to a herdr 1 `workspace.list` answer. With no herdr 1 answer, the
+/// core workspaces alone.
+pub fn merge_workspace_list(herdr: Option<Value>, p: &Projection) -> Value {
+    let mut out = herdr.unwrap_or_else(|| json!({ "type": "workspace_list", "workspaces": [] }));
+    if let Some(m) = out.as_object_mut() {
+        let list = m.entry("workspaces").or_insert_with(|| json!([]));
+        if let Some(a) = list.as_array_mut() {
+            a.extend(p.workspaces.iter().cloned());
+        }
+    }
+    out
+}

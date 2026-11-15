@@ -1,10 +1,12 @@
 //! `herdr.call` on a core id: which herdr-core method answers a herdr 1 method, and how the
-//! answer gets the herdr 1 shape. Pure; `core::live` does the calls.
+//! answer gets the herdr 1 shape. [`plan`] gives the single-call rows; [`action`] gives every
+//! row, also the ones with more steps. Pure; `core::live` does the calls.
 //!
 //! Methods with no core equivalent give the error code [`UNSUPPORTED`].
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
+use super::actions::{agent_line, rename_labels, ActionError, Scope};
 use super::project::{self, address};
 
 /// The error code of a herdr method that a core entry cannot do.
@@ -172,4 +174,70 @@ pub fn shape(shape: &Shape, result: Value) -> Value {
         Shape::ProcessInfo => project::process_info(&result),
         Shape::Plain => result,
     }
+}
+
+/// What a herdr 1 call on a core id does. [`Action::Call`] is one core call; the other actions
+/// need more than one call or a projection (`core::live::run`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// One core call, see [`plan`].
+    Call(Plan),
+    /// `tab.create` (and `workspace.create` for the core): a new shell in a new tab of
+    /// `workspace` (None: a new space). `kind` is the herdr 1 answer type.
+    Run { kind: &'static str, workspace: Option<String>, cwd: Option<String> },
+    /// `agent.start`: type the agent command `line` into the shell of `addr`.
+    Start { addr: String, line: String },
+    /// `agent.prompt`: send `text` once the terminal reports an agent status.
+    Prompt { addr: String, text: String },
+    /// `agent.rename` and the rename of a task tab: set these labels.
+    Label { addr: String, labels: Map<String, Value> },
+    /// `tab.close`, `workspace.close`: kill every terminal of the scope.
+    Kill(Scope),
+    /// `agent.explain`.
+    Explain { addr: String },
+    /// `workspace.get` of a core workspace.
+    WorkspaceGet(String),
+}
+
+/// The action of the herdr 1 call `method` on the core id `id`.
+pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionError> {
+    let s = |k: &str| params.get(k).and_then(Value::as_str);
+    let pane = || {
+        address(id)
+            .map(String::from)
+            .ok_or_else(|| ActionError::unsupported(format!("{method} on Herdr 2 needs a terminal id, not {id}")))
+    };
+    let owned_names = "The Herdr app owns the names of its spaces and tabs. Rename the task instead.";
+    Ok(match method {
+        "tab.create" => Action::Run { kind: "tab_created", workspace: Some(id.to_string()), cwd: s("cwd").map(String::from) },
+        "agent.start" => {
+            let addr = pane()?;
+            let kind = s("kind").filter(|k| !k.is_empty()).ok_or_else(|| ActionError::bad("agent.start requires kind"))?;
+            let args: Vec<String> = match params.get("args") {
+                None | Some(Value::Null) => vec![],
+                Some(Value::Array(a)) => a
+                    .iter()
+                    .map(|v| v.as_str().map(String::from))
+                    .collect::<Option<_>>()
+                    .ok_or_else(|| ActionError::bad("agent.start: args must be strings"))?,
+                Some(_) => return Err(ActionError::bad("agent.start: args must be an array")),
+            };
+            Action::Start { addr, line: agent_line(kind, &args)? }
+        }
+        "agent.prompt" => {
+            let text = s("text").filter(|t| !t.is_empty()).ok_or_else(|| ActionError::unsupported("agent.prompt requires text"))?;
+            Action::Prompt { addr: pane()?, text: text.to_string() }
+        }
+        "agent.rename" => Action::Label { addr: pane()?, labels: rename_labels(s("name")) },
+        "tab.rename" => match id.strip_prefix(&format!("{}task:", project::PREFIX)).filter(|a| address(&project::pane_id(a)).is_some()) {
+            Some(addr) => Action::Label { addr: addr.to_string(), labels: rename_labels(s("label")) },
+            None => return Err(ActionError::unsupported(owned_names)),
+        },
+        "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
+        "tab.close" => Action::Kill(Scope::Tab(id.to_string())),
+        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string())),
+        "agent.explain" => Action::Explain { addr: pane()? },
+        "workspace.get" => Action::WorkspaceGet(id.to_string()),
+        _ => Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?),
+    })
 }

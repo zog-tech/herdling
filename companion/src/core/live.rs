@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 use super::client::{Client, CoreError};
 use super::endpoint::CoreSocket;
 use super::project::{self, Projection};
-use super::route;
+use super::actions;
+use super::route::{self, Action};
 use crate::preview::PreviewState;
 use crate::types::{AgentPreview, AgentStatus, RpcError};
 
@@ -74,11 +75,125 @@ pub async fn read_text(sock: &CoreSocket, timeout: Duration, pane: &str, lines: 
 /// `herdr.call` of `method` on the core id `id`. A method with no core equivalent gives the
 /// error code `unsupported`.
 pub async fn call(sock: &CoreSocket, timeout: Duration, method: &str, params: &Value, id: &str) -> Result<Value, RpcError> {
-    let plan = route::plan(method, params, id).map_err(|u| RpcError { code: route::UNSUPPORTED.into(), message: u.0 })?;
-    let bound = if matches!(plan.method, "terminal.send" | "terminal.keys") { TYPING_TIMEOUT } else { timeout };
-    let mut c = Client::connect(&sock.current(), timeout).await.map_err(rpc_err)?;
-    let r = c.call_with(plan.method, plan.params, bound).await.map_err(rpc_err)?;
-    Ok(route::shape(&plan.shape, r))
+    run(sock, timeout, route::action(method, params, id)?).await
+}
+
+/// Checks that the core has each of `methods` (`hello.methods`). A core that does not list its
+/// methods is tried. A missing method gives `unsupported`, before any change.
+pub async fn require(c: &mut Client, methods: &[&str]) -> Result<(), RpcError> {
+    let h = c.hello().await.map_err(rpc_err)?;
+    let Some(list) = h.get("methods").and_then(Value::as_array) else { return Ok(()) };
+    match methods.iter().find(|m| !list.iter().any(|l| l.as_str() == Some(m))) {
+        Some(m) => Err(RpcError {
+            code: route::UNSUPPORTED.into(),
+            message: format!("this herdr-core has no {m}; update herdr-core"),
+        }),
+        None => Ok(()),
+    }
+}
+
+async fn connect(sock: &CoreSocket, timeout: Duration) -> Result<Client, RpcError> {
+    Client::connect(&sock.current(), timeout).await.map_err(rpc_err)
+}
+
+/// The projection, as an RPC result.
+async fn placed(sock: &CoreSocket, timeout: Duration) -> Result<Projection, RpcError> {
+    projection(sock, timeout).await.map_err(rpc_err)
+}
+
+/// A new shell at `place` (see [`actions::place_labels`]) in `cwd`. Returns the new terminal
+/// address and the workspace and tab ids that the projection gives it.
+pub async fn run_shell(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: Option<&str>) -> Result<(String, String, String), RpcError> {
+    let ids = actions::fresh_ids();
+    let shell = std::env::var("SHELL").ok();
+    let params = actions::run_params(cwd, actions::place_labels(place, &ids), actions::shell_argv(shell.as_deref()));
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.run"]).await?;
+    let t = c.call("terminal.run", params).await.map_err(rpc_err)?;
+    let addr = t
+        .get("address")
+        .or_else(|| t.pointer("/terminal/address"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| RpcError { code: "internal".into(), message: "terminal.run gave no address".into() })?
+        .to_string();
+    let (ws, tab) = actions::placed_ids(place, &ids, &addr);
+    Ok((addr, ws, tab))
+}
+
+/// The place of the workspace id `workspace`. Only a group id needs the projection.
+pub async fn place(sock: &CoreSocket, timeout: Duration, workspace: Option<&str>) -> Result<actions::Place, RpcError> {
+    let needs = workspace.is_some_and(|w| w.starts_with(&format!("{}g:", project::PREFIX)));
+    let p = if needs { placed(sock, timeout).await? } else { Projection::default() };
+    Ok(actions::place_of(workspace, &p)?)
+}
+
+/// Sends `text` to `addr` with the typing bound, after the method check.
+pub async fn send(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str) -> Result<Value, RpcError> {
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.send"]).await?;
+    c.call_with("terminal.send", json!({ "terminal": addr, "text": text }), TYPING_TIMEOUT).await.map_err(rpc_err)
+}
+
+/// Sets `labels` on terminal `addr`. Only the labels that `core::actions` names come here.
+pub async fn label(sock: &CoreSocket, timeout: Duration, addr: &str, labels: serde_json::Map<String, Value>) -> Result<Value, RpcError> {
+    let mut c = connect(sock, timeout).await?;
+    require(&mut c, &["terminal.label"]).await?;
+    c.call("terminal.label", json!({ "terminal": addr, "labels": labels })).await.map_err(rpc_err)
+}
+
+/// Runs one action of [`route::action`].
+pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result<Value, RpcError> {
+    match action {
+        Action::Call(plan) => {
+            let bound = if matches!(plan.method, "terminal.send" | "terminal.keys") { TYPING_TIMEOUT } else { timeout };
+            let mut c = connect(sock, timeout).await?;
+            let r = c.call_with(plan.method, plan.params, bound).await.map_err(rpc_err)?;
+            Ok(route::shape(&plan.shape, r))
+        }
+        Action::Run { kind, workspace, cwd } => {
+            let place = place(sock, timeout, workspace.as_deref()).await?;
+            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
+            Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
+        }
+        Action::Start { addr, line } => {
+            send(sock, timeout, &addr, &line).await?;
+            Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
+        }
+        Action::Prompt { addr, text } => {
+            let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            if project::agent_status(&t).is_none() {
+                // The app retries on this text while a new agent starts (`startSession`).
+                return Err(RpcError {
+                    code: "agent_not_ready".into(),
+                    message: format!("not an active named agent yet: {} has reported no agent status", project::pane_id(&addr)),
+                });
+            }
+            send(sock, timeout, &addr, &text).await
+        }
+        Action::Label { addr, labels } => Ok(project::pane_get(&label(sock, timeout, &addr, labels).await?)),
+        Action::Kill(scope) => {
+            let members = actions::members(&placed(sock, timeout).await?, &scope)?;
+            let mut c = connect(sock, timeout).await?;
+            require(&mut c, &["terminal.kill"]).await?;
+            let mut closed = Vec::new();
+            for addr in members {
+                match c.call("terminal.kill", json!({ "terminal": addr })).await {
+                    Ok(_) => closed.push(project::pane_id(&addr)),
+                    // A terminal that ended meanwhile is closed already.
+                    Err(e) if matches!(e.kind(), Some("not_found" | "finished")) => {}
+                    Err(e) => return Err(rpc_err(e)),
+                }
+            }
+            Ok(json!({ "closed": closed }))
+        }
+        Action::Explain { addr } => {
+            let mut c = connect(sock, timeout).await?;
+            let t = c.call("terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            let screen = c.call("terminal.read", json!({ "terminal": addr, "lines": 0 })).await.map_err(rpc_err)?;
+            Ok(actions::explain(&t, screen.get("text").and_then(Value::as_str).unwrap_or("")))
+        }
+        Action::WorkspaceGet(id) => Ok(actions::workspace_get(&placed(sock, timeout).await?, &id)?),
+    }
 }
 
 /// One preview line per core agent (only `wanted` panes when given). An agent with a known
