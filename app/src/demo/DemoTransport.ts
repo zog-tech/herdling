@@ -5,7 +5,6 @@ import type {
   AutomationRun,
   CommandInfo,
   CommandList,
-  CoreGroup,
   FilePut,
   GroupsList,
   Boot,
@@ -17,10 +16,12 @@ import type {
   CoreStatus,
   MacSettingsPane,
   PaneAnswer,
+  PaneMove,
   PortsList,
   PreviewClose,
   ShellUnwatch,
   ShellWatch,
+  SessionStart,
   ShellWatches,
   Stats,
   UpdateApply,
@@ -53,20 +54,17 @@ const WATCH_MS = 200;
 /** herdr key names (what the app sends) to the names the scenario knows. */
 const KEY_NAMES: Record<string, string> = { enter: "Enter", backspace: "BSpace", esc: "Escape", "ctrl+c": "C-c" };
 
-/** The herdr methods that work on a Herdr 2 pane, as in herdlingd. Every other one answers `unsupported`. */
-export const CORE_HERDR_METHODS: ReadonlySet<string> = new Set([
-  "pane.read",
-  "pane.send_input",
-  "pane.send_text",
-  "pane.send_keys",
-  "pane.get",
-  "pane.process_info",
-  "pane.close",
-  "agent.prompt",
-]);
-
-/** The error of herdlingd for a herdr 1 method on a Herdr 2 id. */
-const coreUnsupported = (method: string) => new DemoError(CORE_UNSUPPORTED, `${method} needs herdr 1; Herdr 2 terminals do not have it`);
+/**
+ * The demo acts as a herdlingd with the plan C methods: every herdr method works on a Herdr 2 id,
+ * except the renames of a Herdr app space or tab (the Herdr app owns those names).
+ */
+function coreRefusal(method: string, p: Record<string, unknown>): DemoError | undefined {
+  const tab = typeof p.tab_id === "string" ? p.tab_id : "";
+  const ws = typeof p.workspace_id === "string" ? p.workspace_id : "";
+  if (method === "tab.rename" && tab.startsWith("hc:tab:")) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its tabs");
+  if (method === "workspace.rename" && isCore(ws)) return new DemoError(CORE_UNSUPPORTED, "the Herdr app owns the names of its spaces");
+  return undefined;
+}
 
 const DEMO_BOOT: Boot = {
   starts_at: "boot",
@@ -366,7 +364,6 @@ export class DemoTransport implements LineTransport {
       }
       case "shell.watch": {
         const pane = need(p, "pane_id", method);
-        if (isCore(pane)) throw coreUnsupported(method);
         const since = Math.floor(Date.now() / 1000);
         const w: ShellWatch = { pane_id: pane, since, expires_at: since + 24 * 3600, busy: false };
         this.shellWatches.set(pane, w);
@@ -376,21 +373,25 @@ export class DemoTransport implements LineTransport {
         return { removed: this.shellWatches.delete(need(p, "pane_id", method)) } satisfies ShellUnwatch;
       case "shell.watches":
         return { watches: [...this.shellWatches.values()] } satisfies ShellWatches;
-      // Herdr 2 groups: the demo core terminals are in one Herdr app space, so none can move.
-      case "groups.list": {
-        const snap = this.scenario.snapshot();
-        const groups: CoreGroup[] = snap.workspaces
-          .filter((w) => isCore(w.workspace_id))
-          .map((w) => ({
-            workspace_id: w.workspace_id,
-            label: w.label ?? "",
-            source: "space",
-            space_id: w.workspace_id.replace(/^hc:space:/, ""),
-            terminals: snap.panes.filter((x) => x.workspace_id === w.workspace_id).length,
-            agents: snap.agents.filter((x) => x.workspace_id === w.workspace_id).length,
-            agent_status: (w.agent_status ?? "unknown") as AgentStatus,
-          }));
-        return { groups } satisfies GroupsList;
+      // Herdr 2 groups: the spaces and the fallback groups of the demo core.
+      case "groups.list":
+        return { groups: this.scenario.coreGroups() } satisfies GroupsList;
+      case "pane.move": {
+        const pane = need(p, "pane_id", method);
+        const targets = [str(p, "workspace_id") !== undefined, p.new_space === true, str(p, "group") !== undefined].filter(Boolean).length;
+        if (targets !== 1) throw new DemoError("bad_request", "pane.move takes exactly one of workspace_id, new_space and group");
+        return this.scenario.movePane(pane, { workspaceId: str(p, "workspace_id"), newSpace: p.new_space === true, group: str(p, "group") }) satisfies PaneMove;
+      }
+      case "session.start": {
+        const args = Array.isArray(p.args) ? p.args.filter((a): a is string => typeof a === "string") : undefined;
+        const r = this.scenario.startCoreSession({
+          cwd: need(p, "cwd", method),
+          kind: need(p, "kind", method),
+          workspaceId: str(p, "workspace_id"),
+          prompt: str(p, "prompt"),
+          args,
+        });
+        return { ...r, prompt_error: null } satisfies SessionStart;
       }
       // The demo computer has an up-to-date Herdr 2 that runs.
       case "core.status":
@@ -417,12 +418,6 @@ export class DemoTransport implements LineTransport {
             { name: "build-box", address: "192.0.2.20", user: "demo", sources: ["ssh_config"] },
           ],
         } satisfies MachinesSuggest;
-      case "pane.move":
-        need(p, "pane_id", method);
-        throw new DemoError("unsupported", "this terminal is in a Herdr app space; move it in the Herdr app");
-      case "session.start":
-        need(p, "cwd", method);
-        throw new DemoError("unsupported", "The demo computer starts agents with New session.");
       case "summary.make":
         throw new DemoError("not_installed", "The demo computer has no summary command. The phone summary is used.");
       case "tts.make":
@@ -465,9 +460,9 @@ export class DemoTransport implements LineTransport {
   private herdr(method: string, p: Params): unknown {
     const s = this.scenario;
     const m = `herdr ${method}`;
-    // As herdlingd: a Herdr 2 id gets only the methods that the core has.
-    const target = str(p, "pane_id") ?? str(p, "target") ?? str(p, "tab_id") ?? str(p, "workspace_id");
-    if (isCore(target) && !CORE_HERDR_METHODS.has(method)) throw coreUnsupported(method);
+    // As herdlingd: the Herdr app owns the names of its spaces and tabs.
+    const refusal = coreRefusal(method, p);
+    if (refusal) throw refusal;
     switch (method) {
       case "session.snapshot":
         return { snapshot: s.snapshot() };

@@ -1,4 +1,5 @@
-import { agentName, startSession, startShell } from "./startSession";
+import { setCoreActions, useCoreActions } from "./backend";
+import { agentName, SESSION_START_TIMEOUT_MS, startOnCore, startSession, startShell } from "./startSession";
 
 function fakeRpc() {
   const calls: { method: string; params: any; timeoutMs?: number }[] = [];
@@ -277,9 +278,48 @@ describe("Herdr 2 workspaces", () => {
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create", "agent.start"]);
   });
 
+  it("a_host_with_the_core_actions_adds_a_tab_to_the_herdr_2_space", async () => {
+    setCoreActions("h1", { methods: ["session.start"] });
+    const rpc = fakeRpc();
+    await startSession(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:1", hostId: "h1" });
+    expect(rpc.calls.map((c: any) => c.method)).toEqual(["tab.create", "agent.start"]);
+    useCoreActions.setState({ hosts: {} });
+  });
+
   it("start_shell_makes_a_herdr_1_workspace_too", async () => {
     const rpc = fakeRpc();
     await startShell(rpc, { cwd: "/home/sam/proj", workspaceId: "hc:loose" });
     expect(rpc.calls.map((c: any) => c.method)).toEqual(["workspace.create"]);
+  });
+});
+
+describe("startOnCore", () => {
+  it("starts the agent with one session.start call", async () => {
+    const calls: { method: string; params: any; timeoutMs?: number }[] = [];
+    const rpc = {
+      call: async (method: string, params: any, timeoutMs?: number) => {
+        calls.push({ method, params, timeoutMs });
+        return { pane_id: "hc:t7", workspace_id: "hc:space:sp1", tab_id: "hc:tab:tb1", prompt_error: "agent did not start in time" };
+      },
+    } as any;
+    const r = await startOnCore(rpc, { cwd: "/home/sam/proj", kind: "claude", workspaceId: "hc:space:sp1", prompt: "  fix it ", args: ["--model", "x"] });
+    expect(r).toEqual({ paneId: "hc:t7", promptError: "agent did not start in time" });
+    expect(calls).toEqual([
+      {
+        method: "session.start",
+        params: { cwd: "/home/sam/proj", kind: "claude", workspace_id: "hc:space:sp1", prompt: "fix it", args: ["--model", "x"] },
+        timeoutMs: SESSION_START_TIMEOUT_MS,
+      },
+    ]);
+    calls.length = 0;
+    // A new space: no workspace_id, no empty prompt.
+    await startOnCore(rpc, { cwd: "/home/sam/proj", kind: "codex", prompt: " " });
+    expect(calls[0].params).toEqual({ cwd: "/home/sam/proj", kind: "codex" });
+  });
+
+  it("a shell in a new Herdr 2 space asks for the core backend", async () => {
+    const rpc = fakeRpc();
+    await startShell(rpc, { cwd: "/home/sam/proj", core: true });
+    expect(rpc.calls[0]).toMatchObject({ method: "workspace.create", params: { cwd: "/home/sam/proj", backend: "core" } });
   });
 });

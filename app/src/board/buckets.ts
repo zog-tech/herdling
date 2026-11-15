@@ -1,10 +1,10 @@
 import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 
-import { CORE_LABEL, isCore } from "@/herdr/backend";
 import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
 import { backgroundLine, hasBackground } from "./background";
+import { groupOf, helperParents, repoLine, type HelperInfo } from "./tasks";
 
 /** Where an agent sits on the Board. */
 export type Bucket = "needs_you" | "ready" | "working" | "background" | "idle";
@@ -70,6 +70,12 @@ export type BoardItem = {
   sinceKnown?: boolean;
   /** The line under the title: activity, question or last reply. */
   line?: string;
+  /** The Herdr 2 group of the agent (a Herdr app space or a fallback group). */
+  group?: string;
+  /** "repo · branch" (`repoLine`). */
+  repoLine?: string;
+  /** The helpers under this task (spec goal 4). A blocked helper is also a card of its own. */
+  helpers?: HelperInfo[];
 };
 
 /**
@@ -103,6 +109,8 @@ export type BoardHost = {
  * Cards from the live snapshots plus the latest previews. A preview fetched while the agent
  * had another status is ignored (it describes the old state). `firstSeen` holds the app's own
  * start time per pane (epoch ms) for when the companion does not know `status_since`.
+ * A helper (`parent_id`, see `helperParents`) shows under its task, not as a card. A blocked
+ * helper is a card too: it needs the user.
  */
 export function mergeBoard(
   hosts: BoardHost[],
@@ -113,13 +121,26 @@ export function mergeBoard(
 ): BoardItem[] {
   const out: BoardItem[] = [];
   for (const h of hosts) {
+    const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
+    const parents = helperParents(h.agents);
+    const helpers = new Map<string, HelperInfo[]>();
     for (const agent of h.agents) {
+      const task = parents.get(agent.pane_id);
+      if (!task) continue;
+      const list = helpers.get(task) ?? [];
+      list.push({ paneId: agent.pane_id, title: agentTitle(names, agent), status: agent.agent_status });
+      helpers.set(task, list);
+    }
+    for (const agent of h.agents) {
+      if (parents.has(agent.pane_id) && agent.agent_status !== "blocked") continue;
       const key = `${h.hostId}:${agent.pane_id}`;
       const raw = previews[key];
       const p = raw && raw.status === agent.agent_status ? raw : undefined;
       const bucket = withBackground(bucketOf(agent, seen ? seen[key] : Number.POSITIVE_INFINITY), p);
       const local = firstSeen[key]?.status === agent.agent_status ? firstSeen[key].at : undefined;
-      const names = { workspaces: h.workspaces as WorkspaceInfo[], tabs: h.tabs ?? [], panes: h.panes ?? [] };
+      const group = groupOf(agent);
+      const line = repoLine(agent);
+      const mine = helpers.get(agent.pane_id);
       out.push({
         key,
         hostId: h.hostId,
@@ -133,6 +154,9 @@ export function mergeBoard(
         since: p?.status_since != null ? p.status_since * 1000 : local,
         sinceKnown: p?.status_since != null,
         line: previewLine(bucket, p),
+        ...(group ? { group } : {}),
+        ...(line ? { repoLine: line } : {}),
+        ...(mine ? { helpers: mine } : {}),
       });
     }
   }
@@ -178,8 +202,6 @@ export type BoardSection = {
   bucket?: Bucket;
   /** Set when grouped by workspace and the section has one workspace on one computer. */
   workspace?: { hostId: string; workspaceId: string };
-  /** A small label after the title: "Herdr 2" for a Herdr 2 workspace. */
-  tag?: string;
   data: BoardItem[];
 };
 
@@ -269,17 +291,15 @@ function groupByFolder(items: BoardItem[]): BoardSection[] {
 /**
  * One section per workspace name across all computers (trimmed, case-insensitive). A name on one
  * computer keeps the "<computer> · <workspace>" title and its menu. A name on more computers shows
- * the workspace name with the computers as the subtitle.
- * A Herdr 2 workspace never shares a section with a herdr 1 workspace of the same name, and its
- * section has the "Herdr 2" tag.
+ * the workspace name with the computers as the subtitle. A Herdr 2 space and a herdr 1 workspace
+ * of the same name share one section: the board is one board (spec goal 9).
  */
 function groupByWorkspace(items: BoardItem[]): BoardSection[] {
-  type Group = { label: string; core: boolean; hosts: Map<string, string>; ids: Set<string>; data: BoardItem[] };
+  type Group = { label: string; hosts: Map<string, string>; ids: Set<string>; data: BoardItem[] };
   const groups = new Map<string, Group>();
   for (const i of items) {
-    const core = isCore(i.agent.workspace_id) || i.agent.backend === "core";
-    const key = core ? `${workspaceKey(i.workspace)}|core` : workspaceKey(i.workspace);
-    const g: Group = groups.get(key) ?? { label: i.workspace.trim() || i.workspace, core, hosts: new Map(), ids: new Set(), data: [] };
+    const key = workspaceKey(i.workspace);
+    const g: Group = groups.get(key) ?? { label: i.workspace.trim() || i.workspace, hosts: new Map(), ids: new Set(), data: [] };
     g.hosts.set(i.hostId, i.hostName);
     g.ids.add(i.agent.workspace_id);
     g.data.push(i);
@@ -287,13 +307,12 @@ function groupByWorkspace(items: BoardItem[]): BoardSection[] {
   }
   return [...groups].map(([key, g]) => {
     const names = [...g.hosts.values()];
-    const tag = g.core ? { tag: CORE_LABEL } : {};
     if (g.hosts.size === 1 && g.ids.size === 1) {
       const [hostId] = g.hosts.keys();
-      return { key, title: `${names[0]} · ${g.label}`, workspace: { hostId, workspaceId: [...g.ids][0] }, ...tag, data: g.data };
+      return { key, title: `${names[0]} · ${g.label}`, workspace: { hostId, workspaceId: [...g.ids][0] }, data: g.data };
     }
     const subtitle = names.length <= 2 ? names.join(", ") : `${names.length} computers`;
-    return { key, title: g.label, subtitle, ...tag, data: g.data };
+    return { key, title: g.label, subtitle, data: g.data };
   });
 }
 

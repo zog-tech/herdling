@@ -36,6 +36,11 @@ describe.each(combos.map((c) => [name(c), c] as const))("%s", (_n, choice) => {
   const c: Colors = buildColors(NIGHT_WATCH, choice);
   const surfaces = { bg: c.bg, card: c.card, raised: c.raised } as const;
 
+  test("group_tile_letters_pass_on_their_tile", () => {
+    // The tile is the tone at 18% over `card` (`ui/GroupTile`); its letter has the tone.
+    for (const tone of c.groupTile) expect(contrast(tone, mix(tone, c.card, 0.18))).toBeGreaterThanOrEqual(4.5);
+  });
+
   test("text_and_muted_text_pass_on_every_surface", () => {
     for (const bg of Object.values(surfaces)) {
       expect(contrast(c.text, bg)).toBeGreaterThanOrEqual(7);

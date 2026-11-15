@@ -1,4 +1,4 @@
-import type { AgentStatus, SnapshotBackend } from "@herdling/protocol";
+import type { AgentStatus, GroupFields, SnapshotBackend } from "@herdling/protocol";
 
 /** Subset of herdr `session.snapshot` the app uses. Extra fields from herdr are kept as they come. */
 export type AgentInfo = {
@@ -21,7 +21,7 @@ export type AgentInfo = {
   display_agent?: string | null;
   /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
   backend?: SnapshotBackend;
-};
+} & GroupFields;
 export type WorkspaceInfo = {
   workspace_id: string;
   label: string;
@@ -57,7 +57,9 @@ export type PaneInfo = {
   terminal_title_stripped?: string | null;
   /** "core" for a Herdr 2 (herdr-core) entry, whose ids start with `hc:`. Missing for herdr 1. */
   backend?: SnapshotBackend;
-};
+  /** Set by herdr 1 on a pane with an agent (the core sends it too). */
+  agent_status?: AgentStatus;
+} & GroupFields;
 
 export type Snapshot = {
   agents: AgentInfo[];

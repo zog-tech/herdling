@@ -132,6 +132,7 @@ function ThemedRoot() {
         <Stack.Screen name="hosts/boot-help" options={{ ...hostHeader, title: "Start at boot" }} />
         <Stack.Screen name="hosts/integrations" options={{ ...hostHeader, title: "Agent integrations" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
+        <Stack.Screen name="jump" options={{ ...modalHeader, title: "Jump to a terminal" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />
         <Stack.Screen name="explain/[hostId]/[paneId]" options={{ ...modalHeader, title: "Why this status?" }} />

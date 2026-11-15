@@ -3,7 +3,7 @@
  * The field filters the agents by name, terminal title, computer and folder (see `textFilter.ts`).
  * The close button clears the filter and hides the field.
  */
-import { Search, SearchX, X } from "lucide-react-native";
+import { Search, SearchX, TextSearch, X } from "lucide-react-native";
 import { Pressable, TextInput, View } from "react-native";
 
 import { colors, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
@@ -27,6 +27,27 @@ export function FilterButton({ open, onPress }: { open: boolean; onPress: () => 
       })}
     >
       <Search size={icon.md} color={open ? colors.accent : colors.text} strokeWidth={icon.strokeWidth} />
+    </Pressable>
+  );
+}
+
+/** The button that opens "Jump to a terminal" (`app/jump.tsx`): a search over every agent and terminal. */
+export function JumpButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Jump to a terminal"
+      accessibilityHint="Searches every agent and terminal on every computer"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: hitTarget,
+        height: hitTarget,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: pressed ? state.pressedOpacity : 1,
+      })}
+    >
+      <TextSearch size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
     </Pressable>
   );
 }

@@ -1,6 +1,16 @@
 import { RpcError } from "@/rpc/RpcClient";
 
-import { allows, assertAllows, backendLabel, CORE_LABEL, CORE_UNSUPPORTED, isCore, type HerdrOneAction } from "./backend";
+import {
+  allows,
+  assertAllows,
+  CORE_UNSUPPORTED,
+  coreActions,
+  isCore,
+  renameKindsFor,
+  setCoreActions,
+  useCoreActions,
+  type HerdrOneAction,
+} from "./backend";
 
 const ACTIONS: HerdrOneAction[] = ["rename", "restart", "resume", "newTab", "explain", "closeGroup", "shellWatch", "thread"];
 
@@ -53,14 +63,46 @@ describe("allows", () => {
     }
     expect(err).toBeInstanceOf(RpcError);
     expect((err as RpcError).code).toBe(CORE_UNSUPPORTED);
-    expect((err as RpcError).message).toMatch(/herdr 1/);
+    expect((err as RpcError).message).toMatch(/herdlingd/);
   });
 });
 
-describe("backendLabel", () => {
-  it("labels only Herdr 2 entries", () => {
-    expect(backendLabel({ workspace_id: "hc:space:1", backend: "core" })).toBe(CORE_LABEL);
-    expect(CORE_LABEL).toBe("Herdr 2");
-    expect(backendLabel({ workspace_id: "w1" })).toBeUndefined();
+describe("core actions per host", () => {
+  beforeEach(() => useCoreActions.setState({ hosts: {} }));
+
+  it("needs session.start in hello.methods", () => {
+    expect(coreActions({ methods: ["hello", "session.start"] })).toBe(true);
+    expect(coreActions({ methods: ["hello", "groups.list"] })).toBe(false);
+    // An older herdlingd that does not list its methods: the old rule.
+    expect(coreActions({})).toBe(false);
+    expect(coreActions(undefined)).toBe(false);
+  });
+
+  it("allows every action on a core entry of a host with the plan C methods", () => {
+    setCoreActions("h1", { methods: ["session.start"] });
+    setCoreActions("h2", { methods: ["hello"] });
+    for (const a of ACTIONS) {
+      expect(allows("hc:t1", a, "h1")).toBe(true);
+      expect(allows("hc:t1", a, "h2")).toBe(false);
+      expect(allows("hc:t1", a)).toBe(false);
+      expect(allows("w1:p1", a, "h2")).toBe(true);
+    }
+    expect(() => assertAllows("hc:t1", "restart", "h1")).not.toThrow();
+    expect(() => assertAllows("hc:t1", "restart", "h2")).toThrow(RpcError);
+  });
+
+  it("keeps the last value when the host has no hello, and drops it on a new hello", () => {
+    setCoreActions("h1", { methods: ["session.start"] });
+    setCoreActions("h1", undefined);
+    expect(allows("hc:t1", "thread", "h1")).toBe(true);
+    setCoreActions("h1", { methods: ["hello"] });
+    expect(allows("hc:t1", "thread", "h1")).toBe(false);
+  });
+});
+
+describe("renameKindsFor", () => {
+  it("gives a Herdr 2 entry only the task name", () => {
+    expect(renameKindsFor("hc:t1")).toEqual(["session"]);
+    expect(renameKindsFor({ pane_id: "w1:p1" })).toEqual(["session", "tab", "workspace"]);
   });
 });

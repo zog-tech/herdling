@@ -44,7 +44,7 @@ export default function ResumeScreen() {
       setStarting(s.session);
       setError(undefined);
       try {
-        const { paneId: next } = await resumeSession(rpc, agent, s.session);
+        const { paneId: next } = await resumeSession(rpc, agent, s.session, hostId);
         openResumedSession(router, hostId, next);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

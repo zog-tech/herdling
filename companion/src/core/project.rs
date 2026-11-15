@@ -216,7 +216,18 @@ pub fn pane_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Value {
     if let Some(s) = agent_status(t) {
         p["agent_status"] = json!(status_word(s));
     }
+    if let Some(parent) = parent_pane_id(t) {
+        p["parent_id"] = json!(parent);
+    }
     p
+}
+
+/// The pane id of the parent terminal of `t` on this machine (a helper), else none. The app puts a
+/// helper under its task when the parent is a live agent. A parent on another machine (`box/t1`)
+/// or the terminal itself gives none.
+pub fn parent_pane_id(t: &Value) -> Option<String> {
+    let parent = text(t, "parent").filter(|p| !p.is_empty() && !p.contains('/'))?;
+    (text(t, "address") != Some(parent)).then(|| pane_id(parent))
 }
 
 /// The agent entry of terminal `t`, when it is an agent.
@@ -227,7 +238,7 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Option<Value> 
     let kind = agent_kind(t);
     let known = kind.as_deref().is_some_and(|k| KNOWN_KINDS.contains(&k));
     let display = t.get("status").and_then(|s| text(s, "app")).filter(|_| !known);
-    Some(json!({
+    let mut entry = json!({
         "pane_id": pane_id(addr),
         "tab_id": tab,
         "workspace_id": ws,
@@ -239,7 +250,11 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Option<Value> 
         "terminal_title_stripped": title(t),
         "name": name,
         "backend": BACKEND,
-    }))
+    });
+    if let Some(parent) = parent_pane_id(t) {
+        entry["parent_id"] = json!(parent);
+    }
+    Some(entry)
 }
 
 /// The group fields of a placed terminal.

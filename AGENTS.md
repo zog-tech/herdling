@@ -74,9 +74,10 @@ The path alias `@/` points to `app/src/`.
 | `rpc/` | `RpcClient`: request ids, responses, streamed events, cancel |
 | `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`), suggested computers (`suggest.ts`), the Herdr 2 card (`coreInstall.ts`, `CoreCard.tsx`) |
 | `pairing/` | Pairing by code and QR code, the pairing URL |
-| `herdr/` | herdr snapshot, start, restart, resume, rename and close actions |
-| `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents |
-| `board/` | The board: buckets, rows, the peek sheet, elapsed clocks |
+| `herdr/` | herdr snapshot, start, restart, resume, rename and close actions. `backend.ts`: which actions a Herdr 2 entry has (per host, from `hello.methods`); `moveGroup.ts`: "Move to space" |
+| `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents, the Herdr 2 space picker (`spacePick.ts`) |
+| `board/` | The board: buckets, rows, the peek sheet, elapsed clocks. `tasks.ts`: helpers under their task, the repo line, group tiles; `jump.ts`: "Jump to a terminal" (route `app/jump.tsx`) |
+| `spaces/` | The Spaces tab and the space screen (routes `app/(tabs)/spaces/`): the spaces model, the tab map and the thumbnail poll machine |
 | `thread/` | The chat view: thread items, follow, composer, permission choices, the pages of a tab (`PanePager.tsx`, rules in `herdr/tabPanes.ts`) |
 | `terminal/` | The ANSI terminal view, the key bar (`KeyBar.tsx`, rules in `keyRules.ts`, custom keys in `customKeys.ts`) and the width modes (`fit.ts`, "Phone width") |
 | `preview/` | Browser preview: port list, tunnel, lazy `react-native-webview` loader (route `app/preview/`) |
