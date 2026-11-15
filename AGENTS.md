@@ -91,7 +91,7 @@ The path alias `@/` points to `app/src/`.
 
 | Path | Responsibility |
 |---|---|
-| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `proxy`, `group`, `version` |
+| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `core`, `proxy`, `group`, `version` |
 | `group_cmd.rs` | `herdlingd group`: the `herdling.group` label of the own Herdr 2 terminal |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
 | `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
@@ -103,6 +103,7 @@ The path alias `@/` points to `app/src/`.
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
 | `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), the action rules (`actions.rs`: labels, new ids, close, explain, groups), the start state machine (`start.rs`), call routing (`route.rs`), event lines (`events.rs`), the merged subscribe stream (`merge.rs`, `stream.rs`) and the serve tracker (`tracker.rs`). `serve/core_watch.rs` sends its pushes |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
+| `core_install/` | herdr-core install, update and status (`core.status`, `core.install`, `herdlingd core`): the pin (`pin.rs`, from `companion/core-pin.json`), the pure state machine (`machine.rs`), the herdr 1 guard (`guard.rs`) and the I/O driver (`mod.rs`) |
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |
 | `stats.rs`, `usage.rs`, `automations.rs` | Host stats, plan usage, the `herdr-automate` adapter |
@@ -191,8 +192,16 @@ JS-only dependencies.
   `site/public/install.sh`, or `update.apply` / `herdlingd update`. The spec with the trust model is
   `docs/superpowers/specs/2026-10-31-herdlingd-install-update-design.md`.
 - The installer's `--quiet` lines (`HERDLINGD_STEP`, `HERDLINGD_INSTALLED`, `HERDLINGD_ERROR`) are a
-  contract with `app/src/hosts/installer.ts`. The release asset names and `latest.json` are a
+  contract with `app/src/hosts/installer.ts`. Add step names and error codes only (`core` and
+  `core_install_failed` came with the herdr-core install). The release asset names and `latest.json` are a
   contract with `companion/src/update.rs` and the installer. Do not rename them.
+- herdlingd installs herdr-core (Herdr 2) from `https://releases.herdr.dev/core/` with the version and
+  the SHA-256 in `companion/core-pin.json` (`core.install`, `herdlingd core install`). It never
+  downgrades and never replaces a core outside `~/.local/bin`. To pin a new core version, update
+  `core-pin.json` from the upstream `<version>/manifest.json`, check the checksums of the downloads,
+  and test the install. `"required": true` (plan E, 0.2.0) makes the installer and `update.apply`
+  install the core first. The release workflow copies the pin into `latest.json` (`core`,
+  `requires_core`).
 - The phone key runs `~/.local/bin/herdlingd rpc`. Do not move the binary without an update of
   the `authorized_keys` lines.
 - A new `herdlingd` must keep working with the app builds that people use (section 1).

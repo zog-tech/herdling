@@ -91,6 +91,9 @@ pub struct Ctx {
     /// The `tailscale` program for `machines.suggest`. None: no Tailscale peers. `Ctx::new` leaves
     /// it unset, so a test never runs a real `tailscale`. `main` sets it.
     pub tailscale: Option<PathBuf>,
+    /// Settings for `core.status`, `core.install` and the core path of `herdr.update`. None turns
+    /// them off: `Ctx::new` leaves it unset, so a test never installs or starts a core. `main` sets it.
+    pub core_install: Option<crate::core_install::CoreInstallCtx>,
 }
 
 impl Ctx {
@@ -123,6 +126,7 @@ impl Ctx {
             input_order: crate::input_order::InputOrder::default(),
             ports_cache: crate::ports::PortsCache::default(),
             core_socket: None,
+            core_install: None,
         }
     }
 }
@@ -410,6 +414,8 @@ pub const METHODS: &[&str] = &[
     "pane.move",
     "session.start",
     "machines.suggest",
+    "core.status",
+    "core.install",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -460,6 +466,8 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, params: Value) -> Result<V
         "pane.move" => pane_move(ctx, params).await,
         "session.start" => session_start(ctx, params).await,
         "machines.suggest" => machines_suggest(ctx).await,
+        "core.status" => core_status(ctx).await,
+        "core.install" => core_install(ctx).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -1026,8 +1034,45 @@ async fn update_apply(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
+fn core_ctx(ctx: &Ctx) -> Result<crate::core_install::CoreInstallCtx, RpcError> {
+    ctx.core_install.clone().ok_or_else(|| err("unsupported", "the herdr-core install is off in this process"))
+}
+
+/// See [`crate::core_install::status`]. Only reads.
+async fn core_status(ctx: &Ctx) -> Result<Value, RpcError> {
+    let c = core_ctx(ctx)?;
+    let r = tokio::task::spawn_blocking(move || crate::core_install::status(&c)).await.map_err(|e| err("internal", e.to_string()))?;
+    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
+}
+
+/// See [`crate::core_install::install`]: the pin of this herdlingd, never down.
+async fn core_install(ctx: &Ctx) -> Result<Value, RpcError> {
+    let c = core_ctx(ctx)?;
+    let r = tokio::task::spawn_blocking(move || crate::core_install::install(&c, &c.pin))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
+}
+
 /// See [`crate::herdr_update::run`]. The phone sends no params: the command is fixed.
+/// A computer with herdr-core and no herdr 1 updates herdr-core to the pin instead
+/// ([`crate::core_install::guard::herdr_update_target`]).
 async fn herdr_update(ctx: &Ctx) -> Result<Value, RpcError> {
+    if let Some(core) = ctx.core_install.clone() {
+        let herdr1 = ctx.herdr_update.as_ref().is_some_and(|h| (h.finder)(&h.dirs).is_some());
+        let target = tokio::task::spawn_blocking(move || {
+            let installed = crate::core_install::find_core(&core).is_some();
+            (crate::core_install::guard::herdr_update_target(herdr1, installed), core)
+        })
+        .await
+        .map_err(|e| err("internal", e.to_string()))?;
+        if let (crate::core_install::guard::UpdateTarget::Core, core) = target {
+            let r = tokio::task::spawn_blocking(move || crate::core_install::install(&core, &core.pin))
+                .await
+                .map_err(|e| err("internal", e.to_string()))??;
+            return serde_json::to_value(crate::core_install::as_herdr_update(&r)).map_err(|e| err("internal", e.to_string()));
+        }
+    }
     let c = ctx.herdr_update.clone().ok_or_else(|| err("update_unavailable", "herdr updates are off in this process"))?;
     let r = tokio::task::spawn_blocking(move || crate::herdr_update::run(&c))
         .await

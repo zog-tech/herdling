@@ -268,8 +268,8 @@ curl -fsSL https://herdling.zog-tech.com/install.sh | sh
 The script is at https://herdling.zog-tech.com/install.sh. Read it before you run it, if you like. It does this:
 
 1. It finds your system: macOS or Linux, on arm64 or x86_64. Windows is not supported.
-2. It checks that herdr is installed. It does not install herdr, unless you add `--with-herdr`.
-3. It downloads the newest herdlingd release from https://github.com/zog-tech/herdling/releases and compares its SHA-256 with the `SHA256SUMS` file of the release.
+2. It downloads the newest herdlingd release from https://github.com/zog-tech/herdling/releases and compares its SHA-256 with the `SHA256SUMS` file of the release.
+3. It checks that herdr is installed. It does not install herdr, unless you add `--with-herdr`.
 4. It runs `herdlingd install` (see below) and prints the version.
 5. It tells you when herdlingd starts: at boot, or after you log in. It prints the step to start it at boot (see "Start at boot").
 

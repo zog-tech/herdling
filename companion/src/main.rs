@@ -240,11 +240,54 @@ async fn update_cmd(ctx: update::UpdateCtx, usage: &str) -> Result<()> {
     Ok(())
 }
 
+/// `herdlingd core status | install | required`: the same as `core.status` and `core.install`.
+/// `required` exits with 0 when this herdlingd needs herdr-core, else with 1 (the installer
+/// script reads it; an older herdlingd fails on the unknown subcommand, which also means "no").
+async fn core_cmd(home: &std::path::Path, cmd: &str, usage: &str) -> Result<()> {
+    use herdlingd::core_install as ci;
+    if cmd == "required" {
+        std::process::exit(if ci::pin::embedded().required { 0 } else { 1 });
+    }
+    let ctx = ci::CoreInstallCtx::new(home, herdlingd::core::endpoint::from_env(home));
+    match cmd {
+        "status" => {
+            let s = tokio::task::spawn_blocking(move || ci::status(&ctx)).await?;
+            let installed = match (&s.installed, s.found) {
+                (Some(v), _) => v.clone(),
+                (None, true) => "installed (version unknown)".into(),
+                (None, false) => "not installed".into(),
+            };
+            println!("herdr-core: {installed}{}", if s.managed { " (package manager)" } else { "" });
+            let running = s.running_version.as_deref().map(|v| format!(" ({v})")).unwrap_or_default();
+            println!("Running:   {}{running}", if s.running { "yes" } else { "no" });
+            println!("Pinned:    {}{}", s.pinned, if s.newer_than_pin { " (the core is newer; herdlingd keeps it)" } else { "" });
+            if s.update_available {
+                println!("Run: herdlingd core install");
+            }
+            Ok(())
+        }
+        "install" => {
+            let pin = ctx.pin.clone();
+            println!("Installing herdr-core {} ...", pin.version);
+            let r = tokio::task::spawn_blocking(move || ci::install(&ctx, &pin))
+                .await?
+                .map_err(|e| anyhow::anyhow!("{} ({})", e.message, e.code))?;
+            println!("{}", ci::as_herdr_update(&r).output);
+            if r.started {
+                println!("herdr-core started.");
+            }
+            Ok(())
+        }
+        _ => bail!("{usage}"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run] | version\n       \
                          herdlingd devices | unpair <device_id>\n       \
                          herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]\n       \
+                         herdlingd core status | install | required\n       \
                          herdlingd proxy <port> <grant>\n       \
                          herdlingd group <name> | group --clear  (in a Herdr 2 terminal)";
     if matches!(std::env::args().nth(1).as_deref(), Some("version" | "--version" | "-V")) {
@@ -271,6 +314,7 @@ async fn main() -> Result<()> {
             }
             let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
             ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
+            ctx.core_install = Some(herdlingd::core_install::CoreInstallCtx::new(&home, ctx.core_socket.clone()));
             ctx.herdr_update = Some(herdlingd::herdr_update::HerdrUpdateCtx::new(&home));
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
@@ -349,6 +393,12 @@ async fn main() -> Result<()> {
         Some("update") => {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             update_cmd(update::UpdateCtx::new(home, std::env::current_exe()?.canonicalize()?), USAGE).await
+        }
+        Some("core") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let [cmd] = args.as_slice() else { bail!("{USAGE}") };
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            core_cmd(&home, cmd, USAGE).await
         }
         Some("proxy") => {
             // A host added by hand without a forced command runs the app's command in the shell.

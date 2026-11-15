@@ -23,7 +23,8 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 ## Error codes in use
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
-`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`.
+`unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
+`core_not_running`, `core_install_failed`, `bad_pin`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -169,6 +170,19 @@ Result:
 
 `date` is optional. `update_available` is true only when `latest` is newer than `current`.
 
+From the herdlingd after 0.1.9, the result has an optional `core` part: the herdr 1 guard for a
+release that needs Herdr 2 (herdr-core). Show `notice` before the update.
+
+```json
+{"core": {"requires_core": true, "installed": false, "herdr1": true, "install_first": true, "pinned": "0.1.20", "notice": "This herdlingd works only with Herdr 2 ..."}}
+```
+
+- `requires_core`: the release manifest says `requires_core: true`. Older manifests do not.
+- `installed`: a `herdr-core` is on the computer. `herdr1`: a `herdr` is on the computer.
+- `install_first`: `update.apply` installs herdr-core before it replaces herdlingd.
+- `pinned`: the herdr-core version that the update installs (the `core` pin of the release, else
+  the pin of the running herdlingd).
+
 `update.apply` params: `{"version"?: "X.Y.Z", "allow_downgrade"?: false}`. Result:
 
 ```json
@@ -185,6 +199,15 @@ Result:
 - The rpc process keeps the old code until its channel closes. After the reply the app
   reconnects; the new channel runs the new binary, and `hello` shows the new version.
 - The download can take some time. Use a long timeout (the app uses 3 minutes).
+- When the manifest says `requires_core: true`, the method first runs `core.install` with the
+  `core` pin of the manifest (see "Herdr 2 install"). The result then has `core` (a `CoreInstall`)
+  and, for a computer with herdr 1 and no core, `notice`. When the core install fails, the method
+  stops with `core_install_failed`, before it downloads herdlingd: the old herdlingd stays.
+
+The release manifest (`latest.json`) can have two optional fields, from the herdlingd after 0.1.9:
+`requires_core` (boolean) and `core` (the herdr-core pin: `version`, `required` and `sha256` by
+target, a copy of `companion/core-pin.json`). The release key signs them with the rest of the file.
+An older herdlingd ignores them.
 
 Error codes:
 
@@ -198,6 +221,7 @@ Error codes:
 | `update_in_progress` | Another update runs now |
 | `io_error` | The binary could not be unpacked or replaced (for example, the folder is not writable) |
 | `bad_request` | `version` is not a version text |
+| `core_install_failed` | The release needs herdr-core, and its install failed. The message has the reason. herdlingd did not change |
 
 ## Update herdr: `herdr.update`
 
@@ -243,6 +267,80 @@ Error codes:
 | `command_failed` | `herdr update` did not start or exited with an error. The message has the end of its output |
 | `timeout` | `herdr update` ran longer than 180 seconds and herdlingd stopped it |
 | `update_unavailable` | herdr updates are off in this process |
+
+On a computer with herdr-core and no herdr 1 (from the herdlingd after 0.1.9), `herdr.update`
+updates herdr-core to the pin, as `core.install` does, and gives the result in the same shape:
+`status` `"updated"` when the core was installed or updated, else `"up_to_date"`; `handoff`
+`"complete"` after an update (the new core takes over the running terminals), else `"none"`;
+`output` is one line about the core. The errors are the ones of `core.install`.
+
+## Herdr 2 install: `core.status` and `core.install`
+
+From the herdlingd after 0.1.9. Check `hello.methods` first. herdlingd installs herdr-core
+(Herdr 2) itself, with the version and the SHA-256 that the herdlingd release pins
+(`companion/core-pin.json`, signed with the binary). It does not run the upstream `install.sh`.
+
+`core.status` has no params. It only reads: it runs `herdr-core --version` and asks the core socket.
+
+```json
+{"found": true, "installed": "0.1.19", "managed": false, "running": true, "running_version": "0.1.19",
+ "pinned": "0.1.20", "newer_than_pin": false, "update_available": true, "required": false,
+ "target": "macos-aarch64", "herdr1": true}
+```
+
+- `found` and `installed`: a `herdr-core` in `~/.local/bin`, else in the `PATH` and the usual
+  folders. `installed` is null when it gives no version.
+- `managed`: the core is not in `~/.local/bin` (Homebrew, Nix, conda). herdlingd never replaces it.
+- `newer_than_pin`: the installed or the running core is newer than `pinned`. herdlingd keeps it
+  and works with it (the Herdr app updates the core too).
+- `update_available`: `core.install` would install or update the core.
+- `required`: this herdlingd needs the core. The installer then installs the core and does not
+  need herdr 1.
+- `target`: the upstream build of this computer, null when there is none.
+
+`core.install` has no params. Result:
+
+```json
+{"from": "0.1.19", "to": "0.1.20", "status": "updated", "started": false, "pinned": "0.1.20"}
+```
+
+The steps (a pure state machine in `companion/src/core_install/machine.rs`):
+
+1. Find the core and its version. A core of a package manager, a core newer than the pin and a
+   core with no version stay as they are (`kept_managed`, `kept_newer`, `kept_unknown`). The pin
+   (`up_to_date`) stays too. herdlingd never downgrades.
+2. Else download `https://releases.herdr.dev/core/<pin>/herdr-core-<target>.tar.gz` into
+   `~/.cache/herdling/core.<pid>` and compare its SHA-256 with the pin. A difference stops with
+   `checksum_mismatch`; nothing outside that folder changes.
+3. Unpack it. The unpacked `herdr-core --version` must say the pinned version.
+4. Put it in place as the upstream installer does. macOS: `Herdr Core.app` with
+   `--hc-install-bundle` to `~/.local/bin/herdr-core`, then `server restart` on an update. Linux
+   (and macOS with no app in the tarball): an update runs `herdr-core update --from <file>`
+   (running terminals keep running); a first install copies the file. A `~/.local/bin/hc` link is
+   added when no `hc` exists.
+5. Make sure that the core runs: when no core answers on the socket, run `herdr-core server
+   start` and wait up to 10 seconds. The core runs as its own service (a systemd user service on
+   Linux, a launchd job on macOS). `started` is true when herdlingd started it.
+
+`status` is `installed`, `updated`, `up_to_date`, `kept_newer`, `kept_unknown` or `kept_managed`.
+One install runs at a time (`core-install.lock` in the herdlingd config folder). Use a long timeout
+(3 minutes).
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `unsupported` | The core install is off in this process |
+| `unsupported_target` | herdr-core has no build for this OS and CPU |
+| `download_failed` | The download failed |
+| `checksum_mismatch` | The download does not match the pinned SHA-256. Nothing was installed |
+| `install_failed` | The tarball, the unpacked core or the install step failed |
+| `core_not_running` | The core did not start, or it does not answer on its socket |
+| `busy` | Another core install runs now |
+| `bad_pin` | The pin is not valid |
+
+`herdlingd core status`, `herdlingd core install` and `herdlingd core required` do the same on the
+computer. `core required` exits with 0 when this herdlingd needs the core (the installer reads it).
 
 ## Start at boot: `hello.boot`, `boot.check` and `mac.open_settings`
 
@@ -653,7 +751,8 @@ the phone key fingerprint and asks "Keep this phone?".
 ## Herdr 2 (herdr-core)
 
 Since the herdlingd after 0.1.7. herdlingd joins a running herdr-core (`hc`; checked against
-herdr-core 0.1.19, protocol generation 1). It never starts a core. Old apps see the core entries
+herdr-core 0.1.19, protocol generation 1). It starts a core only in `core.install`, in
+`update.apply` for a release that needs the core, and in the installer. Old apps see the core entries
 because they come in the herdr 1 shapes.
 
 ### The core socket

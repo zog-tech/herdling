@@ -6,6 +6,8 @@ import type { PasswordExecOptions, PasswordExecResult } from "../../modules/ssh"
  * The script (`site/public/install.sh`) prints machine-readable lines with `--quiet`:
  * `HERDLINGD_STEP <step>`, then `HERDLINGD_INSTALLED <version>` or `HERDLINGD_ERROR <code> <text>`.
  * A newer script also prints `HERDLINGD_BOOT boot|login|unknown` before `HERDLINGD_INSTALLED`.
+ * For a herdlingd that needs Herdr 2, the script installs herdr-core first (step `core`); a failure
+ * there gives `core_install_failed`, and herdlingd is not installed.
  * An older script does not: the boot state is then not known.
  * The native exec returns the output when the command ends; it does not stream.
  */
@@ -42,6 +44,7 @@ export type InstallFailCode =
   | "unsupported_arch"
   | "no_herdr"
   | "herdr_install_failed"
+  | "core_install_failed"
   | "no_downloader"
   | "no_checksum_tool"
   | "download_failed"
@@ -66,6 +69,7 @@ const SCRIPT_CODES: readonly InstallFailCode[] = [
   "unsupported_arch",
   "no_herdr",
   "herdr_install_failed",
+  "core_install_failed",
   "no_downloader",
   "no_checksum_tool",
   "download_failed",
@@ -86,6 +90,8 @@ export function installMessage(code: InstallFailCode, detail?: string): string {
       return `herdr is not installed on this computer. Install herdr first (${HERDR_URL}), then try again.`;
     case "herdr_install_failed":
       return `herdr could not be installed${detail ? `: ${detail.slice(0, 200)}` : "."} Install herdr from ${HERDR_URL}, then try again.`;
+    case "core_install_failed":
+      return `Herdr 2 (herdr-core) could not be installed${detail ? `: ${detail.slice(0, 200)}` : "."} herdlingd was not installed.`;
     case "no_downloader":
       return "The computer has no curl or wget. Install one of them, then try again.";
     case "no_checksum_tool":
