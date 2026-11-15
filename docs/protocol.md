@@ -54,6 +54,11 @@ Since herdlingd 0.1.1. A streamed screen of one pane. It replaces `pane.read` po
 - The app stops the stream with `rpc.cancel` when the terminal is not on screen. The stream also
   stops when the channel closes.
 - An app that finds no `pane.watch` in `hello.methods` polls `pane.read` as before.
+- Optional `cols` and `rows` (both, or none): the phone grid. On a Herdr 2 pane, herdlingd then
+  attaches as a driver, so the program lays out its output at that size. The terminal on the
+  computer has this size too while the stream lives (the core has one size per terminal). The
+  reply has `drive: true`. The values are clamped to 20–500 columns and 5–200 rows. herdr 1 panes
+  and herdlingd before this change ignore them and give no `drive`.
 
 ## herdr events: `herdr.subscribe` and `events_lost`
 
@@ -717,12 +722,12 @@ group falls back to the folder name.
 
 | herdr 1 method | core method |
 |---|---|
-| `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0) |
+| `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0). With `format: "ansi"`: one passive `terminal.attach`, see "Terminal view" |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
 | `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
 | `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
 | `agent.prompt` | `terminal.send` (the core refuses it while the agent is blocked) |
-| `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes |
+| `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
 
 - Every other method gives the error code `unsupported`, also on a core workspace or tab id.
@@ -736,6 +741,27 @@ group falls back to the folder name.
   herdr 1, and gives its transcript (`log_path`). `agents.preview` of a core pane reads the
   transcript of the agent and sets `source: "log"`. When no transcript exists, `thread.resolve`
   gives `session: null`, and only `agents.preview` falls back to the screen.
+
+### Terminal view
+
+`pane.watch` on a core pane uses `terminal.attach` on a framed core connection, when `hello.methods`
+of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
+
+- herdlingd attaches as a watcher (`observe: true`, `resize_notifications: true`, `history` =
+  `lines`). The core never takes its size, keys or focus. With `cols` and `rows` it attaches as a
+  driver at that size. In both modes herdlingd sends only CREDIT and CLOSE frames on the stream:
+  typing goes through `terminal.send` and `terminal.keys`.
+- A terminal emulator in herdlingd reads the stream. Each event has the history lines and the
+  screen rows with SGR colors (`format: "ansi"`), as herdr 1 gives them. Trailing blank rows are cut
+  on the main screen; on the alternate screen (a full-screen app) every row stays. `revision` is 0.
+- The first attach runs before the reply: a missing terminal gives `pane_not_found`. A terminal
+  that ends gives `{"error": "pane_not_found"}`. When the core connection closes, herdlingd attaches
+  again (250 ms, then doubled up to 4 s). After 5 failures in a row it sends `{"closed": true}`.
+- `pane.get` of a watched pane has `scroll`: `max_offset_from_bottom` is 0 on the alternate screen,
+  else the number of history lines; `viewport_rows` is the rows. The app uses it to find a
+  full-screen app and show the page keys.
+- `pane.read` with `format: "ansi"` takes the first paint of one passive attach (it waits until no
+  frame came for 40 ms, at most 1 s), then detaches.
 
 ### Events
 

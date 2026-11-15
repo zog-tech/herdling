@@ -7,6 +7,13 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased herdlingd]
 
+- The terminal view of a Herdr 2 pane has colors and scrollback, as a herdr 1 pane has.
+  `pane.watch` attaches to the core terminal as a watcher (it never types or resizes), and an
+  emulator in herdlingd makes the herdr 1 screen text. A core restart attaches again. `pane.get`
+  of a watched pane has `scroll`, so the app shows the page keys for a full-screen app. An ANSI
+  `pane.read` takes one paint. New dependency: `vt100`.
+- `pane.watch` has the optional params `cols` and `rows`: on a Herdr 2 pane, herdlingd lays the
+  terminal out at the phone grid while the stream lives, and the reply has `drive: true`.
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
   the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.
