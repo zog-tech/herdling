@@ -1,6 +1,6 @@
-import type { AgentsInstalled, FsDirs, GitStatus, GitWorktree, RecentSession } from "@herdling/protocol";
+import type { AgentsInstalled, FsDirs, GitStatus, GitWorktree, GroupsList, RecentSession } from "@herdling/protocol";
 import { File } from "expo-file-system";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Eye, EyeOff, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { Alert, Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
@@ -10,7 +10,7 @@ import { branchError, defaultBranch, worktreePane, worktreeSlug } from "@/change
 import { agentLabel } from "@/herdr/agentKinds";
 import { expectPane } from "@/herdr/expectedPanes";
 import { canResume, resumeInFolder } from "@/herdr/sessionActions";
-import { startSession, startShell, workspaceExists, type FreshPane } from "@/herdr/startSession";
+import { startOnCore, startSession, startShell, workspaceExists, type FreshPane } from "@/herdr/startSession";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { workspaceForCwd } from "@/herdr/workspaceForCwd";
 import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
@@ -30,6 +30,7 @@ import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
 import { DangerWarning, StartOptionsBar } from "@/newSession/StartOptionsBar";
 import { buildArgs } from "@/newSession/startOptions";
+import { firstChoice, groupsReducer, initialGroups, spaceChoices, startsOnCore, type GroupsEvent, type GroupsLoad } from "@/newSession/spacePick";
 import { choiceFor, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
 import { RpcError } from "@/rpc/RpcClient";
 import { rememberCommand } from "@/terminal/recentCommands";
@@ -103,13 +104,15 @@ function HiddenToggle({ value, onChange }: { value: boolean; onChange: (v: boole
 
 export default function NewSessionScreen() {
   const router = useRouter();
+  /** From the space screen: the computer and the space to start in. */
+  const params = useLocalSearchParams<{ host?: string; workspace?: string }>();
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const hosts = useHosts((s) => s.hosts);
   const onlineKey = useOnlineHostKey(hosts.map((h) => h.id));
   const online = useMemo(() => hosts.filter((h) => onlineKey.split(",").includes(h.id)), [hosts, onlineKey]);
 
-  const [hostId, setHostId] = useState<string>();
+  const [hostId, setHostId] = useState<string | undefined>(params.host);
   const remembered = useAgentMemory((s) => s.byHost);
   const kind = agentFor(remembered, hostId);
   // Shell is chosen for this screen only: it is not remembered, so the next session starts with the agent again.
@@ -137,6 +140,32 @@ export default function NewSessionScreen() {
   }, [online, hostId]);
 
   const { rpc, hello } = useHostConn(hostId ?? "");
+  // Herdr 2 (spec goal 5): a host with the plan C methods and a core starts agents in a space.
+  const onCore = startsOnCore(hello);
+  const groupsState = useRef<GroupsLoad>(initialGroups);
+  const [groupsLoad, setGroupsLoad] = useState<GroupsLoad>(initialGroups);
+  const sendGroups = useCallback((e: GroupsEvent) => {
+    const r = groupsReducer(groupsState.current, e);
+    groupsState.current = r.state;
+    setGroupsLoad(r.state);
+    return r.effects;
+  }, []);
+  useEffect(() => {
+    if (!rpc || !onCore) {
+      sendGroups({ type: "reset" });
+      return;
+    }
+    for (const fx of sendGroups({ type: "load" })) {
+      rpc.call<GroupsList>("groups.list").then(
+        (r) => sendGroups({ type: "done", gen: fx.gen, groups: r?.groups ?? [] }),
+        (e) => sendGroups({ type: "fail", gen: fx.gen, error: message(e) }),
+      );
+    }
+  }, [rpc, onCore, sendGroups]);
+  const spaceList = useMemo(() => spaceChoices(groupsLoad.kind === "ready" ? groupsLoad.groups : []), [groupsLoad]);
+  /** The space the user picked; undefined: the first choice (`firstChoice`). Null is "New space". */
+  const [pickedSpace, setPickedSpace] = useState<string | null | undefined>(undefined);
+  useEffect(() => setPickedSpace(undefined), [hostId]);
   const dictation = useDictation({
     onText: (t) => putPrompt((p) => appendDictation(p, t)),
     onPartial: setHeard,
@@ -321,6 +350,10 @@ export default function NewSessionScreen() {
 
   const snapshot = useSnapshots((s) => (hostId ? s.byHost[hostId] : undefined));
   const existing = useMemo(() => (cwd ? workspaceForCwd(snapshot, cwd) : undefined), [snapshot, cwd]);
+  const spaceId =
+    pickedSpace !== undefined && (pickedSpace === null || spaceList.some((c) => c.id === pickedSpace))
+      ? pickedSpace
+      : firstChoice(spaceList, snapshot, cwd, params.workspace);
   useEffect(() => setNewWorkspace(false), [cwd]);
 
   // "In a new git worktree": only for a folder in a git repo, on a herdlingd that can make one.
@@ -382,7 +415,8 @@ export default function NewSessionScreen() {
     if (inWorktree) {
       setProgress("Creating worktree…");
       try {
-        const w = await rpc.call<GitWorktree>("git.worktree_add", { cwd, branch: branch.trim() }, 90_000);
+        // On Herdr 2 the worktree opens in a new space (`backend: "core"`).
+        const w = await rpc.call<GitWorktree>("git.worktree_add", { cwd, branch: branch.trim(), ...(onCore ? { backend: "core" } : {}) }, 90_000);
         folder = w.path;
         fresh = worktreePane(w);
       } catch (e) {
@@ -392,15 +426,16 @@ export default function NewSessionScreen() {
         return;
       }
     }
-    if (!fresh) setProgress("Creating workspace…");
+    if (!fresh) setProgress(onCore ? "Starting…" : "Creating workspace…");
     try {
       // The snapshot can lag: fall back to a new workspace when the old one is gone.
       // A new worktree is a new folder: it always gets a new workspace. When herdr made the
       // worktree, herdr also made its workspace (`fresh`): the session starts in its pane.
-      const reuse = !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
-      const workspaceId = reuse && existing ? existing.workspace_id : undefined;
+      // On Herdr 2 the picked space (or a new space) holds the session.
+      const reuse = !onCore && !inWorktree && existing && !newWorkspace && (await workspaceExists(rpc, existing.workspace_id));
+      const workspaceId = onCore ? (inWorktree ? undefined : (spaceId ?? undefined)) : reuse && existing ? existing.workspace_id : undefined;
       if (shell) {
-        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, fresh, onProgress: setProgress, hostId });
+        const { paneId, commandError } = await startShell(rpc, { cwd: folder, command: prompt, workspaceId, fresh, onProgress: setProgress, hostId, core: onCore });
         if (!commandError) rememberCommand(hostId, prompt);
         allowLeave();
         // The mark carries the hint into the detail column of regular width too.
@@ -411,16 +446,21 @@ export default function NewSessionScreen() {
         return;
       }
       // The start options apply to a new agent only: not to a resume and not to a shell.
-      const { paneId, promptError } = await startSession(rpc, {
-        cwd: folder,
-        kind,
-        prompt: firstPrompt,
-        workspaceId,
-        fresh,
-        args: buildArgs(kind, choice),
-        onProgress: setProgress,
-        hostId,
-      });
+      // On Herdr 2 one `session.start` call starts the agent; a worktree pane (`fresh`) takes `agent.start`.
+      const { paneId, promptError } =
+        onCore && !fresh
+          ? await startOnCore(rpc, { cwd: folder, kind, prompt: firstPrompt, workspaceId, args: buildArgs(kind, choice), onProgress: setProgress })
+          : await startSession(rpc, {
+              cwd: folder,
+              kind,
+              prompt: firstPrompt,
+              workspaceId,
+              fresh,
+              args: buildArgs(kind, choice),
+              onProgress: setProgress,
+              hostId,
+              core: onCore,
+            });
       pastesSent(sentPastes);
       // The agent runs even when the prompt failed: open it with the prompt ready to resend.
       // The uploaded files stay on the computer, so their paths stay in the prompt.
@@ -437,7 +477,7 @@ export default function NewSessionScreen() {
       setError(message(e));
       setProgress(undefined);
     }
-  }, [rpc, hostId, cwd, kind, choice, shell, prompt, pastes, pastesSent, existing, newWorkspace, router, allowLeave, worktree, repo, branch]);
+  }, [rpc, hostId, cwd, kind, choice, shell, prompt, pastes, pastesSent, existing, newWorkspace, router, allowLeave, worktree, repo, branch, onCore, spaceId]);
 
   const resume = useCallback(
     async (s: RecentSession) => {
@@ -449,9 +489,11 @@ export default function NewSessionScreen() {
       setResuming(s.session);
       try {
         // Same rule as Start: a new workspace, unless the user picked a tab in an existing one.
-        const ws = newWorkspace ? undefined : workspaceForCwd(snapshot, s.cwd);
+        // On Herdr 2: the picked space, or a new space.
+        const ws = onCore || newWorkspace ? undefined : workspaceForCwd(snapshot, s.cwd);
         const reuse = ws && (await workspaceExists(rpc, ws.workspace_id));
-        const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId: reuse && ws ? ws.workspace_id : undefined, hostId });
+        const workspaceId = onCore ? (spaceId ?? undefined) : reuse && ws ? ws.workspace_id : undefined;
+        const { paneId } = await resumeInFolder(rpc, { cwd: s.cwd, kind, session: s.session, workspaceId, hostId, core: onCore });
         allowLeave();
         expectPane(hostId, paneId, "agent");
         router.replace(`/session/${hostId}/${paneId}` as never);
@@ -461,7 +503,7 @@ export default function NewSessionScreen() {
         setResuming(undefined);
       }
     },
-    [rpc, hostId, busy, prompt, pasteChips.pastes.length, snapshot, kind, allowLeave, router, newWorkspace],
+    [rpc, hostId, busy, prompt, pasteChips.pastes.length, snapshot, kind, allowLeave, router, newWorkspace, onCore, spaceId],
   );
 
   if (online.length === 0)
@@ -574,7 +616,26 @@ export default function NewSessionScreen() {
           </Section>
         ) : null}
 
-        {cwd && existing && !inWorktree ? (
+        {onCore && !inWorktree ? (
+          <Section title="Space">
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+              {spaceList.map((c) => (
+                <Chip key={c.id ?? "new"} label={c.label} selected={c.id === spaceId} onPress={() => !busy && setPickedSpace(c.id)} />
+              ))}
+            </View>
+            {groupsLoad.kind === "loading" ? (
+              <Text variant="caption" muted>
+                Loading the spaces…
+              </Text>
+            ) : groupsLoad.kind === "failed" ? (
+              <Text variant="caption" muted>
+                {"Can't list the spaces. The session starts in a new space."}
+              </Text>
+            ) : null}
+          </Section>
+        ) : null}
+
+        {!onCore && cwd && existing && !inWorktree ? (
           <Section title="Where">
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
               <Chip label="New workspace" selected={newWorkspace} onPress={() => setNewWorkspace(true)} />

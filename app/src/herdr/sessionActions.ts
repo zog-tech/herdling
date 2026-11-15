@@ -157,11 +157,11 @@ export async function resumeSession(rpc: Rpc, a: AgentInfo, session: string, hos
  */
 export async function resumeInFolder(
   rpc: Rpc,
-  o: { cwd: string; kind: string; session: string; workspaceId?: string; hostId?: string },
+  o: { cwd: string; kind: string; session: string; workspaceId?: string; hostId?: string; core?: boolean },
 ): Promise<{ paneId: string }> {
   const args = resumeArgs(o.kind, o.session);
   if (!args) throw new RpcError("no_resume", `${o.kind} cannot resume an earlier session`);
-  const { paneId } = await startSession(rpc, { cwd: o.cwd, kind: o.kind, workspaceId: o.workspaceId, args, hostId: o.hostId });
+  const { paneId } = await startSession(rpc, { cwd: o.cwd, kind: o.kind, workspaceId: o.workspaceId, args, hostId: o.hostId, core: o.core });
   return { paneId };
 }
 

@@ -13,7 +13,9 @@ import { useStartOptionsMemory } from "./startOptionsMemory";
 // The screen with the demo host behind it: real `fs.dirs`, `agents.installed` and `sessions.recent` answers.
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
+let mockParams: { host?: string; workspace?: string } = {};
 jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => mockParams,
   useRouter: () => ({ replace: mockReplace, push: mockPush, dismiss: jest.fn() }),
   useNavigation: () => ({ dispatch: jest.fn(), setOptions: jest.fn() }),
   usePreventRemove: () => {},
@@ -42,7 +44,10 @@ beforeEach(async () => {
   const rpc = new RpcClient(transport);
   const hello = rpc.call<Hello>("hello");
   await jest.advanceTimersByTimeAsync(100);
-  mockConn = { status: "online", rpc, hello: await hello };
+  // These tests use the flow of a herdlingd without the plan C methods. The Herdr 2 tests put them back.
+  const full = await hello;
+  mockConn = { status: "online", rpc, hello: { ...full, methods: full.methods?.filter((m) => m !== "session.start") } };
+  mockParams = {};
   useAgentMemory.setState({ byHost: {} });
   useStartOptionsMemory.setState({ byKind: {} });
   mockReplace.mockClear();
