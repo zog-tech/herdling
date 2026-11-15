@@ -671,11 +671,12 @@ gives the error code `pane_not_found`.
 herdlingd puts each terminal in the first place that fits:
 
 1. The space and tab of the herdr-app layout document that hold the terminal.
-2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
-   document tab holds yet, for example right after the phone starts an agent. The name of the
-   space is the part of the `where` label before the last ` / `.
    A Herdr app space with no name takes the `where` name of its first terminal, else the folder
    name of that terminal, else the folder name of the space.
+2. The terminal labels `herdr.space` and `herdr.tab`. This also names a document space that no
+   document tab holds yet, for example right after the phone starts an agent. The name of the
+   space is the part of the `where` label before the last ` / `. When another workspace already
+   holds the tab id (a stale label), the terminal gets its own task tab `hc:task:<address>`.
 3. A helper (a subagent terminal) goes to the task tab of its parent. When the parent is gone,
    finished or on another computer, the helper becomes its own task in its own group.
 4. A fallback group. The group name is the first that exists: the `herdling.group` label, the git
@@ -693,7 +694,8 @@ Core agent and pane entries have these optional fields. An old app ignores them.
 | `repo_root` | The root folder of the repo |
 | `branch` | The branch of the repo, when it has one |
 
-The task name of a terminal is its name, else its 7501 title, else its terminal title. A title
+The task name of a terminal is its `herdling.name` label (a rename from the phone), else its
+name, else its 7501 title, else its terminal title. A title
 that only repeats the reported app or the agent kind (for example "Claude Code") is not a task
 name. The agent `name` and the pane `label` are the task name. When there is none, they are the
 first that exists of: the name of the Herdr app tab that holds the terminal, the terminal name,
@@ -706,8 +708,8 @@ group falls back to the folder name.
 - `agent_status`: 7501 `idle` → `idle`, `working` → `working`, `done` → `done`, `blocked` and
   `error` → `blocked`, other words → `unknown`.
 - `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
-  reported app when the kind is unknown (null for a known kind), `name` the task name,
-  `state_change_seq` the time of the last status change.
+  reported app when the kind is unknown (null for a known kind), `name` the entry name (see
+  above), `state_change_seq` the time of the last status change.
 - Each backend fails on its own. When herdr 1 is down and the core is up, the answer has the core
   entries only. With no core, the answer is the herdr 1 answer, unchanged.
 
@@ -715,27 +717,103 @@ group falls back to the folder name.
 
 `herdr.call` with a param `target` or `*_id` that starts with `hc:` goes to the core:
 
-| herdr 1 method | core method |
+| herdr 1 method | On the core |
 |---|---|
 | `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0) |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
 | `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
 | `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
-| `agent.prompt` | `terminal.send` (the core refuses it while the agent is blocked) |
+| `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
 | `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes |
 | `pane.close` | `terminal.kill` |
+| `tab.create` on `hc:space:<id>` or `hc:g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
+| `workspace.create` with `backend: "core"` | the same, in a new space. Without `backend: "core"` the call goes to herdr 1 |
+| `agent.start` on a pane | types the agent command (`<program> <args>`, shell-quoted) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used |
+| `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
+| `tab.rename` of `hc:task:<address>` | the same for that terminal |
+| `tab.rename` of `hc:tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
+| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used |
+| `agent.explain` | `terminal.get` and `terminal.read`: the agent reports its status itself, so `screen_detection_skipped` is true, the one rule `osc-7501` matched, and its evidence is the end of the screen |
+| `workspace.get` | the workspace entry of the snapshot, else `workspace_not_found` |
 
-- Every other method gives the error code `unsupported`, also on a core workspace or tab id.
-  A herdlingd that does not reach a core also gives `unsupported`.
+- `workspace.list` (no id) adds the core workspaces to the herdr 1 list, as `session.snapshot` does.
+- Restart and resume of the app use these calls: `pane.close`, `workspace.get`, `tab.create`,
+  then `agent.start` with the resume arguments. The new agent is a new tab of the same space.
+- Every other method gives the error code `unsupported`, also a pane method on a workspace or tab
+  id. A herdlingd that does not reach a core also gives `unsupported`.
+- Before a call that changes the core (`terminal.run`, `terminal.label`, `terminal.kill` of a tab
+  or workspace, `terminal.send` of `agent.start` and `agent.prompt`), herdlingd reads the core
+  `hello.methods`. A core that lacks the method gives `unsupported`, and nothing changes.
 - The core error kinds `not_found` and `finished` become `pane_not_found`. Other kinds are the code.
 - The core waits until nobody types at the computer before it types. A typing call can take up
   to 75 seconds.
-- `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list` and
-  `ports.list` accept a core `pane_id`. `shell.watch` gives `unsupported`.
+- `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list`,
+  `ports.list` and `shell.watch` accept a core `pane_id`.
 - `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
   herdr 1, and gives its transcript (`log_path`). `agents.preview` of a core pane reads the
   transcript of the agent and sets `source: "log"`. When no transcript exists, `thread.resolve`
   gives `session: null`, and only `agents.preview` falls back to the screen.
+
+### New terminals
+
+herdlingd starts a terminal as the Herdr app does: the login shell of the user (`$SHELL -l`, else
+the core's own shell) with `keep: true` and no parent. Then it types the agent command. It sets
+only these labels:
+
+| Place | Labels |
+|---|---|
+| a space `hc:space:<id>` | `herdr.space=<id>`, `herdr.tab=<new tab id>` |
+| a new space | `herdr.space=<new space id>`, `herdr.tab=<new tab id>` |
+| a label group `hc:g:<key>` | `herdling.group=<group name>` |
+| a repo or folder group | none: the folder places the terminal |
+
+New ids look like the Herdr app ids: `sp` or `tb` and 32 hex digits. Each new agent gets a new tab
+id, so it is its own tab at the desk. herdlingd never writes the herdr-app layout document.
+
+### `groups.list`
+
+Params: none. Result: `{groups: [{workspace_id, label, source, space_id?, terminals, agents,
+agent_status}]}`, one per workspace of the core part of the snapshot. `source` is `space`,
+`label`, `repo` or `folder`. `space_id` is set for a space. Without a core: `unsupported`.
+
+### `pane.move`
+
+Params: `pane_id` (a core pane) and exactly one of `workspace_id` (a space `hc:space:<id>` or a
+label group `hc:g:<key>`), `new_space: true`, or `group` (a name of at most 64 characters; an
+empty name removes the label). Result: `{pane_id, workspace_id, tab_id}`, where the terminal
+shows now.
+
+- A space target sets `herdr.space` and a new `herdr.tab`. The Herdr app then shows the terminal
+  in that space. A group target sets `herdling.group`. No other label changes.
+- Only a terminal in no Herdr app space moves. A terminal in a space gives `unsupported`: it is
+  not known if the Herdr app moves a terminal that it holds when its labels change.
+- A repo or folder group gives `unsupported`: the folder places those terminals.
+- An unknown pane gives `pane_not_found`; a bad target gives `bad_request`.
+
+### `session.start`
+
+Params: `cwd` (an absolute path), `kind` (an agent kind with a known program), optional
+`workspace_id` (`hc:space:<id>` or `hc:g:<key>`; missing makes a new space), `prompt` and `args`.
+Result: `{pane_id, workspace_id, tab_id, prompt_error}`.
+
+herdlingd starts a shell (see "New terminals"), types the agent command, waits up to 60 seconds
+for the agent to report a 7501 status, then sends the prompt. When the command cannot be typed,
+herdlingd kills the new shell and gives `start_failed`. When the prompt does not go in, the agent
+still runs and `prompt_error` says why.
+
+### Worktrees on the core
+
+`git.worktree_add` with `backend: "core"` makes the worktree with git, then starts a shell in a
+new space in the worktree folder. The result has `via: "herdr"` and the core `workspace_id`,
+`tab_id` and `pane_id`, so the app starts the agent in that pane. herdlingd checks the core
+methods before git runs.
+
+### `herdlingd group`
+
+`herdlingd group <name>` sets the `herdling.group` label of the terminal that runs it, and
+`herdlingd group --clear` removes it. The core sets `HC_TERMINAL_ID` and `HC_TERMINAL_SOCKET` in
+each terminal; outside a core terminal the command fails. A terminal in no Herdr app space then
+shows in that group.
 
 ### Events
 
@@ -751,6 +829,10 @@ lines with `hc:` ids: a status change as `pane.agent_status_changed`, a cleared 
   With no core, the stream works as before.
 
 ### Pushes
+
+`herdlingd serve` also checks the `shell.watch` watches of core panes with `terminal.get`: every
+3 seconds, and early after a core `foreground` or `title` event of a watched pane. The push rules
+are the herdr 1 rules.
 
 `herdlingd serve` also subscribes to the core events, after `hello` shows generation 1. It sends
 "finished" (working → idle or done) and "needs you" (blocked or error) pushes for core agents,

@@ -225,8 +225,9 @@ herdr (unchanged), through its socket ~/.config/herdr/herdr.sock
   to the herdr 1 ones, in the spaces of the Herdr app, with a "Herdr 2" label. You can read
   them, type into them, answer a permission menu, close them and get pushes when an agent
   finishes or needs you. Older app builds see them too. Rename, restart, worktrees, new tabs,
-  the chat view and "Notify me when it finishes" need herdr 1 for now. See "Herdr 2" in
-  [docs/protocol.md](docs/protocol.md).
+  the chat view and "Notify me when it finishes" need herdr 1 in the app for now. A newer
+  `herdlingd` already does these actions on Herdr 2, and `herdlingd group <name>` puts a Herdr 2
+  terminal in a named group. See "Herdr 2" in [docs/protocol.md](docs/protocol.md).
 
 ## How Herdling compares
 

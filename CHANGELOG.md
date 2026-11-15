@@ -7,6 +7,16 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [Unreleased herdlingd]
 
+- Herdr 2 actions: on a core entry, `tab.create`, `agent.start`, `agent.prompt`, `agent.rename`,
+  `tab.close`, `workspace.close`, `agent.explain`, `workspace.get` and `workspace.list` work.
+  The app's restart and resume work through them. Space and tab renames give `unsupported`.
+  `workspace.create` and `git.worktree_add` with `backend: "core"` open a new Herdr app space.
+- New methods `groups.list`, `pane.move` and `session.start`. A new terminal is a login shell
+  with the Herdr app labels `herdr.space` and `herdr.tab`, so the Herdr app shows it at the desk.
+- `shell.watch` works on Herdr 2 terminals.
+- `herdlingd group <name>` and `herdlingd group --clear` set or remove the `herdling.group` label
+  of the Herdr 2 terminal that runs them.
+- The `herdling.name` label is the task name of a Herdr 2 terminal.
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
   the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.

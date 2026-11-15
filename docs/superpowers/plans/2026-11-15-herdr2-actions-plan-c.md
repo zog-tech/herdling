@@ -18,7 +18,7 @@
 - Add fields and methods only; new fields optional. An unknown id gives `pane_not_found` (or `tab_not_found`, `workspace_not_found`), never a panic. A method with no Herdr 2 meaning gives `unsupported` with a clear message.
 - Gate each core write call on the core `hello.methods`: a list that lacks the method gives `unsupported`; a missing list means "try".
 - herdr 1 behaviour does not change. Calls with no `hc:` id go to herdr 1 as before, except where a new optional param (`backend: "core"`) asks for the core.
-- Builds: `CARGO_TARGET_DIR=/Volumes/MiniSSD/builds/herdling-target`, `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate.
+- Builds: `CARGO_TARGET_DIR` on the external build volume (AGENTS.md section 7), `nice -n 15 cargo test -j 2`, `nice -n 15 cargo clippy -j 2 --all-targets -- -D warnings`. No `cargo fmt` over the crate.
 - Test data: user `sam`, `/home/sam/proj`, `studio.local`. ASD-STE100 for comments and docs.
 
 ## Decisions
@@ -61,26 +61,27 @@
 - `pub struct ActionError { pub code: String, pub message: String }` with `fn not_found(kind, id)`, `fn unsupported(msg)`, `fn bad(msg)`; `impl From<ActionError> for RpcError`.
 - `pub fn new_id(prefix: &str, bytes: [u8; 16]) -> String` — `prefix` + 32 hex digits.
 - `pub struct NewIds { pub space: String, pub tab: String }` and `pub fn fresh_ids() -> NewIds` (uses `rand`; the only impure function here).
-- `pub enum Place { Space(String), NewSpace, LabelGroup(String), Folder }`
-- `pub fn place_of(workspace_id: Option<&str>, p: &Projection) -> Result<Place, ActionError>` — `None` → `NewSpace`; `hc:space:<id>` → `Space(id)`; `hc:g:<key>` in `p` → `LabelGroup(label)` when its panes have `group_source: "label"`, else `Folder`; other ids → `workspace_not_found`.
+- `pub enum Place { Space(String), NewSpace, LabelGroup { key: String, label: String }, Folder { key: String } }`
+- `pub fn place_of(workspace_id: Option<&str>, p: &Projection) -> Result<Place, ActionError>` — `None` → `NewSpace`; `hc:space:<id>` → `Space(id)`; `hc:g:<key>` in `p` → `LabelGroup` when its panes have `group_source: "label"`, else `Folder`; other ids → `workspace_not_found`.
 - `pub fn place_labels(place: &Place, ids: &NewIds) -> Map<String, Value>`
 - `pub fn shell_argv(shell: Option<&str>) -> Vec<String>` — `[shell, "-l"]` for an absolute path, else empty.
-- `pub fn run_params(cwd: &str, labels: Map<String, Value>, argv: Vec<String>) -> Value` — `{argv, cwd, labels, keep: true, no_parent: true}`.
-- `pub fn placed_ids(place: &Place, ids: &NewIds, addr: &str, p_ws_key: Option<&str>) -> (String, String)` — the workspace and tab id of the new terminal, as the projection will show it: space → `hc:space:<id>` / `hc:tab:<tab>`; group → the given `hc:g:<key>` / `hc:task:<addr>`.
+- `pub fn run_params(cwd: Option<&str>, labels: Map<String, Value>, argv: Vec<String>) -> Value` — `{argv, cwd?, labels, keep: true, no_parent: true}`.
+- `pub fn placed_ids(place: &Place, ids: &NewIds, addr: &str) -> (String, String)` — the workspace and tab id of the new terminal, as the projection will show it: space → `hc:space:<id>` / `hc:tab:<tab>`; group → `hc:g:<key>` / `hc:task:<addr>`.
 - `pub fn created(kind: &str, ws: &str, tab: &str, pane: &str) -> Value` — `{type: kind, workspace: {workspace_id}, tab: {tab_id, workspace_id}, root_pane: {pane_id, tab_id, workspace_id}}`.
 - `pub fn shell_quote(s: &str) -> String` and `pub fn agent_line(kind: &str, args: &[String]) -> Result<String, ActionError>`.
 - `pub enum Scope { Tab(String), Workspace(String) }` and `pub fn members(p: &Projection, scope: &Scope) -> Result<Vec<String>, ActionError>` — the terminal addresses.
 - `pub fn workspace_get(p: &Projection, id: &str) -> Result<Value, ActionError>` — `{type: "workspace_info", workspace: <entry>}`.
 - `pub fn explain(t: &Value, screen: &str) -> Value`
 - `pub fn rename_labels(name: Option<&str>) -> Map<String, Value>` — trimmed; empty or none gives `""` (removes).
-- `pub fn in_space(t: &Value, p: &Projection) -> bool` — the pane entry of `t` has `group_source: "space"`.
+- `pub fn in_space(addr: &str, p: &Projection) -> bool` — the pane entry of `addr` has `group_source: "space"`.
+- Added in Task 4: `group_name`, `MoveTarget`, `move_target`, `move_labels`, `where_is`, `merge_workspace_list` (Task 3).
 - `pub fn groups(p: &Projection) -> Value` — `{groups: [{workspace_id, label, source, space_id?, terminals, agents, agent_status}]}`.
 
-- [ ] **Step 1: Write the failing tests** in `tests/core_actions.rs`: `new_ids_look_like_the_herdr_app_ids` (`new_id("sp", [0xab; 16])` = `"sp" + "ab"*16`), `place_from_workspace_ids` (none, space, label group, repo group, unknown → `workspace_not_found`, `hc:loose` → `workspace_not_found`), `place_labels_set_only_the_needed_labels` (space: two `herdr.*`; label group: only `herdling.group`; folder: empty), `agent_line_quotes_each_argument` (`claude --resume 'a b'`, `codex resume abc`, a single quote → `'it'\''s'`, unknown kind → `bad_request`), `members_of_tab_and_workspace` (doc space with two tabs; `hc:task:t3`; unknown → not found), `explain_has_the_herdr_one_shape`, `rename_labels_trim_and_remove`, `groups_list_counts`, `shell_argv_needs_an_absolute_path`. In `core_pure.rs`: `herdling_name_is_the_task_name`, `stale_tab_label_gets_a_task_tab` (a `herdr.tab` that a document space of another workspace holds → `hc:task:<addr>`).
-- [ ] **Step 2: Run** `nice -n 15 cargo test -j 2 --test core_actions --test core_pure` — FAIL (module missing).
-- [ ] **Step 3: Implement** `actions.rs`, the `herdling.name` rule and the tab guard.
-- [ ] **Step 4: Run** the same tests — PASS. Then the whole suite.
-- [ ] **Step 5: Commit** — "companion: add pure rules for Herdr 2 actions"
+- [x] **Step 1: Write the failing tests** in `tests/core_actions.rs`: `new_ids_look_like_the_herdr_app_ids` (`new_id("sp", [0xab; 16])` = `"sp" + "ab"*16`), `place_from_workspace_ids` (none, space, label group, repo group, unknown → `workspace_not_found`, `hc:loose` → `workspace_not_found`), `place_labels_set_only_the_needed_labels` (space: two `herdr.*`; label group: only `herdling.group`; folder: empty), `agent_line_quotes_each_argument` (`claude --resume 'a b'`, `codex resume abc`, a single quote → `'it'\''s'`, unknown kind → `bad_request`), `members_of_tab_and_workspace` (doc space with two tabs; `hc:task:t3`; unknown → not found), `explain_has_the_herdr_one_shape`, `rename_labels_trim_and_remove`, `groups_list_counts`, `shell_argv_needs_an_absolute_path`. In `core_pure.rs`: `herdling_name_is_the_task_name`, `stale_tab_label_gets_a_task_tab` (a `herdr.tab` that a document space of another workspace holds → `hc:task:<addr>`).
+- [x] **Step 2: Run** `nice -n 15 cargo test -j 2 --test core_actions --test core_pure` — FAIL (module missing).
+- [x] **Step 3: Implement** `actions.rs`, the `herdling.name` rule and the tab guard.
+- [x] **Step 4: Run** the same tests — PASS. Then the whole suite.
+- [x] **Step 5: Commit** — "companion: add pure rules for Herdr 2 actions"
 
 ### Task 2: Fake core writes and the hello gate
 
@@ -100,11 +101,11 @@ This task has no own test file: Task 3 tests use it. Commit with Task 3.
 - Test: `companion/tests/core_actions_rpc.rs`
 
 **Interfaces:**
-- `pub enum Action { Call(Plan), Run { kind: &'static str, place_id: Option<String>, cwd: String }, Start { addr, kind, args }, Prompt { addr, text }, Label { addr, labels }, Kill(Scope), Explain { addr }, WorkspaceGet(String) }`
-- `pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, Unsupported>` — falls back to `plan()` for the single-call rows.
+- `pub enum Action { Call(Plan), Run { kind: &'static str, workspace: Option<String>, cwd: Option<String> }, Start { addr, line }, Prompt { addr, text }, Label { addr, labels }, Kill(Scope), Explain { addr }, WorkspaceGet(String) }`
+- `pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionError>` — falls back to `plan()` for the single-call rows.
 - `live::call` keeps its signature.
 
-- [ ] **Step 1: Write the failing tests** (rpc session with the fake core, as `core_rpc.rs`):
+- [x] **Step 1: Write the failing tests** (rpc session with the fake core, as `core_rpc.rs`):
   - `tab_create_in_a_space_runs_a_labelled_shell`: `tab.create {workspace_id: "hc:space:sp1", cwd: "/home/sam/proj"}` → one `terminal.run` with `labels` = `{herdr.space: "sp1", herdr.tab: tb…}`, `keep: true`, and the answer `root_pane.pane_id` = `hc:t3`, `workspace.workspace_id` = `hc:space:sp1`.
   - `workspace_create_for_the_core_makes_a_new_space`: `backend: "core"` → new `sp…` and `tb…` labels.
   - `agent_start_types_the_agent_command`: `agent.start {pane_id: "hc:t2", kind: "claude", args: ["--resume", "abc"]}` → `terminal.send {terminal: "t2", text: "claude --resume abc"}`.
@@ -115,10 +116,10 @@ This task has no own test file: Task 3 tests use it. Commit with Task 3.
   - `explain_reads_the_screen`.
   - `old_core_without_the_method_is_unsupported`: `State.methods` without `terminal.run` → `tab.create` gives `unsupported`, no `terminal.run`.
   - `workspace_list_adds_core_workspaces`.
-- [ ] **Step 2: Run** `nice -n 15 cargo test -j 2 --test core_actions_rpc` — FAIL.
-- [ ] **Step 3: Implement** Task 2 and Task 3.
-- [ ] **Step 4: Run** all companion tests — PASS.
-- [ ] **Step 5: Commit** — "companion: give herdr 1 actions a Herdr 2 meaning"
+- [x] **Step 2: Run** `nice -n 15 cargo test -j 2 --test core_actions_rpc` — FAIL.
+- [x] **Step 3: Implement** Task 2 and Task 3.
+- [x] **Step 4: Run** all companion tests — PASS.
+- [x] **Step 5: Commit** — "companion: give herdr 1 actions a Herdr 2 meaning"
 
 ### Task 4: New methods `groups.list`, `pane.move`, `session.start`
 
@@ -131,31 +132,31 @@ This task has no own test file: Task 3 tests use it. Commit with Task 3.
 - `groups.list {}` → `{groups: [{workspace_id, label, source, space_id?, terminals, agents, agent_status}]}`. No core → `unsupported`.
 - `pane.move {pane_id, workspace_id?: "hc:space:<id>", new_space?: bool, group?: string}` → `{pane_id, workspace_id, tab_id}`. Exactly one of the three targets. `workspace_id`/`new_space` set `herdr.space` and a new `herdr.tab`; `group` sets `herdling.group` (an empty group removes it). A terminal in a space → `unsupported`.
 - `session.start {cwd, kind, workspace_id?, prompt?, args?}` → `{pane_id, workspace_id, tab_id, prompt_error?}`.
-- `core::start`: `pub enum State { Shell, Command { addr }, Waiting { addr, tries }, Prompt { addr }, Done }`, `pub enum Input { Ran(String), Typed, Record(Value), Sent, Failed(String) }`, `pub enum Effect { Run, Type(String), Wait(Duration), Get(String), Send(String, String), Kill(String), Finish(Result<Option<String>, String>) }`, `pub fn step(state: State, input: Input, plan: &Plan) -> (State, Vec<Effect>)` where `Plan { line, prompt: Option<String>, max_tries: u32, wait: Duration }`. A failed command kills the new terminal and gives an error; a failed or timed-out prompt gives `Finish(Ok(Some(prompt_error)))`.
+- `core::start`: `pub enum State { Shell, Command { addr }, Waiting { addr, tries }, Prompt { addr }, Done }`, `pub enum Input { Ran(String), Typed, Record(Value), Sent, Failed(String) }`, `pub enum Effect { Run, Type { addr, line }, Wait(Duration), Get(String), Send { addr, text }, Kill(String), Finish(Outcome) }`, `pub enum Outcome { Started { addr, prompt_error: Option<String> }, Failed(String) }`, `pub fn begin() -> (State, Vec<Effect>)`, `pub fn step(state: State, input: Input, plan: &Plan) -> (State, Vec<Effect>)` where `Plan { line, prompt: Option<String>, max_tries: u32, wait: Duration }`. A failed command kills the new terminal and gives an error; a failed or timed-out prompt gives `Finish(Ok(Some(prompt_error)))`.
 
-- [ ] **Step 1: Write the failing tests**: each state and input of `step` (including impossible pairs → `Done` with an error), `groups_list_counts_spaces_and_groups`, `pane_move_to_new_space_sets_two_labels`, `pane_move_to_group_sets_one_label`, `pane_move_refuses_a_terminal_in_a_space`, `session_start_runs_types_and_prompts` (fake terminal gets a status before the prompt), `session_start_without_core_is_unsupported`.
-- [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement**; add each method to `METHODS`, `APP_METHODS`, the protocol types and the demo host.
-- [ ] **Step 4: Run** companion tests, `pnpm exec tsc --noEmit` in `app/` and `protocol/`, `pnpm test --maxWorkers=2` in `app/` — PASS.
-- [ ] **Step 5: Commit** — "companion: list groups, move panes and start agents on Herdr 2"
+- [x] **Step 1: Write the failing tests**: each state and input of `step` (including impossible pairs → `Done` with an error), `groups_list_counts_spaces_and_groups`, `pane_move_to_new_space_sets_two_labels`, `pane_move_to_group_sets_one_label`, `pane_move_refuses_a_terminal_in_a_space`, `session_start_runs_types_and_prompts` (fake terminal gets a status before the prompt), `session_start_without_core_is_unsupported`.
+- [x] **Step 2: Run** — FAIL.
+- [x] **Step 3: Implement**; add each method to `METHODS`, `APP_METHODS`, the protocol types and the demo host.
+- [x] **Step 4: Run** companion tests, `pnpm exec tsc --noEmit` in `app/` and `protocol/`, `pnpm test --maxWorkers=2` in `app/` — PASS.
+- [x] **Step 5: Commit** — "companion: list groups, move panes and start agents on Herdr 2"
 
 ### Task 5: `git.worktree_add` on the core
 
 **Files:** Modify `companion/src/rpc.rs` (`git_worktree_add`), `protocol/src/index.ts` (`backend?: "core"` param). Test: `companion/tests/core_actions_rpc.rs`.
 
-- [ ] **Step 1: Write the failing test** `worktree_for_the_core_opens_a_new_space`: a temp git repo (skip with a message when `git` is missing), `git.worktree_add {cwd, branch: "fix-x", backend: "core"}` → the folder exists, one `terminal.run` with `cwd` = the worktree and two `herdr.*` labels, the answer has `via: "herdr"`, `workspace_id` `hc:space:sp…`, `pane_id` `hc:t3`.
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** — "companion: make worktrees for Herdr 2 in a new space"
+- [x] **Step 1: Write the failing test** `worktree_for_the_core_opens_a_new_space`: a temp git repo (skip with a message when `git` is missing), `git.worktree_add {cwd, branch: "fix-x", backend: "core"}` → the folder exists, one `terminal.run` with `cwd` = the worktree and two `herdr.*` labels, the answer has `via: "herdr"`, `workspace_id` `hc:space:sp…`, `pane_id` `hc:t3`.
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** — "companion: make worktrees for Herdr 2 in a new space"
 
 ### Task 6: `shell.watch` on core panes
 
 **Files:** Modify `companion/src/rpc.rs` (`shell_watch` accepts core ids), `companion/src/serve/shells.rs` (`poll` takes a `Backend`), `companion/src/serve/watch.rs` (herdr 1 loop checks non-core watches only), `companion/src/serve/core_watch.rs` (core loop checks core watches, nudged by `foreground` events). Test: `companion/tests/serve_shells.rs` (or a new `core_shells.rs`).
 
-**Interfaces:** `pub enum Backend<'a> { Herdr, Core(&'a CoreSocket) }`; `pub fn core_probe(r: Result<Value, CoreError>) -> Probe` in `shell_watch.rs`-adjacent code (`core::actions` or `serve::shells`): not found, finished or a record that is not live → `Gone`; other error → `Unknown`; else `probe(process_info)`.
+**Interfaces:** `pub enum Backend<'a> { Herdr, Core(&'a CoreSocket) }` and `pub fn core_probe(r: Result<Value, CoreError>) -> Probe` in `serve/shells.rs`: not found, finished or a record that is not live → `Gone`; other error → `Unknown`; else `probe(process_info)` with the foreground folder. `pub fn core_watch::foreground_pane(params: &Value) -> Option<String>`.
 
-- [ ] **Step 1: Write the failing tests**: `core_probe_rules` (pure), `core_watch_sends_one_push_when_the_command_ends` (fake core: foreground pid ≠ shell pid, then equal → one push to the mock push server), `shell_watch_accepts_a_core_pane`.
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** — "companion: watch shell commands in Herdr 2 terminals"
+- [x] **Step 1: Write the failing tests**: `core_probe_rules` (pure), `core_watch_sends_one_push_when_the_command_ends` (fake core: foreground pid ≠ shell pid, then equal → one push to the mock push server), `shell_watch_accepts_a_core_pane`.
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** — "companion: watch shell commands in Herdr 2 terminals"
 
 ### Task 7: `herdlingd group`
 
@@ -163,20 +164,45 @@ This task has no own test file: Task 3 tests use it. Commit with Task 3.
 
 **Interfaces:** `pub enum GroupCmd { Set(String), Clear }`, `pub fn parse(args: &[String]) -> Result<GroupCmd, String>` (no args, two names, a name over 64 characters or with control characters → error); `pub fn labels(cmd: &GroupCmd) -> Value`; `pub async fn run(cmd: GroupCmd, terminal: Option<String>, socket: Option<PathBuf>, fallback: Option<CoreSocket>) -> Result<String, String>` — needs `HC_TERMINAL_ID`, uses `HC_TERMINAL_SOCKET`, else the resolved socket.
 
-- [ ] **Step 1: Write the failing tests**: `parse_rules`, `group_sets_the_label_on_the_own_terminal` (fake core, `terminal.label {terminal: "t1", labels: {"herdling.group": "Clips"}}`), `clear_removes_it`, `outside_a_core_terminal_fails`.
-- [ ] **Step 2–4:** run, implement, run.
-- [ ] **Step 5: Commit** — "companion: add herdlingd group for Herdr 2 terminals"
+- [x] **Step 1: Write the failing tests**: `parse_rules`, `group_sets_the_label_on_the_own_terminal` (fake core, `terminal.label {terminal: "t1", labels: {"herdling.group": "Clips"}}`), `clear_removes_it`, `outside_a_core_terminal_fails`.
+- [x] **Step 2–4:** run, implement, run.
+- [x] **Step 5: Commit** — "companion: add herdlingd group for Herdr 2 terminals"
 
 ### Task 8: Docs and a live read check
 
 **Files:** `docs/protocol.md`, `CHANGELOG.md` (Unreleased herdlingd), `AGENTS.md` (`core/` row: `actions.rs`, `start.rs`; `group_cmd.rs`; `main.rs` subcommands), this plan's Follow-ups.
 
-- [ ] **Step 1:** Update the docs. Fix the plan A doc follow-up (the agent field list "`name` the task name"; the unnamed-space sentence under rule 2).
-- [ ] **Step 2:** Clippy clean, all tests, type checks.
-- [ ] **Step 3:** Privacy check of `git diff main`.
-- [ ] **Step 4:** Read-only live check: `nice -n 15 cargo build -j 2`, then `printf` a `hello`, a `session.snapshot` and a `groups.list` request into `$CARGO_TARGET_DIR/debug/herdlingd rpc`. No write method.
-- [ ] **Step 5: Commit** — "docs: Herdr 2 actions, new methods and herdlingd group"
+- [x] **Step 1:** Update the docs. Fix the plan A doc follow-up (the agent field list "`name` the task name"; the unnamed-space sentence under rule 2).
+- [x] **Step 2:** Clippy clean, all tests, type checks.
+- [x] **Step 3:** Privacy check of `git diff main`.
+- [x] **Step 4:** Read-only live check: `nice -n 15 cargo build -j 2`, then `printf` a `hello`, a `session.snapshot` and a `groups.list` request into `$CARGO_TARGET_DIR/debug/herdlingd rpc`. No write method.
+- [x] **Step 5: Commit** — "docs: Herdr 2 actions, new methods and herdlingd group"
 
 ## Follow-ups
 
-Filled in while building.
+Found while building plan C. None blocks plan C.
+
+- **Open question (goal 6):** does the Herdr app move a terminal that is already in a space when its
+  `herdr.space` and `herdr.tab` labels change? Not tested (it needs the live core). `pane.move`
+  refuses a terminal in a space until the maintainer checks it at the desk.
+- **Plan E:** `workspace.create` and `git.worktree_add` use the core only with `backend: "core"`.
+  With herdr 1 gone, the core is the default. The restart of an agent whose space is gone (the last
+  terminal of a space that is not in the layout document) calls `workspace.create` without the
+  marker, so until plan E it goes to herdr 1.
+- **Plan E:** `herdr.update` is still herdr 1 only (plan B makes it update herdr-core).
+- **Plan F (app):** the app still hides rename, restart, resume, explain, close of groups, shell
+  watch and new tabs for core entries (`app/src/herdr/backend.ts`, `CORE_HAS` is empty), and the
+  demo host refuses `shell.watch` on a core pane. Turn each on behind `hello.methods` (the new
+  methods) or a herdlingd version check. Use `groups.list`, `pane.move` and `session.start` for New
+  session on Herdr 2 and "Move to group". Accept `via: "herdr"` with `hc:` ids in `worktreePane`.
+- **Plan F:** `agent.rename` in the app checks the herdr agent name rule (lower case, 32
+  characters). `herdling.name` has no such rule: the app can allow free text for a core agent.
+- **Plan D:** the terminal view (`pane.watch`) of a new core shell.
+- `agent.start` types the command into a login shell. A shell with a slow start script takes the
+  typed text when it is ready. herdlingd does not wait for the shell prompt.
+- `session.start` waits up to 60 seconds for an agent that never reports an OSC 7501 status (an
+  agent kind with no Herdr 2 integration). It then gives `prompt_error`. The app should show the
+  prompt again.
+- `tab.close` and `workspace.close` kill every terminal of a Herdr app space, also plain shells.
+  This is what herdr 1 did; the app asks before a group close.
+- The demo host does not start agents with `session.start`; it answers `unsupported`.

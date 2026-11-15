@@ -91,7 +91,8 @@ The path alias `@/` points to `app/src/`.
 
 | Path | Responsibility |
 |---|---|
-| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `proxy`, `version` |
+| `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `proxy`, `group`, `version` |
+| `group_cmd.rs` | `herdlingd group`: the `herdling.group` label of the own Herdr 2 terminal |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
 | `herdr.rs`, `events.rs` | The herdr socket client and event subscription |
 | `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI |
@@ -100,7 +101,7 @@ The path alias `@/` points to `app/src/`.
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
 | `git.rs`, `worktree.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (herdr `worktree.create`, or git) |
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
-| `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), call routing (`route.rs`), event lines (`events.rs`), the merged subscribe stream (`merge.rs`, `stream.rs`) and the serve tracker (`tracker.rs`). `serve/core_watch.rs` sends its pushes |
+| `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), the action rules (`actions.rs`: labels, new ids, close, explain, groups), the start state machine (`start.rs`), call routing (`route.rs`), event lines (`events.rs`), the merged subscribe stream (`merge.rs`, `stream.rs`) and the serve tracker (`tracker.rs`). `serve/core_watch.rs` sends its pushes |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `push.rs` | Expo push messages. Never log push tokens |
 | `stt.rs`, `tts.rs`, `summary.rs`, `hostcmd.rs` | Optional host commands from `~/.config/herdling/config.toml` |
