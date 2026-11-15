@@ -6,17 +6,18 @@ const mockCalls: any[] = [];
 let mockScreen = "a";
 let mockHello: { methods?: string[] } | undefined;
 type OnData = (d: unknown) => void;
-const mockWatch: { params?: any; onData?: OnData; off: jest.Mock; fail?: Error } = { off: jest.fn() };
+const mockWatch: { params?: any; onData?: OnData; off: jest.Mock; fail?: Error; drive?: boolean } = { off: jest.fn() };
 const mockRpc = {
   call: async (_m: string, params: any) => {
     mockCalls.push(params);
     return { read: { text: mockScreen } };
   },
-  stream: async (method: string, params: any, onData: OnData) => {
+  stream: async (method: string, params: any, onData: OnData, onResult?: (r: unknown) => void) => {
     if (mockWatch.fail) throw mockWatch.fail;
     expect(method).toBe("pane.watch");
     mockWatch.params = params;
     mockWatch.onData = onData;
+    onResult?.({ stream: "w:1", ...(mockWatch.drive ? { drive: true } : {}) });
     return mockWatch.off;
   },
 };
@@ -45,6 +46,7 @@ beforeEach(() => {
   mockWatch.params = undefined;
   mockWatch.onData = undefined;
   mockWatch.fail = undefined;
+  mockWatch.drive = undefined;
   mockWatch.off = jest.fn();
 });
 afterEach(() => {
@@ -168,4 +170,47 @@ describe("with pane.watch", () => {
     await flush();
     expect(mockCalls).toHaveLength(1);
   });
+});
+
+function SizeProbe({ size, onDrive }: { size?: { cols: number; rows: number }; onDrive: (d: boolean) => void }) {
+  latest = useTerminalText("host-1", "hc:t1", true, { format: "ansi", ...(size ? { size, onDrive } : {}) });
+  return null;
+}
+
+test("phone_size_goes_with_the_watch_and_reports_drive", async () => {
+  mockHello = { methods: ["pane.watch"] };
+  mockWatch.drive = true;
+  const onDrive = jest.fn();
+  await act(async () => {
+    tree = create(<SizeProbe size={{ cols: 50, rows: 35 }} onDrive={onDrive} />);
+  });
+  await flush();
+  expect(mockWatch.params).toMatchObject({ pane_id: "hc:t1", cols: 50, rows: 35 });
+  expect(onDrive).toHaveBeenCalledWith(true);
+  // A new size starts a new watch at that size.
+  await act(async () => tree!.update(<SizeProbe size={{ cols: 40, rows: 30 }} onDrive={onDrive} />));
+  await flush();
+  expect(mockWatch.off).toHaveBeenCalled();
+  expect(mockWatch.params).toMatchObject({ cols: 40, rows: 30 });
+});
+
+test("an_older_herdlingd_gives_no_drive", async () => {
+  mockHello = { methods: ["pane.watch"] };
+  const onDrive = jest.fn();
+  await act(async () => {
+    tree = create(<SizeProbe size={{ cols: 50, rows: 35 }} onDrive={onDrive} />);
+  });
+  await flush();
+  expect(onDrive).toHaveBeenCalledWith(false);
+});
+
+test("no_size_no_cols", async () => {
+  mockHello = { methods: ["pane.watch"] };
+  const onDrive = jest.fn();
+  await act(async () => {
+    tree = create(<SizeProbe onDrive={onDrive} />);
+  });
+  await flush();
+  expect(mockWatch.params.cols).toBeUndefined();
+  expect(onDrive).not.toHaveBeenCalled();
 });

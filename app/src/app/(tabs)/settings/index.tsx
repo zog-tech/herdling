@@ -17,6 +17,7 @@ import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts, type Host } from "@/hosts/store";
 import { updateStatus } from "@/hosts/updates";
 import { useNotifPrefs, type NotifPref } from "@/push/prefs";
+import { useCustomKeys } from "@/terminal/customKeys";
 import { useSavedPrompts } from "@/thread/savedPrompts";
 import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GoldSwitch } from "@/ui/GoldSwitch";
@@ -322,6 +323,30 @@ function PromptsSection() {
   );
 }
 
+/** "Terminal": the custom keys and text macros of the terminal key bar. The terminal theme is in Theme. */
+function TerminalSection() {
+  const router = useRouter();
+  const count = useCustomKeys((s) => s.keys.length);
+  return (
+    <Section title="Terminal">
+      <Group>
+        <Row
+          accessibilityLabel={`Key bar, ${count} custom keys`}
+          onPress={() => router.push("/key-bar" as never) /* typed routes regenerate on the next dev start */}
+          title="Key bar"
+          detail="Custom keys and text macros such as /new or yes."
+          trailing={
+            <Text muted style={{ fontVariant: ["tabular-nums"] }}>
+              {count}
+            </Text>
+          }
+          chevron
+        />
+      </Group>
+    </Section>
+  );
+}
+
 /**
  * Settings: grouped bands with small uppercase headers. Each row has a title, one plain line under
  * it, and its control on the right (a gold switch, a segmented control, or a chevron).
@@ -376,6 +401,7 @@ export default function SettingsScreen() {
         </Group>
       </Section>
       <PromptsSection />
+      <TerminalSection />
       <VoiceSection />
       <VoiceInputSection />
       <FeelSection />

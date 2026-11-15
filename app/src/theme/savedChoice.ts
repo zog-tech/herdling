@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-import { DEFAULT_CHOICE, isAccentId, isThemeId, type ThemeChoice } from "./palettes";
+import { DEFAULT_CHOICE, isAccentId, isTerminalThemeId, isThemeId, type ThemeChoice } from "./palettes";
 
 /** The keychain key of the theme prefs store (`themePrefs.ts`). */
 export const THEME_PREFS_KEY = "herdling.theme_prefs";
@@ -12,10 +12,11 @@ export const THEME_PREFS_KEY = "herdling.theme_prefs";
 export function parseChoice(raw: string | null | undefined): ThemeChoice {
   if (!raw) return DEFAULT_CHOICE;
   try {
-    const s = (JSON.parse(raw) as { state?: { theme?: unknown; accent?: unknown } }).state ?? {};
+    const s = (JSON.parse(raw) as { state?: { theme?: unknown; accent?: unknown; terminal?: unknown } }).state ?? {};
     return {
       theme: isThemeId(s.theme) ? s.theme : DEFAULT_CHOICE.theme,
       accent: isAccentId(s.accent) ? s.accent : DEFAULT_CHOICE.accent,
+      ...(isTerminalThemeId(s.terminal) && s.terminal !== "app" ? { terminal: s.terminal } : {}),
     };
   } catch {
     return DEFAULT_CHOICE;

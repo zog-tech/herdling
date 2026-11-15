@@ -5,6 +5,8 @@ import { Linking, View } from "react-native";
 
 import { type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from "@/hosts/discovery";
 import { useHosts, type Host } from "@/hosts/store";
+import { suggestionDetail, type SuggestedHost, type SuggestState } from "@/hosts/suggest";
+import { useSuggestions } from "@/hosts/useSuggestions";
 import { colors, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Group, Section } from "@/ui/Group";
@@ -45,6 +47,56 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
         {where}
       </Text>
     </Row>
+  );
+}
+
+/** A suggested computer: a tap opens "Set up with password" with its details filled in. */
+function SuggestedRow({ s }: { s: SuggestedHost }) {
+  const router = useRouter();
+  return (
+    <Row
+      accessibilityLabel={`Set up ${s.name} with password`}
+      onPress={() =>
+        router.push({
+          pathname: "/hosts/password",
+          params: { name: s.name, address: s.address, ...(s.port ? { port: String(s.port) } : {}), ...(s.user ? { user: s.user } : {}) },
+        })
+      }
+      title={s.name}
+      trailing={s.online === undefined ? null : <Badge label={s.online ? "Online" : "Offline"} color={s.online ? colors.status.done : colors.status.idle} />}
+      chevron
+    >
+      <Text variant="small" muted numberOfLines={2}>
+        {suggestionDetail(s)}
+      </Text>
+    </Row>
+  );
+}
+
+/**
+ * "Suggested": computers that a paired computer knows (Herdr machines, SSH config, Tailscale).
+ * Hidden while no paired computer lists `machines.suggest`.
+ */
+function SuggestedSection({ state }: { state: SuggestState }) {
+  if (state.status === "idle") return null;
+  if (state.status === "ready" && state.list.length === 0) return null;
+  return (
+    <Section title="Suggested" footer="From your paired computers. Herdling sets up a new computer with its SSH password.">
+      <Group>
+        {state.status === "loading" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md }}>
+            <DelayedSpinner color={colors.textMuted} />
+            <Text muted>Asking your computers…</Text>
+          </View>
+        ) : state.status === "failed" ? (
+          <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
+            <Text variant="small" muted>{`Can't get suggestions: ${state.error}`}</Text>
+          </View>
+        ) : (
+          state.list.map((x) => <SuggestedRow key={x.address} s={x} />)
+        )}
+      </Group>
+    </Section>
   );
 }
 
@@ -121,6 +173,7 @@ export default function DiscoverScreen() {
   }, []);
   const state = useDiscovery(focused && !paused);
   const hosts = useHosts((s) => s.hosts);
+  const suggested = useSuggestions(focused);
 
   return (
     <Screen flush>
@@ -132,6 +185,8 @@ export default function DiscoverScreen() {
           ))}
         </Group>
       </Section>
+
+      <SuggestedSection state={suggested} />
 
       <Section title="Other ways">
         <Group>

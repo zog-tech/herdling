@@ -637,3 +637,21 @@ export type PaneMove = { pane_id: string; workspace_id: string | null; tab_id: s
 export type SessionStartParams = { cwd: string; kind: string; workspace_id?: string; prompt?: string; args?: string[] };
 /** `session.start` result. `prompt_error` says why the first prompt did not go in; the agent runs. */
 export type SessionStart = { pane_id: string; workspace_id: string; tab_id: string; prompt_error?: string | null };
+
+/** Where a suggested computer comes from: the herdr-core machine list, `~/.ssh/config`, or Tailscale. */
+export type SuggestionSource = "core" | "ssh_config" | "tailscale";
+/**
+ * One computer in `machines.suggest`: a name, an address the phone can try, and the user and the
+ * port when the source has them. `online` is set when the source knows it. Never keys or other
+ * SSH config values.
+ */
+export type MachineSuggestion = {
+  name: string;
+  address: string;
+  user?: string;
+  port?: number;
+  sources: SuggestionSource[];
+  online?: boolean;
+};
+/** `machines.suggest` result. Read only; a source that fails gives no entries. */
+export type MachinesSuggest = { suggestions: MachineSuggestion[] };

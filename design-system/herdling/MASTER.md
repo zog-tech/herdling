@@ -115,6 +115,11 @@ Rules:
   so it never looks like the working lantern.
 - Only dark themes. A light theme needs light variants of every token, light native controls
   (headers, glass, keyboard, status bar) and a check on a device.
+- **Terminal themes** (Settings, Theme, "Terminal"; `TERMINAL_THEMES` in `palettes.ts`) change only
+  `terminal.bg`, `terminal.fg` and `ansi`: the screen of the terminal view. "Same as the app" keeps
+  the theme's values. "Paper" is the one light surface: `#F7F4EC` with ink `#24211C` (14.6:1), and
+  every ANSI entry 4:1 or more on it ("white" is a mid grey `#6F6A61`, so white text stays
+  readable). Text drawn on the terminal screen uses `terminal.fg`, never `text` or `textMuted`.
 - Code reads `colors.*` at render time. Never copy a color into a module constant: a theme change
   replaces the values in place and mounts the screens again. For a `StyleSheet.create` at module
   level, use `themed(() => StyleSheet.create(...))`.
@@ -274,3 +279,19 @@ Each one has an icon, one sentence that says what is true, and an action when on
 - [ ] Haptics follow the table; none on scroll or typing.
 - [ ] Empty, error and offline states have a message and a Retry.
 - [ ] VoiceOver: labels, order, custom actions, live announcements.
+
+## Session screen patterns (plan F2)
+
+- **Pages of a tab.** A strip under the session header: one `dot.size` dot per pane (the open one
+  in `text`, a pane that needs you in ember, others in `divider`), the tab name and "2 of 3" in
+  `caption` muted, and a tab map button. The tab map is a page sheet with one tile per pane; the
+  open pane has a 2 pt accent edge (selected state), a pane that needs you has the ember edge and
+  `blockedTint`.
+- **In-app banner.** A glass card at the top (radius `lg`, `edge` border), the status icon
+  (ember hand, sage check, terminal), the title in bold and one muted line. It enters in
+  `motion.enterMs` and stays 5 s. Never for the open session.
+- **Key bar.** Keys are `card` fills with an `edge` border, 44 pt high; ^C has the `danger` edge.
+  An armed Ctrl or Alt has the accent edge and text (selected state); a locked one also has the
+  `accentTint` fill. Custom keys use the `raised` fill. The drag pad sits at the right, outside
+  the paged row. Page dots under the bar only when it overflows.
+

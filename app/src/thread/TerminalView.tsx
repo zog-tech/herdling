@@ -7,9 +7,11 @@ import {
   Maximize2,
   WrapText,
   MoveHorizontal,
+  Smartphone,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentRef } from "react";
 import {
+  Alert,
   Keyboard,
   Platform,
   Pressable,
@@ -39,15 +41,19 @@ import {
   fitFontSize,
   lineHeightFor,
   nextWidthMode,
+  phoneGrid,
   widestCols,
   type WidthMode,
 } from "@/terminal/fit";
-import { KeyRow } from "@/terminal/KeyRow";
+import { KeyBar } from "@/terminal/KeyBar";
+import { encode, modReducer, NO_MOD, type BarInput } from "@/terminal/keyRules";
 import { forgetCommand, rememberCommand, useHostCommands } from "@/terminal/recentCommands";
 import { RecentCommandRow } from "@/terminal/RecentCommandRow";
 import { findInLines, markLines } from "@/terminal/search";
-import { useTerminalWidth } from "@/terminal/widthMode";
-import { sendInput, sendInputWorks } from "@/terminal/keys";
+import { canDrive, markNoDrive, useTerminalWidth } from "@/terminal/widthMode";
+import { isCore } from "@/herdr/backend";
+import { useDebounced } from "@/thread/useThreadSearch";
+import { sendInputWithFallback, sendInputWorks } from "@/terminal/keys";
 import { fullScreenApp, overflows, PAGE_TEXT, paneScroll, type PageDirection } from "@/terminal/pageScroll";
 import { LatencyBadge, useSrtt } from "@/terminal/latency";
 import {
@@ -87,7 +93,12 @@ const MODES: Record<WidthMode, { label: string; Icon: typeof Maximize2 }> = {
   fit: { label: "Fit to screen", Icon: Maximize2 },
   wrap: { label: "Wrap lines", Icon: WrapText },
   scroll: { label: "Scroll sideways", Icon: MoveHorizontal },
+  phone: { label: "Phone width", Icon: Smartphone },
 };
+
+/** Wait after a size change before the watch starts again at the new grid. */
+const PHONE_RESIZE_MS = 400;
+const PHONE_NOTE = "The pane on your computer gets the phone's size while you watch it here.";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -135,8 +146,35 @@ export function TerminalView({
   active?: boolean;
 }) {
   const focused = useIsFocused() && active;
+  const { rpc, status, hello } = useHostConn(hostId);
+  const mode = useTerminalWidth((s) => s.mode);
+  const setMode = useTerminalWidth((s) => s.set);
+  const [viewWidth, setViewWidth] = useState(0);
+  const [viewHeightState, setViewHeightState] = useState(0);
+  // "Phone width": only the session terminal of a Herdr 2 pane, with `pane.watch`, on a connection
+  // that did not refuse the size. Else the view shows "fit".
+  const [driveRefused, setDriveRefused] = useState(false);
+  const phoneOk = !!controls && isCore(paneId) && listsMethod(hello, "pane.watch") && canDrive(rpc) && !driveRefused;
+  const shownMode: WidthMode = mode === "phone" && !phoneOk ? "fit" : mode;
+  // A string, so the debounce waits for the size to stay the same, not for the same object.
+  const liveGrid = shownMode === "phone" ? phoneGrid(viewWidth - 2 * space.md, viewHeightState - 2 * space.md, type.size.caption) : null;
+  const gridKey = useDebounced(liveGrid ? `${liveGrid.cols}x${liveGrid.rows}` : "", PHONE_RESIZE_MS);
+  const size = useMemo(() => {
+    const [c, r] = gridKey.split("x").map(Number);
+    return c && r ? { cols: c, rows: r } : undefined;
+  }, [gridKey]);
+  const onDrive = useCallback(
+    (drive: boolean) => {
+      if (drive) return;
+      // An older herdlingd ignores the size: back to "fit" for this connection.
+      if (rpc) markNoDrive(rpc);
+      setDriveRefused(true);
+    },
+    [rpc],
+  );
   const { text, error, refresh } = useTerminalText(hostId, paneId, focused, {
     format: "ansi",
+    ...(shownMode === "phone" && size ? { size, onDrive } : {}),
   });
   // Parsed once per new screen: the hook keeps the same string while the screen is unchanged.
   const parsed = useMemo(
@@ -146,7 +184,6 @@ export function TerminalView({
         : parseAnsi(text, colors.ansi).slice(-MAX_LINES),
     [text],
   );
-  const { rpc, status, hello } = useHostConn(hostId);
   const online = status === "online" && !!rpc;
   const srtt = useSrtt(rpc, focused && !!controls);
   const [echoes, setEchoes] = useState<Echo[]>([]);
@@ -195,7 +232,7 @@ export function TerminalView({
   const queue = useMemo(
     () =>
       rpc
-        ? new SendQueue((op) => sendInput(rpc, paneId, op), {
+        ? new SendQueue((op) => sendInputWithFallback(rpc, paneId, op), {
             pipeline: () => ordered && sendInputWorks(rpc),
             onError: (e) => setSendError(message(e)),
           })
@@ -224,16 +261,13 @@ export function TerminalView({
   useEffect(() => {
     onCount?.(matches.length);
   }, [onCount, matches.length]);
-  const mode = useTerminalWidth((s) => s.mode);
-  const setMode = useTerminalWidth((s) => s.set);
-  const [viewWidth, setViewWidth] = useState(0);
   const cols = useMemo(() => (lines ? widestCols(lines) : 0), [lines]);
   // Depends on the column count and the view width only, so it does not jump on small refreshes.
   const fontSize =
-    mode === "fit"
+    shownMode === "fit"
       ? fitFontSize(cols, viewWidth - 2 * space.md, type.size.caption)
       : type.size.caption;
-  const lineHeight = mode === "fit" ? lineHeightFor(fontSize) : LINE_HEIGHT;
+  const lineHeight = shownMode === "fit" ? lineHeightFor(fontSize) : LINE_HEIGHT;
   // Keep the current match in the middle of the view: on a new query, a step, or when new output
   // moves its line. With wrapped lines the place is close, not exact.
   const currentLine = current >= 0 ? matches[current]?.line : undefined;
@@ -275,6 +309,7 @@ export function TerminalView({
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setViewWidth(e.nativeEvent.layout.width);
     viewHeight.current = e.nativeEvent.layout.height;
+    setViewHeightState(e.nativeEvent.layout.height);
     measure();
     // The view got shorter (keyboard): stay at the end.
     if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
@@ -318,11 +353,12 @@ export function TerminalView({
   const body = shown ? (
     <AnsiText lines={shown} style={{ fontSize, lineHeight }} />
   ) : (
-    <Text mono variant="caption" muted>
+    // `terminal.fg`, not `textMuted`: the terminal theme can be light.
+    <Text mono variant="caption" color={colors.terminal.fg}>
       {error ? `Can't read the terminal: ${error}` : "Loading…"}
     </Text>
   );
-  const { label, Icon } = MODES[mode];
+  const { label, Icon } = MODES[shownMode];
 
   const topControls = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
@@ -337,7 +373,12 @@ export function TerminalView({
         accessibilityHint="Double tap to change how the terminal text fits the screen"
         onPress={() => {
           haptics.tap();
-          setMode(nextWidthMode(mode));
+          const next = nextWidthMode(shownMode, phoneOk);
+          setMode(next);
+          if (next === "phone" && !useTerminalWidth.getState().phoneNoteSeen) {
+            useTerminalWidth.getState().notePhone();
+            Alert.alert("Phone width", PHONE_NOTE);
+          }
         }}
         style={({ pressed }) => ({
           width: hitTarget,
@@ -387,7 +428,7 @@ export function TerminalView({
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
         >
-          {mode === "wrap" ? (
+          {shownMode === "wrap" ? (
             body
           ) : (
             <HScrollView showsHorizontalScrollIndicator={false}>
@@ -499,6 +540,10 @@ function TerminalControls({
   const commands = useHostCommands(hostId);
   const keyboard = useKeyboardShown();
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  // Ctrl and Alt of the key bar: one-shot, for the next key from the bar or the keyboard.
+  const [mods, modEvent] = useReducer(modReducer, NO_MOD);
+  const modsRef = useRef(mods);
+  modsRef.current = mods;
 
   const key = (k: string) => {
     if (!queue || !typist || !online) return;
@@ -506,6 +551,21 @@ function TerminalControls({
     setPredict(endEpoch);
     const sent = direct ? typist.key(k) : queue.push({ keys: [k] });
     sent.then(onSent, () => {});
+  };
+
+  /** A key of the bar, or a typed character while a modifier is on: encoded with the modifier. */
+  const barInput = (input: BarInput) => {
+    if (!queue || !online) return;
+    const { op, state } = encode(modsRef.current, input);
+    if (state !== modsRef.current) {
+      modsRef.current = state;
+      modEvent({ type: "used" });
+    }
+    setError(undefined);
+    setPredict(endEpoch);
+    // The waiting typed text goes first, then this item as its own call.
+    typist?.flush();
+    queue.push(op).then(onSent, () => {});
   };
 
   const send = () => {
@@ -562,8 +622,22 @@ function TerminalControls({
     let same = 0;
     while (same < buf.length && same < t.length && buf[same] === t[same]) same++;
     const removed = Array.from(buf.slice(same)).length;
-    const added = t.slice(same).replace(/\u200B/g, "");
+    let added = t.slice(same).replace(/\u200B/g, "");
     if (removed > 0 || added) setError(undefined);
+    // A modifier is on: the first typed character goes with it.
+    if (added && modsRef.current.mod !== null) {
+      const [ch, ...rest] = Array.from(added);
+      for (let i = 0; i < removed; i++) void typist.key("backspace");
+      barInput({ kind: "char", ch });
+      added = rest.join("");
+      if (added) {
+        typist.type(added);
+        const now = Date.now();
+        setPredict((p) => onType(p, added, now));
+      }
+      setBuf(resetBuf);
+      return;
+    }
     for (let i = 0; i < removed; i++) {
       void typist.key("backspace");
       setPredict(onBackspace);
@@ -604,7 +678,7 @@ function TerminalControls({
           onRemove={(cmd) => forgetCommand(hostId, cmd)}
         />
       ) : null}
-      <KeyRow onKey={key} disabled={!online} />
+      <KeyBar mods={mods} disabled={!online} onMod={modEvent} onInput={barInput} />
       {error ? (
         <Text
           variant="small"
@@ -650,6 +724,11 @@ function TerminalControls({
           value={direct ? buf : line}
           onChangeText={(t) => {
             if (direct) return typeDirect(t);
+            // A modifier is on and one character came at the end: it goes to the pane with the modifier.
+            if (modsRef.current.mod !== null && t.length === line.length + 1 && t.startsWith(line)) {
+              barInput({ kind: "char", ch: t.slice(-1) });
+              return;
+            }
             setLine(t);
             if (error) setError(undefined);
           }}
