@@ -11,6 +11,8 @@ import type {
   GitStatus,
   GroupsList,
   MachinesSuggest,
+  CoreStatus,
+  CoreInstall,
   GitWorktree,
   Hello,
   MacOpenSettings,
@@ -288,6 +290,10 @@ describe("DemoTransport", () => {
     answered.add("pane.move");
     expect(await callError("session.start", { cwd: "/home/demo", kind: "claude" })).toMatchObject({ code: "unsupported" });
     answered.add("session.start");
+
+    // Herdr 2 on the demo computer: installed, running, nothing to update.
+    expect(await call<CoreStatus>("core.status").then(ok("core.status"))).toMatchObject({ found: true, running: true, update_available: false });
+    expect(await call<CoreInstall>("core.install").then(ok("core.install"))).toMatchObject({ status: "up_to_date" });
 
     // Suggested computers: names and addresses only.
     const suggested = await call<MachinesSuggest>("machines.suggest").then(ok("machines.suggest"));

@@ -47,6 +47,8 @@ export const APP_METHODS = [
   "pane.move",
   "session.start",
   "machines.suggest",
+  "core.status",
+  "core.install",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

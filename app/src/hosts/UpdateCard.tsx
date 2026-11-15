@@ -11,13 +11,14 @@ import { Text } from "@/ui/Text";
 
 import { useHostConn } from "./connection";
 import { useHosts } from "./store";
+import { coreUpdateNote } from "./coreInstall";
 import { applyUpdate, updateStatus } from "./updates";
 
 /** Longest part of the release notes in the confirmation. */
 const NOTES_LIMIT = 600;
 
-function confirmUpdate(from: string, to: string, notes: string): Promise<boolean> {
-  const text = notes.trim() ? `\n\n${notes.trim().slice(0, NOTES_LIMIT)}` : "";
+function confirmUpdate(from: string, to: string, notes: string, coreNote?: string): Promise<boolean> {
+  const text = (coreNote ? `\n\n${coreNote}` : "") + (notes.trim() ? `\n\n${notes.trim().slice(0, NOTES_LIMIT)}` : "");
   return new Promise((resolve) => {
     Alert.alert(
       `Update herdlingd to ${to}?`,
@@ -43,13 +44,15 @@ export function UpdateCard({ hostId }: { hostId: string }) {
   const status = updateStatus(host, hello);
   if (!hello && !busy && !result) return null;
 
+  const coreNote = status.kind === "available" ? coreUpdateNote(status.core) : undefined;
   const update = async (from: string, to: string, notes: string) => {
-    if (busy || !(await confirmUpdate(from, to, notes))) return;
+    if (busy || !(await confirmUpdate(from, to, notes, coreNote))) return;
     setBusy(true);
     setResult(undefined);
     try {
       const r = await applyUpdate(hostId);
-      setResult({ ok: true, text: r.status === "up_to_date" ? `herdlingd ${r.version} is up to date.` : `herdlingd ${r.version} is running.` });
+      const text = r.status === "up_to_date" ? `herdlingd ${r.version} is up to date.` : `herdlingd ${r.version} is running.`;
+      setResult({ ok: true, text: r.notice ? `${text} ${r.notice}` : text });
     } catch (e) {
       setResult({ ok: false, text: e instanceof Error ? e.message : "The update failed." });
     } finally {
@@ -73,6 +76,11 @@ export function UpdateCard({ hostId }: { hostId: string }) {
           <Text bold>
             Update available: {status.from} → {status.to}
           </Text>
+          {coreNote ? (
+            <Text variant="small" color={colors.status.blocked}>
+              {coreNote}
+            </Text>
+          ) : null}
           {status.notes.trim() ? (
             <Text variant="small" muted numberOfLines={6}>
               {status.notes.trim()}
