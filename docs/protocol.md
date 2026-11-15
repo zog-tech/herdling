@@ -693,6 +693,7 @@ Core agent and pane entries have these optional fields. An old app ignores them.
 | `repo` | The name of the git repo, when the folder is in one |
 | `repo_root` | The root folder of the repo |
 | `branch` | The branch of the repo, when it has one |
+| `parent_id` | The pane id of the parent terminal (`hc:<address>`), for a helper that a terminal on this computer started. The app shows the helper under its task when the parent is a live agent |
 
 The task name of a terminal is its `herdling.name` label (a rename from the phone), else its
 name, else its 7501 title, else its terminal title. A title

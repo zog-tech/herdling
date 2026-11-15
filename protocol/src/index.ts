@@ -42,6 +42,27 @@ export type Backends = { herdr?: HerdrBackend; core?: CoreBackend };
  */
 export type SnapshotBackend = "core";
 
+/** Where the group name of a Herdr 2 terminal comes from (`docs/protocol.md`, "Placement"). */
+export type GroupSource = "space" | "label" | "repo" | "folder";
+
+/**
+ * The optional group and task fields of a Herdr 2 agent or pane entry. An older herdlingd, and
+ * herdr 1, send none of them.
+ */
+export type GroupFields = {
+  /** The name of the group of the terminal (a Herdr app space or a fallback group). */
+  group?: string | null;
+  group_source?: GroupSource | null;
+  /** The name of the git repo, when the folder is in one. */
+  repo?: string | null;
+  /** The root folder of the repo. */
+  repo_root?: string | null;
+  /** The branch of the repo, when it has one. */
+  branch?: string | null;
+  /** The pane id of the parent terminal of a helper (`hc:<address>`). */
+  parent_id?: string | null;
+};
+
 /**
  * When herdlingd starts: `hello.boot` and the result of `boot.check`.
  * herdlingd is a user service: it starts when the user logs in, or at boot with automatic login
@@ -511,7 +532,7 @@ export type ShellWatches = { watches: ShellWatch[] };
 export type CoreGroup = {
   workspace_id: string;
   label: string;
-  source: "space" | "label" | "repo" | "folder";
+  source: GroupSource;
   space_id?: string;
   terminals: number;
   agents: number;

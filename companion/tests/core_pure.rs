@@ -591,3 +591,21 @@ fn stale_tab_label_gets_a_task_tab() {
     assert_eq!(ids(&p.tabs, "tab_id"), ["hc:tab:a", "hc:task:t2"]);
     assert_eq!(p.panes[1]["workspace_id"], "hc:space:s2");
 }
+
+#[test]
+fn helper_entries_name_their_parent() {
+    let parent = agent_in("t1", Some("/home/sam/proj"), "main task");
+    let mut helper = agent_in("t2", Some("/home/sam/proj"), "sub task");
+    helper["parent"] = json!("t1");
+    let mut remote = agent_in("t3", Some("/home/sam/proj"), "remote child");
+    remote["parent"] = json!("box/t1");
+    let mut own = agent_in("t4", Some("/home/sam/proj"), "own parent");
+    own["parent"] = json!("t4");
+    let p = project::project(&[parent, helper, remote, own], None, &Repos::new());
+    let parent_of = |list: &[Value], id: &str| list.iter().find(|v| v["pane_id"] == id).map(|v| v["parent_id"].clone());
+    assert_eq!(parent_of(&p.agents, "hc:t2"), Some(json!("hc:t1")));
+    assert_eq!(parent_of(&p.panes, "hc:t2"), Some(json!("hc:t1")));
+    assert_eq!(parent_of(&p.agents, "hc:t1"), Some(Value::Null), "no parent: no field");
+    assert_eq!(parent_of(&p.agents, "hc:t3"), Some(Value::Null), "a parent on another machine is left out");
+    assert_eq!(parent_of(&p.agents, "hc:t4"), Some(Value::Null), "a terminal is not its own parent");
+}
