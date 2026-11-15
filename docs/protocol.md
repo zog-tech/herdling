@@ -24,7 +24,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
-`core_not_running`, `core_install_failed`, `bad_pin`.
+`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -365,7 +365,13 @@ The steps (a pure state machine in `companion/src/core_install/machine.rs`):
 
 `status` is `installed`, `updated`, `up_to_date`, `kept_newer`, `kept_unknown` or `kept_managed`.
 One install runs at a time (`core-install.lock` in the herdlingd config folder). Use a long timeout
-(3 minutes).
+(3 minutes). Since 0.2.0 the whole install ends within 150 seconds (`install_timeout`), so the
+answer always comes before that timeout. herdlingd starts the place step only with at least 60
+seconds left, so a place is never cut off.
+
+- A `~/.local/bin/herdr-core` that is a symlink counts as the core of herdlingd only when it
+  points into `~/.local/share/herdr-core` (the upstream app bundle install). Any other link
+  (Homebrew, Nix, a link of the user) is `managed`, also when its target is gone.
 
 Error codes:
 
@@ -379,6 +385,7 @@ Error codes:
 | `core_not_running` | The core did not start, or it does not answer on its socket |
 | `busy` | Another core install runs now |
 | `bad_pin` | The pin is not valid |
+| `install_timeout` | The install used its 150 seconds. The message says whether the core was put in place |
 
 `herdlingd core status`, `herdlingd core install` and `herdlingd core required` do the same on the
 computer. `core required` exits with 0 when this herdlingd needs the core (the installer reads it).
@@ -886,6 +893,33 @@ group falls back to the folder name.
 - With no core socket or no core answer, the call gives `herdr_unavailable` (old apps show
   "herdr is not running").
 
+### Typing on Herdr 2
+
+Since herdlingd 0.2.0. The app calls do not change (`pane.send_input`, `pane.send_text`,
+`pane.send_keys`, `agent.prompt`, `pane.answer`).
+
+- A line with Enter (`text` and `keys: ["enter"]`, or `pane.send_text` with a final newline) and
+  `agent.prompt` go through `terminal.send`. The core pastes the text and presses Enter when
+  nobody types at the computer.
+- Text without Enter, and keys, go in at once. herdlingd opens a short `terminal.attach` stream
+  (`observe: false`, `resumed: true`, at the size that the terminal has, so nothing resizes) and
+  writes the bytes, then closes the stream. The text goes as it is, so every character works
+  (punctuation, accents, emoji). Keys get the xterm bytes for the modes of the program (from the
+  first paint, for example application cursor keys). When the core has `automatic_input`
+  (`hello.features` and the attach reply), the bytes go as AUTOMATIC_INPUT frames: they do not
+  count as a person at the computer. Else they go as DATA.
+- A key with no xterm form (for example `shift+enter`) goes through `terminal.keys`.
+- `pane.answer` types its digit in the same way.
+- Every typing call answers within 10 seconds of its arrival, the wait behind earlier calls to
+  the same pane included. The app gives a call 15 seconds. A `terminal.send` that still waits at
+  the deadline (someone types at the computer) is cancelled: herdlingd closes its connection,
+  and the core never types a send that it has not started. The error is `busy` with a text that
+  asks the user to look at the terminal first. A send that went in just before the close (a new
+  turn, or the agent works) counts as sent.
+- When a typing call to a pane fails, the calls to that pane that arrived before the failure do
+  not run. Their error is `dropped` (or `busy` when they ran out of time), and nothing was typed.
+  A later Enter does not run a half-typed command.
+
 ### Calls on a core id
 
 On herdlingd 0.2.0 every `herdr.call` goes to the core. The id is the first non-empty string of
@@ -896,18 +930,17 @@ the core.
 |---|---|
 | `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0). With `format: "ansi"`: one passive `terminal.attach`, see "Terminal view" |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
-| `pane.send_keys`, `pane.send_input` with keys only | `terminal.keys` |
-| `pane.send_input` or `pane.send_text` without Enter | `terminal.keys`, only when each character has a key |
+| `pane.send_keys`, `pane.send_input` with keys, `pane.send_input` or `pane.send_text` without Enter | typed at once as raw bytes on a short `terminal.attach` stream (see "Typing on Herdr 2"). A core without `terminal.attach` gets `terminal.keys`, only when each character has a key |
 | `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
 | `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
 | `tab.create` on `space:<id>` or `g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
 | `workspace.create` | the same, in a new space. 0.1.x apps send `backend: "core"`; old apps send no `backend`. Both go to the core on 0.2.0 |
-| `agent.start` on a pane | types the agent command (`<program> <args>`, shell-quoted) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used |
+| `agent.start` on a pane | types the agent command (`<program> <args>`) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used. Each argument is quoted for the shell in the pane (its foreground program, else the `SHELL` of herdlingd): POSIX quotes for sh, bash, zsh and the like, fish quotes for fish, double quotes for Nushell. Another shell takes only plain words. An argument with a control character, or one that the shell cannot take, gives `bad_request` and types nothing |
 | `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
 | `tab.rename` of `task:<address>` | the same for that terminal |
 | `tab.rename` of `tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
-| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used |
+| `tab.close`, `workspace.close` | `terminal.kill` of each terminal of that tab or workspace. An unknown id gives `tab_not_found` or `workspace_not_found` and kills nothing. `close_group` is not used. Optional `pane_ids` (since 0.2.0): the panes that the app showed; only the panes in both close. Without `pane_ids`, a `workspace.close` of a repo or folder group (`g:<key>` whose terminals have no `herdling.group` label) gives `unsupported` and kills nothing: such a group follows the folder of each terminal, so an older app can have shown other terminals. A space, a tab and a label group close as a whole |
 | `agent.explain` | `terminal.get` and `terminal.read`: the agent reports its status itself, so `screen_detection_skipped` is true, the one rule `osc-7501` matched, and its evidence is the end of the screen |
 | `workspace.get` | the workspace entry of the snapshot, else `workspace_not_found` |
 
@@ -923,8 +956,7 @@ the core.
   or workspace, `terminal.send` of `agent.start` and `agent.prompt`), herdlingd reads the core
   `hello.methods`. A core that lacks the method gives `unsupported`, and nothing changes.
 - The core error kinds `not_found` and `finished` become `pane_not_found`. Other kinds are the code.
-- The core waits until nobody types at the computer before it types. A typing call can take up
-  to 75 seconds.
+- Typing calls answer within 10 seconds of their arrival. See "Typing on Herdr 2".
 - `pane.watch`, `pane.answer`, `agents.preview`, `git.status`, `git.diff`, `commands.list`,
   `ports.list` and `shell.watch` accept a core `pane_id`.
 - `thread.resolve` finds the session of a core agent from the processes of the terminal, as for
@@ -1002,7 +1034,7 @@ of the core has it. Else herdlingd reads `terminal.read` as before (plain text).
 - herdlingd attaches as a watcher (`observe: true`, `resize_notifications: true`, `history` =
   `lines`). The core never takes its size, keys or focus. With `cols` and `rows` it attaches as a
   driver at that size. In both modes herdlingd sends only CREDIT and CLOSE frames on the stream:
-  typing goes through `terminal.send` and `terminal.keys`.
+  typing has its own short streams (see "Typing on Herdr 2").
 - A terminal emulator in herdlingd reads the stream. Each event has the history lines and the
   screen rows with SGR colors (`format: "ansi"`), as herdr 1 gives them. Trailing blank rows are cut
   on the main screen; on the alternate screen (a full-screen app) every row stays. `revision` is 0.
@@ -1052,6 +1084,25 @@ On 0.2.0 `backends` has only `core`. `herdr_ok` is true when the core answers, `
 the core version and `herdr_protocol` is missing, so old apps show the runtime as running. The
 app knows a Herdr 2 only host by `herdlingd` 0.2.0 or later, and then treats every entry as a
 Herdr 2 entry (task rename only, phone width, no herdr 1 key fallback).
+
+### `hello.core_setup` and the core self-heal
+
+Since 0.2.0. A herdlingd 0.1.9 that updates to 0.2.0 does not read `requires_core`, so no core
+is installed. 0.2.0 then installs the pinned core itself: when `serve` starts, and when `hello`
+finds that no core answers and none is installed. It is the path of `core.install` (the pinned
+SHA-256, the same lock). It runs only when no `herdr-core` is found, so it never downgrades and
+never touches a core of a package manager. After a failure, `hello` tries again after 10
+minutes; `serve` tries at each start.
+
+When no core answers, `hello` has `core_setup`:
+
+```json
+{"herdr_ok": false, "core_setup": {"state": "installing", "message": "Installing Herdr 2 (herdr-core 0.1.20) on this computer. This takes a minute. Then Herdling shows its terminals."}}
+```
+
+`state` is `installing`, `failed` (the message has the error) or `missing`. The field is missing
+when all is well. A `herdr_unavailable` error gets the same message, because old apps show that
+text. The state is in `core-heal.json` next to `core-install.lock`.
 
 ## Compatibility rules
 

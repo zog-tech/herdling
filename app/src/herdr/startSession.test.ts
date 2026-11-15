@@ -116,6 +116,21 @@ describe("startSession", () => {
     expect(calls.at(-1)).toEqual({ method: "workspace.close", params: { workspace_id: "w7" } });
   });
 
+  it("the_undo_on_herdr_2_closes_only_the_new_pane", async () => {
+    const calls: { method: string; params: any }[] = [];
+    const rpc = {
+      call: async (_m: string, p: any) => {
+        calls.push(p);
+        if (p.method === "tab.create") return { tab: { tab_id: "task:t7" }, root_pane: { pane_id: "t7" } };
+        if (p.method === "agent.start") throw new Error("boom");
+        return {};
+      },
+    } as any;
+    setCoreActions("h-undo", { methods: ["session.start"], herdlingd: "0.2.0" });
+    await expect(startSession(rpc, { cwd: "/a/b", kind: "claude", workspaceId: "g:src", hostId: "h-undo" })).rejects.toThrow("boom");
+    expect(calls.at(-1)).toEqual({ method: "tab.close", params: { tab_id: "task:t7", pane_ids: ["t7"] } });
+  });
+
   it("undo_never_sends_close_group_and_keeps_the_start_error_when_herdr_refuses", async () => {
     const calls: { method: string; params: any }[] = [];
     const rpc = {

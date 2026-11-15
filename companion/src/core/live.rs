@@ -11,12 +11,23 @@ use super::endpoint::CoreSocket;
 use super::project::{self, Projection};
 use super::actions;
 use super::route::{self, Action};
+use super::typing;
 use crate::preview::PreviewState;
 use crate::types::{AgentPreview, AgentStatus, RpcError};
 
-/// Bound for `terminal.send` and `terminal.keys`: the core waits until nobody types at the
-/// computer (about 3 s), and an unfinished draft there holds a send for up to 60 s.
-pub const TYPING_TIMEOUT: Duration = Duration::from_secs(75);
+tokio::task_local! {
+    /// The end of the phone input call that runs in this task: its arrival plus
+    /// [`typing::INPUT_TIMEOUT`]. `rpc` sets it for each typing call (see `crate::input_order`).
+    pub static INPUT_DEADLINE: tokio::time::Instant;
+}
+
+/// The deadline of the input call of this task, else [`typing::INPUT_TIMEOUT`] from now.
+pub fn input_deadline() -> tokio::time::Instant {
+    INPUT_DEADLINE.try_with(|d| *d).unwrap_or_else(|_| tokio::time::Instant::now() + typing::INPUT_TIMEOUT)
+}
+
+/// How long a check after a timed-out send may take. The app still gets its answer in time.
+const AFTER_CHECK: Duration = Duration::from_secs(2);
 
 /// The RPC error of a core error. `not_found` and `finished` become `pane_not_found`, the code
 /// that herdr 1 gives for a closed pane, so the app and the pane checks treat both the same.
@@ -127,11 +138,76 @@ pub async fn place(sock: &CoreSocket, timeout: Duration, workspace: Option<&str>
     Ok(actions::place_of(workspace, &p)?)
 }
 
-/// Sends `text` to `addr` with the typing bound, after the method check.
+/// Sends `text` to `addr` (`terminal.send`, paste and Enter), after the method check.
 pub async fn send(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str) -> Result<Value, RpcError> {
+    send_line(sock, timeout, addr, json!({ "terminal": addr, "text": text })).await
+}
+
+/// `terminal.send` with `params`, bounded by [`input_deadline`].
+///
+/// The core holds a send while someone types at the computer (up to 60 s for a draft). At the
+/// deadline herdlingd closes the connection, and the core cancels a send that has not typed yet:
+/// nothing goes in after the answer, so a resend from the user cannot double the text. A send
+/// that typed just before the close shows a new turn or `working` ([`typing::late_send`]) and
+/// counts as sent.
+pub async fn send_line(sock: &CoreSocket, timeout: Duration, addr: &str, params: Value) -> Result<Value, RpcError> {
+    let deadline = input_deadline();
     let mut c = connect(sock, timeout).await?;
     require(&mut c, &["terminal.send"]).await?;
-    c.call_with("terminal.send", json!({ "terminal": addr, "text": text }), TYPING_TIMEOUT).await.map_err(rpc_err)
+    let before = c.call("terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+    match tokio::time::timeout_at(deadline, c.call("terminal.send", params)).await {
+        Ok(r) => r.map_err(rpc_err),
+        Err(_) => {
+            // The close cancels the send in the core.
+            drop(c);
+            let after = once(sock, AFTER_CHECK, "terminal.get", json!({ "terminal": addr })).await;
+            match after {
+                Ok(after) if typing::late_send(&before, &after) => Ok(json!({ "turn": after.get("turn"), "late": true })),
+                _ => Err(typing::unconfirmed_error()),
+            }
+        }
+    }
+}
+
+/// Types `text`, then presses `keys`, in terminal `addr` at once (see `core::typing`), bounded
+/// by [`input_deadline`]. A core without `terminal.attach` gets the `fallback` call.
+pub async fn type_in(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str, keys: &[String], fallback: Option<route::Plan>) -> Result<Value, RpcError> {
+    use super::term_watch::{type_into, OpenError, Typed};
+    let deadline = input_deadline();
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now()).min(timeout);
+    let t = once(sock, left, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+    let dim = |k: &str| t.get(k).and_then(Value::as_u64).and_then(|n| u16::try_from(n).ok()).filter(|n| *n > 0);
+    let size = (dim("cols").unwrap_or(80), dim("rows").unwrap_or(24));
+    match type_into(sock, deadline, addr, size, text, keys).await {
+        Ok(Typed::All) => Ok(json!({})),
+        Ok(Typed::TextOnly) => keys_by_core(sock, timeout, deadline, addr, keys).await,
+        Err(OpenError::NoAttach) => match fallback {
+            Some(plan) => keys_by_core(sock, timeout, deadline, addr, &plan_keys(&plan)).await,
+            None => Err(RpcError {
+                code: route::UNSUPPORTED.into(),
+                message: "This herdr-core cannot type this text without Enter. Update Herdr 2, or send it as a line.".into(),
+            }),
+        },
+        Err(OpenError::Core(e)) => Err(rpc_err(e)),
+    }
+}
+
+/// The `keys` of a `terminal.keys` plan.
+fn plan_keys(plan: &route::Plan) -> Vec<String> {
+    plan.params["keys"].as_array().map(|a| a.iter().filter_map(|k| k.as_str().map(String::from)).collect()).unwrap_or_default()
+}
+
+/// `terminal.keys` bounded by `deadline`. The core cannot cancel it, so a timeout says that the
+/// keys may still go in.
+async fn keys_by_core(sock: &CoreSocket, timeout: Duration, deadline: tokio::time::Instant, addr: &str, keys: &[String]) -> Result<Value, RpcError> {
+    let mut c = connect(sock, timeout).await?;
+    match tokio::time::timeout_at(deadline, c.call("terminal.keys", json!({ "terminal": addr, "keys": keys }))).await {
+        Ok(r) => r.map_err(rpc_err),
+        Err(_) => Err(RpcError {
+            code: "busy".into(),
+            message: "Not confirmed: someone is typing at the computer. The keys go in when they pause. Look at the terminal before you press them again.".into(),
+        }),
+    }
 }
 
 /// Sets `labels` on terminal `addr`. Only the labels that `core::actions` names come here.
@@ -144,18 +220,33 @@ pub async fn label(sock: &CoreSocket, timeout: Duration, addr: &str, labels: ser
 /// Runs one action of [`route::action`].
 pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result<Value, RpcError> {
     match action {
+        Action::Call(plan) if plan.method == "terminal.send" => {
+            let addr = plan.params["terminal"].as_str().unwrap_or_default().to_string();
+            send_line(sock, timeout, &addr, plan.params).await
+        }
+        Action::Call(plan) if plan.method == "terminal.keys" => {
+            let addr = plan.params["terminal"].as_str().unwrap_or_default().to_string();
+            let keys = plan_keys(&plan);
+            if keys.is_empty() {
+                return Ok(json!({}));
+            }
+            keys_by_core(sock, timeout, input_deadline(), &addr, &keys).await
+        }
         Action::Call(plan) => {
-            let bound = if matches!(plan.method, "terminal.send" | "terminal.keys") { TYPING_TIMEOUT } else { timeout };
             let mut c = connect(sock, timeout).await?;
-            let r = c.call_with(plan.method, plan.params, bound).await.map_err(rpc_err)?;
+            let r = c.call(plan.method, plan.params).await.map_err(rpc_err)?;
             Ok(route::shape(&plan.shape, r))
         }
+        Action::Type { addr, text, keys, fallback } => Box::pin(type_in(sock, timeout, &addr, &text, &keys, fallback)).await,
         Action::Run { kind, workspace, cwd } => {
             let place = place(sock, timeout, workspace.as_deref()).await?;
             let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
             Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
         }
-        Action::Start { addr, line } => {
+        Action::Start { addr, kind, args } => {
+            let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
+            let login = std::env::var("SHELL").ok();
+            let line = actions::agent_line(&kind, &args, actions::family_of_terminal(&t, login.as_deref()))?;
             send(sock, timeout, &addr, &line).await?;
             Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
         }
@@ -171,8 +262,8 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
             send(sock, timeout, &addr, &text).await
         }
         Action::Label { addr, labels } => Ok(project::pane_get(&label(sock, timeout, &addr, labels).await?)),
-        Action::Kill(scope) => {
-            let members = actions::members(&placed(sock, timeout).await?, &scope)?;
+        Action::Kill(scope, shown) => {
+            let members = actions::close_members(&placed(sock, timeout).await?, &scope, shown.as_deref())?;
             let mut c = connect(sock, timeout).await?;
             require(&mut c, &["terminal.kill"]).await?;
             let mut closed = Vec::new();

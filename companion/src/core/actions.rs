@@ -167,28 +167,93 @@ pub fn created(kind: &str, ws: &str, tab: &str, pane: &str) -> Value {
     })
 }
 
-/// `s` as one shell word. Plain words stay as they are; others go in single quotes.
-pub fn shell_quote(s: &str) -> String {
-    let plain = |c: char| c.is_ascii_alphanumeric() || "_-./=:@%+,".contains(c);
-    if !s.is_empty() && s.chars().all(plain) {
-        return s.to_string();
-    }
-    format!("'{}'", s.replace('\'', r"'\''"))
+/// The quoting rules of the shell that reads an agent command line. herdlingd types the line
+/// into a shell (so the agent runs in a login shell and the shell stays after the agent ends),
+/// and each shell family reads quotes in its own way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellFamily {
+    /// sh, bash, zsh, dash, ksh and the like: single quotes with no escapes in them.
+    Posix,
+    /// fish: in single quotes, `\\` and `\'` are escapes.
+    Fish,
+    /// Nushell: double quotes with backslash escapes, no interpolation without `$`.
+    Nu,
+    /// A shell whose quoting herdlingd does not know (xonsh, tcsh, elvish): plain words only.
+    Other,
 }
 
-/// The command line that starts an agent of `kind` with `args`, as the user types it.
-pub fn agent_line(kind: &str, args: &[String]) -> Result<String, ActionError> {
-    let program = crate::agents::AGENT_BINS
+impl ShellFamily {
+    /// The family of a shell program: a path, a name, or a login shell name such as `-zsh`.
+    pub fn of(program: Option<&str>) -> ShellFamily {
+        let name = program.unwrap_or("").rsplit('/').next().unwrap_or("").trim_start_matches('-');
+        match name {
+            "sh" | "bash" | "zsh" | "dash" | "ksh" | "mksh" | "pdksh" | "ash" | "yash" | "posh" | "busybox" => ShellFamily::Posix,
+            "fish" => ShellFamily::Fish,
+            "nu" => ShellFamily::Nu,
+            _ => ShellFamily::Other,
+        }
+    }
+
+    /// True for a program name that is a shell of a known family.
+    pub fn known(program: &str) -> bool {
+        ShellFamily::of(Some(program)) != ShellFamily::Other
+    }
+}
+
+/// True when `s` reads as one literal word in every shell family: no quotes, globs, expansions
+/// or separators, and no first character that a shell expands (`=` in zsh, `%` in fish, `~`).
+fn plain_word(s: &str) -> bool {
+    let mut chars = s.chars();
+    let first_ok = chars.next().is_some_and(|c| c.is_ascii_alphanumeric() || "_-./+".contains(c));
+    first_ok && chars.all(|c| c.is_ascii_alphanumeric() || "_-./=:@%+,".contains(c))
+}
+
+/// `s` as one word for a shell of `family`. Plain words stay as they are. A word with a control
+/// character is refused in every family: a newline or an escape would run or change the line.
+pub fn quote_for(family: ShellFamily, s: &str) -> Result<String, ActionError> {
+    if s.chars().any(char::is_control) {
+        return Err(ActionError::bad("an agent argument cannot have control characters (a new line, a tab or an escape)"));
+    }
+    if plain_word(s) {
+        return Ok(s.to_string());
+    }
+    Ok(match family {
+        ShellFamily::Posix => format!("'{}'", s.replace('\'', r"'\''")),
+        ShellFamily::Fish => format!("'{}'", s.replace('\\', r"\\").replace('\'', r"\'")),
+        ShellFamily::Nu => format!("\"{}\"", s.replace('\\', r"\\").replace('"', "\\\"")),
+        ShellFamily::Other => {
+            return Err(ActionError::bad(format!(
+                "herdlingd cannot quote the agent argument {s:?} for this shell. Use plain words, or start the agent on the computer"
+            )))
+        }
+    })
+}
+
+/// The program of an agent of `kind`. An unknown kind is `bad_request`.
+pub fn agent_program(kind: &str) -> Result<&'static str, ActionError> {
+    crate::agents::AGENT_BINS
         .iter()
         .find(|(k, _)| *k == kind)
-        .and_then(|(_, bins)| bins.first())
-        .ok_or_else(|| ActionError::bad(format!("herdlingd does not know how to start the agent kind \"{kind}\"")))?;
-    let mut line = shell_quote(program);
+        .and_then(|(_, bins)| bins.first().copied())
+        .ok_or_else(|| ActionError::bad(format!("herdlingd does not know how to start the agent kind \"{kind}\"")))
+}
+
+/// The command line that starts an agent of `kind` with `args`, as the user types it into a
+/// shell of `family`.
+pub fn agent_line(kind: &str, args: &[String], family: ShellFamily) -> Result<String, ActionError> {
+    let mut line = quote_for(family, agent_program(kind)?)?;
     for a in args {
         line.push(' ');
-        line.push_str(&shell_quote(a));
+        line.push_str(&quote_for(family, a)?);
     }
     Ok(line)
+}
+
+/// The shell family of the shell in a terminal record: its foreground program when that is a
+/// known shell, else the login shell `login` (the `SHELL` of herdlingd).
+pub fn family_of_terminal(t: &Value, login: Option<&str>) -> ShellFamily {
+    let fg = t.pointer("/foreground/name").and_then(Value::as_str).filter(|n| ShellFamily::known(n));
+    ShellFamily::of(fg.or(login))
 }
 
 /// A tab or a workspace of the projection.
@@ -218,6 +283,37 @@ pub fn members(p: &Projection, scope: &Scope) -> Result<Vec<String>, ActionError
         return Err(ActionError::not_found(kind, id));
     }
     Ok(list)
+}
+
+/// The terminals that a `tab.close` or `workspace.close` of `scope` kills.
+///
+/// `shown`: the pane ids that the app showed in that tab or space (`pane_ids`). Only the panes
+/// in both the scope and `shown` close, so a terminal that joined the group after the app drew
+/// it stays. With no list (an old app), a Herdr app space, a tab and a label group close as a
+/// whole: their members change only by an explicit move. A repo or folder group follows the
+/// folder of each terminal right now, so the old app can have shown other terminals. Such a
+/// close is refused: a clear refusal is safer than a kill of a terminal the user did not see.
+pub fn close_members(p: &Projection, scope: &Scope, shown: Option<&[String]>) -> Result<Vec<String>, ActionError> {
+    let all = members(p, scope)?;
+    if let Some(shown) = shown {
+        let shown: Vec<&str> = shown.iter().map(|s| ids::strip_legacy(s)).collect();
+        return Ok(all.into_iter().filter(|addr| shown.contains(&project::pane_id(addr).as_str())).collect());
+    }
+    if let Scope::Workspace(id) = scope {
+        let id = ids::strip_legacy(id);
+        let follows_folder = matches!(ids::workspace(id), Some(Workspace::Group(_)))
+            && p.panes
+                .iter()
+                .filter(|e| text(e, "workspace_id") == Some(id))
+                .any(|e| text(e, "group_source") != Some("label"));
+        if follows_folder {
+            return Err(ActionError::unsupported(
+                "This group follows the folders of its terminals, so Herdling cannot be sure which terminals it closes. \
+                 Close its terminals one by one, or update Herdling.",
+            ));
+        }
+    }
+    Ok(all)
 }
 
 /// The herdr 1 `workspace.get` answer for the core workspace `id`.

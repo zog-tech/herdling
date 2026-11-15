@@ -266,3 +266,19 @@ async fn input_order_lanes_are_per_pane_and_a_dropped_turn_frees_the_next() {
     assert!(order.take_for("herdr.call", &call("pane.read")).is_none());
     assert!(order.take_for("pane.watch", &call("pane.send_input")).is_none());
 }
+
+#[test]
+fn calls_that_arrived_before_a_failure_are_dropped() {
+    use herdlingd::input_order::InputOrder;
+    let order = InputOrder::default();
+    let first = order.take("t1");
+    let second = order.take("t1");
+    let other = order.take("t2");
+    std::thread::sleep(Duration::from_millis(2));
+    first.fail();
+    assert!(second.dropped(), "came before the failure");
+    assert!(!other.dropped(), "another pane");
+    std::thread::sleep(Duration::from_millis(2));
+    let later = order.take("t1");
+    assert!(!later.dropped(), "came after the failure");
+}

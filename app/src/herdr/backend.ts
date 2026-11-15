@@ -116,6 +116,25 @@ export function hostIsCoreOnly(hostId: string | undefined): boolean {
 }
 
 /**
+ * An id without the `hc:` prefix of herdlingd 0.1.x, on a host that is Herdr 2 only (`coreOnly`).
+ * Delivered pushes, routes and saved state can still hold the old form after the update to
+ * herdlingd 0.2.0, which gives plain ids. On any other host the id stays as it is.
+ */
+export function plainId(id: string, coreOnly: boolean): string {
+  return coreOnly && id.startsWith(CORE_ID_PREFIX) ? id.slice(CORE_ID_PREFIX.length) : id;
+}
+
+/** `plainId` for the host `hostId` (Herdr 2 only from its last `hello`). */
+export function hostPlainId(hostId: string | undefined, id: string): string {
+  return plainId(id, hostIsCoreOnly(hostId));
+}
+
+/** True when `hostId` is Herdr 2 only, as a React hook. */
+export function useHostCoreOnly(hostId: string | undefined): boolean {
+  return useCoreActions((s) => !!hostId && !!s.only?.[hostId]);
+}
+
+/**
  * True for a Herdr 2 entry on any herdlingd: an `hc:` id or `backend: "core"` (0.1.x), or any
  * entry of a host that is Herdr 2 only (0.2.0). Use it for the rules that differ for a Herdr 2
  * pane: the task name, the phone width and the key fallback.

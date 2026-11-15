@@ -80,6 +80,10 @@ pub struct Hello {
     /// send the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backends: Option<Value>,
+    /// When no core answers: `{"state": "installing" | "failed" | "missing", "message"}`, what
+    /// herdlingd does about the core (see `core_install::heal`). An older herdlingd does not send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_setup: Option<Value>,
 }
 
 /// `hello.boot` and the result of `boot.check`.

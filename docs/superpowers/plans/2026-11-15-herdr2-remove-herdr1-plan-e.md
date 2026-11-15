@@ -169,6 +169,24 @@ Then bump `companion/Cargo.toml` to 0.1.10 with a CHANGELOG entry. Keep `core-pi
 `"required": false` in 0.1.10, so 0.1.10 still works with herdr 1. Plans C, D and F2 are not
 needed for the guard. The 0.2.0 manifest must say `requires_core: true`.
 
+### Release notes of 0.1.10 and 0.2.0 (the core notice)
+
+Old apps show the `notes` of `latest.json` before an update. The release workflow takes them from
+the CHANGELOG section `## [herdlingd X.Y.Z]`.
+
+- 0.1.10 (from `main`): start its CHANGELOG section with this paragraph, so the notes carry it:
+  "The next herdlingd (0.2.0) works only with Herdr 2 (herdr-core). This version can install
+  herdr-core first: on the host screen, use Install Herdr 2, or run `herdlingd core install` on the
+  computer. herdr 1 sessions do not show in Herdling after 0.2.0."
+- 0.2.0: the workflow on this branch puts the core notice in front of the notes by itself when
+  `core-pin.json` says `"required": true` ("This update needs Herdr 2 (herdr-core). herdlingd
+  installs herdr-core <pin> on this computer when it is missing. ...").
+- A computer that goes from 0.1.9 straight to 0.2.0 (0.1.9 ignores `requires_core`) heals itself:
+  0.2.0 installs the pinned core when `serve` starts and when `hello` finds no core
+  (`core_install::heal`). `hello.core_setup` and the `herdr_unavailable` message say "Installing
+  Herdr 2…" or the install error. The fixed "herdr is not running" text of the app builds 1.0.0
+  and 1.0.1 does not change; the notes above are the text that those builds show first.
+
 ### Open points
 
 - The site (`site/public/`) now describes 0.2.0. Deploy it only with the 0.2.0 release.

@@ -8,13 +8,13 @@ import { Bot, Ellipsis, LayoutGrid, Plus } from "lucide-react-native";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
-import { allows, renameKindsFor } from "@/herdr/backend";
+import { allows, isCoreEntry, renameKindsFor } from "@/herdr/backend";
 import { expectPane } from "@/herdr/expectedPanes";
 import { promptRename, renameSupported } from "@/herdr/rename";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { startShell } from "@/herdr/startSession";
 import { getHostConn, useHostConn } from "@/hosts/connection";
-import { firstTab, hostSpaces, MAX_THUMBS, tabLabel } from "@/spaces/spaces";
+import { closeSpaceParams, firstTab, hostSpaces, MAX_THUMBS, tabLabel } from "@/spaces/spaces";
 import { PaneThumb } from "@/spaces/PaneThumb";
 import { useThumbnails } from "@/spaces/useThumbnails";
 import { colors, denseScale, dot, hitTarget, icon, radius, space, state } from "@/theme/tokens";
@@ -124,7 +124,7 @@ export default function SpaceScreen() {
               text: "Close",
               style: "destructive",
               onPress: () =>
-                rpc.call("herdr.call", { method: "workspace.close", params: { workspace_id: workspaceId } }).then(
+                rpc.call("herdr.call", { method: "workspace.close", params: closeSpaceParams(spaceInfo ?? { workspaceId, tabs: [] }, isCoreEntry(workspaceId, hostId)) }).then(
                   () => {
                     haptics.commit();
                     router.back();

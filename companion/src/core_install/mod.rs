@@ -12,6 +12,7 @@
 //! [`CoreInstallCtx`], so tests pass fakes and never download or touch a live core.
 
 pub mod guard;
+pub mod heal;
 pub mod machine;
 pub mod pin;
 
@@ -19,7 +20,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::herdr_update::{self, Exit, HerdrRunner, RunOut};
 use crate::types::{CoreInstall, CoreStatus, HerdrUpdate, RpcError};
@@ -30,6 +31,12 @@ use pin::CorePin;
 pub const BIN: &str = "herdr-core";
 /// Largest accepted core tarball (about 15 MB in 0.1.20).
 pub const DOWNLOAD_LIMIT: usize = 128 << 20;
+/// The longest whole install: download, place, start and checks. The app waits 180 s for
+/// `core.install` and `herdr.update`, so its answer always comes first from herdlingd.
+pub const INSTALL_BUDGET: Duration = Duration::from_secs(150);
+/// The least time left for the place. With less, the install stops before it: a place that is
+/// cut off could leave a half-written core.
+pub const PLACE_MIN: Duration = Duration::from_secs(60);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const PLACE_TIMEOUT: Duration = Duration::from_secs(120);
 const START_TIMEOUT: Duration = Duration::from_secs(30);
@@ -132,6 +139,22 @@ pub trait CoreIo {
     fn place(&mut self, mode: PlaceMode) -> Result<(), String>;
     fn running(&mut self, wait: bool) -> Option<String>;
     fn start(&mut self) -> Result<(), String>;
+    /// The time left of the install budget. None: no deadline.
+    fn left(&self) -> Option<Duration> {
+        None
+    }
+}
+
+/// The error when the install budget is used up before `effect`. Before the place nothing
+/// changed; after it the core is there but may not run yet.
+fn out_of_time(effect: Effect, placed: bool) -> RpcError {
+    let secs = INSTALL_BUDGET.as_secs();
+    let message = if placed {
+        format!("herdr-core is installed, but the install ran out of time ({secs} s) before it was sure that the core runs. Look again in a minute")
+    } else {
+        format!("the herdr-core install ran out of time ({secs} s) before the step {effect:?}. Nothing was installed. Try again")
+    };
+    err("install_timeout", message)
 }
 
 /// Most steps of one flow. The longest flow has 9.
@@ -140,11 +163,19 @@ const MAX_STEPS: usize = 32;
 /// Runs the flow of [`machine::step`] with `io`. `url` is the download of the pin.
 pub fn drive(plan: &Plan, url: &str, io: &mut dyn CoreIo) -> Result<Outcome, RpcError> {
     let (mut state, mut input) = (State::Begin, Input::Go);
+    let mut placed = false;
     for _ in 0..MAX_STEPS {
         match machine::step(plan, state, input) {
             Step::Done(o) => return Ok(o),
             Step::Fail(f) => return Err(err(f.code, f.message)),
             Step::Next(next, effect) => {
+                if let Some(left) = io.left() {
+                    let need = if matches!(effect, Effect::Place(_)) { PLACE_MIN } else { Duration::from_millis(1) };
+                    if left < need {
+                        return Err(out_of_time(effect, placed));
+                    }
+                }
+                placed |= matches!(effect, Effect::Place(_));
                 input = match effect {
                     Effect::FindInstalled => Input::Installed(io.find_installed()),
                     Effect::Download => Input::Downloaded(io.download(url)),
@@ -166,11 +197,41 @@ fn executable(p: &Path) -> bool {
     fs::metadata(p).map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false)
 }
 
-/// Where the core is: `~/.local/bin/herdr-core` first, else the first `herdr-core` in `dirs`.
+/// The folder of the upstream macOS app bundle install. Its installer puts a symlink to the core
+/// in this folder at `~/.local/bin/herdr-core`.
+fn upstream_share(home: &Path) -> PathBuf {
+    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
+    home.join(".local/share/herdr-core")
+}
+
+/// What `~/.local/bin/herdr-core` is. A plain executable file and a symlink into the upstream
+/// bundle folder are ours. Any other symlink (Homebrew, Nix, a link that the user made) is
+/// managed: herdlingd never replaces it, also when its target is gone. A broken link into the
+/// upstream folder counts as no core. None: nothing usable is there.
+fn classify_dest(dest: &Path, home: &Path) -> Option<Where> {
+    let meta = fs::symlink_metadata(dest).ok()?;
+    if !meta.file_type().is_symlink() {
+        return executable(dest).then_some(Where::Ours);
+    }
+    let share = upstream_share(home);
+    match dest.canonicalize() {
+        Ok(target) if target.starts_with(&share) && executable(&target) => Some(Where::Ours),
+        Ok(_) => Some(Where::Managed),
+        Err(_) => {
+            let raw = fs::read_link(dest).ok()?;
+            let raw = if raw.is_absolute() { raw } else { dest.parent().map(|p| p.join(&raw)).unwrap_or(raw) };
+            let into_share = raw.starts_with(&share) || raw.starts_with(home.join(".local/share/herdr-core"));
+            (!into_share).then_some(Where::Managed)
+        }
+    }
+}
+
+/// Where the core is: `~/.local/bin/herdr-core` first (see [`classify_dest`]), else the first
+/// `herdr-core` in `dirs`.
 pub fn find_core(ctx: &CoreInstallCtx) -> Option<(Where, PathBuf)> {
     let dest = ctx.dest();
-    if executable(&dest) {
-        return Some((Where::Ours, dest));
+    if let Some(at) = classify_dest(&dest, &ctx.home) {
+        return Some((at, dest));
     }
     ctx.dirs.iter().map(|d| d.join(BIN)).find(|p| *p != dest && executable(p)).map(|p| (Where::Managed, p))
 }
@@ -219,15 +280,32 @@ pub struct SystemCoreIo<'a> {
     /// The core to start: the found one, or the one just placed.
     bin: Option<PathBuf>,
     bundle: bool,
+    /// The end of the install budget ([`INSTALL_BUDGET`]).
+    deadline: Instant,
+}
+
+/// Runs `f` on its own thread and waits at most `limit` for it. A late result is dropped (the
+/// thread ends on its own timeout); it never changes the install after the answer.
+fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(limit).ok()
 }
 
 impl<'a> SystemCoreIo<'a> {
     pub fn new(ctx: &'a CoreInstallCtx) -> SystemCoreIo<'a> {
-        SystemCoreIo { ctx, env: ctx.child_env(), stage: None, bin: None, bundle: false }
+        SystemCoreIo { ctx, env: ctx.child_env(), stage: None, bin: None, bundle: false, deadline: Instant::now() + INSTALL_BUDGET }
     }
 
+    fn remaining(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
+    /// Runs a process, bounded by its own `timeout` and by the install budget.
     fn run(&self, bin: &Path, args: &[&str], timeout: Duration) -> RunOut {
-        self.ctx.runner.run(bin, args, &self.env, timeout)
+        self.ctx.runner.run(bin, args, &self.env, timeout.min(self.remaining().max(Duration::from_secs(1))))
     }
 
     fn version_of(&self, bin: &Path) -> Option<String> {
@@ -273,7 +351,10 @@ impl CoreIo for SystemCoreIo<'_> {
     }
 
     fn download(&mut self, url: &str) -> Result<String, String> {
-        let body = (self.ctx.fetch)(url)?;
+        // The place keeps its own time ([`PLACE_MIN`]).
+        let limit = self.remaining().saturating_sub(PLACE_MIN);
+        let (fetch, u) = (self.ctx.fetch.clone(), url.to_string());
+        let body = within(limit, move || fetch(&u)).ok_or_else(|| format!("the download took longer than {} s", limit.as_secs()))??;
         let root = self.ctx.home.join(".cache/herdling");
         let dir = root.join(format!("core.{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -365,13 +446,18 @@ impl CoreIo for SystemCoreIo<'_> {
     }
 
     fn running(&mut self, wait: bool) -> Option<String> {
-        (self.ctx.probe)(wait)
+        let probe = self.ctx.probe.clone();
+        within(self.remaining(), move || probe(wait)).flatten()
     }
 
     fn start(&mut self) -> Result<(), String> {
         let bin = self.bin.clone().unwrap_or_else(|| self.ctx.dest());
         let r = self.run(&bin, &["server", "start"], START_TIMEOUT);
         if succeeded(&r) { Ok(()) } else { Err(run_text(&r)) }
+    }
+
+    fn left(&self) -> Option<Duration> {
+        Some(self.remaining())
     }
 }
 

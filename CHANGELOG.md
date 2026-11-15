@@ -7,6 +7,9 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.0] - unreleased
 
+herdlingd 0.2.0 needs Herdr 2 (herdr-core). When no herdr-core is installed, it installs the pinned
+version itself (also after an update from 0.1.9). herdr 1 sessions do not show in Herdling any more.
+
 ### Breaking
 
 - herdlingd 0.2.0 talks only to Herdr 2 (herdr-core). The herdr 1 client is gone. A computer with
@@ -29,6 +32,32 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   gives `herdr_unavailable`.
 
 ### Also in 0.2.0
+
+- Self-heal: when `serve` starts, and when `hello` finds no core, herdlingd installs the pinned
+  herdr-core if none is installed (the `core.install` path, the same lock, never down, never a
+  package manager core). An update from 0.1.9 (which ignores `requires_core`) no longer leaves the
+  app with no runtime. New `hello.core_setup` (`installing`, `failed`, `missing`, with a message);
+  `herdr_unavailable` errors carry the same message. The app shows it on the host screens.
+- The release workflow puts a core notice in front of the notes of a release that needs the core.
+
+- `core.install` (and the core step of `herdr.update`) ends within 150 seconds, under the 180
+  seconds that the app waits (error `install_timeout`). The place step starts only with 60 seconds
+  left, so it is never cut off.
+
+- Typing on Herdr 2: text without Enter and keys go in at once as raw bytes on a short attach
+  stream, so punctuation, accents and emoji work in "Type directly" (also from the app builds
+  1.0.0 and 1.0.1). Every typing call answers within 10 seconds. A line that waits for quiet at
+  the computer longer is cancelled and never types later (error `busy`), so a resend cannot
+  double it. The calls behind a failed call to the same pane do not run (error `dropped`).
+
+- `tab.close` and `workspace.close` take an optional `pane_ids`: only the panes that the app showed
+  close. Without it, the close of a repo or folder group gives `unsupported`, because the group
+  follows the folders of its terminals. The app sends the list.
+- `agent.start` and `session.start` quote the agent arguments for the shell in the pane (POSIX,
+  fish or Nushell). Another shell takes only plain words. An argument with a control character
+  gives `bad_request`.
+- `herdlingd` keeps a `~/.local/bin/herdr-core` symlink that points outside the upstream bundle
+  folder (Homebrew, Nix): it is a package manager core, never replaced.
 
 - Herdr 2 actions: on a core entry, `tab.create`, `agent.start`, `agent.prompt`, `agent.rename`,
   `tab.close`, `workspace.close`, `agent.explain`, `workspace.get` and `workspace.list` work.
@@ -180,6 +209,13 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   to end", a long press for "Select text" and the latency badge stay. Settings, Terminal,
   "Renderer" goes back to "Classic". A build without the web view or an older herdlingd keeps the
   classic view. xterm.js is bundled in the app (no network fetch).
+- On a computer with herdlingd 0.2.0, an old `hc:` pane id from a delivered push, a route or the
+  saved "seen" state names the same pane as its plain id, so such a push opens the pane and its
+  notifications go away when the pane opens.
+- "Close space" on a Herdr 2 space closes only the panes that the screen showed (`pane_ids`).
+- The host screens show what herdlingd does when Herdr 2 is missing ("Installing Herdr 2…" or the
+  install error, from `hello.core_setup`).
+
 - On a computer with herdlingd 0.2.0 or later, every entry is a Herdr 2 entry (plain ids): the
   task rename, the phone width mode and "Move to space" work, and the herdr 1 key fallback is off.
   A 0.1.x computer keeps the old rules for its herdr 1 panes.

@@ -6,7 +6,7 @@
 
 use serde_json::{json, Map, Value};
 
-use super::actions::{agent_line, rename_labels, ActionError, Scope};
+use super::actions::{agent_line, rename_labels, ActionError, Scope, ShellFamily};
 use super::ids::{self, Tab};
 use super::project::{self, address};
 
@@ -55,7 +55,8 @@ fn unsupported(m: impl Into<String>) -> Unsupported {
     Unsupported(m.into())
 }
 
-/// The core keys that type `text` exactly, when every character has a key. The page sequences
+/// The core keys that type `text` exactly, when every character has a key. Only a core without
+/// `terminal.attach` types text this way; else the text goes in as raw bytes (`core::typing`). The page sequences
 /// of the app (`\x1b[5~`, `\x1b[6~`) are the page keys.
 pub fn text_keys(text: &str) -> Option<Vec<String>> {
     match text {
@@ -92,6 +93,21 @@ fn keys_param(params: &Value) -> Result<Vec<String>, Unsupported> {
             .ok_or_else(|| unsupported("keys must be strings")),
         Some(_) => Err(unsupported("keys must be an array")),
     }
+}
+
+/// The text and the keys of a typing call, as [`plan`] reads them: `pane.send_text` with one
+/// final newline is a line and Enter.
+pub fn typed(method: &str, params: &Value) -> Result<(String, Vec<String>), Unsupported> {
+    let text = params.get("text").and_then(Value::as_str).unwrap_or("");
+    Ok(match method {
+        "pane.send_input" => (text.to_string(), keys_param(params)?),
+        "pane.send_text" => match text.strip_suffix('\n').or_else(|| text.strip_suffix('\r')) {
+            Some(line) if !line.is_empty() && !line.contains(['\n', '\r']) => (line.to_string(), vec!["enter".into()]),
+            _ => (text.to_string(), vec![]),
+        },
+        "pane.send_keys" => (String::new(), keys_param(params)?),
+        _ => (String::new(), vec![]),
+    })
 }
 
 /// Typing `text`, then pressing `keys`: one `terminal.send` when it is a line and Enter,
@@ -188,18 +204,37 @@ pub enum Action {
     /// `tab.create` (and `workspace.create` for the core): a new shell in a new tab of
     /// `workspace` (None: a new space). `kind` is the herdr 1 answer type.
     Run { kind: &'static str, workspace: Option<String>, cwd: Option<String> },
-    /// `agent.start`: type the agent command `line` into the shell of `addr`.
-    Start { addr: String, line: String },
+    /// `agent.start`: type the command of agent `kind` with `args` into the shell of `addr`.
+    /// The line is quoted for the shell family of that terminal (`core::live`).
+    Start { addr: String, kind: String, args: Vec<String> },
+    /// Text without Enter, and keys: typed at once (`core::typing`). `fallback` is the
+    /// `terminal.keys` call of [`plan`] for a core without `terminal.attach`, if the text has keys.
+    Type { addr: String, text: String, keys: Vec<String>, fallback: Option<Plan> },
     /// `agent.prompt`: send `text` once the terminal reports an agent status.
     Prompt { addr: String, text: String },
     /// `agent.rename` and the rename of a task tab: set these labels.
     Label { addr: String, labels: Map<String, Value> },
-    /// `tab.close`, `workspace.close`: kill every terminal of the scope.
-    Kill(Scope),
+    /// `tab.close`, `workspace.close`: kill the terminals of the scope, only those of `pane_ids`
+    /// when the app sent the list (see [`super::actions::close_members`]).
+    Kill(Scope, Option<Vec<String>>),
     /// `agent.explain`.
     Explain { addr: String },
     /// `workspace.get` of a core workspace.
     WorkspaceGet(String),
+}
+
+/// The optional `pane_ids` of a close: the panes that the app showed.
+fn pane_ids(params: &Value) -> Result<Option<Vec<String>>, ActionError> {
+    match params.get("pane_ids") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|v| v.as_str().map(String::from))
+            .collect::<Option<_>>()
+            .map(Some)
+            .ok_or_else(|| ActionError::bad("pane_ids must be strings")),
+        Some(_) => Err(ActionError::bad("pane_ids must be an array")),
+    }
 }
 
 /// The action of the herdr 1 call `method` on the core id `id`.
@@ -222,7 +257,9 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
                     .ok_or_else(|| ActionError::bad("agent.start: args must be strings"))?,
                 Some(_) => return Err(ActionError::bad("agent.start: args must be an array")),
             };
-            Action::Start { addr, line: agent_line(kind, &args)? }
+            // The checks of the kind and the arguments come before any call.
+            agent_line(kind, &args, ShellFamily::Posix)?;
+            Action::Start { addr, kind: kind.to_string(), args }
         }
         "agent.prompt" => {
             let text = s("text").filter(|t| !t.is_empty()).ok_or_else(|| ActionError::unsupported("agent.prompt requires text"))?;
@@ -235,8 +272,18 @@ pub fn action(method: &str, params: &Value, id: &str) -> Result<Action, ActionEr
             None => return Err(ActionError::not_found("tab", id)),
         },
         "workspace.rename" => return Err(ActionError::unsupported(owned_names)),
-        "tab.close" => Action::Kill(Scope::Tab(id.to_string())),
-        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string())),
+        "tab.close" => Action::Kill(Scope::Tab(id.to_string()), pane_ids(params)?),
+        "workspace.close" => Action::Kill(Scope::Workspace(id.to_string()), pane_ids(params)?),
+        "pane.send_input" | "pane.send_text" | "pane.send_keys" => {
+            let addr = pane()?;
+            let (text, keys) = typed(method, params).map_err(|u| ActionError::unsupported(u.0))?;
+            if (!text.is_empty() && keys == ["enter"]) || (text.is_empty() && keys.is_empty()) {
+                // A line (`terminal.send`), or nothing to type.
+                Action::Call(plan(method, params, id).map_err(|u| ActionError::unsupported(u.0))?)
+            } else {
+                Action::Type { addr, text, keys, fallback: plan(method, params, id).ok() }
+            }
+        }
         "agent.explain" => Action::Explain { addr: pane()? },
         "workspace.get" => Action::WorkspaceGet(id.to_string()),
         _ if address(id).is_none() && PANE_METHODS.contains(&method) => return Err(ActionError::not_found("pane", id)),
