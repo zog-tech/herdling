@@ -3,6 +3,7 @@
 //! `hc:` and the field `backend: "core"`, so older apps show them too. See `docs/protocol.md`,
 //! "Herdr 2 (herdr-core)".
 
+pub mod attach;
 pub mod client;
 pub mod endpoint;
 pub mod events;
