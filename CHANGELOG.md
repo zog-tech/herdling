@@ -17,6 +17,18 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 - `herdlingd group <name>` and `herdlingd group --clear` set or remove the `herdling.group` label
   of the Herdr 2 terminal that runs them.
 - The `herdling.name` label is the task name of a Herdr 2 terminal.
+- herdlingd installs herdr-core (Herdr 2). It pins one version and its SHA-256 per release
+  (`companion/core-pin.json`, now herdr-core 0.1.20). It never downgrades a core and never replaces
+  a core of a package manager. New methods `core.status` and `core.install`, and the commands
+  `herdlingd core status`, `install` and `required`.
+- `herdr.update` updates herdr-core to the pin on a computer with the core and no herdr 1.
+- The release manifest can say `requires_core` and carry the core pin. `update.check` then tells the
+  app (`core`, with a notice for herdr 1 users), and `update.apply` installs the core first. When
+  that fails, the update stops with `core_install_failed` and the old herdlingd stays.
+- The installer asks the new herdlingd `core required`. When it says yes, the installer installs
+  herdr-core first (step `core`, error `core_install_failed`) and does not need herdr 1. The herdr 1
+  check now comes after the download.
+
 - A Herdr 2 push uses the card name as its title and the group and status message as its body.
 - Herdr 2 terminals have groups: the Herdr app space, the `herdling.group` label, the git repo or
   the folder. Ids are `hc:space:<id>`, `hc:tab:<id>`, `hc:g:<key>` and `hc:task:<address>`.

@@ -153,11 +153,16 @@ jobs:
               sha, name = line.split()
               target = name.removeprefix("herdlingd-").removesuffix(".tar.gz")
               assets[target] = {"url": f"{base}/{name}", "sha256": sha}
+          # The herdr-core pin of this herdlingd (companion/core-pin.json). An older herdlingd
+          # reads it to install the core first when this release needs it (requires_core).
+          pin = json.load(open("../companion/core-pin.json"))
           manifest = {
               "version": version,
               "date": datetime.date.today().isoformat(),
               "notes": open("notes.md").read().strip(),
               "assets": assets,
+              "requires_core": bool(pin.get("required", False)),
+              "core": pin,
           }
           with open("latest.json", "w") as f:
               json.dump(manifest, f, indent=2)

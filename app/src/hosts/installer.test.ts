@@ -59,6 +59,19 @@ describe("HERDLINGD_BOOT", () => {
     expect(r).toMatchObject({ ok: false, code: "herdr_install_failed" });
     expect(!r.ok && r.message).toContain("https://herdr.dev");
   });
+
+  it("maps core_install_failed and reads the core step", () => {
+    const r = parseInstallOutput(
+      "HERDLINGD_STEP verify\nHERDLINGD_STEP core\nHERDLINGD_ERROR core_install_failed herdr-core could not be installed: checksum_mismatch\n",
+      "",
+      1,
+    );
+    expect(r).toMatchObject({ ok: false, code: "core_install_failed" });
+    expect(!r.ok && r.message).toContain("checksum_mismatch");
+    expect(!r.ok && r.message).toContain("herdlingd was not installed");
+    const ok = parseInstallOutput("HERDLINGD_STEP core\nHERDLINGD_STEP install\nHERDLINGD_INSTALLED 0.2.0\n", "", 0);
+    expect(ok).toEqual({ ok: true, version: "0.2.0" });
+  });
 });
 
 describe("parseInstallOutput", () => {

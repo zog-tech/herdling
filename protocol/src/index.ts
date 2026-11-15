@@ -86,6 +86,28 @@ export type UpdateCheck = {
   date?: string;
   /** The release asset target for this computer, for example `aarch64-apple-darwin`. */
   target: string;
+  /** What the update does with herdr-core first. Missing from an older herdlingd. */
+  core?: UpdateCore;
+};
+
+/**
+ * The herdr 1 guard in `update.check`. When the release needs herdr-core and the computer has
+ * none, `update.apply` installs the core first. When that fails, the update stops and the old
+ * herdlingd stays. Show `notice` before the update.
+ */
+export type UpdateCore = {
+  /** True when the release needs herdr-core. */
+  requires_core: boolean;
+  /** True when a `herdr-core` is on the computer. */
+  installed: boolean;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+  /** True when the update installs herdr-core before it replaces herdlingd. */
+  install_first: boolean;
+  /** The herdr-core version that the update installs. */
+  pinned: string;
+  /** Text for the user before the update. */
+  notice?: string;
 };
 
 /** Params of `update.apply`. Without `version` the host installs the latest release. */
@@ -98,6 +120,10 @@ export type UpdateApply = {
   status: "updated" | "up_to_date";
   /** False when no service is installed, or when the restart command failed. */
   service_restarted: boolean;
+  /** The herdr-core step, when the release needs the core. Error `core_install_failed` when it fails. */
+  core?: CoreInstall;
+  /** Text for the user, for example that herdr 1 sessions do not show any more. */
+  notice?: string;
 };
 
 /**
@@ -112,6 +138,50 @@ export type HerdrUpdate = {
   handoff: "complete" | "failed" | "none";
   /** The output of `herdr update`, at most the last 16 KiB. */
   output: string;
+};
+
+/**
+ * Result of `core.status` (no params): herdr-core (Herdr 2) on the computer. Only reads.
+ * Check `hello.methods` for `core.status` first.
+ */
+export type CoreStatus = {
+  /** True when a `herdr-core` is on the computer. */
+  found: boolean;
+  /** Version of the installed `herdr-core`. Null when none is found or it gave no version. */
+  installed?: string | null;
+  /** True when a package manager owns the core (not in `~/.local/bin`). herdlingd never replaces it. */
+  managed: boolean;
+  /** True when a core answers on its socket. */
+  running: boolean;
+  /** Version of the running core, when it says one. */
+  running_version?: string | null;
+  /** The herdr-core version that this herdlingd installs. */
+  pinned: string;
+  /** True when the installed or running core is newer than the pin. herdlingd keeps it. */
+  newer_than_pin: boolean;
+  /** True when `core.install` would install or update the core. */
+  update_available: boolean;
+  /** True when this herdlingd needs the core to work. */
+  required: boolean;
+  /** Upstream build target, for example `macos-aarch64`. Null: no build for this computer. */
+  target?: string | null;
+  /** True when herdr 1 (`herdr`) is on the computer. */
+  herdr1: boolean;
+};
+
+/**
+ * Result of `core.install` (no params): installs the pinned herdr-core when it is missing, updates
+ * herdlingd's own core when it is older (never down), and makes sure that the core runs.
+ * Errors: `unsupported_target`, `download_failed`, `checksum_mismatch`, `install_failed`,
+ * `core_not_running`, `busy`.
+ */
+export type CoreInstall = {
+  from?: string | null;
+  to?: string | null;
+  status: "installed" | "updated" | "up_to_date" | "kept_newer" | "kept_unknown" | "kept_managed";
+  /** True when herdlingd started the core. */
+  started: boolean;
+  pinned: string;
 };
 
 export type ThreadItem =

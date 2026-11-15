@@ -48,6 +48,11 @@ folder with `latest/download/herdlingd-<target>.tar.gz` and `SHA256SUMS`, served
 `python3 -m http.server 8799`:
 `HERDLING_RELEASE_BASE=http://127.0.0.1:8799 sh public/install.sh --quiet`.
 
+A herdlingd that needs Herdr 2 answers `herdlingd core required` with exit 0. The script then runs
+`herdlingd core install` (step `core`, error `core_install_failed`) before `herdlingd install`, and
+it does not need herdr 1. To test this path, put a fake `herdlingd` script in the tarball that
+answers `version`, `install` and `core required|install`, and use a temporary `HOME`.
+
 After the first release:
 
 1. Set `installer.ready: true` in `public/config.js`.
