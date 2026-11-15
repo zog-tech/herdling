@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect } from "react";
 
+import { plainId, useHostCoreOnly } from "@/herdr/backend";
 import { bannerOpened } from "@/push/BannerHost";
 import { dismissPaneNotifications } from "@/push/dismiss";
 import { SessionDetail } from "@/thread/SessionDetail";
@@ -13,7 +14,7 @@ export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
  * In regular width `LayoutSync` moves it into the detail column of Overview.
  */
 export default function SessionScreen() {
-  const { hostId, paneId, prompt, promptError, from, shell } = useLocalSearchParams<{
+  const { hostId, paneId: routePane, prompt, promptError, from, shell } = useLocalSearchParams<{
     hostId: string;
     paneId: string;
     /** Set by New session when the first prompt failed after the agent started. */
@@ -25,6 +26,8 @@ export default function SessionScreen() {
     shell?: string;
   }>();
   const router = useRouter();
+  // A route from an older push or link can hold the `hc:` id of herdlingd 0.1.x.
+  const paneId = plainId(routePane, useHostCoreOnly(hostId));
   const openPane = useCallback((target: string) => router.replace(`/session/${hostId}/${target}` as never), [router, hostId]);
   const back = useCallback(() => (router.canGoBack() ? router.back() : router.replace("/")), [router]);
   // The user sees the session now: the delivered notifications of the pane go away.

@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 
 import { secureJSONStorage } from "@/secureStorage";
 
+import { CORE_ID_PREFIX, hostIsCoreOnly } from "./backend";
 import { paneKey } from "./snapshot";
 
 type SeenStore = { seen: Record<string, number> };
@@ -22,14 +23,36 @@ export function markSeen(hostId: string, paneId: string, seq: number): void {
   useSeen.setState((s) => ((s.seen[key] ?? 0) >= seq ? s : { seen: { ...s.seen, [key]: seq } }));
 }
 
-/** Drops last-seen entries of `hostId` for panes that no longer exist. */
+/**
+ * Moves the entries of `hostId` with an old `hc:` pane id to the plain id (herdlingd 0.2.0 has
+ * plain ids). The higher seq wins. The same object when nothing moves. Pure.
+ */
+export function migrateSeen(seen: Record<string, number>, hostId: string): Record<string, number> {
+  const old = `${hostId}:${CORE_ID_PREFIX}`;
+  const moving = Object.keys(seen).filter((k) => k.startsWith(old));
+  if (moving.length === 0) return seen;
+  const next = { ...seen };
+  for (const k of moving) {
+    const plain = paneKey(hostId, k.slice(old.length));
+    next[plain] = Math.max(next[plain] ?? 0, seen[k]);
+    delete next[k];
+  }
+  return next;
+}
+
+/**
+ * Drops last-seen entries of `hostId` for panes that no longer exist. On a Herdr 2 only host,
+ * entries with an old `hc:` id move to the plain id first.
+ */
 export function pruneSeen(hostId: string, livePaneIds: string[]): void {
   const prefix = `${hostId}:`;
   const live = new Set(livePaneIds.map((id) => paneKey(hostId, id)));
+  const coreOnly = hostIsCoreOnly(hostId);
   useSeen.setState((s) => {
-    const stale = Object.keys(s.seen).filter((k) => k.startsWith(prefix) && !live.has(k));
-    if (stale.length === 0) return s;
-    const seen = { ...s.seen };
+    const base = coreOnly ? migrateSeen(s.seen, hostId) : s.seen;
+    const stale = Object.keys(base).filter((k) => k.startsWith(prefix) && !live.has(k));
+    if (stale.length === 0) return base === s.seen ? s : { seen: base };
+    const seen = { ...base };
     stale.forEach((k) => delete seen[k]);
     return { seen };
   });

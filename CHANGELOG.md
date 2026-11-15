@@ -196,6 +196,13 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- On a computer with herdlingd 0.2.0, an old `hc:` pane id from a delivered push, a route or the
+  saved "seen" state names the same pane as its plain id, so such a push opens the pane and its
+  notifications go away when the pane opens.
+- "Close space" on a Herdr 2 space closes only the panes that the screen showed (`pane_ids`).
+- The host screens show what herdlingd does when Herdr 2 is missing ("Installing Herdr 2…" or the
+  install error, from `hello.core_setup`).
+
 - On a computer with herdlingd 0.2.0 or later, every entry is a Herdr 2 entry (plain ids): the
   task rename, the phone width mode and "Move to space" work, and the herdr 1 key fallback is off.
   A 0.1.x computer keeps the old rules for its herdr 1 panes.
