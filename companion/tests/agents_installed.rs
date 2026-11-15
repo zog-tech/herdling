@@ -56,7 +56,7 @@ async fn rpc_agents_installed_answers_with_both_lists() {
     let dir = tempfile::tempdir().unwrap();
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().to_path_buf());
+    let mut ctx = Ctx::new(dir.path().to_path_buf());
     ctx.bin_dirs = vec![dir.path().join("bin")];
     program(&dir.path().join("bin"), "pi", 0o755);
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));

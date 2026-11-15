@@ -40,23 +40,3 @@ pub fn notice(g: Guard) -> Option<&'static str> {
         _ => None,
     }
 }
-
-/// Which program `herdr.update` updates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateTarget {
-    /// herdr 1 (`herdr update --handoff`), as before.
-    Herdr1,
-    /// herdr-core, to the pin and never down.
-    Core,
-}
-
-/// The target of `herdr.update`. A computer with herdr 1 keeps the herdr 1 update (plan E
-/// removes it). A computer with the core and no herdr 1 updates the core. With neither, the
-/// herdr 1 path gives its `not_installed` error, as before.
-pub fn herdr_update_target(herdr1: bool, core_installed: bool) -> UpdateTarget {
-    if !herdr1 && core_installed {
-        UpdateTarget::Core
-    } else {
-        UpdateTarget::Herdr1
-    }
-}

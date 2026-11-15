@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use herdlingd::core_install::guard::{self, Guard, UpdateTarget};
+use herdlingd::core_install::guard::{self, Guard};
 use herdlingd::core_install::machine::{
     self, decide, place_mode, Decision, Effect, Found, Input, Outcome, PlaceMode, Plan, State, Status, Step, Where,
 };
@@ -290,13 +290,6 @@ fn guard_table() {
     assert_eq!(guard::notice(Guard::EnsureCore), None);
 }
 
-#[test]
-fn herdr_update_targets() {
-    assert_eq!(guard::herdr_update_target(true, true), UpdateTarget::Herdr1);
-    assert_eq!(guard::herdr_update_target(true, false), UpdateTarget::Herdr1);
-    assert_eq!(guard::herdr_update_target(false, true), UpdateTarget::Core);
-    assert_eq!(guard::herdr_update_target(false, false), UpdateTarget::Herdr1);
-}
 
 // ---- status ----
 

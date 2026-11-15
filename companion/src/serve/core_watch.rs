@@ -1,9 +1,9 @@
-//! Watches the agent statuses of herdr-core (Herdr 2) and sends pushes through the same
-//! debouncer and push pipeline as herdr 1. herdlingd only joins a running core: when there is
-//! none, it tries again with backoff and logs only when the state changes.
+//! Watches the agent statuses of herdr-core (Herdr 2) and sends pushes through the debouncer
+//! and the push pipeline. herdlingd only joins a running core: when there is none, it tries
+//! again with backoff and logs only when the state changes.
 //!
 //! The quiet-at-the-computer rule needs desk activity, and the core does not report it. So a
-//! core push is never held back as "at the computer".
+//! push is never held back as "at the computer".
 
 use std::time::{Duration, Instant};
 
@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use super::debounce::{Debouncer, Notice};
-use super::watch::deliver;
 use super::ServeCtx;
 use crate::config;
 use crate::core::client::{Client, CoreError, Notice as CoreNotice, Subscription, GENERATION};
@@ -154,7 +153,7 @@ async fn run(ctx: &ServeCtx, client: &reqwest::Client, sock: &CoreSocket, termin
         }
         if shell_check || nudge.ready(Instant::now()) {
             // The core reports no desk activity, so a command push is never held back.
-            if let Some(panes) = super::shells::poll(ctx, client, false, super::shells::Backend::Core(sock)).await {
+            if let Some(panes) = super::shells::poll(ctx, client, sock).await {
                 nudge.set_watched(panes);
             }
             nudge.checked(Instant::now());
@@ -196,4 +195,35 @@ async fn choice_of(sock: &CoreSocket, pane: &str) -> Option<crate::choices::Push
     let (text, _) = crate::core::live::read_text(sock, HERDR_TIMEOUT, pane, 0).await.ok()?;
     let choice = crate::choices::yes_no(&crate::choices::parse_choices(&text), 0)?;
     Some(crate::choices::PushChoice { question: crate::choices::menu_question(&text), ..choice })
+}
+
+/// Sends `msgs` and removes the push tokens that Expo reports as no longer registered.
+pub(super) async fn deliver(ctx: &ServeCtx, client: &reqwest::Client, msgs: &[push::PushMessage]) {
+    if msgs.is_empty() {
+        return;
+    }
+    let gone = match push::send(client, &ctx.push_url, msgs).await {
+        Ok(gone) => gone,
+        Err(e) => {
+            eprintln!("herdlingd serve: push: {e:#}");
+            return;
+        }
+    };
+    if gone.is_empty() {
+        return;
+    }
+    let path = ctx.config_path.clone();
+    let cleared = tokio::task::spawn_blocking(move || {
+        config::update(&path, |c| {
+            for d in &mut c.devices {
+                if d.expo_token.as_ref().is_some_and(|t| gone.contains(t)) {
+                    d.expo_token = None;
+                }
+            }
+        })
+    })
+    .await;
+    if !matches!(cleared, Ok(Ok(()))) {
+        eprintln!("herdlingd serve: could not remove unregistered push tokens");
+    }
 }

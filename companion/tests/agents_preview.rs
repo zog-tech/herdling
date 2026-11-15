@@ -1,11 +1,9 @@
 //! `agents.preview`: Claude log tails, the screen fallback, caps and the rpc round trip.
 
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
-#[path = "support/fake_herdr_events.rs"]
-mod fake_herdr_events;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -238,7 +236,7 @@ fn status_since_comes_from_events() {
     // First sighting in a snapshot: unknown.
     assert_eq!(s.status_since("w1:p1", "idle"), None);
     let before = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-    s.observe_event(&fake_herdr_events::status_ev("w1:p1", "working"));
+    s.observe_event(&json!({"event": "pane.agent_status_changed", "data": {"pane_id": "w1:p1", "agent_status": "working"}}));
     let since = s.status_since("w1:p1", "working").expect("known after an event");
     assert!(since >= before);
     // A snapshot with the same status keeps the start.
@@ -256,10 +254,10 @@ struct Session {
 }
 
 impl Session {
-    fn start(sock: PathBuf, home: PathBuf) -> Session {
+    fn start(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(1 << 16);
         let (server_out, client_rx) = tokio::io::duplex(1 << 16);
-        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
     async fn call(&mut self, method: &str, params: Value) -> Value {
@@ -274,48 +272,36 @@ fn write(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-/// Three panes: a working Claude agent with a log, a blocked Codex agent whose screen
-/// asks a question, and an idle Codex agent whose screen cannot be read.
-fn fake_host(dir: &Path) -> (PathBuf, PathBuf) {
+/// Two agents: a working Claude agent with a log, and a blocked Codex agent whose screen
+/// asks a question.
+fn fake_host(dir: &Path) -> (Ctx, fake_core::FakeCore) {
     let home = dir.join("home");
     write(&home.join(".claude/sessions/4242.json"), r#"{"pid":4242,"sessionId":"abc-123","cwd":"/home/sam/proj"}"#);
     let log = [prompt("u1", "Fix it"), tool("a1", "t1", "Bash", json!({"command": "pnpm test"}))].join("\n") + "\n";
     write(&home.join(".claude/projects/-home-sam-proj/abc-123.jsonl"), &log);
-    let sock = dir.join("herdr.sock");
-    fake_herdr::spawn_fn(&sock, |method, params| {
-        let pane = params["pane_id"].as_str().or(params["target"].as_str()).unwrap_or("");
-        match method {
-            "session.snapshot" => Some(json!({"snapshot": {"agents": [
-                {"pane_id": "w1:p1", "agent": "claude", "agent_status": "working", "cwd": "/home/sam/proj"},
-                {"pane_id": "w1:p2", "agent": "codex", "agent_status": "blocked", "cwd": "/home/sam/proj"},
-                {"pane_id": "w1:p3", "agent": "codex", "agent_status": "idle", "cwd": "/home/sam/proj"},
-            ]}})),
-            "agent.get" => {
-                let kind = if pane == "w1:p1" { "claude" } else { "codex" };
-                Some(json!({"agent": {"agent": kind, "cwd": "/home/sam/proj", "pane_id": pane}}))
-            }
-            "pane.process_info" => Some(json!({"process_info": {"pane_id": pane, "shell_pid": 1,
-                "foreground_process_group_id": 4242, "foreground_processes": [{"pid": 4242, "name": "claude"}]}})),
-            "pane.read" if pane == "w1:p2" => Some(json!({"read": {"text": "Would you like to run `rm -rf build`?\n│ 1. Yes │\n"}})),
-            _ => None,
-        }
-    });
-    (sock, home)
+    let state = fake_core::State {
+        terminals: vec![
+            fake_core::agent_at("t1", "Claude Code", "working", "/home/sam/proj", 4242),
+            fake_core::agent_at("t2", "Codex", "blocked", "/home/sam/proj", 4343),
+        ],
+        screen: "Would you like to run `rm -rf build`?\n│ 1. Yes │\n".into(),
+        ..Default::default()
+    };
+    fake_core::with_ctx(dir, home, state)
 }
 
 #[tokio::test]
-async fn rpc_previews_every_agent_and_skips_failures() {
+async fn rpc_previews_every_agent() {
     let dir = tempfile::tempdir().unwrap();
-    let (sock, home) = fake_host(dir.path());
-    let mut s = Session::start(sock, home);
+    let (ctx, _core) = fake_host(dir.path());
+    let mut s = Session::start(ctx);
     let r = s.call("agents.preview", json!({})).await;
     let list = r["result"]["previews"].as_array().unwrap_or_else(|| panic!("{r}"));
     assert_eq!(list.len(), 2, "{r}");
-    assert_eq!(list[0]["pane_id"], "w1:p1");
+    assert_eq!(list[0]["pane_id"], "hc:t1");
     assert_eq!(list[0]["source"], "log");
     assert_eq!(list[0]["activity"], "Running pnpm test");
-    assert_eq!(list[0]["status_since"], Value::Null);
-    assert_eq!(list[1]["pane_id"], "w1:p2");
+    assert_eq!(list[1]["pane_id"], "hc:t2");
     assert_eq!(list[1]["source"], "screen");
     assert_eq!(list[1]["question"], "Would you like to run `rm -rf build`?");
 }
@@ -323,20 +309,24 @@ async fn rpc_previews_every_agent_and_skips_failures() {
 #[tokio::test]
 async fn rpc_filters_by_pane_ids() {
     let dir = tempfile::tempdir().unwrap();
-    let (sock, home) = fake_host(dir.path());
-    let mut s = Session::start(sock, home);
-    let r = s.call("agents.preview", json!({"pane_ids": ["w1:p1"]})).await;
+    let (ctx, _core) = fake_host(dir.path());
+    let mut s = Session::start(ctx);
+    let r = s.call("agents.preview", json!({"pane_ids": ["hc:t1"]})).await;
     let list = r["result"]["previews"].as_array().unwrap();
     assert_eq!(list.len(), 1);
-    assert_eq!(list[0]["pane_id"], "w1:p1");
-    let bad = s.call("agents.preview", json!({"pane_ids": "w1:p1"})).await;
+    assert_eq!(list[0]["pane_id"], "hc:t1");
+    let bad = s.call("agents.preview", json!({"pane_ids": "hc:t1"})).await;
     assert_eq!(bad["error"]["code"], "bad_request");
 }
 
 #[tokio::test]
-async fn rpc_without_herdr_is_an_error() {
+async fn rpc_without_core_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("missing.sock"), dir.path().to_path_buf());
+    let mut s = Session::start(Ctx::new(dir.path().to_path_buf()));
     let r = s.call("agents.preview", json!({})).await;
+    assert_eq!(r["error"]["code"], "herdr_unavailable");
+    let mut ctx = Ctx::new(dir.path().to_path_buf());
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(dir.path().join("missing.sock")));
+    let r = Session::start(ctx).call("agents.preview", json!({})).await;
     assert_eq!(r["error"]["code"], "herdr_unavailable");
 }

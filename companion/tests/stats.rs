@@ -7,7 +7,7 @@ use herdlingd::rpc::{self, Ctx};
 async fn start(dir: &tempfile::TempDir) -> (tokio::io::DuplexStream, tokio::io::Lines<BufReader<tokio::io::DuplexStream>>) {
     let (client_tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let ctx = Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    let ctx = Ctx::new(dir.path().into());
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     (client_tx, BufReader::new(client_rx).lines())
 }

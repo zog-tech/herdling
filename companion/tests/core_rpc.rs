@@ -1,14 +1,9 @@
-//! `herdlingd rpc` with a fake herdr-core: snapshot merge, routing, `unsupported`, `hello`,
-//! `pane.answer`, `pane.watch` and the merged `herdr.subscribe` stream.
+//! `herdlingd rpc` with a fake herdr-core: the snapshot, routing, `unsupported`, `hello`,
+//! `pane.answer`, `pane.watch` and the `herdr.subscribe` stream.
 
 #[path = "support/fake_core.rs"]
 mod fake_core;
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
-#[path = "support/fake_herdr_events.rs"]
-mod fake_herdr_events;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -64,14 +59,11 @@ struct Setup {
 }
 
 impl Setup {
-    fn herdr_sock(&self) -> PathBuf {
-        self.dir.path().join("herdr.sock")
-    }
     fn core_sock(&self) -> PathBuf {
         self.dir.path().join("core.sock")
     }
     fn ctx(&self) -> Ctx {
-        let mut ctx = Ctx::new(self.herdr_sock(), self.dir.path().into());
+        let mut ctx = Ctx::new(self.dir.path().into());
         ctx.core_socket = Some(CoreSocket::fixed(self.core_sock()));
         ctx
     }
@@ -80,20 +72,10 @@ impl Setup {
     }
 }
 
-fn herdr_snapshot() -> Value {
-    json!({"snapshot": {"version": "0.9.5", "protocol": 22,
-        "workspaces": [{"workspace_id": "w1", "label": "api", "number": 1, "agent_status": "idle"}],
-        "tabs": [], "panes": [{"pane_id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1"}],
-        "agents": [{"pane_id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "agent_status": "idle"}]}})
-}
-
-/// A fake core with terminal t1 (an agent in `state`) and t2 (a shell), and optionally a fake herdr 1.
-fn setup(herdr: bool, core: bool, state: &str) -> Setup {
+/// A fake core with terminal t1 (an agent in `state`) and t2 (a shell), when `core` is true.
+fn setup(core: bool, state: &str) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let mut s = Setup { dir, core: None };
-    if herdr {
-        fake_herdr::spawn(&s.herdr_sock(), HashMap::from([("session.snapshot".to_string(), herdr_snapshot())]));
-    }
     if core {
         let st = State {
             terminals: vec![terminal("t1", Some("api-agent"), Some(state)), terminal("t2", None, None)],
@@ -111,33 +93,15 @@ fn pane_ids(snap: &Value, key: &str) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn snapshot_without_a_core_is_herdr_one_exactly() {
-    let s = setup(true, false, "idle");
-    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
-    let a = no_core.herdr(1, "session.snapshot", json!({})).await;
-    assert_eq!(a["result"], herdr_snapshot());
-    // A core socket that does not exist: the same answer.
+async fn snapshot_comes_from_the_core() {
+    let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
-    let b = sess.herdr(1, "session.snapshot", json!({})).await;
-    assert_eq!(b["result"], herdr_snapshot());
-}
-
-#[tokio::test]
-async fn snapshot_merges_both_and_each_side_alone() {
-    let s = setup(true, true, "working");
-    let mut sess = Session::start(s.ctx());
-    let both = sess.herdr(1, "session.snapshot", json!({})).await;
-    assert_eq!(pane_ids(&both, "agents"), ["w1:p1", "hc:t1"]);
-    assert_eq!(pane_ids(&both, "panes"), ["w1:p1", "hc:t1", "hc:t2"]);
-    assert_eq!(both["result"]["snapshot"]["version"], "0.9.5");
-
-    let core_only = setup(false, true, "working");
-    let mut sess = Session::start(core_only.ctx());
     let r = sess.herdr(1, "session.snapshot", json!({})).await;
     assert_eq!(pane_ids(&r, "agents"), ["hc:t1"]);
+    assert_eq!(pane_ids(&r, "panes"), ["hc:t1", "hc:t2"]);
     assert_eq!(r["result"]["snapshot"]["workspaces"][0]["workspace_id"], "hc:g:src");
 
-    let none = setup(false, false, "idle");
+    let none = setup(false, "idle");
     let mut sess = Session::start(none.ctx());
     let r = sess.herdr(1, "session.snapshot", json!({})).await;
     assert_eq!(r["error"]["code"], "herdr_unavailable");
@@ -145,7 +109,7 @@ async fn snapshot_merges_both_and_each_side_alone() {
 
 #[tokio::test]
 async fn calls_on_core_panes_translate() {
-    let s = setup(false, true, "blocked");
+    let s = setup(true, "blocked");
     let mut sess = Session::start(s.ctx());
     let r = sess.herdr(1, "pane.read", json!({"pane_id": "hc:t1", "source": "visible", "format": "text"})).await;
     assert!(r["result"]["read"]["text"].as_str().unwrap().contains("1. Yes"), "{r}");
@@ -179,7 +143,7 @@ async fn calls_on_core_panes_translate() {
 #[tokio::test]
 async fn old_loose_ids_are_not_found() {
     // herdlingd 0.1.x had a "hc:loose" workspace and a "hc:loose:tab" tab. An old app can still send them.
-    let s = setup(false, true, "idle");
+    let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
     for (i, id) in ["hc:loose", "hc:loose:tab"].into_iter().enumerate() {
         let r = sess.herdr(i as u64 + 1, "pane.read", json!({"pane_id": id, "source": "visible"})).await;
@@ -190,7 +154,7 @@ async fn old_loose_ids_are_not_found() {
 
 #[tokio::test]
 async fn methods_with_no_core_equivalent_are_unsupported() {
-    let s = setup(true, true, "idle");
+    let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
     for (i, (m, p)) in [
         ("pane.rename", json!({"pane_id": "hc:t1", "label": "x"})),
@@ -204,23 +168,23 @@ async fn methods_with_no_core_equivalent_are_unsupported() {
         let r = sess.herdr(i as u64 + 1, m, p).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
     }
-    // Without a core socket, a core id is unsupported too.
-    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
+    // Without a core socket: herdr_unavailable, as old apps know it.
+    let mut no_core = Session::start(Ctx::new(s.dir.path().into()));
     let r = no_core.herdr(1, "pane.read", json!({"pane_id": "hc:t1"})).await;
-    assert_eq!(r["error"]["code"], "unsupported");
+    assert_eq!(r["error"]["code"], "herdr_unavailable");
     assert!(s.core().calls_of("terminal.read").is_empty());
 }
 
 #[tokio::test]
 async fn hello_lists_backends() {
-    let s = setup(true, true, "idle");
+    let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "hello", json!({})).await;
     assert_eq!(r["result"]["herdr_ok"], true);
-    assert_eq!(r["result"]["backends"]["herdr"]["version"], "0.9.5");
+    assert!(r["result"]["backends"].get("herdr").is_none());
     assert_eq!(r["result"]["backends"]["core"], json!({"version": "0.1.19", "generation": 1}));
 
-    let none = setup(false, false, "idle");
+    let none = setup(false, "idle");
     let mut sess = Session::start(none.ctx());
     let r = sess.call(1, "hello", json!({})).await;
     assert_eq!(r["result"]["herdr_ok"], false);
@@ -229,7 +193,7 @@ async fn hello_lists_backends() {
 
 #[tokio::test]
 async fn pane_answer_on_a_core_pane() {
-    let s = setup(false, true, "blocked");
+    let s = setup(true, "blocked");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "pane.answer", json!({"pane_id": "hc:t1", "key": "2", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale", "label mismatch");
@@ -239,7 +203,7 @@ async fn pane_answer_on_a_core_pane() {
     let r = sess.call(3, "pane.answer", json!({"pane_id": "hc:t9", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale");
 
-    let idle = setup(false, true, "working");
+    let idle = setup(true, "working");
     let mut sess = Session::start(idle.ctx());
     let r = sess.call(1, "pane.answer", json!({"pane_id": "hc:t1", "key": "1", "expect_label": "Yes"})).await;
     assert_eq!(r["error"]["code"], "stale");
@@ -248,7 +212,7 @@ async fn pane_answer_on_a_core_pane() {
 
 #[tokio::test]
 async fn thread_resolve_and_previews_for_core_agents() {
-    let s = setup(false, true, "working");
+    let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t1"})).await;
     assert_eq!(r["result"]["session"], Value::Null);
@@ -262,7 +226,7 @@ async fn thread_resolve_and_previews_for_core_agents() {
 
 #[tokio::test]
 async fn core_thread_resolves_claude_session() {
-    let s = setup(false, true, "working");
+    let s = setup(true, "working");
     // The fake terminal t1 has foreground pid 101 in /home/sam/proj/src. HOME is the temp folder.
     let home = s.dir.path();
     std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
@@ -280,7 +244,7 @@ async fn core_thread_resolves_claude_session() {
 
 #[tokio::test]
 async fn core_preview_reads_the_transcript() {
-    let s = setup(false, true, "idle");
+    let s = setup(true, "idle");
     let home = s.dir.path();
     std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
     std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
@@ -298,7 +262,7 @@ async fn core_preview_reads_the_transcript() {
 
 #[tokio::test]
 async fn core_preview_of_a_working_agent_keeps_the_log_reply() {
-    let s = setup(false, true, "working");
+    let s = setup(true, "working");
     let home = s.dir.path();
     std::fs::create_dir_all(home.join(".claude/sessions")).unwrap();
     std::fs::write(home.join(".claude/sessions/101.json"), r#"{"sessionId": "abc", "cwd": "/home/sam/proj/src"}"#).unwrap();
@@ -316,7 +280,7 @@ async fn core_preview_of_a_working_agent_keeps_the_log_reply() {
 
 #[tokio::test]
 async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
-    let s = setup(false, true, "working");
+    let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "thread.resolve", json!({"pane_id": "hc:t9"})).await;
     assert_eq!(r["error"]["code"], "pane_not_found", "{r}");
@@ -324,7 +288,7 @@ async fn core_thread_resolve_of_a_missing_terminal_is_pane_not_found() {
 
 #[tokio::test]
 async fn pane_watch_reads_a_core_pane() {
-    let s = setup(false, true, "idle");
+    let s = setup(true, "idle");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "pane.watch", json!({"pane_id": "hc:t1", "lines": 50, "interval_ms": 50})).await;
     assert!(r["result"]["stream"].is_string(), "{r}");
@@ -338,7 +302,7 @@ async fn pane_watch_reads_a_core_pane() {
 
 #[tokio::test]
 async fn subscribe_with_core_only_streams_core_events() {
-    let s = setup(false, true, "working");
+    let s = setup(true, "working");
     let mut sess = Session::start(s.ctx());
     let r = sess.call(1, "herdr.subscribe", json!({})).await;
     assert!(r["result"]["stream"].is_string(), "{r}");
@@ -353,31 +317,6 @@ async fn subscribe_with_core_only_streams_core_events() {
     // The last backend ends: the stream closes as before.
     s.core().send(Ctl::Drop);
     assert_eq!(sess.event().await, json!({"closed": true}));
-}
-
-#[tokio::test]
-async fn subscribe_keeps_herdr_one_when_the_core_drops() {
-    use fake_herdr_events::{spawn_fake_opts, status_ev, Push};
-    let dir = tempfile::tempdir().unwrap();
-    let herdr_sock = dir.path().join("herdr.sock");
-    let (push, _reqs, _open) = spawn_fake_opts(&herdr_sock, &["w1:p1"], &[]);
-    let core_sock = dir.path().join("core.sock");
-    let core = fake_core::spawn(&core_sock, State { terminals: vec![terminal("t1", None, Some("working"))], ..State::default() });
-    let mut ctx = Ctx::new(herdr_sock, dir.path().into());
-    ctx.core_socket = Some(CoreSocket::fixed(core_sock));
-    let mut sess = Session::start(ctx);
-    let r = sess.call(1, "herdr.subscribe", json!({})).await;
-    assert!(r["result"]["stream"].is_string(), "{r}");
-    core.wait_subscribes(1).await;
-    core.send(Ctl::Drop);
-    assert_eq!(sess.event().await["event"], "layout.updated", "a hint, not a close");
-    push.send(Push::Event(status_ev("w1:p1", "done"))).unwrap();
-    assert_eq!(sess.event().await["data"]["pane_id"], "w1:p1");
-    // The core leg connects again after the retry wait and gives one more hint.
-    core.wait_subscribes(2).await;
-    assert_eq!(sess.event().await["event"], "layout.updated");
-    core.send(Ctl::Event(status_event("t1", "blocked")));
-    assert_eq!(sess.event().await["data"]["pane_id"], "hc:t1");
 }
 
 /// Runs `git` in `dir`. False when git is not installed or the command fails.

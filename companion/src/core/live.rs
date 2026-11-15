@@ -197,7 +197,7 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
 }
 
 /// One preview line per core agent (only `wanted` panes when given). An agent with a known
-/// transcript is read from its log, as herdr 1 agents are. Else the line comes from the 7501
+/// transcript is read from its log. Else the line comes from the 7501
 /// message, else from the last line of the screen.
 pub async fn previews(
     sock: &CoreSocket,
@@ -243,11 +243,16 @@ async fn one_preview(sock: &CoreSocket, timeout: Duration, home: &Path, state: &
         source: "screen".into(),
         background: None,
     };
-    // The log work of one agent is bounded as herdr 1's is. A timeout falls back to the screen.
+    // The log work of one agent is bounded. A timeout falls back to the screen.
     let from_log = tokio::time::timeout(crate::preview::PANE_TIMEOUT, log_preview(home, state, &pane, t)).await;
     let logged = match from_log {
-        Ok(Some(lp)) => {
+        Ok(Some((path, lp))) => {
             crate::preview::fill_from_log(&mut p, status, &lp);
+            // Claude Code also reports the background shells and subagents that still run.
+            if crate::transcript::Agent::of_log(&path.to_string_lossy()) == crate::transcript::Agent::Claude {
+                let info = project::process_info(t);
+                p.background = crate::preview::claude_background(state, &pane, &path, &info["process_info"]).await;
+            }
             true
         }
         _ => false,
@@ -277,9 +282,9 @@ async fn one_preview(sock: &CoreSocket, timeout: Duration, home: &Path, state: &
     p
 }
 
-/// What the transcript of a core terminal says, or None when the agent has no known log.
-/// The log path is cached per pane, as for herdr 1.
-async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Value) -> Option<crate::preview::LogPreview> {
+/// The log of a core terminal and what it says, or None when the agent has no known log.
+/// The log path is cached per pane.
+async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Value) -> Option<(PathBuf, crate::preview::LogPreview)> {
     let kind = project::agent_kind(record)?;
     crate::transcript::Agent::from_kind(&kind)?;
     let path = match state.cached_log(pane) {
@@ -290,7 +295,9 @@ async fn log_preview(home: &Path, state: &PreviewState, pane: &str, record: &Val
             l
         }
     }?;
-    tokio::task::spawn_blocking(move || crate::preview::read_any_log(&path)).await.ok()?.ok()
+    let p = path.clone();
+    let lp = tokio::task::spawn_blocking(move || crate::preview::read_any_log(&p)).await.ok()?.ok()?;
+    Some((path, lp))
 }
 
 /// The result of `session.start`.

@@ -15,12 +15,10 @@ use tokio::task::{AbortHandle, JoinSet};
 
 use crate::claude;
 use crate::transcript;
-use crate::herdr::{self, HerdrError};
 use crate::types::{Hello, RpcError, RpcRequest, RpcResponse};
 
-/// Default bound for a herdr connect or request/response round trip.
+/// Default bound for a herdr-core connect or request/response round trip.
 pub const HERDR_TIMEOUT: Duration = Duration::from_secs(10);
-const AGENT_START_TIMEOUT: Duration = Duration::from_secs(40);
 /// The process exits when no request line arrives for this long. The app pings every 15 s.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// The process exits when one stdout write does not finish in this time.
@@ -33,7 +31,6 @@ pub const MAX_LINE: usize = 34 << 20;
 
 #[derive(Clone)]
 pub struct Ctx {
-    pub herdr_socket: PathBuf,
     pub home: PathBuf,
     /// Companion config file, written by `push.register`.
     pub config_path: PathBuf,
@@ -68,9 +65,6 @@ pub struct Ctx {
     /// Settings for `update.check` and `update.apply`. None turns updates off: `Ctx::new`
     /// leaves it unset, so a test never downloads or replaces a binary. `main` sets it.
     pub update: Option<crate::update::UpdateCtx>,
-    /// Settings for `herdr.update`. None turns it off: `Ctx::new` leaves it unset, so a test
-    /// never runs a real `herdr update`. `main` sets it.
-    pub herdr_update: Option<crate::herdr_update::HerdrUpdateCtx>,
     /// Runs the system commands of `hello.boot`, `boot.check` and `mac.open_settings`. None
     /// turns them off: `Ctx::new` leaves it unset, so a test never runs a real system command.
     /// `main` sets it.
@@ -94,9 +88,8 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(herdr_socket: PathBuf, home: PathBuf) -> Ctx {
+    pub fn new(home: PathBuf) -> Ctx {
         Ctx {
-            herdr_socket,
             config_path: crate::config::default_path(&home),
             authorized_keys: home.join(".ssh/authorized_keys"),
             bin_dirs: crate::automations::default_bin_dirs(&home),
@@ -114,7 +107,6 @@ impl Ctx {
             stt_timeout: crate::stt::TIMEOUT,
             preview: crate::preview::PreviewState::default(),
             update: None,
-            herdr_update: None,
             sys: None,
             host_os: crate::boot::Os::current(),
             boot_cache: crate::boot::BootCache::default(),
@@ -506,13 +498,6 @@ async fn read_page(log: String, params: &Value) -> Result<crate::types::ThreadPa
     Ok(page)
 }
 
-fn herdr_err(e: HerdrError) -> RpcError {
-    match e {
-        HerdrError::Unavailable(m) => err("herdr_unavailable", m),
-        HerdrError::Remote { code, message } => err(&code, message),
-    }
-}
-
 async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
     let mut h = Hello {
         host: hostname(),
@@ -527,30 +512,16 @@ async fn hello(ctx: &Ctx) -> Result<Value, RpcError> {
         boot: read_boot(ctx, false).await,
         backends: None,
     };
-    let core = async {
-        match &ctx.core_socket {
-            Some(sock) => crate::core::live::backend_info(sock, ctx.herdr_timeout).await,
-            None => None,
-        }
+    // herdr-core is the only backend. Old apps read `herdr_ok` and `herdr_version` to show
+    // whether the runtime runs, so these fields describe the core.
+    let core = match &ctx.core_socket {
+        Some(sock) => crate::core::live::backend_info(sock, ctx.herdr_timeout).await,
+        None => None,
     };
-    let herdr = async {
-        let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await.ok()?;
-        c.call("session.snapshot", json!({})).await.ok()
-    };
-    let (snap, core) = tokio::join!(herdr, core);
-    let mut backends = serde_json::Map::new();
-    if let Some(snap) = snap {
-        h.herdr_ok = true;
-        let s = snap.get("snapshot").unwrap_or(&snap);
-        h.herdr_version = s.get("version").and_then(Value::as_str).map(String::from);
-        h.herdr_protocol = s.get("protocol").and_then(Value::as_u64);
-        backends.insert("herdr".into(), json!({ "version": h.herdr_version, "protocol": h.herdr_protocol }));
-    }
     if let Some(core) = core {
-        backends.insert("core".into(), core);
-    }
-    if !backends.is_empty() {
-        h.backends = Some(Value::Object(backends));
+        h.herdr_ok = true;
+        h.herdr_version = core.get("version").and_then(Value::as_str).map(String::from);
+        h.backends = Some(json!({ "core": core }));
     }
     serde_json::to_value(h).map_err(|e| err("internal", e.to_string()))
 }
@@ -609,77 +580,37 @@ async fn herdr_call(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .ok_or_else(|| err("bad_request", "herdr.call requires a method"))?
         .to_string();
     let p = params.get("params").cloned().unwrap_or_else(|| json!({}));
-    // `agent.start` waits for the agent to boot, which can take much longer than other calls.
-    let timeout = if method == "agent.start" { AGENT_START_TIMEOUT } else { ctx.herdr_timeout };
-    // Mark phone input before herdr gets it, so `serve` does not count the start of work
-    // that follows as activity at the desk.
-    if let Some(pane) = crate::phone_input::input_pane(&method, &p) {
-        let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
-    }
-    // A call that names a core id goes to the core, or fails with `unsupported`.
-    if let Some(id) = crate::core::route::core_target(&p).map(String::from) {
-        let Some(sock) = &ctx.core_socket else {
-            return Err(err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"));
-        };
-        if let Some(r) = crate::core::term_watch::herdr_call(ctx, sock, &method, &p, &id).await {
-            return r;
+    let sock = core_sock(ctx)?;
+    // Calls that name no entry.
+    match method.as_str() {
+        "session.snapshot" => return Ok(core_projection(ctx).await?.snapshot()),
+        "workspace.list" => return Ok(crate::core::actions::merge_workspace_list(None, &core_projection(ctx).await?)),
+        // A new space. Old apps send no `backend`; a 0.1.x app sends `backend: "core"`.
+        "workspace.create" => {
+            let cwd = p.get("cwd").and_then(Value::as_str).map(String::from);
+            let action = crate::core::route::Action::Run { kind: "workspace_created", workspace: None, cwd };
+            return crate::core::live::run(sock, ctx.herdr_timeout, action).await;
         }
-        return crate::core::live::call(sock, ctx.herdr_timeout, &method, &p, &id).await;
+        _ => {}
     }
-    if method == "session.snapshot" {
-        return session_snapshot(ctx, p).await;
-    }
-    // A new space on the core, only when the app asks for it. Plan E makes the core the default.
-    if method == "workspace.create" && p.get("backend").and_then(Value::as_str) == Some(crate::core::project::BACKEND) {
-        let sock = core_sock(ctx)?;
-        let cwd = p.get("cwd").and_then(Value::as_str).map(String::from);
-        let action = crate::core::route::Action::Run { kind: "workspace_created", workspace: None, cwd };
-        return crate::core::live::run(sock, ctx.herdr_timeout, action).await;
-    }
-    if method == "workspace.list" {
-        return workspace_list(ctx, p).await;
-    }
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, timeout).await.map_err(herdr_err)?;
-    c.call(&method, p).await.map_err(herdr_err)
-}
-
-/// `session.snapshot` of herdr 1 with the core entries added. Each backend fails on its own,
-/// see [`crate::core::project::merge_snapshots`].
-async fn session_snapshot(ctx: &Ctx, p: Value) -> Result<Value, RpcError> {
-    let herdr = async {
-        let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await?;
-        c.call("session.snapshot", p).await
+    let Some(id) = crate::core::route::target(&p) else {
+        return Err(err(crate::core::route::UNSUPPORTED, format!("{method} on Herdr 2 needs a pane, tab or workspace id")));
     };
-    let (herdr, core) = tokio::join!(herdr, core_projection(ctx));
-    crate::core::project::merge_snapshots(herdr, core).map_err(herdr_err)
-}
-
-/// `workspace.list` of herdr 1 with the core workspaces added. Each backend fails on its own.
-async fn workspace_list(ctx: &Ctx, p: Value) -> Result<Value, RpcError> {
-    let (herdr, core) = tokio::join!(herdr_once(ctx, "workspace.list", p), core_projection(ctx));
-    match (herdr, core) {
-        (Ok(h), None) => Ok(h),
-        (Ok(h), Some(c)) => Ok(crate::core::actions::merge_workspace_list(Some(h), &c)),
-        (Err(_), Some(c)) => Ok(crate::core::actions::merge_workspace_list(None, &c)),
-        (Err(e), None) => Err(herdr_err(e)),
+    if let Some(r) = crate::core::term_watch::herdr_call(ctx, sock, &method, &p, &id).await {
+        return r;
     }
+    crate::core::live::call(sock, ctx.herdr_timeout, &method, &p, &id).await
 }
 
-/// The core socket, or `unsupported` when this herdlingd does not reach a core.
+/// The core socket, or `herdr_unavailable` when this herdlingd knows no core socket.
 fn core_sock(ctx: &Ctx) -> Result<&crate::core::endpoint::CoreSocket, RpcError> {
-    ctx.core_socket.as_ref().ok_or_else(|| err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"))
+    ctx.core_socket.as_ref().ok_or_else(|| err("herdr_unavailable", "herdr-core: no core socket on this computer"))
 }
 
-/// The core entries, when a core answers.
-async fn core_projection(ctx: &Ctx) -> Option<crate::core::project::Projection> {
-    let sock = ctx.core_socket.as_ref()?;
-    crate::core::live::projection(sock, ctx.herdr_timeout).await.ok()
-}
-
-/// One herdr call on its own connection (herdr 0.9.0 closes a connection after one answer).
-async fn herdr_once(ctx: &Ctx, method: &str, params: Value) -> Result<Value, HerdrError> {
-    let mut c = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await?;
-    c.call(method, params).await
+/// The core entries. No core answer gives `herdr_unavailable`.
+async fn core_projection(ctx: &Ctx) -> Result<crate::core::project::Projection, RpcError> {
+    let sock = core_sock(ctx)?;
+    crate::core::live::projection(sock, ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)
 }
 
 fn stale(message: &str) -> RpcError {
@@ -706,43 +637,14 @@ async fn pane_answer(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     if !matches!(key.as_bytes(), [b'1'..=b'9']) {
         return Err(err("bad_request", "pane.answer: key must be one digit from 1 to 9"));
     }
-    if crate::core::project::is_core_id(pane) {
-        return pane_answer_core(ctx, pane, key, expect, expect_question).await;
-    }
-    let gone = |e: HerdrError| match e {
-        HerdrError::Remote { code, .. } if code == "pane_not_found" => stale("the pane is gone"),
-        e => herdr_err(e),
-    };
-    let got = herdr_once(ctx, "pane.get", json!({ "pane_id": pane })).await.map_err(gone)?;
-    let status = got.get("pane").unwrap_or(&got).get("agent_status").and_then(Value::as_str);
-    if status.is_some_and(|s| s != "blocked") {
-        return Err(stale("the agent does not wait for an answer"));
-    }
-    let read = herdr_once(ctx, "pane.read", json!({ "pane_id": pane, "source": "visible", "format": "text" }))
-        .await
-        .map_err(gone)?;
-    let text = read.get("read").unwrap_or(&read).get("text").and_then(Value::as_str).unwrap_or("");
-    let choices = crate::choices::parse_choices(text);
-    let Some(choice) = choices.iter().find(|c| c.key == key) else {
-        return Err(stale("the menu changed"));
-    };
-    if !crate::choices::label_matches(&choice.label, expect) {
-        return Err(stale("the menu changed"));
-    }
-    if expect_question.is_some_and(|q| crate::choices::menu_question(text).as_deref() != Some(q)) {
-        return Err(stale("the question changed"));
-    }
-    // Mark phone input before herdr gets it, as `herdr.call` does.
-    let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
-    herdr_once(ctx, "pane.send_keys", json!({ "pane_id": pane, "keys": [key] })).await.map_err(herdr_err)?;
-    Ok(json!({ "answered": true }))
+    pane_answer_core(ctx, pane, key, expect, expect_question).await
 }
 
 /// `pane.answer` for a core pane: the same checks on the core record and screen, then the
 /// digit with `terminal.keys`.
 async fn pane_answer_core(ctx: &Ctx, pane: &str, key: &str, expect: &str, expect_question: Option<&str>) -> Result<Value, RpcError> {
     use crate::core::{live, project};
-    let sock = ctx.core_socket.as_ref().ok_or_else(|| err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"))?;
+    let sock = core_sock(ctx)?;
     let gone = |e: crate::core::client::CoreError| match e.kind() {
         Some("not_found" | "finished") => stale("the pane is gone"),
         _ => live::rpc_err(e),
@@ -762,7 +664,6 @@ async fn pane_answer_core(ctx: &Ctx, pane: &str, key: &str, expect: &str, expect
     if expect_question.is_some_and(|q| crate::choices::menu_question(&text).as_deref() != Some(q)) {
         return Err(stale("the question changed"));
     }
-    let _ = crate::phone_input::mark(&ctx.home, pane, std::time::SystemTime::now());
     let addr = project::address(pane).unwrap_or_default();
     let mut c = crate::core::client::Client::connect(&sock.current(), ctx.herdr_timeout).await.map_err(live::rpc_err)?;
     c.call_with("terminal.keys", json!({ "terminal": addr, "keys": [key] }), live::TYPING_TIMEOUT).await.map_err(live::rpc_err)?;
@@ -786,15 +687,9 @@ async fn herdr_subscribe(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, R
         Some(_) => return Err(err("bad_request", "events must be an array of strings")),
     };
 
-    // Subscribe before replying, so the caller sees herdr errors and gets no events before the id.
-    let src = crate::core::stream::Sources {
-        herdr_socket: ctx.herdr_socket.clone(),
-        timeout: ctx.herdr_timeout,
-        events,
-        core: ctx.core_socket.clone(),
-        retry: crate::core::stream::RETRY,
-    };
-    let mut lines = crate::core::stream::open(src).await.map_err(herdr_err)?;
+    // Subscribe before replying, so the caller sees core errors and gets no events before the id.
+    let sock = core_sock(ctx)?.clone();
+    let mut lines = crate::core::stream::open(sock, ctx.herdr_timeout, events).await.map_err(crate::core::live::rpc_err)?;
 
     let out = out.clone();
     let preview = ctx.preview.clone();
@@ -828,14 +723,10 @@ fn rpc_cancel(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
 
 async fn thread_resolve(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let pane = str_param(&params, "pane_id", "thread.resolve")?;
-    if crate::core::project::is_core_id(pane) {
-        use crate::core::live;
-        let sock = ctx.core_socket.as_ref().ok_or_else(|| err(crate::core::route::UNSUPPORTED, "this herdlingd does not reach herdr-core"))?;
-        let record = live::record(sock, ctx.herdr_timeout, pane).await.map_err(live::rpc_err)?;
-        let r = transcript::resolve_core(&ctx.home, &record).await;
-        return serde_json::to_value(r).map_err(|e| err("internal", e.to_string()));
-    }
-    let r = transcript::resolve(&ctx.herdr_socket, ctx.herdr_timeout, &ctx.home, pane).await.map_err(herdr_err)?;
+    use crate::core::live;
+    let sock = core_sock(ctx)?;
+    let record = live::record(sock, ctx.herdr_timeout, pane).await.map_err(live::rpc_err)?;
+    let r = transcript::resolve_core(&ctx.home, &record).await;
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
@@ -1051,30 +942,14 @@ async fn core_install(ctx: &Ctx) -> Result<Value, RpcError> {
     serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
 }
 
-/// See [`crate::herdr_update::run`]. The phone sends no params: the command is fixed.
-/// A computer with herdr-core and no herdr 1 updates herdr-core to the pin instead
-/// ([`crate::core_install::guard::herdr_update_target`]).
+/// `herdr.update`: updates herdr-core to the pin of this herdlingd, never down (see
+/// [`crate::core_install::install`]). The answer has the herdr 1 shape that old apps read.
 async fn herdr_update(ctx: &Ctx) -> Result<Value, RpcError> {
-    if let Some(core) = ctx.core_install.clone() {
-        let herdr1 = ctx.herdr_update.as_ref().is_some_and(|h| (h.finder)(&h.dirs).is_some());
-        let target = tokio::task::spawn_blocking(move || {
-            let installed = crate::core_install::find_core(&core).is_some();
-            (crate::core_install::guard::herdr_update_target(herdr1, installed), core)
-        })
-        .await
-        .map_err(|e| err("internal", e.to_string()))?;
-        if let (crate::core_install::guard::UpdateTarget::Core, core) = target {
-            let r = tokio::task::spawn_blocking(move || crate::core_install::install(&core, &core.pin))
-                .await
-                .map_err(|e| err("internal", e.to_string()))??;
-            return serde_json::to_value(crate::core_install::as_herdr_update(&r)).map_err(|e| err("internal", e.to_string()));
-        }
-    }
-    let c = ctx.herdr_update.clone().ok_or_else(|| err("update_unavailable", "herdr updates are off in this process"))?;
-    let r = tokio::task::spawn_blocking(move || crate::herdr_update::run(&c))
+    let core = ctx.core_install.clone().ok_or_else(|| err("update_unavailable", "herdr-core updates are off in this process"))?;
+    let r = tokio::task::spawn_blocking(move || crate::core_install::install(&core, &core.pin))
         .await
         .map_err(|e| err("internal", e.to_string()))??;
-    serde_json::to_value(r).map_err(|e| err("internal", e.to_string()))
+    serde_json::to_value(crate::core_install::as_herdr_update(&r)).map_err(|e| err("internal", e.to_string()))
 }
 
 /// One preview line per agent (only `pane_ids` when given). See [`crate::preview`].
@@ -1089,33 +964,10 @@ async fn agents_preview(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         ),
         Some(_) => return Err(err("bad_request", "pane_ids must be an array of strings")),
     };
-    let is_core = |p: &String| crate::core::project::is_core_id(p);
-    let core_wanted: Option<Vec<String>> = pane_ids.as_ref().map(|v| v.iter().filter(|p| is_core(p)).cloned().collect());
-    let herdr_ids: Option<Vec<String>> = pane_ids.map(|v| v.into_iter().filter(|p| !is_core(p)).collect());
-    // Only core panes asked for: herdr 1 is not asked.
-    let only_core = herdr_ids.as_ref().is_some_and(|v| v.is_empty()) && core_wanted.as_ref().is_some_and(|v| !v.is_empty());
-    let herdr = async {
-        if only_core {
-            return Ok(Vec::new());
-        }
-        crate::preview::previews(&ctx.herdr_socket, ctx.herdr_timeout, &ctx.home, &ctx.preview, herdr_ids, crate::preview::PANE_TIMEOUT)
-            .await
-    };
-    let core = async {
-        let sock = ctx.core_socket.as_ref()?;
-        if core_wanted.as_ref().is_some_and(|v| v.is_empty()) {
-            return None;
-        }
-        crate::core::live::previews(sock, ctx.herdr_timeout, &ctx.home, &ctx.preview, core_wanted.as_deref()).await.ok()
-    };
-    let (herdr, core) = tokio::join!(herdr, core);
-    // Each backend fails on its own: a herdr 1 error counts only when the core gives nothing.
-    let mut previews = match (herdr, &core) {
-        (Ok(p), _) => p,
-        (Err(_), Some(_)) => Vec::new(),
-        (Err(e), None) => return Err(herdr_err(e)),
-    };
-    previews.extend(core.unwrap_or_default());
+    let sock = core_sock(ctx)?;
+    let previews = crate::core::live::previews(sock, ctx.herdr_timeout, &ctx.home, &ctx.preview, pane_ids.as_deref())
+        .await
+        .map_err(crate::core::live::rpc_err)?;
     Ok(json!({ "previews": previews }))
 }
 
@@ -1204,52 +1056,37 @@ async fn git_diff(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     serde_json::to_value(d).map_err(|e| err("internal", e.to_string()))
 }
 
-/// A new branch and worktree for a new session. herdr makes it when it can, so the worktree
-/// joins the group of the repo in the herdr sidebar; otherwise git makes it. Both use the same
-/// checks. See [`crate::git::worktree_plan`] and [`crate::worktree::create`].
+/// A new branch and worktree for a new session: git makes the worktree, then a shell opens in a
+/// new Herdr app space in it. `via: "herdr"` tells the app to start the agent in that pane. The
+/// param `backend: "core"` of 0.1.x apps is accepted and changes nothing.
+/// See [`crate::git::worktree_plan`].
 async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     let cwd = git_cwd(ctx, &params, "git.worktree_add").await?;
     let branch = str_param(&params, "branch", "git.worktree_add")?;
     let plan = crate::git::worktree_plan(&cwd, branch).await?;
-    // Herdr 2: git makes the worktree, then a shell opens in a new space in it. `via: "herdr"`
-    // tells the app to start the agent in that pane, as for a herdr 1 worktree workspace.
-    if params.get("backend").and_then(Value::as_str) == Some(crate::core::project::BACKEND) {
-        let sock = core_sock(ctx)?;
-        // Check the core first, so a core that cannot start the shell leaves no worktree behind.
-        let mut c = crate::core::client::Client::connect(&sock.current(), ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)?;
-        crate::core::live::require(&mut c, &["terminal.run"]).await?;
-        drop(c);
-        let mut w = crate::git::worktree_add_git(&plan).await?;
-        let place = crate::core::actions::Place::NewSpace;
-        let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path)).await?;
-        w.via = "herdr";
-        w.workspace_id = Some(ws);
-        w.tab_id = Some(tab);
-        w.pane_id = Some(crate::core::project::pane_id(&addr));
-        return serde_json::to_value(w).map_err(|e| err("internal", e.to_string()));
-    }
-    let w = match crate::worktree::create(&ctx.herdr_socket, &plan).await.map_err(herdr_err)? {
-        Some(w) => w,
-        None => crate::git::worktree_add_git(&plan).await?,
-    };
+    let sock = core_sock(ctx)?;
+    // Check the core first, so a core that cannot start the shell leaves no worktree behind.
+    let mut c = crate::core::client::Client::connect(&sock.current(), ctx.herdr_timeout).await.map_err(crate::core::live::rpc_err)?;
+    crate::core::live::require(&mut c, &["terminal.run"]).await?;
+    drop(c);
+    let mut w = crate::git::worktree_add_git(&plan).await?;
+    let place = crate::core::actions::Place::NewSpace;
+    let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path)).await?;
+    w.via = "herdr";
+    w.workspace_id = Some(ws);
+    w.tab_id = Some(tab);
+    w.pane_id = Some(crate::core::project::pane_id(&addr));
     serde_json::to_value(w).map_err(|e| err("internal", e.to_string()))
 }
 
-/// The folder and the agent kind of a pane from herdr `pane.get`. Both `None` when herdr does not answer.
+/// The folder and the agent kind of a pane from its core record. Both `None` when the core does not answer.
 async fn pane_info(ctx: &Ctx, pane_id: &str) -> (Option<String>, Option<String>) {
-    if crate::core::project::is_core_id(pane_id) {
-        let Some(sock) = &ctx.core_socket else { return (None, None) };
-        let Ok(t) = crate::core::live::record(sock, ctx.herdr_timeout, pane_id).await else { return (None, None) };
-        let p = crate::core::project::pane_get(&t);
-        let pane = &p["pane"];
-        let text = |k: &str| pane.get(k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
-        return (text("foreground_cwd").or_else(|| text("cwd")), text("agent"));
-    }
-    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return (None, None) };
-    let Ok(got) = c.call("pane.get", json!({ "pane_id": pane_id })).await else { return (None, None) };
-    let pane = got.get("pane").unwrap_or(&got);
+    let Some(sock) = &ctx.core_socket else { return (None, None) };
+    let Ok(t) = crate::core::live::record(sock, ctx.herdr_timeout, pane_id).await else { return (None, None) };
+    let p = crate::core::project::pane_get(&t);
+    let pane = &p["pane"];
     let text = |k: &str| pane.get(k).and_then(Value::as_str).filter(|c| !c.is_empty()).map(String::from);
-    (text("cwd").or_else(|| text("foreground_cwd")), text("agent"))
+    (text("foreground_cwd").or_else(|| text("cwd")), text("agent"))
 }
 
 /// Most entries accepted in `push.register` `capabilities`.
@@ -1336,18 +1173,12 @@ fn reserved_port(ctx: &Ctx) -> u16 {
     crate::config::load(&ctx.config_path).unwrap_or_default().pair_port
 }
 
-/// The shell and foreground PIDs of a pane, from herdr `pane.process_info`. Empty when herdr does not answer.
+/// The shell and foreground PIDs of a pane, from its core record. Empty when the core does not answer.
 async fn pane_roots(ctx: &Ctx, pane_id: &str) -> Vec<u32> {
-    if crate::core::project::is_core_id(pane_id) {
-        let Some(sock) = &ctx.core_socket else { return Vec::new() };
-        let Ok(t) = crate::core::live::record(sock, ctx.herdr_timeout, pane_id).await else { return Vec::new() };
-        let info = crate::core::project::process_info(&t);
-        let (fg, shell) = crate::transcript::procs::pane_pids(&info["process_info"]);
-        return shell.into_iter().chain(fg).collect();
-    }
-    let Ok(mut c) = herdr::Client::connect(&ctx.herdr_socket, ctx.herdr_timeout).await else { return Vec::new() };
-    let info = c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null);
-    let (fg, shell) = crate::transcript::procs::pane_pids(info.get("process_info").unwrap_or(&info));
+    let Some(sock) = &ctx.core_socket else { return Vec::new() };
+    let Ok(t) = crate::core::live::record(sock, ctx.herdr_timeout, pane_id).await else { return Vec::new() };
+    let info = crate::core::project::process_info(&t);
+    let (fg, shell) = crate::transcript::procs::pane_pids(&info["process_info"]);
     shell.into_iter().chain(fg).collect()
 }
 

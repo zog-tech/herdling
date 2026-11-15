@@ -19,10 +19,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::claude::{self, cap};
-use crate::herdr::{Client, HerdrError};
 use crate::types::{RecentSession, ThreadItem, ThreadPage, ThreadRef, ToolResult};
 
 pub use procs::{host_procs, Proc, ProcList};
@@ -264,42 +263,6 @@ fn pi_leaf_before(path: &Path, end: u64) -> Option<String> {
         }
         v.get("id")?.as_str().map(String::from)
     })
-}
-
-/// Resolve a pane to its session. Agents without an adapter give `session: null`.
-pub async fn resolve(socket: &Path, timeout: Duration, home: &Path, pane_id: &str) -> Result<ThreadRef, HerdrError> {
-    resolve_with(socket, timeout, home, pane_id, host_procs).await
-}
-
-pub async fn resolve_with(
-    socket: &Path,
-    timeout: Duration,
-    home: &Path,
-    pane_id: &str,
-    procs: ProcList,
-) -> Result<ThreadRef, HerdrError> {
-    // Claude panes resolve as before. For other kinds this call only reads the kind and cwd.
-    let mut out = claude::resolve(socket, timeout, home, pane_id).await?;
-    if matches!(Agent::from_kind(&out.kind), Some(Agent::Claude) | None) {
-        return Ok(out);
-    }
-    let Some(cwd) = out.cwd.clone() else { return Ok(out) };
-    // A failed process lookup is not fatal: the recent-activity rule applies.
-    let info = match Client::connect(socket, timeout).await {
-        Ok(mut c) => c.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null),
-        Err(_) => Value::Null,
-    };
-    let info = info.get("process_info").cloned().unwrap_or(info);
-    let home = home.to_path_buf();
-    let kind = out.kind.clone();
-    let found = tokio::task::spawn_blocking(move || resolve_from_info(&home, &kind, Some(cwd), &info, procs, claude::process_table))
-        .await
-        .ok();
-    if let Some(r) = found {
-        out.session = r.session;
-        out.log_path = r.log_path;
-    }
-    Ok(out)
 }
 
 /// The session of an agent of `kind` in `cwd`, from the `pane.process_info` object `info`.

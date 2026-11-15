@@ -16,14 +16,13 @@ pub const UNSUPPORTED: &str = "unsupported";
 const DEFAULT_LINES: u64 = 200;
 const MAX_LINES: u64 = 1000;
 
-/// The core id that `params` names: the value of `target` or of a key that ends with `_id`,
-/// when it starts with `hc:`. Text params never count.
-pub fn core_target(params: &Value) -> Option<&str> {
-    let obj = params.as_object()?;
-    obj.iter()
-        .filter(|(k, _)| *k == "target" || k.ends_with("_id"))
-        .filter_map(|(_, v)| v.as_str())
-        .find(|v| project::is_core_id(v))
+/// The keys that name the entry of a herdr 1 call, in the order they count.
+const ID_KEYS: [&str; 4] = ["pane_id", "target", "tab_id", "workspace_id"];
+
+/// The id of the entry that a herdr 1 call names: the first non-empty string of `pane_id`,
+/// `target`, `tab_id`, `workspace_id`. None for a call that names no entry.
+pub fn target(params: &Value) -> Option<String> {
+    ID_KEYS.iter().find_map(|k| params.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from))
 }
 
 /// How the core answer becomes the herdr 1 answer.
@@ -105,7 +104,7 @@ fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan
         vec![]
     } else {
         text_keys(text).ok_or_else(|| {
-            unsupported("Herdr 2 cannot type this text without Enter. Send it as a line, or use herdr 1.")
+            unsupported("Herdr 2 cannot type this text without Enter. Send it as a line.")
         })?
     };
     all.extend(keys);
@@ -117,7 +116,7 @@ fn typing(addr: &str, text: &str, keys: Vec<String>, force: bool) -> Result<Plan
 
 /// The core call for the herdr 1 call `method` on the core pane `id`.
 pub fn plan(method: &str, params: &Value, id: &str) -> Result<Plan, Unsupported> {
-    let need_herdr1 = || unsupported(format!("{method} needs herdr 1; Herdr 2 terminals do not support it yet"));
+    let need_herdr1 = || unsupported(format!("{method} has no meaning on Herdr 2"));
     let addr = address(id).ok_or_else(need_herdr1)?;
     let s = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or("");
     let get = |shape| Ok(Plan { method: "terminal.get", params: json!({ "terminal": addr }), shape });

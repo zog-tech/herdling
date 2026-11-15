@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use herdlingd::core::client::Notice;
 use herdlingd::core::endpoint::{self, CoreSocket, Inputs};
-use herdlingd::core::merge::{Action, Leg, Merge, Side};
 use herdlingd::core::groups::{RepoInfo, Repos};
 use herdlingd::core::project::{self, Projection};
 use herdlingd::core::route::{self, Shape};
@@ -274,20 +273,6 @@ fn status_map() {
 }
 
 #[test]
-fn snapshot_merge_each_side_alone() {
-    let herdr = json!({"snapshot": {"version": "0.9.5", "agents": [{"pane_id": "w1:p1"}], "panes": [], "workspaces": [], "tabs": []}});
-    let core = project::project(&[term("t1", None, Some("idle"))], None, &Repos::new());
-    // No core: exactly herdr 1.
-    assert_eq!(project::merge_snapshots::<()>(Ok(herdr.clone()), None), Ok(herdr.clone()));
-    let both = project::merge_snapshots::<()>(Ok(herdr.clone()), Some(core.clone())).unwrap();
-    assert_eq!(both["snapshot"]["version"], "0.9.5");
-    assert_eq!(ids(both["snapshot"]["agents"].as_array().unwrap(), "pane_id"), ["w1:p1", "hc:t1"]);
-    let core_only = project::merge_snapshots(Err("down"), Some(core)).unwrap();
-    assert_eq!(ids(core_only["snapshot"]["agents"].as_array().unwrap(), "pane_id"), ["hc:t1"]);
-    assert_eq!(project::merge_snapshots::<&str>(Err("down"), None), Err("down"));
-}
-
-#[test]
 fn push_text_uses_name_title_then_app() {
     assert_eq!(project::push_text(&term("t1", Some("api"), Some("done"))), ("api".into(), "Claude Code · m".into()));
     assert_eq!(project::push_text(&term("t1", None, Some("done"))), ("fix".into(), "Claude Code · m".into()));
@@ -315,10 +300,14 @@ fn ids_and_targets() {
     assert_eq!(project::address("hc:space:s1"), None);
     assert_eq!(project::address("hc:box/t7"), None);
     assert_eq!(project::address("w1:p1"), None);
-    assert_eq!(route::core_target(&json!({"pane_id": "hc:t1"})), Some("hc:t1"));
-    assert_eq!(route::core_target(&json!({"target": "hc:t1", "text": "x"})), Some("hc:t1"));
-    assert_eq!(route::core_target(&json!({"workspace_id": "hc:space:s"})), Some("hc:space:s"));
-    assert_eq!(route::core_target(&json!({"pane_id": "w1:p1", "text": "hc:t1"})), None, "text never routes");
+    let t = |p: serde_json::Value| route::target(&p);
+    assert_eq!(t(json!({"pane_id": "hc:t1"})).as_deref(), Some("hc:t1"));
+    assert_eq!(t(json!({"target": "hc:t1", "text": "x"})).as_deref(), Some("hc:t1"));
+    assert_eq!(t(json!({"workspace_id": "hc:space:s"})).as_deref(), Some("hc:space:s"));
+    // The pane wins over the workspace; text never names an entry; an empty id does not count.
+    assert_eq!(t(json!({"workspace_id": "hc:space:s", "pane_id": "hc:t2"})).as_deref(), Some("hc:t2"));
+    assert_eq!(t(json!({"text": "hc:t1"})), None, "text never routes");
+    assert_eq!(t(json!({"pane_id": "", "tab_id": "hc:tab:x"})).as_deref(), Some("hc:tab:x"));
 }
 
 #[test]
@@ -418,29 +407,6 @@ fn tracker_effects() {
     assert_eq!(t.apply(&ev("finished", "t4", json!({}))), vec![Effect::Forget("hc:t4".into())]);
     assert!(t.record("hc:t4").is_none());
     assert!(t.apply(&ev("status", "box/t1", json!({"status": {"state": "done"}}))).is_empty());
-}
-
-#[test]
-fn merge_state_machine() {
-    assert!(Merge::start(Leg::Down, Leg::Down).is_none());
-    assert!(Merge::start(Leg::Down, Leg::Off).is_none());
-    // No core: the herdr 1 end closes the stream, as before.
-    let mut m = Merge::start(Leg::Up, Leg::Off).unwrap();
-    assert!(m.to_retry().is_empty());
-    assert_eq!(m.ended(Side::Herdr), Action::Close);
-    // Core absent at the start: retried; herdr 1 alone still closes.
-    let mut m = Merge::start(Leg::Up, Leg::Down).unwrap();
-    assert_eq!(m.to_retry(), vec![Side::Core]);
-    assert_eq!(m.ended(Side::Herdr), Action::Close);
-    // Both up: one end gives a hint and a retry, the reconnect gives a hint.
-    let mut m = Merge::start(Leg::Up, Leg::Up).unwrap();
-    assert_eq!(m.ended(Side::Core), Action::Hint);
-    assert_eq!(m.to_retry(), vec![Side::Core]);
-    assert_eq!(m.connected(Side::Core), Action::Hint);
-    assert_eq!(m.connected(Side::Core), Action::None, "an impossible second connect");
-    assert_eq!(m.ended(Side::Herdr), Action::Hint);
-    assert_eq!(m.ended(Side::Herdr), Action::None, "an impossible second end");
-    assert_eq!(m.ended(Side::Core), Action::Close);
 }
 
 #[test]

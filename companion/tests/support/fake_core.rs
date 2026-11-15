@@ -122,6 +122,27 @@ pub fn terminal(address: &str, name: Option<&str>, status: Option<&str>) -> Valu
     })
 }
 
+/// The record of an agent `app` (for example "Claude Code" or "Codex") with the 7501 `state`,
+/// in `cwd`, with the foreground process `pid`.
+pub fn agent_at(address: &str, app: &str, state: &str, cwd: &str, pid: u64) -> Value {
+    let name = app.split(' ').next().unwrap_or(app).to_lowercase();
+    json!({
+        "address": address, "name": null, "argv": ["zsh"], "cwd": cwd, "state": "live", "labels": {},
+        "pid": 100, "foreground": {"pid": pid, "name": name, "argv": [name], "cwd": cwd},
+        "status": {"state": state, "app": app, "title": "", "msg": ""},
+        "status_ms": 1_700_000_000_000u64, "title": "term title",
+    })
+}
+
+/// A fake core on `dir/core.sock` and a context that reaches it, with `home` as the home folder.
+pub fn with_ctx(dir: &Path, home: std::path::PathBuf, state: State) -> (herdlingd::rpc::Ctx, FakeCore) {
+    let sock = dir.join("core.sock");
+    let core = spawn(&sock, state);
+    let mut ctx = herdlingd::rpc::Ctx::new(home);
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(sock));
+    (ctx, core)
+}
+
 /// An `event` params value.
 pub fn event(kind: &str, terminal: &str, data: Value) -> Value {
     json!({"seq": 1, "type": kind, "terminal": terminal, "data": data})

@@ -138,7 +138,7 @@ fn build_marks_pane_ports_first_and_drops_others() {
 async fn call(home: &Path, method: &str, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 16);
     let (server_out, client_rx) = tokio::io::duplex(1 << 20);
-    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(home.join("none.sock"), home.into())));
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(home.into())));
     let req = json!({"id": 1, "method": method, "params": params});
     tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();
     let mut lines = BufReader::new(client_rx).lines();

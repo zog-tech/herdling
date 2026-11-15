@@ -23,7 +23,7 @@ fn fake_bin(dir: &Path, script: &str) -> PathBuf {
 async fn call(bin_dirs: Vec<PathBuf>, home: &Path, method: &str, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = Ctx::new(home.join("none.sock"), home.into());
+    let mut ctx = Ctx::new(home.into());
     ctx.bin_dirs = bin_dirs;
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let req = json!({ "id": 1, "method": method, "params": params });

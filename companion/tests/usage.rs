@@ -109,7 +109,7 @@ fn write_credentials(home: &std::path::Path) {
 async fn usage_rpc(home: &std::path::Path, base: &str) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = Ctx::new(home.join("none.sock"), home.into());
+    let mut ctx = Ctx::new(home.into());
     ctx.usage_urls = UsageUrls { claude: format!("{base}/claude"), codex: format!("{base}/codex") };
     ctx.usage_keychain = false;
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));

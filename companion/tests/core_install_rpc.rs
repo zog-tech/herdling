@@ -3,14 +3,14 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use herdlingd::core_install::pin::CorePin;
 use herdlingd::core_install::CoreInstallCtx;
-use herdlingd::herdr_update::{Exit, HerdrRunner, HerdrUpdateCtx, RunOut};
+use herdlingd::herdr_update::{Exit, HerdrRunner, RunOut};
 use herdlingd::rpc::{self, Ctx};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -54,7 +54,7 @@ fn tarball(dir: &Path) -> Vec<u8> {
 }
 
 struct Fix {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
     core_ctx: CoreInstallCtx,
     core: Arc<FakeCore>,
     downloads: Arc<Mutex<usize>>,
@@ -97,7 +97,7 @@ fn fix(installed: Option<&str>) -> Fix {
         pin,
         lock_dir: home.join(".config/herdling"),
     };
-    Fix { dir, core_ctx, core, downloads }
+    Fix { _dir: dir, core_ctx, core, downloads }
 }
 
 struct Session {
@@ -125,28 +125,9 @@ impl Session {
 }
 
 fn ctx_with(f: &Fix) -> Ctx {
-    let mut ctx = Ctx::new(f.dir.path().join("none.sock"), f.core_ctx.home.clone());
+    let mut ctx = Ctx::new(f.core_ctx.home.clone());
     ctx.core_install = Some(f.core_ctx.clone());
     ctx
-}
-
-fn no_herdr(_: &[PathBuf]) -> Option<PathBuf> {
-    None
-}
-
-fn with_herdr(_: &[PathBuf]) -> Option<PathBuf> {
-    Some(PathBuf::from("/home/sam/.local/bin/herdr"))
-}
-
-fn herdr1_ctx(f: &Fix, finder: fn(&[PathBuf]) -> Option<PathBuf>) -> HerdrUpdateCtx {
-    HerdrUpdateCtx {
-        lock_dir: f.dir.path().join("lock"),
-        dirs: vec![],
-        env: vec![],
-        runner: f.core.clone(),
-        timeout: Duration::from_secs(5),
-        finder,
-    }
 }
 
 #[tokio::test]
@@ -154,7 +135,7 @@ async fn the_methods_are_listed_and_off_without_a_context() {
     assert!(rpc::METHODS.contains(&"core.status"));
     assert!(rpc::METHODS.contains(&"core.install"));
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(Ctx::new(dir.path().join("none.sock"), dir.path().into()));
+    let mut s = Session::start(Ctx::new(dir.path().into()));
     for (i, m) in ["core.status", "core.install"].iter().enumerate() {
         let r = s.call(i as u64 + 1, m).await;
         assert_eq!(r["error"]["code"], "unsupported", "{m}: {r}");
@@ -202,11 +183,9 @@ async fn core_install_keeps_a_newer_core() {
 }
 
 #[tokio::test]
-async fn herdr_update_on_a_core_host_updates_the_core() {
+async fn herdr_update_updates_the_core() {
     let f = fix(Some("0.1.19"));
-    let mut ctx = ctx_with(&f);
-    ctx.herdr_update = Some(herdr1_ctx(&f, no_herdr));
-    let mut s = Session::start(ctx);
+    let mut s = Session::start(ctx_with(&f));
     let r = s.call(1, "herdr.update").await;
     let u = &r["result"];
     assert_eq!(u["status"], "updated", "{r}");
@@ -218,13 +197,9 @@ async fn herdr_update_on_a_core_host_updates_the_core() {
 }
 
 #[tokio::test]
-async fn herdr_update_with_herdr1_keeps_the_herdr1_update() {
-    let f = fix(Some("0.1.19"));
-    let mut ctx = ctx_with(&f);
-    ctx.herdr_update = Some(herdr1_ctx(&f, with_herdr));
-    let mut s = Session::start(ctx);
+async fn herdr_update_without_an_install_context_is_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Session::start(Ctx::new(dir.path().into()));
     let r = s.call(1, "herdr.update").await;
-    assert!(r.get("result").is_some(), "{r}");
-    assert!(f.core.calls.lock().unwrap().iter().any(|c| c == &["update", "--handoff"]), "the herdr 1 update ran");
-    assert_eq!(*f.downloads.lock().unwrap(), 0, "no core download");
+    assert_eq!(r["error"]["code"], "update_unavailable", "{r}");
 }

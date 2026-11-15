@@ -6,11 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::parse_line;
-use crate::herdr::{Client, HerdrError};
-use crate::types::{RecentSession, ThreadItem, ThreadRef};
+use crate::types::{RecentSession, ThreadItem};
 
 /// A log file counts as live for the no-PID-file fallback if written within this window.
 const RECENT_WINDOW: Duration = Duration::from_secs(10 * 60);
@@ -30,52 +29,11 @@ pub fn project_dir(home: &Path, cwd: &str) -> PathBuf {
     home.join(".claude").join("projects").join(name)
 }
 
-/// Resolve a pane to its Claude session. Non-Claude panes give `session: null`.
-pub async fn resolve(
-    socket: &Path,
-    timeout: Duration,
-    home: &Path,
-    pane_id: &str,
-) -> Result<ThreadRef, HerdrError> {
-    resolve_with(socket, timeout, home, pane_id, process_table).await
-}
-
 /// Source of `(pid, ppid)` pairs. Tests inject a fixed table.
 pub type ProcessTable = fn() -> Option<Vec<(u32, u32)>>;
 
-pub async fn resolve_with(
-    socket: &Path,
-    timeout: Duration,
-    home: &Path,
-    pane_id: &str,
-    table: ProcessTable,
-) -> Result<ThreadRef, HerdrError> {
-    let mut c = Client::connect(socket, timeout).await?;
-    let got = c.call("agent.get", json!({ "target": pane_id })).await?;
-    let agent = got.get("agent").unwrap_or(&got);
-    let kind = agent.get("agent").and_then(Value::as_str).unwrap_or("unknown").to_string();
-    let cwd = agent.get("cwd").and_then(Value::as_str).map(String::from);
-    let mut out = ThreadRef { kind, session: None, log_path: None, cwd: cwd.clone() };
-    let Some(cwd) = cwd.filter(|_| out.kind == "claude") else { return Ok(out) };
-
-    // A failed process lookup is not fatal: the recent-file fallback still applies.
-    // herdr 0.9.0 closes the connection after each reply, so use a fresh connection.
-    let info = match Client::connect(socket, timeout).await {
-        Ok(mut c2) => c2.call("pane.process_info", json!({ "pane_id": pane_id })).await.unwrap_or(Value::Null),
-        Err(_) => Value::Null,
-    };
-    let info = info.get("process_info").cloned().unwrap_or(info);
-    let home = home.to_path_buf();
-    let resolved = tokio::task::spawn_blocking(move || session_from_info(&home, &cwd, &info, table)).await.ok().flatten();
-    if let Some((session, log)) = resolved {
-        out.session = Some(session);
-        out.log_path = Some(log.to_string_lossy().into_owned());
-    }
-    Ok(out)
-}
-
-/// The Claude session id and log path of a pane in `cwd`, from its herdr 1 `pane.process_info`
-/// object `info` (herdr 2 records give the same shape). Blocks: it reads files and can run `ps`.
+/// The Claude session id and log path of a pane in `cwd`, from its `pane.process_info`
+/// object `info` (made from the core record). Blocks: it reads files and can run `ps`.
 pub fn session_from_info(home: &Path, cwd: &str, info: &Value, table: ProcessTable) -> Option<(String, PathBuf)> {
     let (direct, roots) = pane_pids(info);
     locate(home, cwd, &direct, &roots, table)

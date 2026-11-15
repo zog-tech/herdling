@@ -380,7 +380,7 @@ async fn second_update_at_the_same_time_is_refused() {
 async fn rpc_without_update_settings_downloads_nothing() {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let dir = tempfile::tempdir().unwrap();
-    let ctx = herdlingd::rpc::Ctx::new(dir.path().join("none.sock"), dir.path().into());
+    let ctx = herdlingd::rpc::Ctx::new(dir.path().into());
     let (mut tx, server_in) = tokio::io::duplex(4096);
     let (server_out, rx) = tokio::io::duplex(4096);
     tokio::spawn(herdlingd::rpc::run(BufReader::new(server_in), server_out, ctx));

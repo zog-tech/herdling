@@ -484,33 +484,6 @@ pub fn project(terminals: &[Value], doc: Option<&Value>, repos: &Repos) -> Proje
     b.finish()
 }
 
-/// Adds the core entries to a herdr 1 `session.snapshot` result. The herdr 1 fields stay as
-/// they are; the four lists get the core entries at the end.
-pub fn merge_into(herdr: Value, core: &Projection) -> Value {
-    let mut herdr = herdr;
-    let has_inner = herdr.get("snapshot").is_some_and(Value::is_object);
-    let snap = if has_inner { &mut herdr["snapshot"] } else { &mut herdr };
-    let Some(obj) = snap.as_object_mut() else { return core.snapshot() };
-    for (key, extra) in [("workspaces", &core.workspaces), ("tabs", &core.tabs), ("panes", &core.panes), ("agents", &core.agents)] {
-        let list = obj.entry(key).or_insert_with(|| Value::Array(vec![]));
-        if let Some(a) = list.as_array_mut() {
-            a.extend(extra.iter().cloned());
-        }
-    }
-    herdr
-}
-
-/// `session.snapshot` of both backends. Each side fails on its own: with no core (`None`) the
-/// herdr 1 answer is returned as it is; with herdr 1 down and the core up, the core part alone.
-pub fn merge_snapshots<E>(herdr: Result<Value, E>, core: Option<Projection>) -> Result<Value, E> {
-    match (herdr, core) {
-        (Ok(h), None) => Ok(h),
-        (Ok(h), Some(c)) => Ok(merge_into(h, &c)),
-        (Err(_), Some(c)) => Ok(c.snapshot()),
-        (Err(e), None) => Err(e),
-    }
-}
-
 /// The herdr 1 `pane.get` answer for terminal `t`.
 pub fn pane_get(t: &Value) -> Value {
     let mut pane = pane_entry(t, "", "", &display_name(t, None));

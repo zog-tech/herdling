@@ -165,7 +165,7 @@ async fn ask(ctx: Ctx, line: &str) -> Value {
 }
 
 fn ctx_with(dir: &tempfile::TempDir, os: Os, fake: Arc<Fake>) -> Ctx {
-    let mut ctx = Ctx::new(dir.path().join("none.sock"), dir.path().join("sam"));
+    let mut ctx = Ctx::new(dir.path().join("sam"));
     ctx.sys = Some(fake);
     ctx.host_os = os;
     ctx
@@ -174,9 +174,9 @@ fn ctx_with(dir: &tempfile::TempDir, os: Os, fake: Arc<Fake>) -> Ctx {
 #[tokio::test]
 async fn hello_without_a_runner_has_no_boot() {
     let dir = tempfile::tempdir().unwrap();
-    let r = ask(Ctx::new(dir.path().join("none.sock"), dir.path().into()), r#"{"id":1,"method":"hello"}"#).await;
+    let r = ask(Ctx::new(dir.path().into()), r#"{"id":1,"method":"hello"}"#).await;
     assert!(r["result"].get("boot").is_none(), "{r}");
-    let r = ask(Ctx::new(dir.path().join("none.sock"), dir.path().into()), r#"{"id":2,"method":"boot.check"}"#).await;
+    let r = ask(Ctx::new(dir.path().into()), r#"{"id":2,"method":"boot.check"}"#).await;
     assert_eq!(r["error"]["code"], "unsupported_platform");
 }
 

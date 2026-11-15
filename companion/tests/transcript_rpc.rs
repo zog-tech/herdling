@@ -1,9 +1,8 @@
-//! The transcript layer through rpc and herdr: resolve, hello, sessions.recent, follow, previews.
+//! The transcript layer through rpc and the core: resolve, hello, sessions.recent, follow, previews.
 
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -20,10 +19,10 @@ struct Session {
 }
 
 impl Session {
-    fn start(sock: PathBuf, home: PathBuf) -> Session {
+    fn start(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(1 << 16);
         let (server_out, client_rx) = tokio::io::duplex(1 << 16);
-        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+        tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
     async fn send(&mut self, method: &str, params: Value) {
@@ -60,18 +59,6 @@ fn codex_log(home: &Path, id: &str) -> PathBuf {
     path
 }
 
-fn fake_codex_herdr(dir: &Path) -> PathBuf {
-    let sock = dir.join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("agent.get".to_string(), json!({"agent":{"agent":"codex","cwd":CWD,"pane_id":"w1:p1"}}));
-    m.insert(
-        "pane.process_info".to_string(),
-        json!({"process_info":{"shell_pid":100,"foreground_process_group_id":200,"foreground_processes":[{"pid":200,"name":"node"}]}}),
-    );
-    fake_herdr::spawn(&sock, m);
-    sock
-}
-
 fn proc(pid: u32, ppid: u32, name: &str, cmd: &[&str], age: u64) -> Proc {
     Proc { pid, ppid, name: name.into(), cmd: cmd.iter().map(|s| s.to_string()).collect(), start: SystemTime::now() - Duration::from_secs(age) }
 }
@@ -94,19 +81,20 @@ fn agent_start_finds_the_agent_by_name_or_script() {
     assert!(procs::agent_start(&list, &[], Some(100), &["codex"]).is_none());
 }
 
-#[tokio::test]
-async fn resolve_finds_the_codex_session_of_the_pane() {
+#[test]
+fn resolve_finds_the_codex_session_of_the_pane() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     let log = codex_log(&home, "s-77");
-    let sock = fake_codex_herdr(dir.path());
+    let info = json!({"shell_pid":100,"foreground_process_group_id":200,"foreground_processes":[{"pid":200,"name":"node"}]});
     fn list() -> Vec<Proc> {
         vec![
             Proc { pid: 100, ppid: 1, name: "zsh".into(), cmd: vec![], start: SystemTime::now() - Duration::from_secs(900) },
             Proc { pid: 300, ppid: 200, name: "codex".into(), cmd: vec!["codex".into()], start: SystemTime::now() - Duration::from_secs(120) },
         ]
     }
-    let r = transcript::resolve_with(&sock, Duration::from_secs(5), &home, "w1:p1", list).await.unwrap();
+    let resolve = |procs| transcript::resolve_from_info(&home, "codex", Some(CWD.into()), &info, procs, herdlingd::claude::process_table);
+    let r = resolve(list);
     assert_eq!(r.kind, "codex");
     assert_eq!(r.session.as_deref(), Some("s-77"));
     assert_eq!(r.log_path.as_deref(), Some(log.to_string_lossy().as_ref()));
@@ -114,8 +102,7 @@ async fn resolve_finds_the_codex_session_of_the_pane() {
     fn fresh() -> Vec<Proc> {
         vec![Proc { pid: 200, ppid: 100, name: "codex".into(), cmd: vec![], start: SystemTime::now() + Duration::from_secs(60) }]
     }
-    let r = transcript::resolve_with(&sock, Duration::from_secs(5), &home, "w1:p1", fresh).await.unwrap();
-    assert_eq!(r.session, None);
+    assert_eq!(resolve(fresh).session, None);
 }
 
 #[tokio::test]
@@ -123,7 +110,7 @@ async fn rpc_hello_lists_thread_kinds_and_sessions_recent_takes_a_kind() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     codex_log(&home, "s-1");
-    let mut s = Session::start(dir.path().join("none.sock"), home.clone());
+    let mut s = Session::start(Ctx::new(home.clone()));
     let r = s.call("hello", json!({})).await;
     assert_eq!(r["result"]["thread_kinds"], json!(["claude", "codex", "pi", "opencode", "omp", "gemini"]));
     assert_eq!(r["result"]["command_kinds"], json!(["claude", "codex", "pi", "opencode"]));
@@ -150,7 +137,7 @@ async fn rpc_follow_on_pi_ends_when_the_branch_changes() {
     ];
     let mut text: String = head.iter().map(|l| l.to_string() + "\n").collect();
     write(&log, &text);
-    let mut s = Session::start(dir.path().join("none.sock"), home.clone());
+    let mut s = Session::start(Ctx::new(home.clone()));
     let r = s.call("thread.follow", json!({"log_path": log, "from": text.len()})).await;
     let stream = r["result"]["stream"].as_str().unwrap().to_string();
     text += &(json!({"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-01T10:00:02.000Z",
@@ -169,7 +156,7 @@ async fn rpc_follow_on_pi_ends_when_the_branch_changes() {
 #[tokio::test]
 async fn rpc_follow_missing_log_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(Ctx::new(dir.path().into()));
     let missing = codex::sessions_root(dir.path()).join("2026/10/01/rollout-x.jsonl");
     let r = s.call("thread.follow", json!({"log_path": missing, "from": 0})).await;
     assert_eq!(r["error"]["code"], "not_found");
@@ -180,14 +167,12 @@ async fn rpc_preview_of_a_codex_pane_reads_its_log() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     codex_log(&home, "s-9");
-    let sock = dir.path().join("herdr.sock");
-    fake_herdr::spawn_fn(&sock, |method, _params| match method {
-        "session.snapshot" => Some(json!({"snapshot": {"agents": [{"pane_id": "w1:p1", "agent": "codex", "agent_status": "working", "cwd": CWD}]}})),
-        "agent.get" => Some(json!({"agent": {"agent": "codex", "cwd": CWD, "pane_id": "w1:p1"}})),
-        "pane.process_info" => Some(json!({"process_info": {"pane_id": "w1:p1"}})),
-        _ => None,
-    });
-    let mut s = Session::start(sock, home);
+    // No process ids: the recent-activity rule finds the log.
+    let mut t = fake_core::agent_at("t1", "Codex", "working", CWD, 0);
+    t["pid"] = Value::Null;
+    t["foreground"] = json!({"name": "codex", "cwd": CWD});
+    let (ctx, _core) = fake_core::with_ctx(dir.path(), home, fake_core::State { terminals: vec![t], ..Default::default() });
+    let mut s = Session::start(ctx);
     let r = s.call("agents.preview", json!({})).await;
     let p = &r["result"]["previews"][0];
     assert_eq!(p["source"], "log", "{r}");

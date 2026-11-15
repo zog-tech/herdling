@@ -62,7 +62,6 @@ async fn start() -> Setup {
     let ctx = ServeCtx {
         core_socket: None,
         home: dir.path().into(),
-        herdr_socket: dir.path().join("herdr.sock"),
         config_path: config::default_path(dir.path()),
         push_url: "http://127.0.0.1:9/unused".into(),
         debounce: Duration::from_millis(50),

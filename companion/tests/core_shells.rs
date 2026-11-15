@@ -79,7 +79,7 @@ async fn core_watch_sends_one_push_when_the_command_ends() {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let watches = shell_watch::path(dir.path());
     shell_watch::add(&watches, "hc:t2", Some("d1"), now).unwrap();
-    // A herdr 1 watch stays for the herdr 1 loop: the core loop does not touch it.
+    // A watch of a herdr 1 pane (saved by herdlingd 0.1.x) names no terminal: it goes.
     shell_watch::add(&watches, "w1:p1", None, now).unwrap();
     let sock = dir.path().join("core.sock");
     let core = fake_core::spawn(&sock, State { terminals: vec![shell(busy_fg())], ..State::default() });
@@ -87,7 +87,6 @@ async fn core_watch_sends_one_push_when_the_command_ends() {
     let ctx = ServeCtx {
         core_socket: Some(CoreSocket::fixed(sock)),
         home: dir.path().into(),
-        herdr_socket: dir.path().join("no-herdr.sock"),
         config_path: cfg,
         push_url: http.url.clone(),
         debounce: Duration::from_millis(50),
@@ -114,7 +113,7 @@ async fn core_watch_sends_one_push_when_the_command_ends() {
     assert_eq!(body[0]["body"], "cargo build");
     assert_eq!(body[0]["data"]["kind"], "shell");
     let left: Vec<String> = shell_watch::list(&watches, now).unwrap().into_iter().map(|w| w.pane_id).collect();
-    assert_eq!(left, ["w1:p1"]);
+    assert!(left.is_empty(), "{left:?}");
     let again = tokio::time::timeout(Duration::from_millis(3500), http.bodies.recv()).await;
     assert!(again.is_err(), "one push only");
 }

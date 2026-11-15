@@ -11,14 +11,11 @@ use crate::config;
 pub mod bonjour;
 pub mod core_watch;
 pub mod debounce;
-pub mod desk;
 pub mod http;
 pub mod shells;
-pub mod watch;
 
 pub struct ServeCtx {
     pub home: PathBuf,
-    pub herdr_socket: PathBuf,
     pub config_path: PathBuf,
     pub push_url: String,
     pub debounce: Duration,
@@ -78,7 +75,7 @@ pub async fn run(ctx: ServeCtx, shutdown: impl Future<Output = ()>) -> Result<()
     .ok();
     eprintln!("herdlingd serve: started");
     tokio::select! {
-        _ = async { tokio::join!(watch::watch(&ctx), core_watch::watch(&ctx)) } => {}
+        _ = core_watch::watch(&ctx) => {}
         _ = pairing => {}
         _ = shutdown => {}
     }

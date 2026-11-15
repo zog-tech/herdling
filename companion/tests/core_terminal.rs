@@ -68,7 +68,7 @@ struct Setup {
 
 impl Setup {
     fn ctx(&self) -> Ctx {
-        let mut ctx = Ctx::new(self.dir.path().join("herdr.sock"), self.dir.path().into());
+        let mut ctx = Ctx::new(self.dir.path().into());
         ctx.core_socket = Some(CoreSocket::fixed(self.sock()));
         ctx
     }

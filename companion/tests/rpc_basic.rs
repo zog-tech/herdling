@@ -1,8 +1,5 @@
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
-
-use std::collections::HashMap;
-use std::path::PathBuf;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -14,10 +11,9 @@ struct Session {
 }
 
 impl Session {
-    fn start(sock: PathBuf, home: PathBuf) -> Session {
+    fn start(ctx: Ctx) -> Session {
         let (client_tx, server_in) = tokio::io::duplex(65536);
         let (server_out, client_rx) = tokio::io::duplex(65536);
-        let ctx = Ctx::new(sock, home);
         tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
         Session { tx: client_tx, rx: BufReader::new(client_rx).lines() }
     }
@@ -29,64 +25,79 @@ impl Session {
     }
 }
 
-fn fake(dir: &tempfile::TempDir) -> PathBuf {
-    let sock = dir.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert(
-        "session.snapshot".to_string(),
-        json!({"type":"session_snapshot","snapshot":{"version":"9.9.9","protocol":22}}),
-    );
-    m.insert("agent.list".to_string(), json!({"type":"agent_list","agents":[]}));
-    fake_herdr::spawn(&sock, m);
-    sock
+/// A fake core with one agent terminal `t1`.
+fn fake(dir: &tempfile::TempDir) -> (Ctx, fake_core::FakeCore) {
+    let state = fake_core::State { terminals: vec![fake_core::terminal("t1", None, Some("idle"))], screen: "$ ".into(), ..Default::default() };
+    fake_core::with_ctx(dir.path(), dir.path().into(), state)
+}
+
+fn bare(dir: &tempfile::TempDir) -> Ctx {
+    Ctx::new(dir.path().into())
 }
 
 #[tokio::test]
-async fn hello_reports_herdr_ok() {
+async fn hello_reports_the_core_as_herdr() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(fake(&dir), dir.path().into());
+    let (ctx, _c) = fake(&dir);
+    let mut s = Session::start(ctx);
     s.send(r#"{"id":1,"method":"hello"}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 1);
     assert_eq!(r["result"]["herdr_ok"], true);
     assert_eq!(r["result"]["herdlingd"], env!("CARGO_PKG_VERSION"));
-    assert_eq!(r["result"]["herdr_version"], "9.9.9");
-    assert_eq!(r["result"]["herdr_protocol"], 22);
+    // Old apps show this as the herdr version.
+    assert_eq!(r["result"]["herdr_version"], "0.1.19");
+    assert!(r["result"].get("herdr_protocol").is_none());
+    let backends: Vec<&String> = r["result"]["backends"].as_object().unwrap().keys().collect();
+    assert_eq!(backends, ["core"]);
+    assert_eq!(r["result"]["backends"]["core"], json!({"version": "0.1.19", "generation": 1}));
 }
 
 #[tokio::test]
-async fn hello_without_herdr() {
+async fn hello_without_core() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send(r#"{"id":1,"method":"hello"}"#).await;
     let r = s.recv().await;
     assert_eq!(r["result"]["herdr_ok"], false);
     assert!(r["result"].get("herdr_version").is_none());
+    assert!(r["result"].get("backends").is_none());
 }
 
 #[tokio::test]
-async fn herdr_call_passthrough() {
+async fn herdr_call_goes_to_the_core() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(fake(&dir), dir.path().into());
-    s.send(r#"{"id":2,"method":"herdr.call","params":{"method":"agent.list","params":{}}}"#).await;
+    let (ctx, c) = fake(&dir);
+    let mut s = Session::start(ctx);
+    s.send(r#"{"id":2,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1","source":"visible"}}}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 2);
-    assert_eq!(r["result"], json!({"type":"agent_list","agents":[]}));
+    assert_eq!(r["result"]["read"]["text"], "$ ");
+    assert_eq!(c.calls_of("terminal.read").len(), 1);
 }
 
 #[tokio::test]
-async fn herdr_call_unavailable() {
+async fn no_core_gives_herdr_unavailable() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
-    s.send(r#"{"id":3,"method":"herdr.call","params":{"method":"agent.list"}}"#).await;
-    let r = s.recv().await;
-    assert_eq!(r["error"]["code"], "herdr_unavailable");
+    let mut s = Session::start(bare(&dir));
+    s.send(r#"{"id":3,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
+    s.send(r#"{"id":4,"method":"herdr.call","params":{"method":"session.snapshot","params":{}}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
+    // A socket path with no core behind it.
+    let mut ctx = bare(&dir);
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(dir.path().join("missing.sock")));
+    let mut s = Session::start(ctx);
+    s.send(r#"{"id":5,"method":"herdr.call","params":{"method":"session.snapshot","params":{}}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
+    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
+    assert_eq!(s.recv().await["error"]["code"], "herdr_unavailable");
 }
 
 #[tokio::test]
 async fn bad_json_line_does_not_kill_loop() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send("not json").await;
     let bad = s.recv().await;
     assert!(bad["id"].is_null());
@@ -98,13 +109,13 @@ async fn bad_json_line_does_not_kill_loop() {
 #[tokio::test]
 async fn unknown_method() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send(r#"{"id":5,"method":"nope"}"#).await;
     assert_eq!(s.recv().await["error"]["code"], "unknown_method");
 }
 
 #[tokio::test]
-async fn herdr_call_times_out_when_herdr_never_replies() {
+async fn herdr_call_times_out_when_the_core_never_replies() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("silent.sock");
     let listener = tokio::net::UnixListener::bind(&sock).unwrap();
@@ -116,11 +127,12 @@ async fn herdr_call_times_out_when_herdr_never_replies() {
     });
     let (client_tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = Ctx::new(sock, dir.path().into());
+    let mut ctx = Ctx::new(dir.path().into());
+    ctx.core_socket = Some(herdlingd::core::endpoint::CoreSocket::fixed(sock));
     ctx.herdr_timeout = std::time::Duration::from_millis(100);
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let mut s = Session { tx: client_tx, rx: BufReader::new(client_rx).lines() };
-    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"agent.list"}}"#).await;
+    s.send(r#"{"id":6,"method":"herdr.call","params":{"method":"pane.read","params":{"pane_id":"hc:t1"}}}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 6);
     assert_eq!(r["error"]["code"], "herdr_unavailable");
@@ -129,7 +141,7 @@ async fn herdr_call_times_out_when_herdr_never_replies() {
 #[tokio::test]
 async fn ping_returns_empty_object() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send(r#"{"id":7,"method":"ping"}"#).await;
     let r = s.recv().await;
     assert_eq!(r["id"], 7);
@@ -140,7 +152,7 @@ async fn ping_returns_empty_object() {
 #[tokio::test]
 async fn hello_lists_methods_and_methods_match_dispatch() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send(r#"{"id":1,"method":"hello"}"#).await;
     let r = s.recv().await;
     let listed: Vec<&str> = r["result"]["methods"].as_array().unwrap().iter().map(|m| m.as_str().unwrap()).collect();
@@ -170,21 +182,9 @@ async fn hello_lists_methods_and_methods_match_dispatch() {
 }
 
 #[tokio::test]
-async fn herdr_call_marks_phone_input() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(fake(&dir), dir.path().into());
-    s.send(r#"{"id":7,"method":"herdr.call","params":{"method":"agent.list","params":{"pane_id":"w1:p1"}}}"#).await;
-    s.recv().await;
-    assert_eq!(herdlingd::phone_input::last(dir.path(), "w1:p1"), None, "a read is not input");
-    s.send(r#"{"id":8,"method":"herdr.call","params":{"method":"pane.send_text","params":{"pane_id":"w1:p1","text":"hi"}}}"#).await;
-    s.recv().await;
-    assert!(herdlingd::phone_input::last(dir.path(), "w1:p1").is_some());
-}
-
-#[tokio::test]
 async fn shell_watch_adds_lists_and_removes_a_watch() {
     let dir = tempfile::tempdir().unwrap();
-    let mut s = Session::start(dir.path().join("none.sock"), dir.path().into());
+    let mut s = Session::start(bare(&dir));
     s.send(r#"{"id":1,"method":"shell.watch","params":{"pane_id":"w1:p2","device_id":"d_1"}}"#).await;
     let r = s.recv().await;
     assert_eq!(r["result"]["pane_id"], "w1:p2");

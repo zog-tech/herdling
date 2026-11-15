@@ -38,7 +38,7 @@ pub fn set_command(home: &Path, which: Which, argv: Option<Vec<String>>) {
 pub async fn call(home: &Path, method: &str, params: Value, timeout: Duration) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 20);
     let (server_out, client_rx) = tokio::io::duplex(1 << 24);
-    let mut ctx = Ctx::new(home.join("none.sock"), PathBuf::from(home));
+    let mut ctx = Ctx::new(PathBuf::from(home));
     ctx.summary_timeout = timeout;
     ctx.tts_timeout = timeout;
     ctx.stt_timeout = timeout;

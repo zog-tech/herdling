@@ -11,12 +11,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
-use tokio::task::JoinSet;
+use serde_json::Value;
 
 use crate::claude;
 use crate::claude::background::ClaudeFeed;
-use crate::herdr::{self, HerdrError};
 use crate::tail::read_offset_lines_before;
 use crate::transcript::background::BackgroundLog;
 use crate::types::{AgentPreview, AgentStatus, BackgroundInfo, ThreadItem};
@@ -62,14 +60,14 @@ impl PreviewState {
     /// Records a `pane.agent_status_changed` event line: the status began now.
     /// Other event lines are ignored, except `pane_closed`, which forgets the pane.
     pub fn observe_event(&self, ev: &Value) {
-        if let Some(pane) = crate::events::closed_pane_id(ev) {
+        if let Some(pane) = crate::core::events::closed_pane_id(ev) {
             self.since.lock().unwrap().remove(pane);
             self.logs.lock().unwrap().remove(pane);
             self.background.lock().unwrap().remove(pane);
             self.starts.lock().unwrap().remove(pane);
             return;
         }
-        if crate::events::event_name(ev).as_deref() != Some("pane_agent_status_changed") {
+        if crate::core::events::event_name(ev).as_deref() != Some("pane_agent_status_changed") {
             return;
         }
         let Some(data) = ev.get("data") else { return };
@@ -489,75 +487,6 @@ fn is_chrome(c: char) -> bool {
     matches!(c as u32, 0x2500..=0x259F | 0x2800..=0x28FF)
 }
 
-/// One agent of `session.snapshot`.
-struct Agent {
-    pane_id: String,
-    kind: String,
-    status: String,
-}
-
-fn snapshot_agents(snap: &Value) -> Vec<Agent> {
-    let s = snap.get("snapshot").unwrap_or(snap);
-    let Some(list) = s.get("agents").and_then(Value::as_array) else { return vec![] };
-    list.iter()
-        .filter_map(|a| {
-            Some(Agent {
-                pane_id: a.get("pane_id")?.as_str()?.to_string(),
-                kind: a.get("agent").and_then(Value::as_str).unwrap_or("unknown").to_string(),
-                status: a.get("agent_status").and_then(Value::as_str).unwrap_or("unknown").to_string(),
-            })
-        })
-        .collect()
-}
-
-/// Previews of the agents in herdr's snapshot (only `pane_ids` when given). Panes whose
-/// work fails or takes longer than `pane_timeout` are left out. Only a failed snapshot is an error.
-pub async fn previews(
-    socket: &Path,
-    timeout: Duration,
-    home: &Path,
-    state: &PreviewState,
-    pane_ids: Option<Vec<String>>,
-    pane_timeout: Duration,
-) -> Result<Vec<AgentPreview>, HerdrError> {
-    let snap = herdr::Client::connect(socket, timeout).await?.call("session.snapshot", json!({})).await?;
-    let wanted: Option<HashSet<String>> = pane_ids.map(|v| v.into_iter().collect());
-    let agents: Vec<Agent> =
-        snapshot_agents(&snap).into_iter().filter(|a| wanted.as_ref().is_none_or(|w| w.contains(&a.pane_id))).collect();
-
-    let mut set = JoinSet::new();
-    for (order, a) in agents.into_iter().enumerate() {
-        let since = state.status_since(&a.pane_id, &a.status);
-        let (socket, home, state) = (socket.to_path_buf(), home.to_path_buf(), state.clone());
-        set.spawn(async move {
-            let work = one_pane(&socket, timeout, &home, &state, &a);
-            let got = tokio::time::timeout(pane_timeout, work).await.ok().flatten();
-            got.map(|mut p| {
-                p.status_since = since;
-                (order, p)
-            })
-        });
-    }
-    let mut out = Vec::new();
-    while let Some(r) = set.join_next().await {
-        if let Ok(Some(p)) = r {
-            out.push(p);
-        }
-    }
-    out.sort_by_key(|(order, _)| *order);
-    Ok(out.into_iter().map(|(_, p)| p).collect())
-}
-
-fn status_of(s: &str) -> AgentStatus {
-    match s {
-        "working" => AgentStatus::Working,
-        "blocked" => AgentStatus::Blocked,
-        "idle" => AgentStatus::Idle,
-        "done" => AgentStatus::Done,
-        _ => AgentStatus::Unknown,
-    }
-}
-
 /// Fills `p` from a log preview: the last reply, and the activity of a working agent or the
 /// question of a blocked agent. The source becomes `"log"`. Herdr 1 and core panes share this.
 pub(crate) fn fill_from_log(p: &mut AgentPreview, status: AgentStatus, log: &LogPreview) {
@@ -570,53 +499,10 @@ pub(crate) fn fill_from_log(p: &mut AgentPreview, status: AgentStatus, log: &Log
     }
 }
 
-/// One pane's preview: from its Claude log when there is one, else from its screen.
-async fn one_pane(socket: &Path, timeout: Duration, home: &Path, state: &PreviewState, a: &Agent) -> Option<AgentPreview> {
-    let mut p = AgentPreview {
-        pane_id: a.pane_id.clone(),
-        activity: None,
-        last_reply: None,
-        question: None,
-        status_since: None,
-        source: "screen".into(),
-        background: None,
-    };
-    if crate::transcript::Agent::from_kind(&a.kind).is_some() {
-        let log = match state.cached_log(&a.pane_id) {
-            Some(l) => l,
-            None => {
-                let r = crate::transcript::resolve(socket, timeout, home, &a.pane_id).await.ok()?;
-                let l = r.log_path.map(PathBuf::from);
-                state.cache_log(&a.pane_id, l.clone());
-                l
-            }
-        };
-        if let Some(path) = log {
-            if crate::transcript::Agent::of_log(&path.to_string_lossy()) == crate::transcript::Agent::Claude {
-                p.background = claude_background(socket, timeout, state, &a.pane_id, &path).await;
-            }
-            if let Ok(Ok(lp)) = tokio::task::spawn_blocking(move || read_any_log(&path)).await {
-                fill_from_log(&mut p, status_of(&a.status), &lp);
-                // A blocked agent whose log shows no pending call: ask the screen.
-                if a.status == "blocked" && p.question.is_none() {
-                    p.question = read_screen_line(socket, timeout, &a.pane_id, true).await;
-                }
-                return Some(p);
-            }
-        }
-    }
-    let line = read_screen_line(socket, timeout, &a.pane_id, a.status == "blocked").await?;
-    match a.status.as_str() {
-        "working" => p.activity = Some(line),
-        "blocked" => p.question = Some(line),
-        _ => p.last_reply = Some(line),
-    }
-    Some(p)
-}
-
-/// The background shells and subagents of a Claude log that still run. When some are
-/// recorded, the start of the agent process is checked: tasks from before a restart have ended.
-async fn claude_background(socket: &Path, timeout: Duration, state: &PreviewState, pane: &str, path: &Path) -> Option<BackgroundInfo> {
+/// The background shells and subagents of the Claude log `path` of `pane` that still run. When
+/// some are recorded, the start of the agent process (from `info`, a `pane.process_info` object)
+/// is checked: tasks from before a restart have ended.
+pub(crate) async fn claude_background(state: &PreviewState, pane: &str, path: &Path, info: &Value) -> Option<BackgroundInfo> {
     let (st, pane_id, log_path) = (state.clone(), pane.to_string(), path.to_path_buf());
     // The state goes back into the map in the blocking task, so a pane timeout does not lose it.
     let tracker = tokio::task::spawn_blocking(move || {
@@ -633,7 +519,7 @@ async fn claude_background(socket: &Path, timeout: Duration, state: &PreviewStat
     let start = match state.cached_start(pane) {
         Some(s) => s,
         None => {
-            let s = agent_start_ms(socket, timeout, pane).await;
+            let s = agent_start_ms(info).await;
             state.cache_start(pane, s);
             s
         }
@@ -642,12 +528,10 @@ async fn claude_background(socket: &Path, timeout: Duration, state: &PreviewStat
     tracker.info(now, start)
 }
 
-/// Start of the Claude process in the pane, in Unix ms. None when herdr or the process list
-/// does not tell.
-async fn agent_start_ms(socket: &Path, timeout: Duration, pane: &str) -> Option<i64> {
-    let mut c = herdr::Client::connect(socket, timeout).await.ok()?;
-    let info = c.call("pane.process_info", json!({ "pane_id": pane })).await.ok()?;
-    let (fg, shell) = crate::transcript::procs::pane_pids(info.get("process_info").unwrap_or(&info));
+/// Start of the Claude process of a pane in Unix ms, from its `pane.process_info` object. None
+/// when the process list does not tell.
+async fn agent_start_ms(info: &Value) -> Option<i64> {
+    let (fg, shell) = crate::transcript::procs::pane_pids(info);
     if fg.is_empty() && shell.is_none() {
         return None;
     }
@@ -658,18 +542,4 @@ async fn agent_start_ms(socket: &Path, timeout: Duration, pane: &str) -> Option<
     .await
     .ok()??;
     Some(start.duration_since(UNIX_EPOCH).ok()?.as_millis() as i64)
-}
-
-async fn read_screen_line(socket: &Path, timeout: Duration, pane: &str, blocked: bool) -> Option<String> {
-    let mut c = herdr::Client::connect(socket, timeout).await.ok()?;
-    let r = c
-        .call("pane.read", json!({ "pane_id": pane, "source": "visible", "format": "text", "strip_ansi": true }))
-        .await
-        .ok()?;
-    let text = r.get("read").and_then(|x| x.get("text")).and_then(Value::as_str)?;
-    if blocked {
-        screen_question(text)
-    } else {
-        screen_line(text)
-    }
 }

@@ -1,7 +1,6 @@
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
+#[path = "support/fake_core.rs"]
+mod fake_core;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
@@ -12,6 +11,12 @@ use herdlingd::rpc::{self, Ctx};
 fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
+}
+
+/// A core with one agent `app` in `cwd`, and a context with `home`.
+fn core_with(home: &Path, cwd: &Path, app: &str) -> (Ctx, fake_core::FakeCore) {
+    let t = fake_core::agent_at("t1", app, "idle", &cwd.to_string_lossy(), 0);
+    fake_core::with_ctx(home, home.into(), fake_core::State { terminals: vec![t], ..Default::default() })
 }
 
 fn find<'a>(list: &'a [Command], name: &str) -> Option<&'a Command> {
@@ -143,10 +148,10 @@ fn list_is_capped() {
     assert_eq!(commands::list(home.path(), None).len(), commands::MAX_COMMANDS);
 }
 
-async fn call(sock: PathBuf, home: PathBuf, params: Value) -> Value {
+async fn call(ctx: Ctx, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(1 << 20);
-    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, Ctx::new(sock, home)));
+    tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let req = json!({"id": 1, "method": "commands.list", "params": params});
     tx.write_all(format!("{req}\n").as_bytes()).await.unwrap();
     serde_json::from_str(&BufReader::new(client_rx).lines().next_line().await.unwrap().unwrap()).unwrap()
@@ -157,19 +162,16 @@ async fn rpc_resolves_the_cwd_from_the_pane() {
     let home = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     write(&proj.path().join(".claude/commands/here.md"), "From the pane folder\n");
-    let sock = home.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("pane.get".to_string(), json!({"type": "pane_get", "pane": {"pane_id": "w1:p1", "cwd": proj.path()}}));
-    fake_herdr::spawn(&sock, m);
+    let (ctx, _core) = core_with(home.path(), proj.path(), "Claude Code");
 
-    let r = call(sock.clone(), home.path().into(), json!({"pane_id": "w1:p1"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "hc:t1"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     let here = list.iter().find(|c| c["name"] == "here").unwrap();
     assert_eq!(here["source"], "project");
     assert_eq!(here["description"], "From the pane folder");
 
-    // No herdr: still the built-ins, no error.
-    let r = call(home.path().join("none.sock"), home.path().into(), json!({"pane_id": "w1:p1"})).await;
+    // No core: still the built-ins, no error.
+    let r = call(Ctx::new(home.path().into()), json!({"pane_id": "hc:t1"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "clear"));
 }
 
@@ -307,23 +309,20 @@ async fn rpc_kind_param_and_pane_kind_pick_the_codex_list() {
     let home = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     write(&proj.path().join(".agents/skills/cx/SKILL.md"), "---\ndescription: Codex skill\n---\n");
-    let sock = home.path().join("herdr.sock");
-    let mut m = HashMap::new();
-    m.insert("pane.get".to_string(), json!({"type": "pane_get", "pane": {"pane_id": "w1:p1", "cwd": proj.path(), "agent": "codex"}}));
-    fake_herdr::spawn(&sock, m);
+    let (ctx, _core) = core_with(home.path(), proj.path(), "Codex");
 
     // The kind from the pane.
-    let r = call(sock.clone(), home.path().into(), json!({"pane_id": "w1:p1"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "hc:t1"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     let cx = list.iter().find(|c| c["name"] == "cx").unwrap();
     assert_eq!((cx["trigger"].as_str(), cx["source"].as_str()), (Some("$"), Some("project")));
     // The explicit kind wins over the pane kind.
-    let r = call(sock.clone(), home.path().into(), json!({"pane_id": "w1:p1", "kind": "claude"})).await;
+    let r = call(ctx.clone(), json!({"pane_id": "hc:t1", "kind": "claude"})).await;
     let list = r["result"]["commands"].as_array().unwrap();
     assert!(list.iter().any(|c| c["name"] == "clear"));
     assert!(!list.iter().any(|c| c["name"] == "cx"));
-    // The explicit kind works with no herdr.
-    let r = call(home.path().join("none.sock"), home.path().into(), json!({"kind": "codex"})).await;
+    // The explicit kind works with no core.
+    let r = call(Ctx::new(home.path().into()), json!({"kind": "codex"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "permissions"));
 }
 
@@ -641,9 +640,8 @@ fn opencode_skills_use_the_at_trigger_from_all_six_folders() {
 #[tokio::test]
 async fn rpc_kind_param_picks_the_pi_and_opencode_lists() {
     let home = tempfile::tempdir().unwrap();
-    let none = home.path().join("none.sock");
-    let r = call(none.clone(), home.path().into(), json!({"kind": "pi"})).await;
+    let r = call(Ctx::new(home.path().into()), json!({"kind": "pi"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "scoped-models"));
-    let r = call(none, home.path().into(), json!({"kind": "opencode"})).await;
+    let r = call(Ctx::new(home.path().into()), json!({"kind": "opencode"})).await;
     assert!(r["result"]["commands"].as_array().unwrap().iter().any(|c| c["name"] == "connect"));
 }

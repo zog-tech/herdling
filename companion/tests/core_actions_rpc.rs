@@ -4,11 +4,6 @@
 
 #[path = "support/fake_core.rs"]
 mod fake_core;
-#[path = "support/fake_herdr.rs"]
-mod fake_herdr;
-
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use fake_core::{terminal, FakeCore, State};
@@ -65,12 +60,9 @@ pub struct Setup {
 
 impl Setup {
     pub fn ctx(&self) -> Ctx {
-        let mut ctx = Ctx::new(self.dir.path().join("herdr.sock"), self.dir.path().into());
+        let mut ctx = Ctx::new(self.dir.path().into());
         ctx.core_socket = Some(CoreSocket::fixed(self.dir.path().join("core.sock")));
         ctx
-    }
-    pub fn herdr_sock(&self) -> PathBuf {
-        self.dir.path().join("herdr.sock")
     }
     /// The labels of terminal `addr` in the fake core now.
     pub fn labels(&self, addr: &str) -> Value {
@@ -158,10 +150,11 @@ async fn workspace_create_for_the_core_makes_a_new_space() {
     assert!(is_id(&run["labels"]["herdr.tab"], "tb"));
     assert_eq!(r["result"]["workspace"]["workspace_id"], format!("hc:space:{space}"));
     assert_eq!(r["result"]["root_pane"]["pane_id"], "hc:t4");
-    // Without the marker the call goes to herdr 1 (not running here) and the core is not used.
-    let r = sess.herdr("workspace.create", json!({"cwd": "/home/sam/web"})).await;
-    assert_eq!(r["error"]["code"], "herdr_unavailable", "{r}");
-    assert_eq!(s.core.calls_of("terminal.run").len(), 1);
+    // Without the marker (old apps), the core is the default.
+    let r = sess.herdr("workspace.create", json!({"cwd": "/home/sam/web", "label": "web", "focus": false})).await;
+    assert_eq!(r["result"]["root_pane"]["pane_id"], "hc:t5", "{r}");
+    assert_eq!(s.core.calls_of("terminal.run").len(), 2);
+    assert!(is_id(&s.core.calls_of("terminal.run")[1]["labels"]["herdr.space"], "sp"));
 }
 
 #[tokio::test]
@@ -315,14 +308,13 @@ async fn old_core_without_the_method_is_unsupported() {
 }
 
 #[tokio::test]
-async fn workspace_list_adds_core_workspaces() {
+async fn workspace_list_has_the_core_workspaces() {
     let s = setup();
-    let list = json!({"type": "workspace_list", "workspaces": [{"workspace_id": "w1", "label": "api"}]});
-    fake_herdr::spawn(&s.herdr_sock(), HashMap::from([("workspace.list".to_string(), list)]));
     let mut sess = Session::start(s.ctx());
     let r = sess.herdr("workspace.list", json!({})).await;
+    assert_eq!(r["result"]["type"], "workspace_list");
     let ids: Vec<&str> = r["result"]["workspaces"].as_array().unwrap().iter().map(|w| w["workspace_id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["w1", "hc:space:s1", "hc:g:clips"], "{r}");
+    assert_eq!(ids, ["hc:space:s1", "hc:g:clips"], "{r}");
 }
 
 #[tokio::test]
@@ -337,8 +329,8 @@ async fn groups_list_counts_spaces_and_groups() {
     assert_eq!(g[0]["terminals"], 2);
     assert_eq!(g[0]["agents"], 1);
     assert_eq!(g[1]["source"], "label");
-    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
-    assert_eq!(no_core.call("groups.list", json!({})).await["error"]["code"], "unsupported");
+    let mut no_core = Session::start(Ctx::new(s.dir.path().into()));
+    assert_eq!(no_core.call("groups.list", json!({})).await["error"]["code"], "herdr_unavailable");
 }
 
 #[tokio::test]
@@ -411,9 +403,9 @@ async fn session_start_refusals() {
         assert_eq!(r["error"]["code"], code, "{p}: {r}");
     }
     assert!(s.core.calls_of("terminal.run").is_empty());
-    let mut no_core = Session::start(Ctx::new(s.herdr_sock(), s.dir.path().into()));
+    let mut no_core = Session::start(Ctx::new(s.dir.path().into()));
     let r = no_core.call("session.start", json!({"cwd": "/home/sam", "kind": "claude"})).await;
-    assert_eq!(r["error"]["code"], "unsupported");
+    assert_eq!(r["error"]["code"], "herdr_unavailable");
 }
 
 fn git_ok(dir: &std::path::Path, args: &[&str]) -> bool {
@@ -442,10 +434,10 @@ async fn worktree_for_the_core_opens_a_new_space() {
     assert_eq!(run["cwd"], path.to_string_lossy().as_ref());
     assert!(is_id(&run["labels"]["herdr.space"], "sp") && is_id(&run["labels"]["herdr.tab"], "tb"), "{run}");
     assert_eq!(res["workspace_id"], format!("hc:space:{}", run["labels"]["herdr.space"].as_str().unwrap()));
-    // Without the marker no core terminal starts (herdr 1 is not running, so git makes it).
+    // Without the marker (old apps), the core is the default.
     let r = sess.call("git.worktree_add", json!({"cwd": root, "branch": "fix-y"})).await;
-    assert_eq!(r["result"]["via"], "git", "{r}");
-    assert_eq!(s.core.calls_of("terminal.run").len(), 1);
+    assert_eq!(r["result"]["via"], "herdr", "{r}");
+    assert_eq!(s.core.calls_of("terminal.run").len(), 2);
 }
 
 #[tokio::test]

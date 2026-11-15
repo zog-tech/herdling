@@ -5,13 +5,6 @@ use tokio::io::BufReader;
 use std::time::Duration;
 use herdlingd::{config, enroll, install, proxy, rpc, serve, update};
 
-fn herdr_socket(home: &std::path::Path) -> PathBuf {
-    match std::env::var_os("HERDR_SOCKET") {
-        Some(p) if !p.is_empty() => PathBuf::from(p),
-        _ => home.join(".config/herdr/herdr.sock"),
-    }
-}
-
 async fn shutdown_signal() {
     use tokio::signal::unix::{signal, SignalKind};
     match signal(SignalKind::terminate()) {
@@ -312,10 +305,9 @@ async fn main() -> Result<()> {
             if let Some((port, grant)) = std::env::var("SSH_ORIGINAL_COMMAND").ok().as_deref().and_then(proxy::parse_original_command) {
                 proxy_cmd(&home, port, &grant).await;
             }
-            let mut ctx = rpc::Ctx::new(herdr_socket(&home), home.clone());
+            let mut ctx = rpc::Ctx::new(home.clone());
             ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
             ctx.core_install = Some(herdlingd::core_install::CoreInstallCtx::new(&home, ctx.core_socket.clone()));
-            ctx.herdr_update = Some(herdlingd::herdr_update::HerdrUpdateCtx::new(&home));
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }
@@ -335,7 +327,6 @@ async fn main() -> Result<()> {
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             let ctx = serve::ServeCtx {
                 core_socket: herdlingd::core::endpoint::from_env(&home),
-                herdr_socket: herdr_socket(&home),
                 config_path: config::default_path(&home),
                 home,
                 push_url: "https://exp.host/--/api/v2/push/send".into(),

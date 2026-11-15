@@ -64,3 +64,16 @@ pub fn translate(n: &Notice) -> Option<Value> {
         _ => None,
     }
 }
+
+/// Event name with `.` replaced by `_` (herdr 1 lines use both spellings).
+pub fn event_name(ev: &Value) -> Option<String> {
+    ev.get("event").and_then(Value::as_str).map(|n| n.replace('.', "_"))
+}
+
+/// Pane id of a `pane_closed` event line, if it is one.
+pub fn closed_pane_id(ev: &Value) -> Option<&str> {
+    if event_name(ev)? != "pane_closed" {
+        return None;
+    }
+    ev.get("data")?.get("pane_id").and_then(Value::as_str)
+}

@@ -5,7 +5,7 @@ use herdlingd::{config, rpc};
 async fn call(config_path: &std::path::Path, params: Value) -> Value {
     let (mut client_tx, server_in) = tokio::io::duplex(65536);
     let (server_out, client_rx) = tokio::io::duplex(65536);
-    let mut ctx = rpc::Ctx::new(config_path.with_file_name("none.sock"), config_path.parent().unwrap().into());
+    let mut ctx = rpc::Ctx::new(config_path.parent().unwrap().into());
     ctx.config_path = config_path.into();
     tokio::spawn(rpc::run(BufReader::new(server_in), server_out, ctx));
     let req = json!({"id": 1, "method": "push.register", "params": params});

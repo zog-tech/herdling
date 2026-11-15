@@ -54,7 +54,22 @@ impl InputOrder {
         let herdr_method = params.get("method").and_then(Value::as_str)?;
         let empty = Value::Null;
         let herdr_params = params.get("params").unwrap_or(&empty);
-        let pane = crate::phone_input::input_pane(herdr_method, herdr_params)?;
+        let pane = input_pane(herdr_method, herdr_params)?;
         Some(self.take(pane))
     }
+}
+
+/// herdr methods that type into a pane, with the param that names the pane.
+const INPUT_METHODS: &[(&str, &str)] = &[
+    ("pane.send_text", "pane_id"),
+    ("pane.send_keys", "pane_id"),
+    ("pane.send_input", "pane_id"),
+    ("agent.prompt", "target"),
+    ("agent.send_keys", "target"),
+];
+
+/// The pane that a `herdr.call` of `method` with `params` types into, if it is input.
+pub fn input_pane<'a>(method: &str, params: &'a Value) -> Option<&'a str> {
+    let (_, key) = INPUT_METHODS.iter().find(|(m, _)| *m == method)?;
+    params.get(*key).and_then(Value::as_str).filter(|p| !p.is_empty())
 }
