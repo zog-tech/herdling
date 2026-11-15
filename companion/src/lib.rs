@@ -11,6 +11,7 @@ pub mod enroll;
 pub mod events;
 pub mod fsdirs;
 pub mod git;
+pub mod group_cmd;
 pub mod herdr;
 pub mod herdr_update;
 pub mod hostcmd;

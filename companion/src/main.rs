@@ -245,7 +245,8 @@ async fn main() -> Result<()> {
     const USAGE: &str = "usage: herdlingd rpc | serve | pair | enroll | install [--dry-run] | version\n       \
                          herdlingd devices | unpair <device_id>\n       \
                          herdlingd update [--check] [--version X.Y.Z] [--allow-downgrade]\n       \
-                         herdlingd proxy <port> <grant>";
+                         herdlingd proxy <port> <grant>\n       \
+                         herdlingd group <name> | group --clear  (in a Herdr 2 terminal)";
     if matches!(std::env::args().nth(1).as_deref(), Some("version" | "--version" | "-V")) {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -358,6 +359,23 @@ async fn main() -> Result<()> {
             };
             let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
             proxy_cmd(&home, port, &grant).await
+        }
+        Some("group") => {
+            // Sets or removes the `herdling.group` label of the Herdr 2 terminal that runs it.
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let cmd = herdlingd::group_cmd::parse(&args).map_err(|e| anyhow::anyhow!(e))?;
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            let text = herdlingd::group_cmd::run(
+                &cmd,
+                std::env::var("HC_TERMINAL_ID").ok(),
+                std::env::var_os("HC_TERMINAL_SOCKET").map(PathBuf::from),
+                herdlingd::core::endpoint::from_env(&home),
+                rpc::HERDR_TIMEOUT,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+            println!("{text}");
+            Ok(())
         }
         _ => bail!("{USAGE}"),
     }
