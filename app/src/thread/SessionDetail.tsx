@@ -20,6 +20,7 @@ import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
+import { tabPanes } from "@/herdr/tabPanes";
 import { markSeen } from "@/herdr/seen";
 import { chooseRestart, confirmDestructive, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
@@ -41,6 +42,7 @@ import { sendKey } from "@/terminal/keys";
 import { NOTIFY_LABEL, STOP_NOTIFY_LABEL, useShellWatch } from "@/terminal/shellWatch";
 import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
+import { PanePager } from "@/thread/PanePager";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
 import { PendingBubbles } from "@/thread/items/PendingBubble";
@@ -635,6 +637,8 @@ export function SessionDetail({
   // ⌘F opens the search of the thread or the terminal.
   useKeyCommand("find", () => setSearchOpen(true), { enabled: focused });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
+  // The other panes of this tab: page dots, a swipe and the tab map. Null for a tab with one pane.
+  const tab = useMemo(() => tabPanes(snapshot, paneId), [snapshot, paneId]);
   useKeyCommand("prevAgent", () => neighbors.prev && onOpenPane(neighbors.prev), { enabled: focused && neighborShortcuts });
   useKeyCommand("nextAgent", () => neighbors.next && onOpenPane(neighbors.next), { enabled: focused && neighborShortcuts });
 
@@ -675,6 +679,7 @@ export function SessionDetail({
             <Search size={icon.md} color={searchOpen ? colors.accent : colors.text} />
           </Pressable>
         </View>
+        {tab ? <PanePager tab={tab} onOpen={onOpenPane} /> : null}
         {searchOpen ? (
           view === "thread" ? (
             <SearchBar
