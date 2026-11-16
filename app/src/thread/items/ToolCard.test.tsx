@@ -133,3 +133,61 @@ test("expand_opens_the_tool_view", () => {
   const { useToolView } = require("../toolView");
   expect(useToolView.getState().current).toMatchObject({ id: "t2", hostId: "studio", paneId: "w1:p1", name: "Bash" });
 });
+
+type Res = { ok: boolean; text: string; truncated: boolean; ts?: number };
+function cardOf(name: string, input: unknown, result?: Res) {
+  return (
+    <GestureHandlerRootView>
+      <LiveToolContext.Provider value={live()}>
+        <ToolCard id="k1" ts={T0} name={name} inputSummary="" input={input} result={result} />
+      </LiveToolContext.Provider>
+    </GestureHandlerRootView>
+  );
+}
+const ok = (text: string): Res => ({ ok: true, text, truncated: false, ts: T0 + 1000 });
+
+test("edit_card_shows_counts_and_diff_rows", () => {
+  act(() => {
+    tree = create(cardOf("Edit", { file_path: "/p/src/a.ts", old_string: "x", new_string: "y\nz" }, ok("Updated")));
+  });
+  expect(texts(tree!)).toEqual(expect.arrayContaining(["+2", "−1"]));
+  expect(header(tree!).props.accessibilityLabel).toContain("2 lines added, 1 removed");
+  act(() => header(tree!).props.onPress());
+  const t = texts(tree!);
+  expect(t).toEqual(expect.arrayContaining(["-x", "+y", "+z", "a.ts"]));
+  expect(t.join("\n")).not.toContain("old_string");
+});
+
+test("bash_card_shows_command_and_output", () => {
+  act(() => {
+    tree = create(cardOf("Bash", { command: "pnpm test", description: "Run tests" }, { ok: false, text: "FAIL a.test.ts", truncated: false }));
+  });
+  act(() => header(tree!).props.onPress());
+  const t = texts(tree!);
+  expect(t).toEqual(expect.arrayContaining(["$ pnpm test", "Run tests"]));
+  expect(t.filter((x) => x === "FAIL a.test.ts")).toHaveLength(1);
+  expect(t).not.toContain("Error");
+});
+
+test("read_card_shows_only_the_result", () => {
+  act(() => {
+    tree = create(cardOf("Read", { file_path: "x" }, ok("file body")));
+  });
+  act(() => header(tree!).props.onPress());
+  const t = texts(tree!);
+  expect(t).toContain("file body");
+  expect(t).not.toContain("Input");
+});
+
+test("big_edit_is_capped_on_the_card", () => {
+  const neu = Array.from({ length: 500 }, (_, i) => `n${i}`).join("\n");
+  act(() => {
+    tree = create(cardOf("Edit", { file_path: "x", old_string: "", new_string: neu }, ok("Updated")));
+  });
+  act(() => header(tree!).props.onPress());
+  const t = texts(tree!);
+  const adds = t.filter((x) => typeof x === "string" && /^\+n\d+$/.test(x));
+  expect(adds.length).toBeLessThanOrEqual(400);
+  expect(adds.length).toBeGreaterThan(0);
+  expect(t).toContain("100 more lines. Tap Expand to see all.");
+});

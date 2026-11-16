@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { Check, ChevronDown, ChevronRight, CircleX, Maximize2 } from "lucide-react-native";
-import { memo, useContext, useEffect, useState } from "react";
+import { memo, useContext, useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { fontFamily } from "@/theme/fonts";
@@ -16,12 +16,14 @@ import { LinkedText } from "../LinkText";
 import { LiveToolContext } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
 import { toolCopyText } from "../rowMenu";
+import { classifyTool, diffCounts } from "../toolKinds";
 import { lastLines, openToolView, refreshToolView, toolTime, type ToolResult } from "../toolView";
 import { useTerminalText } from "../useTerminalText";
+import { LIVE_LINES, ToolBody } from "./ToolBody";
 
 const MAX_INPUT_CHARS = 4000;
-/** Lines of live output a running card shows. */
-export const LIVE_LINES = 30;
+// ToolBody owns the constant, so the two modules do not import each other.
+export { LIVE_LINES };
 /** Live output refresh while the card is open. */
 export const LIVE_REFRESH_MS = 1_500;
 
@@ -70,6 +72,8 @@ function LiveOutput({ hostId, paneId, enabled }: { hostId: string; paneId: strin
 
 /**
  * One tool call: collapsed to `Name · summary` with its state and time; tap shows input and result.
+ * An edit shows as diff rows with "+N −M" in the header, a new file as a preview, a command as
+ * `$ command` with its output, and a lookup only as its result (`ToolBody`).
  * A running card shows a spinner and a ticking timer. Opened, the newest running card shows the
  * pane's live output. "Expand" opens the full tool view. A long press on the header opens the
  * row menu: Copy (name, input and result) and Select text.
@@ -102,6 +106,9 @@ export const ToolCard = memo(function ToolCard({
   const time = running ? undefined : toolTime(ts, result, Date.now());
   const spokenTime = running ? (elapsed !== undefined ? spokenDuration(elapsed) : undefined) : time;
   const polls = !!live && open && running && live.active && live.newestRunningId === id;
+  const shape = useMemo(() => classifyTool(name, input), [name, input]);
+  const counts = diffCounts(shape);
+  const designed = shape.kind === "diff" || shape.kind === "write" || shape.kind === "shell";
 
   // Keep the full view fresh when it shows this tool.
   useEffect(() => {
@@ -122,7 +129,7 @@ export const ToolCard = memo(function ToolCard({
       <MenuPressable
         menu={{ kind: "tool", text: toolCopyText(name, input, result) }}
         accessibilityRole="button"
-        accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${spokenTime ? `, ${spokenTime}` : ""}`}
+        accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${counts ? `, ${counts.added} lines added, ${counts.deleted} removed` : ""}${spokenTime ? `, ${spokenTime}` : ""}`}
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((o) => !o)}
         style={({ pressed }) => ({
@@ -151,6 +158,13 @@ export const ToolCard = memo(function ToolCard({
             Failed
           </Text>
         ) : null}
+        {counts ? (
+          <Text variant="caption" style={{ fontVariant: ["tabular-nums"] }}>
+            <Text variant="caption" color={colors.diff.add}>{`+${counts.added}`}</Text>
+            <Text variant="caption">{" "}</Text>
+            <Text variant="caption" color={colors.diff.del}>{`−${counts.deleted}`}</Text>
+          </Text>
+        ) : null}
         {ticking ? (
           <TickingDuration since={ts} active={clockOn} muted={false} color={stateColor} accessible={false} />
         ) : time ? (
@@ -162,8 +176,9 @@ export const ToolCard = memo(function ToolCard({
       </MenuPressable>
       {open ? (
         <View style={{ paddingHorizontal: space.md, paddingBottom: space.md, gap: space.sm }}>
-          <Block label="Input" text={inputText(input) || "(none)"} />
-          {result ? (
+          {designed ? <ToolBody shape={shape} result={result} variant="card" /> : null}
+          {shape.kind === "other" ? <Block label="Input" text={inputText(input) || "(none)"} /> : null}
+          {result && shape.kind === "shell" ? null : result ? (
             <Block
               label={result.ok ? (result.truncated ? "Result (truncated)" : "Result") : "Error"}
               text={result.text || "(empty)"}
