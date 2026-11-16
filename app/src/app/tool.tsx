@@ -1,7 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { useIsFocused, useRouter } from "expo-router";
 import { Copy, RotateCcw, X } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { GestureDetector, usePinchGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -14,7 +14,9 @@ import { fullInputText, lastLines, toolTime, useToolView } from "@/thread/toolVi
 import { LinkedText } from "@/thread/LinkText";
 import { ThreadPaneContext } from "@/thread/LiveToolContext";
 import { useTerminalText } from "@/thread/useTerminalText";
+import { ToolBody } from "@/thread/items/ToolBody";
 import { LIVE_REFRESH_MS } from "@/thread/items/ToolCard";
+import { classifyTool } from "@/thread/toolKinds";
 import * as haptics from "@/ui/haptics";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
@@ -46,6 +48,7 @@ function IconButton({ label, onPress, children }: { label: string; onPress: () =
  * Full tool view (a modal; swipe down or Close). Tool name, full input and output (or live output
  * while it runs) in monospace, scrolls both ways. Pinch changes the font size (10–24 pt): the pinch
  * scales the text on the UI thread, and the new size is set once when the fingers lift.
+ * An edit, a new file or a command shows in the designed form of the card (`ToolBody`), at full size.
  */
 export default function ToolScreen() {
   const router = useRouter();
@@ -72,6 +75,7 @@ export default function ToolScreen() {
     },
   });
   const zoom = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  const shape = useMemo(() => (view ? classifyTool(view.name, view.input) : undefined), [view]);
 
   const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
   if (!view) {
@@ -97,6 +101,7 @@ export default function ToolScreen() {
   // A running tool shows a clock that ticks on the UI thread; a finished one shows its run time.
   const ticking = running && view.ts > 0;
   const time = ticking ? undefined : toolTime(view.ts, view.result, Date.now());
+  const designed = !!shape && (shape.kind === "diff" || shape.kind === "write" || shape.kind === "shell");
   const mono = { fontFamily: fontFamily.mono, fontSize: font, lineHeight: Math.round(font * 1.4), color: colors.text };
 
   const copy = async () => {
@@ -157,18 +162,28 @@ export default function ToolScreen() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg }} accessibilityHint="Pinch to change the text size">
           <ScrollView horizontal showsHorizontalScrollIndicator>
             <Animated.View style={[{ gap: space.md, transformOrigin: "top left" }, zoom]}>
-              <Text variant="caption" muted>
-                Input
-              </Text>
-              <Text selectable style={mono}>
-                <LinkedText text={input} />
-              </Text>
-              <Text variant="caption" muted>
-                {outLabel}
-              </Text>
-              <Text selectable style={[mono, view.result && !view.result.ok ? { color: colors.danger } : null]}>
-                <LinkedText text={output} />
-              </Text>
+              {designed ? <ToolBody shape={shape} result={view.result} variant="full" fontSize={font} /> : null}
+              {shape?.kind === "other" ? (
+                <>
+                  <Text variant="caption" muted>
+                    Input
+                  </Text>
+                  <Text selectable style={mono}>
+                    <LinkedText text={input} />
+                  </Text>
+                </>
+              ) : null}
+              {/* ToolBody draws the output of a finished command. */}
+              {designed && shape.kind === "shell" && view.result ? null : (
+                <>
+                  <Text variant="caption" muted>
+                    {outLabel}
+                  </Text>
+                  <Text selectable style={[mono, view.result && !view.result.ok ? { color: colors.danger } : null]}>
+                    <LinkedText text={output} />
+                  </Text>
+                </>
+              )}
             </Animated.View>
           </ScrollView>
         </ScrollView>

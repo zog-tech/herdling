@@ -202,6 +202,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Tool cards show edits as diffs, new files as previews and commands as `$ command` with the output.
+  An edit card shows "+N −M" in its header. "Expand" shows the same view at full size.
 - The terminal view of a computer with herdlingd 0.2.0 or later is a real terminal (xterm.js in a
   web view, on the raw `pane.watch` stream): an exact cell grid, full-width background colors, the
   cursor, full-screen apps, wide characters and emoji, in the terminal theme. Fit, Scroll sideways

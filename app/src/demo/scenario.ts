@@ -1155,7 +1155,7 @@ export class DemoScenario {
       seq: this.bump(),
       items: [
         { kind: "user", id: this.id(), ts: now - 12 * min, text: "Add tests for the signup flow." },
-        tool(this.id(), now - 10 * min, "Write", "tests/signup.test.ts", { file_path: "tests/signup.test.ts" }, "Wrote 146 lines"),
+        tool(this.id(), now - 10 * min, "Write", "tests/signup.test.ts", { file_path: "tests/signup.test.ts", content: DEMO_SIGNUP_TEST }, "Wrote 16 lines"),
         tool(this.id(), now - 8 * min, "Bash", "pnpm test tests/signup.test.ts", { command: "pnpm test tests/signup.test.ts" }, "Tests  12 passed (12)"),
         {
           kind: "assistant",
@@ -1299,7 +1299,12 @@ export class DemoScenario {
     });
 
     this.enqueue(p1, [
-      ...this.toolSteps(p1, "Edit", "src/lib/validate.ts", { file_path: "src/lib/validate.ts" }, "Updated 1 line", "Editing validate.ts", 2_500),
+      ...this.toolSteps(p1, "Edit", "src/lib/validate.ts", {
+          file_path: "src/lib/validate.ts",
+          old_string: "const EMAIL = /^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]{2,}$/i;",
+          new_string: "const EMAIL = /^[a-z0-9._+-]+@[a-z0-9.-]+\\.[a-z]{2,}$/i;",
+        },
+        "Updated 1 line", "Editing validate.ts", 2_500),
       {
         delay: 2_000,
         run: () => {
@@ -1332,7 +1337,12 @@ export class DemoScenario {
           });
         },
       },
-      ...this.toolSteps(p1, "Edit", "src/components/LoginForm.tsx", { file_path: "src/components/LoginForm.tsx" }, "Updated 3 lines", "Editing LoginForm.tsx", 2_500),
+      ...this.toolSteps(p1, "Edit", "src/components/LoginForm.tsx", {
+          file_path: "src/components/LoginForm.tsx",
+          old_string: "  const [valid, setValid] = useState(false);\n  const onBlur = () => setValid(validateEmail(email));",
+          new_string: "  const valid = validateEmail(email);",
+        },
+        "Updated 3 lines", "Editing LoginForm.tsx", 2_500),
       ...this.streamSteps(
         p1,
         "Fixed. The email pattern now accepts a `+` sign, and the submit button turns on as soon as the email is valid.\n\n- `src/lib/validate.ts`: new pattern\n- `src/components/LoginForm.tsx`: checks on each key press, not only on blur\n\nThe signup form uses the same validator, so it is fixed too. All 14 tests pass.",
@@ -1362,7 +1372,13 @@ export class DemoScenario {
           if (t?.kind === "tool") this.putItem(p2, { ...t, result: { ok: true, text: "+ zod 3.23.8\nDone in 1.4s", truncated: false, ts: Date.now() } });
         },
       },
-      ...this.toolSteps(p2, "Edit", "src/routes/users.ts", { file_path: "src/routes/users.ts" }, "Updated 18 lines", "Editing users.ts", 1_500),
+      ...this.toolSteps(p2, "Edit", "src/routes/users.ts", {
+          file_path: "src/routes/users.ts",
+          old_string: "router.post(\"/users\", async (req, res) => {\n  const user = await db.users.create(req.body);\n  res.json(user);\n});",
+          new_string:
+            "const NewUser = z.object({ name: z.string().min(1), email: z.string().email() });\n\nrouter.post(\"/users\", async (req, res) => {\n  const body = NewUser.safeParse(req.body);\n  if (!body.success) return res.status(400).json(body.error.flatten());\n  const user = await db.users.create(body.data);\n  res.json(user);\n});",
+        },
+        "Updated 6 lines", "Editing users.ts", 1_500),
       ...this.toolSteps(p2, "Bash", "pnpm test", { command: "pnpm test" }, "Tests  31 passed (31)", "Running pnpm test", 1_500),
       ...this.streamSteps(
         p2,
@@ -1372,6 +1388,25 @@ export class DemoScenario {
     ]);
   }
 }
+
+/** The content of the demo Write tool: a short test file. */
+const DEMO_SIGNUP_TEST = `import { fireEvent, render, screen } from "@testing-library/react";
+import { SignupForm } from "../src/components/SignupForm";
+
+describe("SignupForm", () => {
+  it("accepts an email with a plus sign", () => {
+    render(<SignupForm />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "sam+demo@example.com" } });
+    expect(screen.getByRole("button", { name: "Sign up" })).toBeEnabled();
+  });
+
+  it("rejects an email without a domain", () => {
+    render(<SignupForm />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "sam@" } });
+    expect(screen.getByRole("button", { name: "Sign up" })).toBeDisabled();
+  });
+});
+`;
 
 function tool(id: string, ts: number, name: string, summary: string, input: unknown, result: string | undefined): ThreadItem {
   return {

@@ -32,3 +32,27 @@ test("full_tool_view_timer_ticks_while_the_tool_runs", () => {
   act(() => t.unmount());
   jest.useRealTimers();
 });
+
+/** The strings of the Text nodes. A `LinkedText` child counts as its text. */
+const texts = (t: ReactTestRenderer) =>
+  t.root
+    .findAll((n) => (n.type as unknown) === "Text")
+    .map((n) => n.props.children)
+    .flat()
+    .map((c: unknown) => (c && typeof c === "object" && "props" in c && typeof (c as { props: { text?: unknown } }).props.text === "string" ? (c as { props: { text: string } }).props.text : c));
+
+test("full_screen_shows_the_edit_diff", () => {
+  openToolView({ id: "t2", hostId: "h", paneId: "p", name: "Edit", input: { file_path: "src/a.ts", old_string: "a", new_string: "b" }, ts: T0, result: { ok: true, text: "Updated", truncated: false, ts: T0 + 500 } });
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(
+      <GestureHandlerRootView>
+        <ToolScreen />
+      </GestureHandlerRootView>,
+    );
+  });
+  const all = texts(t);
+  expect(all).toEqual(expect.arrayContaining(["-a", "+b"]));
+  expect(all.join("\n")).not.toContain("old_string");
+  act(() => t.unmount());
+});
