@@ -190,7 +190,10 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, foo
                 </>
               ) : undefined
             }
-            keyboardDismissMode="interactive"
+            // Not "interactive": the keyboard then follows the finger, but the composer gets no
+            // keyboard events during the drag and leaves a gap. A drag now closes the keyboard at once.
+            // A tap on the thread (not on a button) closes it too ("handled").
+            keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
             initialNumToRender={12}
             windowSize={11}
