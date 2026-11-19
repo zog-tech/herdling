@@ -3,12 +3,26 @@ import { useState } from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { colors, denseScale, hitTarget, icon, radius, space, state } from "@/theme/tokens";
+import { useKeyboardHeight } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
 
 import { choiceView, destructiveKey, isFreeform, type Choice } from "./parseChoices";
 
 /** The menu takes at most this share of the window height and scrolls inside, so the thread stays visible. */
 const MAX_HEIGHT_SHARE = 0.55;
+/**
+ * With the keyboard up, the menu takes at most this share of the space above the keyboard. The
+ * prompt box and its buttons need the rest: a long answer must not push them under the keyboard.
+ */
+const KEYBOARD_SHARE = 0.3;
+/** The menu never gets lower than this: the header and part of one option stay visible. */
+const MIN_HEIGHT = 96;
+
+/** The highest the menu can be, in points, for a window height and a keyboard height (0: hidden). */
+export function menuMaxHeight(windowHeight: number, keyboardHeight: number): number {
+  if (keyboardHeight <= 0) return Math.round(windowHeight * MAX_HEIGHT_SHARE);
+  return Math.max(MIN_HEIGHT, Math.round((windowHeight - keyboardHeight) * KEYBOARD_SHARE));
+}
 /** The digit keycap: one line of body text high, so it lines up with the first line of the title. */
 const KEYCAP = 24;
 const TITLE_LINES = 2;
@@ -51,6 +65,7 @@ export function ChoiceMenu({
   disabled?: boolean;
 }) {
   const { height } = useWindowDimensions();
+  const keyboard = useKeyboardHeight();
   const [overflow, setOverflow] = useState({ box: 0, content: 0 });
   const danger = destructiveKey(choices);
   const rows = choices.filter((c) => !isFreeform(c));
@@ -59,7 +74,7 @@ export function ChoiceMenu({
   const scrolls = overflow.content > overflow.box + 1;
 
   return (
-    <View style={{ maxHeight: height * MAX_HEIGHT_SHARE, gap: space.sm, opacity: disabled ? state.disabledOpacity : 1 }}>
+    <View style={{ maxHeight: menuMaxHeight(height, keyboard), gap: space.sm, opacity: disabled ? state.disabledOpacity : 1 }}>
       <View
         style={{
           gap: space.xs / 2,
@@ -74,7 +89,7 @@ export function ChoiceMenu({
             <Text variant="small" bold color={colors.status.blocked}>
               {who} asks
             </Text>
-            <Text variant="headline" numberOfLines={3} accessibilityLiveRegion="polite">
+            <Text variant="headline" numberOfLines={keyboard > 0 ? 1 : 3} accessibilityLiveRegion="polite">
               {question}
             </Text>
           </>

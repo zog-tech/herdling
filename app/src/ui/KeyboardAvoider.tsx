@@ -184,3 +184,26 @@ export function useKeyboardShown(): boolean {
   }, []);
   return shown;
 }
+
+/**
+ * The height of the software keyboard in points, 0 while it is hidden. A show event with no frame
+ * gives the fallback height, so a view never takes the space of a keyboard it cannot measure.
+ */
+export function useKeyboardHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const onShow = (e: KeyboardEvent) => {
+      const h = e.endCoordinates?.height ?? 0;
+      setHeight(h > 0 ? h : fallbackKeyboardHeight(lastKeyboardHeight, Dimensions.get("window").height));
+    };
+    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", onShow);
+    const change = Platform.OS === "ios" ? Keyboard.addListener("keyboardWillChangeFrame", onShow) : undefined;
+    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setHeight(0));
+    return () => {
+      show.remove();
+      change?.remove();
+      hide.remove();
+    };
+  }, []);
+  return height;
+}

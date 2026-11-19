@@ -202,6 +202,7 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- While the keyboard is up, an agent question takes less space. The prompt box and its buttons stay visible.
 - The first prompt of a new session no longer shows twice (a sent copy and a "Queued" copy).
 - Tool cards show edits as diffs, new files as previews and commands as `$ command` with the output.
   An edit card shows "+N −M" in its header. "Expand" shows the same view at full size.

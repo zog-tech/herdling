@@ -3,7 +3,7 @@ import { join } from "path";
 import { Text } from "react-native";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
-import { ChoiceMenu } from "./ChoiceMenu";
+import { ChoiceMenu, menuMaxHeight } from "./ChoiceMenu";
 import { parseMenu, type Choice } from "./parseChoices";
 
 const fixture = (name: string) => readFileSync(join(__dirname, "__fixtures__", `${name}.txt`), "utf8");
@@ -101,4 +101,12 @@ describe("ChoiceMenu with a permission menu", () => {
     const { t } = render("❯ 1. Allow\n  2. Deny", { agent: undefined });
     expect(texts(t)).toContain("The agent asks you to choose");
   });
+});
+
+test("menu_max_height_shrinks_while_the_keyboard_is_up", () => {
+  expect(menuMaxHeight(800, 0)).toBe(440);
+  // 800 − 340 = 460 above the keyboard; the menu takes 30 % of it, the prompt box keeps the rest.
+  expect(menuMaxHeight(800, 340)).toBe(138);
+  // A very small space: the menu keeps its floor.
+  expect(menuMaxHeight(400, 340)).toBe(96);
 });
