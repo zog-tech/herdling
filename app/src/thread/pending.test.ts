@@ -143,3 +143,18 @@ test("an_older_item_that_contains_the_prompt_does_not_match", () => {
   reconcilePending(H, P, old);
   expect(states()).toEqual(["continue:sending"]);
 });
+
+test("a_first_prompt_whose_log_appears_with_its_copy_goes_away", () => {
+  // A new session: the thread loads only after the first prompt made the log, copy included.
+  const sent = 1_000_000;
+  addPending(H, P, "How do I fix this\n/home/sam/.cache/herdling/uploads/1-pasted-1.jpg", sent);
+  reconcilePending(H, P, [{ kind: "user", id: "u1", ts: sent + 2_000, text: "[Image #1]How do I fix this", images: 1 }], sent + 3_000);
+  expect(states()).toEqual([]);
+});
+
+test("an_older_copy_in_the_log_at_the_first_compare_does_not_match", () => {
+  const sent = 1_000_000;
+  addPending(H, P, "run the tests", sent);
+  reconcilePending(H, P, [{ kind: "user", id: "u1", ts: sent - 60_000, text: "run the tests" }], sent + 1_000);
+  expect(states()).toEqual(["run the tests:sending"]);
+});

@@ -53,6 +53,11 @@ export const usePending = create<State>(() => ({ byPane: {} }));
 
 /** A pending prompt older than this goes away. */
 export const PENDING_MAX_AGE_MS = 30 * 60_000;
+/**
+ * Clock difference allowed between the phone and the host. A log item written this long before the
+ * send, or later, can be the copy of the prompt.
+ */
+const CLOCK_SKEW_MS = 5_000;
 /** Characters compared between a pending prompt and a log user item. */
 const MATCH_CHARS = 200;
 
@@ -133,16 +138,18 @@ export function reconcilePending(hostId: string, paneId: string, items: ThreadIt
     const used = new Set<string>();
     let changed = false;
     const next: Pending[] = [];
-    for (const p of list) {
+    for (let p of list) {
       if (now - p.sentAt > PENDING_MAX_AGE_MS) {
         changed = true;
         continue;
       }
       if (!p.before) {
-        // First compare: what is in the log now is older than this prompt.
-        next.push({ ...p, before: users.map((u) => u.id) });
+        // First compare: what is in the log now is older than this prompt, except items written
+        // after the send. A first prompt makes the log file, so the thread loads only after the
+        // log already has the copy (with an image, the upload makes this gap longer).
+        const before = users.filter((u) => u.ts < p.sentAt - CLOCK_SKEW_MS).map((u) => u.id);
+        p = { ...p, before };
         changed = true;
-        continue;
       }
       // A failed call never reached the agent: a log item with the same text is an older prompt.
       if (p.state !== "failed") {
