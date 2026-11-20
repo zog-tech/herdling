@@ -188,10 +188,96 @@ describe("menuQuestion", () => {
   });
 
   it("parseMenu of the permission fixtures keeps the labels", () => {
-    for (const name of ["claude_bash_permission", "claude_bash_permission_wrapped", "claude_edit_permission"]) {
+    for (const name of [
+      "claude_bash_permission",
+      "claude_bash_permission_wrapped",
+      "claude_edit_permission",
+      "claude_bash_permission_heredoc",
+      "claude_bash_permission_rm",
+      "claude_bash_permission_subagent",
+    ]) {
       const s = fixture(name);
       expect(parseMenu(s).choices.map(({ key, label, selected }) => ({ key, label, selected }))).toEqual(parseChoices(s));
     }
+  });
+});
+
+describe("parseMenu context", () => {
+  it("is the command and the warning of a subagent prompt with no title on the screen", () => {
+    const menu = parseMenu(fixture("claude_bash_permission_subagent"));
+    expect(menu.question).toBe("Do you want to proceed?");
+    expect(menu.choices.map((c) => c.label)).toEqual(["Yes", "No"]);
+    expect(menu.context).toBe(
+      [
+        "cd /Users/sam/apps/clipper/.claude/worktrees/agent-a71f/production",
+        "p='pages/Subscriptions.tsx'",
+        "s=open(p).read()",
+        "def rep(a,b,n=1):",
+        "    global s",
+        "    assert s.count(a)==n, (s.count(a), a[:70])",
+        "    s=s.replace(a,b)",
+        'rep("const { isProUser } = useUserData();",',
+        '    "const { isProUser, pricingCurrency } = useUserData();")',
+        "open(p,'w').write(s)",
+        "EOF",
+        "Dangerous rm operation not ruled out — the shell may read this command differently than it was",
+      ].join("\n"),
+    );
+  });
+
+  it("is the body of a prompt between the frame rule and the question", () => {
+    expect(parseMenu(fixture("claude_bash_permission")).context).toBe("Bash command\n\n  git status\n  Show working tree status");
+    expect(parseMenu(fixture("claude_bash_permission_wrapped")).context).toBe("Bash command\n\n  git status\n  Show working tree status");
+    expect(parseMenu(fixture("claude_bash_permission_heredoc")).context).toBe(
+      [
+        "Bash command",
+        'Tip: auto mode handles these prompts for you — choose "switch to auto mode" below',
+        "Run a Python heredoc that prints hi",
+        "python3 - <<'EOF'",
+        "print('hi')",
+        "EOF",
+        "This command requires approval",
+      ].join("\n"),
+    );
+  });
+
+  it("stops the question at a dashed rule right above it", () => {
+    const menu = parseMenu(fixture("claude_bash_permission_rm"));
+    expect(menu.question).toBe("Do you want to proceed?");
+    expect(menu.context).toBe(
+      ["Bash command", 'Tip: auto mode handles these prompts for you — choose "switch to auto mode" below', "Remove the tmpdir3 folder if it exists", "rm -rf ./tmpdir3"].join("\n"),
+    );
+    expect(menu.choices.map((c) => c.key)).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("strips the side bars of a box and keeps the indent of the diff", () => {
+    const context = parseMenu(fixture("claude_edit_permission")).context!;
+    expect(context.split("\n").slice(0, 4)).toEqual(["Edit file", "src/main.rs", "", "1   fn main() {"]);
+    expect(context).toContain('2 -     println!("hello");');
+    expect(context).not.toMatch(/[│╭╮╰╯─]/);
+  });
+
+  it("strips | side bars only when every line has one", () => {
+    const boxed = "+--------+\n| Bash command\n|   ls | wc -l\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No";
+    expect(parseMenu(boxed).context).toBe("Bash command\n  ls | wc -l");
+    const piped = "────────\nls\n  | wc -l\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No";
+    expect(parseMenu(piped).context).toBe("ls\n  | wc -l");
+  });
+
+  it("keeps the last 60 lines of a long prompt", () => {
+    const body = Array.from({ length: 80 }, (_, i) => `line ${i}`).join("\n");
+    const context = parseMenu(`────────\n${body}\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No`).context!.split("\n");
+    expect(context).toHaveLength(60);
+    expect(context[59]).toBe("line 79");
+  });
+
+  it("is undefined for other menus", () => {
+    expect(parseMenu(fixture("claude_ask_user_question")).context).toBeUndefined();
+    expect(parseMenu("Which file\nshould I open?\n\n❯ 1. a\n  2. b").context).toBeUndefined();
+    // A rule right above the question leaves no body.
+    expect(parseMenu("────────\nDo you want to proceed?\n❯ 1. Yes\n  2. No").context).toBeUndefined();
+    // Agent output above the question is no prompt body.
+    expect(parseMenu("⏺ Done.\nDo you want to proceed?\n❯ 1. Yes\n  2. No").context).toBeUndefined();
   });
 });
 

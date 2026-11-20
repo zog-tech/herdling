@@ -16,7 +16,7 @@ export function useChoices(hostId: string, paneId: string, blocked: boolean): Ch
 }
 
 /**
- * `useChoices` plus the question above the menu. `choices` keeps the same array while the menu on
+ * `useChoices` plus the question above the menu and the prompt context (the command) above it. `choices` keeps the same array while the menu on
  * screen stays the same, also when only the question text changes.
  */
 export function useChoiceMenu(hostId: string, paneId: string, blocked: boolean): Menu {
@@ -47,8 +47,8 @@ export function useChoiceMenu(hostId: string, paneId: string, blocked: boolean):
         // Same menu as before: keep the old objects so the composer does not re-render every second.
         setMenu((prev) => {
           const same = sameChoices(prev.choices, next.choices);
-          if (same && prev.question === next.question) return prev;
-          return { choices: same ? prev.choices : next.choices, question: next.question };
+          if (same && prev.question === next.question && prev.context === next.context) return prev;
+          return { choices: same ? prev.choices : next.choices, question: next.question, context: next.context };
         });
       } catch {
         // The screen is unknown now: show no buttons (the composer shows the blocked message); the next tick retries.

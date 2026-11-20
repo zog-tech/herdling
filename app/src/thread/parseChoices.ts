@@ -18,8 +18,18 @@ const BOX_HEAD = /^[\s│╭╮╰╯─]*/;
 const CHOICE_LINE = /^\s*(?:([❯›>])\s*)?(\d)\.\s+(.+?)\s*$/;
 /** Most lines of question text that `menuQuestion` takes. */
 const QUESTION_LINES = 3;
+/** Most lines of prompt context that `parseMenu` keeps: the lines nearest to the question. */
+export const CONTEXT_LINES = 60;
+/** A rule line: only line characters and box corners (side bars removed first). */
+const RULE = /^[╭╮╰╯┌┐└┘+─━═╌┄┈╍-]{3,}$/;
+/** A solid rule of the prompt frame. A dashed rule (`╌`) is a separator inside the prompt. */
+const SOLID_RULE = /^[╭╰┌└+]?[─━═-]{3,}[╮╯┐┘+]?$/;
+/** The question of a Claude Code permission prompt. Only these menus get a `context`. */
+const PROMPT_QUESTION = /^(?:…)?(?:Do|Would) you (?:want|like) to\b/i;
+/** A line of the agent's own output (a message or the prompt line): the context never goes past it. */
+const AGENT_LINE = /^\s*[⏺●❯›]\s/;
 
-type Line = { indent: number; text: string };
+type Line = { indent: number; text: string; raw: string };
 /** A choice block on the screen: its choices (with parts) and the index of its first line in `lines`. */
 type Scan = { lines: Line[]; block: Choice[]; start: number };
 
@@ -28,7 +38,7 @@ function screenLines(screen: string): Line[] {
   return screen.split(/\r?\n/).map((raw) => {
     const l = raw.replace(BOX_TAIL, "");
     const indent = BOX_HEAD.exec(l)![0].length;
-    return { indent, text: l.slice(indent) };
+    return { indent, text: l.slice(indent), raw };
   });
 }
 
@@ -83,13 +93,20 @@ export function parseChoices(screen: string): Choice[] {
   return block.length ? block.map(({ key, label, selected }) => ({ key, label, selected })) : NONE;
 }
 
-/** A menu for display: the choices of `parseChoices` with their `parts`, and the question above them. */
-export type Menu = { choices: Choice[]; question?: string };
+/**
+ * A menu for display: the choices of `parseChoices` with their `parts`, and the question above them.
+ * `context`: the body of a Claude Code permission prompt above the question (the title, the command,
+ * the description, a warning), as screen lines. Undefined for other menus.
+ */
+export type Menu = { choices: Choice[]; question?: string; context?: string };
 
-/** `parseChoices` and `menuQuestion` in one pass, for the buttons in the app. */
+/** `parseChoices`, `menuQuestion` and the prompt context in one pass, for the buttons in the app. */
 export function parseMenu(screen: string): Menu {
   const s = scan(screen);
-  return s.block.length ? { choices: s.block, question: questionAbove(s) } : { choices: NONE };
+  if (!s.block.length) return { choices: NONE };
+  const q = questionTop(s);
+  const context = q.question && PROMPT_QUESTION.test(q.question) ? contextAbove(s.lines, q.top) : undefined;
+  return context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
 }
 
 /**
@@ -99,24 +116,65 @@ export function parseMenu(screen: string): Menu {
  * A longer paragraph keeps its last 3 lines and starts with "…".
  */
 export function menuQuestion(screen: string): string | undefined {
-  return questionAbove(scan(screen));
+  return questionTop(scan(screen)).question;
 }
 
-function questionAbove({ lines, start }: Scan): string | undefined {
-  if (start < 0) return undefined;
+/** True for a horizontal rule line, also inside a box (`│ ╰───╯ │`). */
+function isRule(raw: string): boolean {
+  return RULE.test(raw.replace(/[│\s]/g, ""));
+}
+
+/** The question above the menu and the index of its first line (the menu start when there is none). */
+function questionTop({ lines, start }: Scan): { question?: string; top: number } {
+  if (start < 0) return { top: -1 };
   let i = start - 1;
   while (i >= 0 && !lines[i].text) i--;
   const taken: string[] = [];
-  for (; i >= 0 && lines[i].text && !CHOICE_LINE.test(lines[i].text); i--) {
+  let top = start;
+  // A rule line ends the question: Claude Code can draw one right above it.
+  for (; i >= 0 && lines[i].text && !CHOICE_LINE.test(lines[i].text) && !isRule(lines[i].raw); i--) {
     if (taken.length === QUESTION_LINES) {
       taken[0] = `…${taken[0]}`;
       break;
     }
     taken.unshift(lines[i].text.trim());
+    top = i;
   }
   const question = taken.join(" ").replace(/\s+/g, " ").trim();
   // A line of only marks (a cursor, a rule) is no question.
-  return /[\p{L}\p{N}]/u.test(question) ? question : undefined;
+  return /[\p{L}\p{N}]/u.test(question) ? { question, top } : { top };
+}
+
+/**
+ * The prompt body above the question line `top`, or undefined. It goes up to the solid rule of the
+ * prompt frame, to a line of the agent's output, or to the top of the screen (a long command pushes
+ * the frame off the screen). Rule lines inside the prompt are left out. Box side bars and trailing
+ * white space are removed; the indent of the command stays, less the indent that all lines share.
+ */
+function contextAbove(lines: Line[], top: number): string | undefined {
+  const taken: string[] = [];
+  for (let i = top - 1; i >= 0 && taken.length < CONTEXT_LINES; i--) {
+    const raw = lines[i].raw;
+    const bare = raw.trim();
+    if (SOLID_RULE.test(bare)) break;
+    if (isRule(raw)) continue;
+    if (AGENT_LINE.test(raw)) break;
+    // Blank lines right above the question do not count toward the cap.
+    if (!taken.length && !bare) continue;
+    taken.unshift(raw);
+  }
+  let body = taken.map((l) => l.replace(/^(\s*│)+/, "").replace(/[\s│]+$/, ""));
+  // A box of "|" side bars: strip them only when every line has one, so a "| grep" line stays.
+  const filled = body.filter((l) => l.trim());
+  if (filled.length && filled.every((l) => /^\s*\|/.test(l))) body = body.map((l) => l.replace(/^\s*\|/, "").trimEnd());
+  const shared = Math.min(...body.filter((l) => l.trim()).map((l) => /^ */.exec(l)![0].length));
+  body = body.map((l) => (l.trim() ? l.slice(shared) : ""));
+  // No blank lines at the ends, and at most one blank line in a row.
+  const text = body
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "");
+  return /[\p{L}\p{N}]/u.test(text) ? text : undefined;
 }
 
 /** The display form of one option. */

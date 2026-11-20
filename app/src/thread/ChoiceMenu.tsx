@@ -1,12 +1,14 @@
-import { ChevronDown, ChevronUp, MessagesSquare, PenLine } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Maximize2, MessagesSquare, PenLine } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
-import { colors, denseScale, hitTarget, icon, radius, space, state } from "@/theme/tokens";
+import { fontFamily } from "@/theme/fonts";
+import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import { useKeyboardHeight } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
 
 import { choiceView, destructiveKey, isFreeform, type Choice } from "./parseChoices";
+import { openSelectText } from "./selectText";
 
 /** The menu takes at most this share of the window height and scrolls inside, so the thread stays visible. */
 const MAX_HEIGHT_SHARE = 0.55;
@@ -22,6 +24,16 @@ const MIN_HEIGHT = 96;
 export function menuMaxHeight(windowHeight: number, keyboardHeight: number): number {
   if (keyboardHeight <= 0) return Math.round(windowHeight * MAX_HEIGHT_SHARE);
   return Math.max(MIN_HEIGHT, Math.round((windowHeight - keyboardHeight) * KEYBOARD_SHARE));
+}
+/** The line height of the prompt context. The box shows at most `CONTEXT_ROWS` lines and scrolls inside. */
+const CONTEXT_LINE_HEIGHT = 18;
+const CONTEXT_ROWS = 8;
+/** The context box never takes more than this share of the menu: the options stay visible. */
+const CONTEXT_SHARE = 0.4;
+
+/** The highest the context box can be, in points, for the highest the menu can be. */
+export function contextMaxHeight(menuMax: number): number {
+  return Math.min(CONTEXT_ROWS * CONTEXT_LINE_HEIGHT + 2 * space.sm, Math.round(menuMax * CONTEXT_SHARE));
 }
 /** The digit keycap: one line of body text high, so it lines up with the first line of the title. */
 const KEYCAP = 24;
@@ -42,7 +54,9 @@ const AGENT_NAMES: Record<string, string> = {
 
 /**
  * The numbered menu of an agent (a permission prompt or a question), above the composer.
- * The header shows the question from the screen. Each option is a row: the digit in a keycap, the
+ * The header shows the question from the screen and, for a permission prompt, its context (the
+ * command and the warning) in a small box that scrolls inside. The box hides while the keyboard is
+ * up, because the prompt box needs the space. Each option is a row: the digit in a keycap, the
  * title, a "Recommended" chip and the detail (2 lines, the chevron shows all). The built-in
  * free-text options ("Type something.", "Chat about this") are small pills under the rows.
  * A tap sends the digit through `onPick`. The terminal cursor (`selected`) has no style: it means nothing on the phone.
@@ -50,6 +64,7 @@ const AGENT_NAMES: Record<string, string> = {
 export function ChoiceMenu({
   choices,
   question,
+  context,
   agent,
   onPick,
   onType,
@@ -57,6 +72,8 @@ export function ChoiceMenu({
 }: {
   choices: Choice[];
   question?: string;
+  /** The body of the permission prompt above the question (`parseMenu`). */
+  context?: string;
   /** The herdr agent kind, for "Claude asks". */
   agent?: string;
   onPick: (c: Choice) => void;
@@ -72,9 +89,10 @@ export function ChoiceMenu({
   const freeform = choices.filter(isFreeform);
   const who = (agent && AGENT_NAMES[agent]) || "The agent";
   const scrolls = overflow.content > overflow.box + 1;
+  const menuMax = menuMaxHeight(height, keyboard);
 
   return (
-    <View style={{ maxHeight: menuMaxHeight(height, keyboard), gap: space.sm, opacity: disabled ? state.disabledOpacity : 1 }}>
+    <View style={{ maxHeight: menuMax, gap: space.sm, opacity: disabled ? state.disabledOpacity : 1 }}>
       <View
         style={{
           gap: space.xs / 2,
@@ -98,6 +116,7 @@ export function ChoiceMenu({
             {who} asks you to choose
           </Text>
         )}
+        {context && keyboard <= 0 ? <PromptContext text={context} maxHeight={contextMaxHeight(menuMax)} /> : null}
       </View>
       <ScrollView
         style={{ flexGrow: 0 }}
@@ -128,6 +147,57 @@ export function ChoiceMenu({
           </View>
         ) : null}
       </ScrollView>
+    </View>
+  );
+}
+
+/**
+ * The command and the warning of a permission prompt, in mono on `sunken`. It scrolls inside its
+ * box; "Show all" opens the text on the "Select text" screen when it does not fit.
+ */
+function PromptContext({ text, maxHeight }: { text: string; maxHeight: number }) {
+  const [size, setSize] = useState({ box: 0, content: 0 });
+  const cut = size.content > size.box + 1;
+  return (
+    <View style={{ gap: space.xs / 2, marginTop: space.xs }}>
+      <ScrollView
+        nestedScrollEnabled
+        style={{ flexGrow: 0, maxHeight, backgroundColor: colors.sunken, borderRadius: radius.sm }}
+        contentContainerStyle={{ padding: space.sm }}
+        onLayout={(e) => {
+          const box = e.nativeEvent.layout.height;
+          setSize((s) => (s.box === box ? s : { ...s, box }));
+        }}
+        onContentSizeChange={(_w, content) => setSize((s) => (s.content === content ? s : { ...s, content }))}
+      >
+        <Text
+          selectable
+          accessibilityLabel={`Prompt details: ${text}`}
+          style={{ fontFamily: fontFamily.mono, fontSize: type.size.caption, lineHeight: CONTEXT_LINE_HEIGHT, color: colors.text }}
+        >
+          {text}
+        </Text>
+      </ScrollView>
+      {cut ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show all of the prompt"
+          onPress={() => openSelectText({ title: "Prompt", text })}
+          style={({ pressed }) => ({
+            alignSelf: "flex-start",
+            minHeight: hitTarget,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.xs,
+            opacity: pressed ? state.pressedOpacity : 1,
+          })}
+        >
+          <Maximize2 size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+          <Text variant="small" muted>
+            Show all
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

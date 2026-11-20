@@ -1,0 +1,20 @@
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ cd /Users/sam/apps/clipper/.claude/worktrees/agent-a71f/production
+ │ p='pages/Subscriptions.tsx'
+ │ s=open(p).read()
+ │ def rep(a,b,n=1):
+ │     global s
+ │     assert s.count(a)==n, (s.count(a), a[:70])
+ │     s=s.replace(a,b)
+ │ rep("const { isProUser } = useUserData();",
+ │     "const { isProUser, pricingCurrency } = useUserData();")
+ │ open(p,'w').write(s)
+ │ EOF
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ Dangerous rm operation not ruled out — the shell may read this command differently than it was
+ 
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel · Tab to amend · ctrl+x ctrl+k twice to stop background agents

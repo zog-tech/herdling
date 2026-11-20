@@ -3,8 +3,16 @@ import { join } from "path";
 import { Text } from "react-native";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
-import { ChoiceMenu, menuMaxHeight } from "./ChoiceMenu";
+import { ChoiceMenu, contextMaxHeight, menuMaxHeight } from "./ChoiceMenu";
 import { parseMenu, type Choice } from "./parseChoices";
+
+let mockKeyboard = 0;
+jest.mock("@/ui/KeyboardAvoider", () => ({ useKeyboardHeight: () => mockKeyboard }));
+const mockOpenSelectText = jest.fn();
+jest.mock("./selectText", () => ({ openSelectText: (v: unknown) => mockOpenSelectText(v) }));
+beforeEach(() => {
+  mockKeyboard = 0;
+});
 
 const fixture = (name: string) => readFileSync(join(__dirname, "__fixtures__", `${name}.txt`), "utf8");
 
@@ -20,7 +28,7 @@ function render(screen: string, props: Partial<Parameters<typeof ChoiceMenu>[0]>
   const onType = jest.fn();
   let t!: ReactTestRenderer;
   act(() => {
-    t = create(<ChoiceMenu choices={menu.choices} question={menu.question} agent="claude" onPick={onPick} onType={onType} {...props} />);
+    t = create(<ChoiceMenu choices={menu.choices} question={menu.question} context={menu.context} agent="claude" onPick={onPick} onType={onType} {...props} />);
   });
   return { t, onPick, onType, menu };
 }
@@ -109,4 +117,45 @@ test("menu_max_height_shrinks_while_the_keyboard_is_up", () => {
   expect(menuMaxHeight(800, 340)).toBe(138);
   // A very small space: the menu keeps its floor.
   expect(menuMaxHeight(400, 340)).toBe(96);
+});
+
+describe("ChoiceMenu with a prompt context", () => {
+  const contextBox = (t: ReactTestRenderer) =>
+    t.root.findAllByType(Text).filter((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Prompt details: "));
+
+  it("shows the command between the question and the options", () => {
+    const { t, menu } = render(fixture("claude_bash_permission_subagent"));
+    expect(texts(t)).toEqual(expect.arrayContaining(["Do you want to proceed?", menu.context!]));
+    expect(contextBox(t)).toHaveLength(1);
+    expect(menu.context).toContain("open(p,'w').write(s)");
+  });
+
+  it("hides the context while the keyboard is up", () => {
+    mockKeyboard = 340;
+    const { t } = render(fixture("claude_bash_permission_subagent"));
+    expect(contextBox(t)).toHaveLength(0);
+    expect(texts(t)).toContain("Do you want to proceed?");
+  });
+
+  it("offers Show all when the context does not fit, and opens the full text", () => {
+    const { t, menu } = render(fixture("claude_bash_permission_subagent"));
+    expect(byLabel(t, /^Show all of the prompt$/)).toHaveLength(0);
+    const box = t.root.find((n) => !!n.props.onContentSizeChange && n.props.nestedScrollEnabled);
+    act(() => {
+      box.props.onLayout({ nativeEvent: { layout: { height: 160 } } });
+      box.props.onContentSizeChange(300, 240);
+    });
+    act(() => byLabel(t, /^Show all of the prompt$/)[0].props.onPress());
+    expect(mockOpenSelectText).toHaveBeenCalledWith({ title: "Prompt", text: menu.context });
+  });
+
+  it("has no context box for a question menu", () => {
+    const { t } = render(fixture("claude_ask_user_question"));
+    expect(contextBox(t)).toHaveLength(0);
+  });
+});
+
+test("context_max_height_is_8_lines_or_less_on_a_small_menu", () => {
+  expect(contextMaxHeight(440)).toBe(8 * 18 + 16);
+  expect(contextMaxHeight(200)).toBe(80);
 });

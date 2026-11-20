@@ -204,7 +204,7 @@ export const Composer = memo(function Composer({
   const blocked = useSnapshots(
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
-  const { choices, question } = useChoiceMenu(hostId, paneId, blocked && online && visible);
+  const { choices, question, context } = useChoiceMenu(hostId, paneId, blocked && online && visible);
   /**
    * The menu (array from `useChoices`) that was answered or found stale. Its buttons stay hidden;
    * `useChoices` returns a new array only when the screen shows a different menu or the status changes.
@@ -461,6 +461,7 @@ export const Composer = memo(function Composer({
         <ChoiceMenu
           choices={choices}
           question={question}
+          context={context}
           agent={agentKind}
           onPick={(c) => void pick(c)}
           onType={() => inputRef.current?.focus()}
