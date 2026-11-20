@@ -1,5 +1,5 @@
-import { RotateCcw, Trash2, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { RotateCcw, Square, Trash2, X } from "lucide-react-native";
+import { useEffect, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import Animated, { useReducedMotion } from "react-native-reanimated";
 
@@ -76,9 +76,31 @@ function Transcribing() {
   );
 }
 
+/** A plain icon button at an end of the bar, with the full 44 pt target. */
+function BarButton({ label, onPress, children }: { label: string; onPress: () => void; children: ReactNode }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      hitSlop={space.xs}
+      style={({ pressed }) => ({
+        width: hitTarget,
+        height: hitTarget - 2,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: pressed ? state.pressedOpacity : 1,
+      })}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 /**
  * Takes the place of the prompt box while voice input runs:
- * recording → ✕ (discard), live waveform and elapsed time; the ✓ sits in the send slot.
+ * recording → ✕ (discard), live waveform, elapsed time and, with `onStop`, a stop button at the end.
+ * The stop button puts the text in the prompt box; the send button outside the bar sends it.
  * finishing → "Transcribing…" with a shimmer.
  * failed → Retry and Discard; the recording stays until one of them.
  */
@@ -87,9 +109,12 @@ export function RecordBar({
   onCancel,
   onRetry,
   onDiscard,
+  onStop,
 }: {
   phase: HoldState["phase"];
   onCancel: () => void;
+  /** Stop and transcribe into the prompt box. Without it, the bar has no stop button (a hold stops on release). */
+  onStop?: () => void;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
@@ -122,26 +147,20 @@ export function RecordBar({
     );
   }
   return (
-    <View style={[shell, { paddingRight: space.md, gap: space.sm }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Discard recording"
-        onPress={onCancel}
-        hitSlop={space.xs}
-        style={({ pressed }) => ({
-          width: hitTarget,
-          height: hitTarget - 2,
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: pressed ? state.pressedOpacity : 1,
-        })}
-      >
+    <View style={[shell, { paddingRight: onStop ? 0 : space.md, gap: space.sm }]}>
+      <BarButton label="Discard recording" onPress={onCancel}>
         <X size={icon.md} color={colors.text} />
-      </Pressable>
+      </BarButton>
       <View style={{ flex: 1, alignItems: "center", overflow: "hidden" }}>
         <Waveform />
       </View>
       <Elapsed />
+      {onStop ? (
+        // A small filled square in the text color: quiet like the ✕, not a red record disc.
+        <BarButton label="Stop and transcribe" onPress={onStop}>
+          <Square size={icon.sm} color={colors.text} fill={colors.text} />
+        </BarButton>
+      ) : null}
     </View>
   );
 }

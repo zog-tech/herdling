@@ -34,7 +34,10 @@ export function MicButton({
   /** Diameter of the idle button in points. While held, the button grows a little. */
   size?: number;
   hint?: boolean;
-  /** No fill and no ring at rest: a button inside the prompt pill. */
+  /**
+   * No fill and no ring at rest: a button inside the prompt pill. While held it gets a quiet
+   * `raised` fill, not the red ring: the record bar next to it shows the recording.
+   */
   bare?: boolean;
 }) {
   const icon = Math.min(28, Math.round(size / 2));
@@ -150,8 +153,8 @@ export function MicButton({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: RING,
-            borderColor: holding ? colors.danger : bare ? "transparent" : colors.raised,
-            backgroundColor: armed ? colors.danger : holding ? colors.card : bare ? "transparent" : colors.raised,
+            borderColor: bare ? (armed ? colors.danger : "transparent") : holding ? colors.danger : colors.raised,
+            backgroundColor: armed ? colors.danger : holding ? (bare ? colors.raised : colors.card) : bare ? "transparent" : colors.raised,
             opacity: off ? uiState.disabledOpacity : 1,
             transform: [{ scale: holding && !reduced ? motion.press.growScale : 1 }],
             transitionProperty: ["transform", "backgroundColor", "borderColor"],
@@ -162,7 +165,7 @@ export function MicButton({
           {armed ? (
             <X size={icon} color={colors.onAccent} />
           ) : (
-            <Mic size={icon} color={holding ? colors.danger : off ? colors.textMuted : colors.text} />
+            <Mic size={icon} color={holding && !bare ? colors.danger : off ? colors.textMuted : colors.text} />
           )}
         </Animated.View>
       </GestureDetector>
