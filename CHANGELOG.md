@@ -202,6 +202,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- A queued message of a working Claude Code agent shows "Send now". A tap presses Esc once: the
+  current turn stops, and Claude Code sends the queued messages at once.
 - A drag on the thread closes the keyboard at once. Before, a half drag left a gap above the keyboard.
 - While the keyboard is up, an agent question takes less space. The prompt box and its buttons stay visible.
 - The first prompt of a new session no longer shows twice (a sent copy and a "Queued" copy).
