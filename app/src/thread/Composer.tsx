@@ -1,6 +1,6 @@
 import type { CommandInfo } from "@herdling/protocol";
 import { File } from "expo-file-system";
-import { ArrowUp, Check } from "lucide-react-native";
+import { ArrowUp } from "lucide-react-native";
 import { memo, useEffect, useRef, useState, type ComponentRef } from "react";
 import { Pressable, TextInput, useWindowDimensions, View } from "react-native";
 
@@ -65,6 +65,8 @@ const INNER = 36;
 /** Space between the pill edge and its buttons: 44 pt pill = 4 + 36 + 4. */
 const INSET = (hitTarget - INNER) / 2;
 const INNER_GAP = space.xs;
+/** Space between the record bar and the button next to it. */
+const BAR_GAP = space.sm;
 /** Height of the button row under wrapped text. */
 const BUTTON_ROW = hitTarget;
 /** Most matches the typed `/` menu renders. */
@@ -81,8 +83,10 @@ export const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, " ").tri
 
 /**
  * Prompt box: multiline, grows to 5 lines, plus voice input; send = herdr `agent.prompt`.
- * Voice input: the mic records, a record bar takes the place of the box (✕ discards, ✓ stops),
- * and the text lands in the box after its text, for editing. It is not sent.
+ * Voice input: the mic records and a record bar takes the place of the box. The bar's ✕ discards and
+ * its stop button puts the text in the box after its text, for editing. The send button stops,
+ * transcribes and sends the prompt at once (the `stopAndSend` event of the hold machine).
+ * During a hold the mic stays in the row under the finger: removing it would end the gesture.
  * While the agent is blocked on a numbered menu, buttons answer it (`pane.send_keys` with the digit).
  * After "Type something." the agent shows a text field and stays blocked, so `agent.prompt` fails:
  * the next send types the text into the pane and presses Enter ("free-text mode").
@@ -174,10 +178,13 @@ export const Composer = memo(function Composer({
         )
       : undefined;
   const dictation = useDictation({
-    onText: (t) => {
-      putText((cur) => appendDictation(cur, t));
+    onText: (t, { send: andSend }) => {
+      const next = appendDictation(latest.current, t);
+      putText(next);
       if (error) setError(undefined);
-      inputRef.current?.focus();
+      // The send tap gave its haptic already. The text goes explicitly: `text` state is not updated yet.
+      if (andSend) void sendPrompt(next, true);
+      else inputRef.current?.focus();
     },
     onPartial: setPartial,
     hostStt,
@@ -191,12 +198,28 @@ export const Composer = memo(function Composer({
   /** The record bar takes the place of the "+" button and the prompt box. */
   const voiceActive = voicePhase !== "idle";
   const recordingNow = voicePhase === "recording" || voicePhase === "armedCancel";
+  /** A tap-started recording: no finger on the mic, so the mic leaves the row and the bar gets a stop button. */
+  const latchedNow = recordingNow && !!dictation.state.latched;
+  /** The mic shows at rest and under the finger of a hold. */
+  const showMic = visible && (!voiceActive || (recordingNow && !latchedNow));
+  /** After a send tap: the text is on its way and goes out when it lands. */
+  const voiceSending = voicePhase === "finishing" && !!dictation.state.send;
+  /** The send button while the mic records: stop, transcribe and send. */
+  const canVoiceSend = recordingNow && online;
   // Terminal mode hides the composer: a recording must not run on behind it.
   const voiceDispatch = dictation.dispatch;
   useEffect(() => {
     if (!visible) voiceDispatch({ type: "cancel", force: true });
   }, [visible, voiceDispatch]);
+  // The host went offline: drop the recording, as the mic does while it shows. A failed one stays for a retry.
+  useEffect(() => {
+    if (!online && dictation.state.phase !== "failed") voiceDispatch({ type: "cancel", force: true });
+    // Only a change of `online` cancels.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, voiceDispatch]);
   const canSend = online && !sending && !picking && !voiceActive && (text.trim().length > 0 || photos.length > 0 || pastes.length > 0);
+  /** The send button is gold when it can send, and while a voice send runs. */
+  const gold = canSend || canVoiceSend || voiceSending;
   const hasDraft = text.trim().length > 0 || photos.length > 0 || pastes.length > 0;
   useEffect(() => {
     onDraftChange?.(hasDraft);
@@ -585,10 +608,21 @@ export const Composer = memo(function Composer({
           }}
         />
         {voiceActive ? (
-          <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: trailInset - INSET, flexDirection: "row" }}>
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 0,
+              // Room for the send button, and for the held mic during a hold, with a gap before them.
+              right: INSET + INNER + (showMic ? INNER + INNER_GAP : 0) + BAR_GAP,
+              flexDirection: "row",
+            }}
+          >
             <RecordBar
               phase={voicePhase}
               onCancel={() => dictation.dispatch({ type: "cancel", force: true })}
+              onStop={latchedNow ? () => dictation.dispatch({ type: "toggle" }) : undefined}
               onRetry={() => dictation.dispatch({ type: "retry" })}
               onDiscard={() => dictation.dispatch({ type: "discard" })}
             />
@@ -619,59 +653,40 @@ export const Composer = memo(function Composer({
             />
           ) : null}
           <View style={{ flex: 1 }} pointerEvents="none" />
-          {visible ? <MicButton bare dictation={dictation} disabled={!online || sending} size={INNER} hint={false} /> : null}
-          {recordingNow ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Stop and transcribe"
-              onPress={() => dictation.dispatch({ type: "toggle" })}
-              hitSlop={(hitTarget - INNER) / 2}
-              style={({ pressed }) => ({
-                width: INNER,
-                height: INNER,
-                borderRadius: INNER / 2,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: pressed ? colors.accentPressed : colors.accent,
-              })}
-            >
-              <Check size={20} color={colors.onAccent} />
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              accessibilityState={{ disabled: !canSend, busy: sending }}
-              disabled={!canSend}
-              onPress={send}
-              hitSlop={(hitTarget - INNER) / 2}
-              style={{ width: INNER, height: INNER }}
-            >
-              {({ pressed }) => (
-                // Quiet graphite when empty; gold fades in (CSS transition, UI thread) when there is text.
-                // A press dips it; Reduce Motion keeps the color change and drops the scale.
-                <Animated.View
-                  style={{
-                    flex: 1,
-                    borderRadius: INNER / 2,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: canSend ? (pressed ? colors.accentPressed : colors.accent) : colors.raised,
-                    transform: [{ scale: pressed && !reduced ? motion.send.pressScale : 1 }],
-                    transitionProperty: ["backgroundColor", "transform"],
-                    transitionDuration: [motion.send.fadeMs, motion.raisedPressMs],
-                    transitionTimingFunction: SEND_EASE,
-                  }}
-                >
-                  {sending ? (
-                    <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={20} color={colors.onAccent} />} />
-                  ) : (
-                    <ArrowUp size={20} color={canSend ? colors.onAccent : colors.textMuted} />
-                  )}
-                </Animated.View>
-              )}
-            </Pressable>
-          )}
+          {showMic ? <MicButton bare dictation={dictation} disabled={!online || sending} size={INNER} hint={false} /> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send"
+            accessibilityState={{ disabled: !(canSend || canVoiceSend), busy: sending || voiceSending }}
+            disabled={!(canSend || canVoiceSend)}
+            onPress={canVoiceSend ? () => dictation.dispatch({ type: "stopAndSend" }) : send}
+            hitSlop={(hitTarget - INNER) / 2}
+            style={{ width: INNER, height: INNER }}
+          >
+            {({ pressed }) => (
+              // Quiet graphite when empty; gold fades in (CSS transition, UI thread) when there is text.
+              // A press dips it; Reduce Motion keeps the color change and drops the scale.
+              <Animated.View
+                style={{
+                  flex: 1,
+                  borderRadius: INNER / 2,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: gold ? (pressed ? colors.accentPressed : colors.accent) : colors.raised,
+                  transform: [{ scale: pressed && !reduced ? motion.send.pressScale : 1 }],
+                  transitionProperty: ["backgroundColor", "transform"],
+                  transitionDuration: [motion.send.fadeMs, motion.raisedPressMs],
+                  transitionTimingFunction: SEND_EASE,
+                }}
+              >
+                {sending || voiceSending ? (
+                  <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={20} color={colors.onAccent} />} />
+                ) : (
+                  <ArrowUp size={20} color={gold ? colors.onAccent : colors.textMuted} />
+                )}
+              </Animated.View>
+            )}
+          </Pressable>
         </View>
       </GlassSurface>
       </View>

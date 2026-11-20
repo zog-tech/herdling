@@ -74,12 +74,15 @@ jest.mock("@/hosts/connection", () => ({
 }));
 jest.mock("@/voice/MicButton", () => ({ MicButton: () => null }));
 let mockVoicePhase = "idle";
+/** More fields of the hold state (`latched`, `send`). */
+let mockVoiceExtra: Record<string, unknown> = {};
 const mockVoiceDispatch = jest.fn();
-let mockOnText: ((t: string) => void) | undefined;
+let mockOnTextRaw: ((t: string, o: { send: boolean }) => void) | undefined;
+const mockOnText = (t: string, o = { send: false }) => mockOnTextRaw!(t, o);
 jest.mock("@/voice/useDictation", () => ({
-  useDictation: (o: { onText: (t: string) => void }) => {
-    mockOnText = o.onText;
-    return { state: { phase: mockVoicePhase, partial: "" }, dispatch: mockVoiceDispatch, clearError: () => {} };
+  useDictation: (o: { onText: (t: string, opts: { send: boolean }) => void }) => {
+    mockOnTextRaw = o.onText;
+    return { state: { phase: mockVoicePhase, partial: "", ...mockVoiceExtra }, dispatch: mockVoiceDispatch, clearError: () => {} };
   },
 }));
 jest.mock("@/voice/RecordBar", () => ({ RecordBar: () => null }));
@@ -147,6 +150,7 @@ beforeEach(() => {
   mockUploadFails = false;
   mockSendGate = undefined;
   mockVoicePhase = "idle";
+  mockVoiceExtra = {};
   mockVoiceDispatch.mockClear();
   clearCommandsCache();
   useSnapshots.setState({ byHost: { "host-1": { agents: [{ pane_id: "w1:p1", agent_status: "blocked" }] } as any }, errors: {} });
@@ -766,24 +770,80 @@ describe("a build without the native paste hook", () => {
   });
 });
 
-test("recording_swaps_the_box_for_the_record_bar_and_the_text_lands_appended", async () => {
-  mockVoicePhase = "recording";
-  await act(async () => {
-    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="fix the bug" />);
-  });
-  expect(tree!.root.findAll((n) => n.type === MockRecordBar)).toHaveLength(1);
-  // The box stays mounted (the keyboard stays up) but takes no text while the mic records.
-  expect(prompt(tree!).props.editable).toBe(false);
-  const check = tree!.root.find((n) => n.props.accessibilityLabel === "Stop and transcribe" && !!n.props.onPress);
-  act(() => check.props.onPress());
-  expect(mockVoiceDispatch).toHaveBeenCalledWith({ type: "toggle" });
+describe("voice input", () => {
+  const bar = (t: ReactTestRenderer) => t.root.find((n) => n.type === MockRecordBar);
+  const mics = (t: ReactTestRenderer) => t.root.findAll((n) => n.type === MicButton);
+  const sendButton = (t: ReactTestRenderer) => t.root.find((n) => n.props.accessibilityLabel === "Send" && !!n.props.onPress);
+  const mount = async (initialText?: string) => {
+    await act(async () => {
+      tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText={initialText} />);
+    });
+  };
+  const rerender = () => act(async () => tree!.update(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />));
 
-  mockVoicePhase = "idle";
-  await act(async () => tree!.update(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} initialText="fix the bug" />));
-  act(() => mockOnText!("in the parser"));
-  expect(prompt(tree!).props.value).toBe("fix the bug in the parser");
-  // The text is not sent.
-  expect(mockCalls.filter((c) => c.method !== "pane.read")).toHaveLength(0);
+  test("a_hold_keeps_the_mic_under_the_finger_and_the_bar_has_no_stop", async () => {
+    mockVoicePhase = "recording";
+    await mount("fix the bug");
+    expect(mics(tree!)).toHaveLength(1);
+    expect(bar(tree!).props.onStop).toBeUndefined();
+    // The box stays mounted (the keyboard stays up) but takes no text while the mic records.
+    expect(prompt(tree!).props.editable).toBe(false);
+    // The bar ends before the mic and the send button, with a gap: send 36 + mic 36 + 4 + inset 4 + gap 8.
+    expect(bar(tree!).parent!.props.style.right).toBe(88);
+    act(() => sendButton(tree!).props.onPress());
+    expect(mockVoiceDispatch).toHaveBeenCalledWith({ type: "stopAndSend" });
+  });
+
+  test("a_tap_started_recording_hides_the_mic_and_the_bar_stops_into_the_box", async () => {
+    mockVoicePhase = "recording";
+    mockVoiceExtra = { latched: true };
+    await mount("fix the bug");
+    expect(mics(tree!)).toHaveLength(0);
+    expect(bar(tree!).parent!.props.style.right).toBe(48);
+    const send = sendButton(tree!);
+    expect(send.props.disabled).toBe(false);
+    act(() => bar(tree!).props.onStop());
+    expect(mockVoiceDispatch).toHaveBeenLastCalledWith({ type: "toggle" });
+    act(() => send.props.onPress());
+    expect(mockVoiceDispatch).toHaveBeenLastCalledWith({ type: "stopAndSend" });
+
+    // Stop: the text lands after the draft, for editing. It is not sent.
+    mockVoicePhase = "idle";
+    mockVoiceExtra = {};
+    await rerender();
+    expect(mics(tree!)).toHaveLength(1);
+    act(() => mockOnText("in the parser"));
+    expect(prompt(tree!).props.value).toBe("fix the bug in the parser");
+    expect(mockCalls.filter((c) => c.method !== "pane.read")).toHaveLength(0);
+  });
+
+  test("after_a_send_tap_the_slot_spins_and_the_text_goes_out_through_the_normal_send", async () => {
+    idle();
+    mockVoicePhase = "finishing";
+    mockVoiceExtra = { send: true };
+    await mount("fix the bug");
+    expect(mics(tree!)).toHaveLength(0);
+    expect(sendButton(tree!).props.disabled).toBe(true);
+    expect(sendButton(tree!).props.accessibilityState).toEqual({ disabled: true, busy: true });
+
+    mockVoicePhase = "idle";
+    mockVoiceExtra = {};
+    await rerender();
+    jest.mocked(haptics.press).mockClear();
+    await act(async () => mockOnText("in the parser", { send: true }));
+    await flush();
+    expect(prompts()).toEqual(["fix the bug in the parser"]);
+    expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["queued"]);
+    expect(prompt(tree!).props.value).toBe("");
+    // The send tap gave the one haptic (in the hold machine); the send adds none.
+    expect(haptics.press).not.toHaveBeenCalled();
+  });
+
+  test("a_finishing_stop_without_send_shows_a_quiet_send_button", async () => {
+    mockVoicePhase = "finishing";
+    await mount("draft");
+    expect(sendButton(tree!).props.accessibilityState).toEqual({ disabled: true, busy: false });
+  });
 });
 
 test("composer_and_pending_bubbles_are_memoized", () => {
@@ -922,7 +982,7 @@ describe("long pastes", () => {
     await act(async () => {
       tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
     });
-    act(() => mockOnText!(block));
+    act(() => mockOnText(block));
     expect(prompt(tree!).props.value).toBe(block);
     await act(async () => prompt(tree!).props.onChangeText(`${block} ok`));
     expect(prompt(tree!).props.value).toBe(`${block} ok`);
