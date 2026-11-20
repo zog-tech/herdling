@@ -146,16 +146,61 @@ function cardOf(name: string, input: unknown, result?: Res) {
 }
 const ok = (text: string): Res => ({ ok: true, text, truncated: false, ts: T0 + 1000 });
 
-test("edit_card_shows_counts_and_diff_rows", () => {
+test("edit_card_shows_counts_and_diff_rows_with_no_tap", () => {
   act(() => {
     tree = create(cardOf("Edit", { file_path: "/p/src/a.ts", old_string: "x", new_string: "y\nz" }, ok("Updated")));
   });
   expect(texts(tree!)).toEqual(expect.arrayContaining(["+2", "−1"]));
   expect(header(tree!).props.accessibilityLabel).toContain("2 lines added, 1 removed");
-  act(() => header(tree!).props.onPress());
-  const t = texts(tree!);
+  expect(header(tree!).props.accessibilityState).toEqual({ expanded: true });
+  let t = texts(tree!);
   expect(t).toEqual(expect.arrayContaining(["-x", "+y", "+z", "a.ts"]));
   expect(t.join("\n")).not.toContain("old_string");
+  // The preview has no result block and no "Show all" row for a short diff.
+  expect(t).not.toContain("Updated");
+  expect(t.some((x) => typeof x === "string" && x.startsWith("Show all"))).toBe(false);
+  // A tap closes the preview; the next tap opens the full card.
+  act(() => header(tree!).props.onPress());
+  expect(header(tree!).props.accessibilityState).toEqual({ expanded: false });
+  expect(texts(tree!)).not.toContain("+y");
+  act(() => header(tree!).props.onPress());
+  t = texts(tree!);
+  expect(t).toEqual(expect.arrayContaining(["+y", "Updated"]));
+});
+
+test("write_card_previews_the_first_lines", () => {
+  const content = Array.from({ length: 20 }, (_, i) => `w${i}`).join("\n");
+  act(() => {
+    tree = create(cardOf("Write", { file_path: "/p/b.ts", content }, ok("Created")));
+  });
+  const t = texts(tree!);
+  expect(t.filter((x) => typeof x === "string" && /^\+w\d+$/.test(x))).toHaveLength(12);
+  expect(t).toContain("Show all 20 lines");
+});
+
+test("big_edit_preview_is_capped_and_show_all_opens_the_card", () => {
+  const neu = Array.from({ length: 30 }, (_, i) => `n${i}`).join("\n");
+  act(() => {
+    tree = create(cardOf("Edit", { file_path: "x", old_string: "", new_string: neu }, ok("Updated")));
+  });
+  const adds = () => texts(tree!).filter((x) => typeof x === "string" && /^\+n\d+$/.test(x));
+  expect(adds()).toHaveLength(12);
+  expect(texts(tree!)).toContain("Show all 30 lines");
+  act(() => tree!.root.find((n) => n.props.accessibilityLabel === "Show all 30 lines" && !!n.props.onPress).props.onPress());
+  expect(adds()).toHaveLength(30);
+  expect(texts(tree!)).toContain("Updated");
+});
+
+test("failed_edit_stays_closed_and_red", () => {
+  act(() => {
+    tree = create(cardOf("Edit", { file_path: "x", old_string: "a", new_string: "b" }, { ok: false, text: "String not found", truncated: false }));
+  });
+  const t = texts(tree!);
+  expect(t).toContain("Failed");
+  expect(t).not.toContain("+b");
+  expect(header(tree!).props.accessibilityState).toEqual({ expanded: false });
+  act(() => header(tree!).props.onPress());
+  expect(texts(tree!)).toEqual(expect.arrayContaining(["+b", "String not found"]));
 });
 
 test("bash_card_shows_command_and_output", () => {
@@ -184,6 +229,8 @@ test("big_edit_is_capped_on_the_card", () => {
   act(() => {
     tree = create(cardOf("Edit", { file_path: "x", old_string: "", new_string: neu }, ok("Updated")));
   });
+  // The first tap closes the preview, the second opens the full card.
+  act(() => header(tree!).props.onPress());
   act(() => header(tree!).props.onPress());
   const t = texts(tree!);
   const adds = t.filter((x) => typeof x === "string" && /^\+n\d+$/.test(x));

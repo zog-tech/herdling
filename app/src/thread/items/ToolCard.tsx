@@ -71,7 +71,15 @@ function LiveOutput({ hostId, paneId, enabled }: { hostId: string; paneId: strin
 }
 
 /**
+ * How much of a card shows. "preview" is the default of an edit or a new file: the first diff rows
+ * under the header, as the Claude Code terminal draws them. Other kinds start "closed".
+ */
+type CardView = "preview" | "closed" | "open";
+
+/**
  * One tool call: collapsed to `Name · summary` with its state and time; tap shows input and result.
+ * An edit or a new file that did not fail shows a short preview of its rows with no tap. A tap on
+ * the header closes it; the next tap opens the full card.
  * An edit shows as diff rows with "+N −M" in the header, a new file as a preview, a command as
  * `$ command` with its output, and a lookup only as its result (`ToolBody`).
  * A running card shows a spinner and a ticking timer. Opened, the newest running card shows the
@@ -95,9 +103,14 @@ export const ToolCard = memo(function ToolCard({
 }) {
   const router = useRouter();
   const live = useContext(LiveToolContext);
-  const [open, setOpen] = useState(false);
-  const Chevron = open ? ChevronDown : ChevronRight;
   const state = !result ? "running" : result.ok ? "ok" : "failed";
+  const shape = useMemo(() => classifyTool(name, input), [name, input]);
+  // Unset until the first tap: the card then shows its default for the kind and the state.
+  const [chosen, setChosen] = useState<CardView | undefined>(undefined);
+  const previews = (shape.kind === "diff" || shape.kind === "write") && state !== "failed";
+  const view: CardView = chosen ?? (previews ? "preview" : "closed");
+  const open = view === "open";
+  const Chevron = view === "closed" ? ChevronRight : ChevronDown;
   const running = state === "running";
   const ticking = running && ts > 0;
   const clockOn = ticking && (live?.active ?? true);
@@ -106,7 +119,6 @@ export const ToolCard = memo(function ToolCard({
   const time = running ? undefined : toolTime(ts, result, Date.now());
   const spokenTime = running ? (elapsed !== undefined ? spokenDuration(elapsed) : undefined) : time;
   const polls = !!live && open && running && live.active && live.newestRunningId === id;
-  const shape = useMemo(() => classifyTool(name, input), [name, input]);
   const counts = diffCounts(shape);
   const designed = shape.kind === "diff" || shape.kind === "write" || shape.kind === "shell";
 
@@ -130,8 +142,8 @@ export const ToolCard = memo(function ToolCard({
         menu={{ kind: "tool", text: toolCopyText(name, input, result) }}
         accessibilityRole="button"
         accessibilityLabel={`${name} ${inputSummary}, ${stateLabel}${counts ? `, ${counts.added} lines added, ${counts.deleted} removed` : ""}${spokenTime ? `, ${spokenTime}` : ""}`}
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((o) => !o)}
+        accessibilityState={{ expanded: view !== "closed" }}
+        onPress={() => setChosen(view === "closed" ? "open" : "closed")}
         style={({ pressed }) => ({
           minHeight: hitTarget,
           flexDirection: "row",
@@ -174,6 +186,11 @@ export const ToolCard = memo(function ToolCard({
         ) : null}
         <Chevron size={14} color={colors.textMuted} />
       </MenuPressable>
+      {view === "preview" ? (
+        <View style={{ paddingHorizontal: space.md, paddingBottom: space.sm }}>
+          <ToolBody shape={shape} result={result} variant="preview" onShowAll={() => setChosen("open")} />
+        </View>
+      ) : null}
       {open ? (
         <View style={{ paddingHorizontal: space.md, paddingBottom: space.md, gap: space.sm }}>
           {designed ? <ToolBody shape={shape} result={result} variant="card" /> : null}

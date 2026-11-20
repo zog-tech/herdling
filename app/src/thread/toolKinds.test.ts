@@ -1,4 +1,4 @@
-import { classifyTool, diffCounts, lineDiff, parsePatch, LCS_MAX_CELLS } from "./toolKinds";
+import { classifyTool, diffCounts, firstLines, lineDiff, parsePatch, splitLines, LCS_MAX_CELLS } from "./toolKinds";
 
 const rows = (ls: { kind: string; text: string }[]) => ls.map((l) => `${l.kind}:${l.text}`);
 
@@ -76,4 +76,11 @@ test("bad_inputs_are_other", () => {
   expect(classifyTool("Edit", "plain text").kind).toBe("other");
   expect(classifyTool("Edit", { file_path: "x", old_string: 5, new_string: "b" }).kind).toBe("other");
   expect(diffCounts({ kind: "other" })).toBeNull();
+});
+
+test("first_lines_match_split_lines", () => {
+  for (const text of ["", "a", "a\n", "a\r\nb\r\n", "a\n\nb", "x\ny\nz\nw"]) {
+    expect(firstLines(text, 100)).toEqual(splitLines(text));
+  }
+  expect(firstLines("a\nb\nc", 2)).toEqual(["a", "b"]);
 });

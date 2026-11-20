@@ -1,26 +1,29 @@
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { DIFF_PAGE_LINES, MAX_LINE_CHARS, splitPath, type DiffLine } from "@/changes/diff";
 import { fontFamily } from "@/theme/fonts";
-import { colors, radius, space, type } from "@/theme/tokens";
+import { colors, hitTarget, radius, space, state as uiState, type } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
 
 import { HScrollView } from "../HScrollView";
 import { LinkedText } from "../LinkText";
-import { splitLines, type ToolShape } from "../toolKinds";
+import { firstLines, splitLines, type ToolShape } from "../toolKinds";
 import { lastLines, type ToolResult } from "../toolView";
 
 /**
  * The designed body of a tool call: an edit as diff rows, a new file as a preview, a command as
  * `$ command` with its output. The card and the full tool screen ("full") share it, so both look
  * the same. The rows keep the "+" and "-" signs, so color is never the only cue.
+ * The "preview" variant is the short form that a closed edit card shows in the thread.
  */
 
 /** Lines of output a card shows: the live output of a running tool, and the output of a command. */
 export const LIVE_LINES = 30;
 /** Diff rows a card shows over all files. More rows make a long card slow to draw. */
 export const CARD_DIFF_ROWS = 400;
+/** Diff rows the inline preview of an edit shows in the thread, before "Show all". */
+export const PREVIEW_ROWS = 12;
 
 const CARD_LINE_HEIGHT = 18;
 
@@ -95,6 +98,22 @@ function PathLine({ path }: { path: string }) {
   );
 }
 
+/** The last row of a preview with hidden rows: it opens the card. */
+function ShowAll({ total, onPress }: { total: number; onPress?: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Show all ${total} lines`}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: hitTarget, justifyContent: "center", opacity: pressed ? uiState.pressedOpacity : 1 })}
+    >
+      <Text variant="caption" bold color={colors.textMuted}>
+        {`Show all ${total} lines`}
+      </Text>
+    </Pressable>
+  );
+}
+
 function MoreNote({ hidden, card }: { hidden: number; card: boolean }) {
   if (hidden <= 0) return null;
   return (
@@ -108,25 +127,33 @@ function cut(line: string): string {
   return line.length > MAX_LINE_CHARS ? `${line.slice(0, MAX_LINE_CHARS)}…` : line;
 }
 
-/** The body of an open tool card, or of the full tool screen ("full"). Null for kinds "lookup" and "other". */
+/**
+ * The body of an open tool card, of the inline preview of an edit ("preview"), or of the full
+ * tool screen ("full"). Null for kinds "lookup" and "other", and for a command in a preview.
+ */
 export function ToolBody({
   shape,
   result,
   variant,
   fontSize,
+  onShowAll,
 }: {
   shape: ToolShape;
   result?: ToolResult;
-  variant: "card" | "full";
+  variant: "card" | "preview" | "full";
   /** Full screen font size; the card uses the caption size. */
   fontSize?: number;
+  /** Preview only: the "Show all" row opens the card. */
+  onShowAll?: () => void;
 }): React.ReactElement | null {
-  const card = variant === "card";
+  const preview = variant === "preview";
+  // The preview is a card with fewer rows: the same size, the same sideways scroll.
+  const card = variant !== "full";
   const m: Metrics =
     card || fontSize === undefined
       ? { fontSize: type.size.caption, lineHeight: CARD_LINE_HEIGHT }
       : { fontSize, lineHeight: Math.round(fontSize * 1.4) };
-  const cap = card ? CARD_DIFF_ROWS : DIFF_PAGE_LINES;
+  const cap = preview ? PREVIEW_ROWS : card ? CARD_DIFF_ROWS : DIFF_PAGE_LINES;
 
   if (shape.kind === "diff") {
     let left = cap;
@@ -147,14 +174,20 @@ export function ToolBody({
     return (
       <View style={{ gap: space.sm }}>
         {parts}
-        <MoreNote hidden={hidden} card={card} />
+        {preview ? (
+          hidden > 0 ? <ShowAll total={shape.files.reduce((n, f) => n + f.lines.length, 0)} onPress={onShowAll} /> : null
+        ) : (
+          <MoreNote hidden={hidden} card={card} />
+        )}
       </View>
     );
   }
 
   if (shape.kind === "write") {
-    const all = splitLines(shape.content);
+    // The preview reads only its first lines, so a big file costs no full split.
+    const all = preview ? firstLines(shape.content, cap) : splitLines(shape.content);
     const shown: DiffLine[] = all.slice(0, cap).map((l) => ({ kind: "add", text: cut(`+${l}`) }));
+    const hidden = (preview ? shape.lineCount : all.length) - shown.length;
     return (
       <View style={{ gap: space.xs }}>
         <PathLine path={shape.path} />
@@ -162,12 +195,17 @@ export function ToolBody({
           {`New file · ${shape.lineCount} ${shape.lineCount === 1 ? "line" : "lines"}`}
         </Text>
         {shown.length > 0 ? <Rows lines={shown} m={m} card={card} /> : null}
-        <MoreNote hidden={all.length - shown.length} card={card} />
+        {preview ? (
+          hidden > 0 ? <ShowAll total={shape.lineCount} onPress={onShowAll} /> : null
+        ) : (
+          <MoreNote hidden={hidden} card={card} />
+        )}
       </View>
     );
   }
 
   if (shape.kind === "shell") {
+    if (preview) return null;
     const failed = !!result && !result.ok;
     const raw = result ? (card ? lastLines(result.text, LIVE_LINES) : result.text) : "";
     const out = raw || "(no output)";

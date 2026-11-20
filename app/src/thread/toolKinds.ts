@@ -61,6 +61,20 @@ export function splitLines(text: string): string[] {
   return lines;
 }
 
+/** The first `n` lines of a text, as `splitLines` gives them, with no split of the whole text. */
+export function firstLines(text: string, n: number): string[] {
+  const out: string[] = [];
+  let at = 0;
+  while (out.length < n && at < text.length) {
+    const end = text.indexOf("\n", at);
+    const line = end < 0 ? text.slice(at) : text.slice(at, end);
+    out.push(end >= 0 && line.endsWith("\r") ? line.slice(0, -1) : line);
+    if (end < 0) break;
+    at = end + 1;
+  }
+  return out;
+}
+
 function pairOf(o: Obj): [string, string] | undefined {
   for (const [a, b] of PAIRS) {
     const oldText = str(o, a);
