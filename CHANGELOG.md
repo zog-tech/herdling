@@ -202,6 +202,11 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- A permission menu of Claude Code shows the prompt above the options: the command, the description
+  and the warning, in a small box that scrolls. "Show all" opens the full text. Before, the menu of a
+  background subagent showed only "Do you want to proceed?" and not the command.
+- Edit cards show the code change in the thread with no tap, as Claude Code does in the terminal:
+  the first 12 diff rows under the header, then "Show all N lines". A tap on the header closes it.
 - A queued message of a working Claude Code agent shows "Send now". A tap presses Esc once: the
   current turn stops, and Claude Code sends the queued messages at once.
 - The "..." menu of a Claude Code session has "Model": Default, Opus, Sonnet or Haiku. A pick sends
