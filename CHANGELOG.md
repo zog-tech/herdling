@@ -202,6 +202,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Thread view: a Claude Code prompt with a question in other words ("Allow this read outside the
+  working directories?") shows its title and file path above the buttons, as other permission prompts do.
 - Voice input in the prompt box: while the mic records, the send button stops, transcribes and
   sends the prompt at once. A small stop button at the end of the record bar puts the text in the
   box for editing. The mic leaves the row during a tapped recording, and the bar has a gap before

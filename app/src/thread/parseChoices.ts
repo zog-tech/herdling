@@ -24,8 +24,13 @@ export const CONTEXT_LINES = 60;
 const RULE = /^[╭╮╰╯┌┐└┘+─━═╌┄┈╍-]{3,}$/;
 /** A solid rule of the prompt frame. A dashed rule (`╌`) is a separator inside the prompt. */
 const SOLID_RULE = /^[╭╰┌└+]?[─━═-]{3,}[╮╯┐┘+]?$/;
-/** The question of a Claude Code permission prompt. Only these menus get a `context`. */
-const PROMPT_QUESTION = /^(?:…)?(?:Do|Would) you (?:want|like) to\b/i;
+/**
+ * The question of a Claude Code permission prompt. Only these menus get a `context`.
+ * Newer prompts ask "Allow this read outside the working directories?".
+ */
+const PROMPT_QUESTION = /^(?:…)?(?:(?:Do|Would) you (?:want|like) to|Allow)\b/i;
+/** The footer of a Claude Code permission prompt, also for a question in other words. */
+const PROMPT_FOOTER = /\bTab to amend\b/;
 /** A line of the agent's own output (a message or the prompt line): the context never goes past it. */
 const AGENT_LINE = /^\s*[⏺●❯›]\s/;
 
@@ -105,7 +110,8 @@ export function parseMenu(screen: string): Menu {
   const s = scan(screen);
   if (!s.block.length) return { choices: NONE };
   const q = questionTop(s);
-  const context = q.question && PROMPT_QUESTION.test(q.question) ? contextAbove(s.lines, q.top) : undefined;
+  const footer = s.lines.slice(-6).some((l) => PROMPT_FOOTER.test(l.text));
+  const context = q.question && (PROMPT_QUESTION.test(q.question) || footer) ? contextAbove(s.lines, q.top) : undefined;
   return context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
 }
 

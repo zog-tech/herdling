@@ -273,6 +273,15 @@ describe("parseMenu context", () => {
 
   it("is undefined for other menus", () => {
     expect(parseMenu(fixture("claude_ask_user_question")).context).toBeUndefined();
+  });
+
+  it("is the title and the path of a read outside the working directories", () => {
+    const menu = parseMenu(fixture("claude_read_outside"));
+    expect(menu.question).toBe("Allow this read outside the working directories?");
+    expect(menu.choices).toHaveLength(4);
+    const context = menu.context!.split("\n");
+    expect(context.slice(0, 2)).toEqual(["Read outside the working directories", "Read(/home/sam/proj/docs/screens/home-dark.png)"]);
+    expect(menu.context).toContain("Auto mode and the sandbox");
     expect(parseMenu("Which file\nshould I open?\n\n❯ 1. a\n  2. b").context).toBeUndefined();
     // A rule right above the question leaves no body.
     expect(parseMenu("────────\nDo you want to proceed?\n❯ 1. Yes\n  2. No").context).toBeUndefined();
