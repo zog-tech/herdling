@@ -45,6 +45,16 @@ export function updateStatus(host: Host, hello: Hello | undefined): UpdateStatus
   return { kind: "none" };
 }
 
+/**
+ * True when the last `update.check` of this herdlingd found no newer release. Then an update cannot
+ * add the methods that the app misses (the app can be ahead of the last release), so the
+ * "Update herdlingd" hint stays hidden.
+ */
+export function isLatestRelease(host: Host, hello: Hello | undefined): boolean {
+  const c = host.updateCheck;
+  return !!hello && !!c && c.current === hello.herdlingd && !c.updateAvailable;
+}
+
 /** True when the Overview shows the one-line notice: an update the user did not close. */
 export function showUpdateNotice(host: Host, status: UpdateStatus): boolean {
   return status.kind === "available" && host.dismissedUpdate !== status.to;

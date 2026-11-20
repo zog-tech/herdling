@@ -7,13 +7,13 @@ import { Text } from "@/ui/Text";
 
 import { needsHerdlingdUpdate, UPDATE_HERDLINGD_HINT } from "./methods";
 import { useHosts, type Host } from "./store";
-import { showUpdateNotice, updateStatus } from "./updates";
+import { isLatestRelease, showUpdateNotice, updateStatus } from "./updates";
 import type { HostConn } from "./connection";
 
 /**
  * One quiet line under a host on the Overview: "herdlingd X → Y available", which opens the host
  * screen, and a close button that hides it for that version. A herdlingd that misses methods gets
- * the older hint instead.
+ * the older hint instead, unless it is the latest release.
  */
 export function UpdateNotice({ host, conn }: { host: Host; conn: HostConn }) {
   const router = useRouter();
@@ -54,7 +54,7 @@ export function UpdateNotice({ host, conn }: { host: Host; conn: HostConn }) {
       </View>
     );
   }
-  if (!hello || !needsHerdlingdUpdate(hello)) return null;
+  if (!hello || !needsHerdlingdUpdate(hello) || isLatestRelease(host, hello)) return null;
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${UPDATE_HERDLINGD_HINT}. Open ${host.name}`} onPress={open}>
       <Text variant="small" muted>

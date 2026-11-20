@@ -26,6 +26,7 @@ import {
   applyUpdate,
   CHECK_EVERY_MS,
   checkForUpdate,
+  isLatestRelease,
   shouldCheck,
   showUpdateNotice,
   updateStatus,
@@ -108,6 +109,16 @@ describe("updateStatus", () => {
     expect(showUpdateNotice(base, status)).toBe(true);
     expect(showUpdateNotice({ ...base, dismissedUpdate: "0.2.0" }, status)).toBe(false);
     expect(showUpdateNotice({ ...base, dismissedUpdate: "0.1.5" }, status)).toBe(true);
+  });
+});
+
+describe("isLatestRelease", () => {
+  it("is true only when the last check of this version found no newer release", () => {
+    expect(isLatestRelease({ ...base, updateCheck: cache({ updateAvailable: false }) }, hello("0.1.0"))).toBe(true);
+    expect(isLatestRelease({ ...base, updateCheck: cache() }, hello("0.1.0"))).toBe(false);
+    expect(isLatestRelease({ ...base, updateCheck: cache({ updateAvailable: false }) }, hello("0.0.9"))).toBe(false);
+    expect(isLatestRelease(base, hello("0.1.0"))).toBe(false);
+    expect(isLatestRelease({ ...base, updateCheck: cache({ updateAvailable: false }) }, undefined)).toBe(false);
   });
 });
 

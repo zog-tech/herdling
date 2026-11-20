@@ -218,6 +218,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Overview: the "Update herdlingd" hint stays hidden when the host already runs the latest
+  herdlingd release, also when the app knows newer methods than that release has.
 - "Simulators" on the host screen and in the session menu: a list of the iOS simulators and
   Android emulators of the computer, and a mirror screen that shows the device as video through
   the preview tunnel. Touches go to the device; a toolbar sends Home, Back, Recent apps, Lock,
