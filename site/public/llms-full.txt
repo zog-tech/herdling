@@ -422,8 +422,9 @@ The message box at the bottom ("Message the agent"):
 - **Attach photos.** Tap **+**, then **Photos**, or long-press the box and paste an image. Up to 4 photos. The photos go to the computer, and their paths go at the end of your message, so the agent can read them.
 - **Commands and skills.** Type `/` as the first character to see the agent's commands. For Codex, type `$` for skills. For OpenCode, type `@` for skills. Or tap **+**, then **Commands & skills**.
 - **Speak.** Tap the mic to record and tap again to stop, or hold the mic and release. Slide away to cancel. The text goes into the box. Herdling does not send it until you tap send.
+- **Send now.** A message that you send while Claude Code works waits in its queue ("Queued"). Tap **Send now** under it to stop the current turn. Claude Code then gets the queued messages at once.
 
-The header has a speaker button (**Speak replies**) and a **...** menu: **Restart**, **Resume older session**, rename, and **Close** (stops the agent and closes its pane).
+The header has a speaker button (**Speak replies**) and a **...** menu: **Restart**, **Resume older session**, **Model** (Claude Code: Default, Opus, Sonnet or Haiku, while the agent is idle), rename, and **Close** (stops the agent and closes its pane).
 
 #### Which agents work with what
 
