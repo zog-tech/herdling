@@ -209,7 +209,7 @@ describe("parseMenu context", () => {
     expect(menu.choices.map((c) => c.label)).toEqual(["Yes", "No"]);
     expect(menu.context).toBe(
       [
-        "cd /Users/sam/apps/clipper/.claude/worktrees/agent-a71f/production",
+        "cd /home/sam/proj/.claude/worktrees/agent-a71f/production",
         "p='pages/Subscriptions.tsx'",
         "s=open(p).read()",
         "def rep(a,b,n=1):",

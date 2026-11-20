@@ -1,5 +1,5 @@
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
- │ cd /Users/sam/apps/clipper/.claude/worktrees/agent-a71f/production
+ │ cd /home/sam/proj/.claude/worktrees/agent-a71f/production
  │ p='pages/Subscriptions.tsx'
  │ s=open(p).read()
  │ def rep(a,b,n=1):
