@@ -455,6 +455,7 @@ pub const METHODS: &[&str] = &[
     "machines.suggest",
     "core.status",
     "core.install",
+    "files.get",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -509,6 +510,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Resu
         "machines.suggest" => machines_suggest(ctx).await,
         "core.status" => core_status(ctx).await,
         "core.install" => core_install(ctx).await,
+        "files.get" => files_get(ctx, params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }
@@ -1096,6 +1098,20 @@ async fn files_put(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .await
         .map_err(|e| err("internal", e.to_string()))??;
     Ok(json!({ "path": path.to_string_lossy() }))
+}
+
+/// A read-only look at one path for the file viewer. See [`crate::files`]. A relative path
+/// starts at `cwd`, else at the folder of `pane_id`.
+async fn files_get(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let raw = str_param(&params, "path", "files.get")?.to_string();
+    let cwd = if crate::files::is_relative(&raw) { Some(git_cwd(ctx, &params, "files.get").await?) } else { None };
+    let path = crate::files::resolve(&ctx.home, &raw, cwd.as_deref()).map_err(|m| err("bad_request", format!("files.get: {m}")))?;
+    let req = crate::files::GetReq {
+        path,
+        hidden: params.get("hidden").and_then(Value::as_bool).unwrap_or(false),
+        offset: params.get("offset").and_then(Value::as_u64).unwrap_or(0),
+    };
+    tokio::task::spawn_blocking(move || crate::files::get(&req)).await.map_err(|e| err("internal", e.to_string()))?
 }
 
 /// The folder of a git call: `cwd`, else the folder of `pane_id` from herdr.

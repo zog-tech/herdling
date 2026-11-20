@@ -9,6 +9,7 @@ pub mod core;
 pub mod core_install;
 pub mod cpace;
 pub mod enroll;
+pub mod files;
 pub mod fsdirs;
 pub mod git;
 pub mod group_cmd;
