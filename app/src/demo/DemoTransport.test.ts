@@ -22,6 +22,8 @@ import type {
   PaneMove,
   PortsList,
   PreviewClose,
+  DevicesList,
+  MirrorStop,
   PreviewOpen,
   RecentSession,
   SessionStart,
@@ -291,6 +293,12 @@ describe("DemoTransport", () => {
     expect(await callError("preview.open", { port: "5173" })).toMatchObject({ code: "bad_request" });
     expect(await call<PreviewClose>("preview.close", { grant: open.grant }).then(ok("preview.close"))).toEqual({ closed: true });
     expect(await callError("preview.close", { grant: "../x" })).toMatchObject({ code: "grant_invalid" });
+
+    // The device mirror: the demo computer has no simulator.
+    expect(await call<DevicesList>("devices.list").then(ok("devices.list"))).toMatchObject({ devices: [] });
+    expect(await callError("mirror.start", { device: "ios:0000" })).toMatchObject({ code: "unsupported" });
+    answered.add("mirror.start");
+    expect(await call<MirrorStop>("mirror.stop", { device: "ios:0000" }).then(ok("mirror.stop"))).toEqual({ stopped: false });
 
     // "Notify me when it finishes": the demo keeps the watch and sends no push.
     expect(await call<ShellWatch>("shell.watch", { pane_id: "t1" }).then(ok("shell.watch"))).toMatchObject({ pane_id: "t1", busy: false });

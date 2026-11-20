@@ -654,6 +654,55 @@ export type PreviewOpen = { grant: string; port: number; expires_at: number };
 export type PreviewCloseParams = { grant: string };
 export type PreviewClose = { closed: boolean };
 
+/** The platform of a mirror device. */
+export type DevicePlatform = "ios" | "android";
+/** `simulator`: an iOS simulator. `emulator`: an Android emulator. `device`: a real Android device (not offered). */
+export type DeviceKind = "simulator" | "emulator" | "device";
+/** One item of `devices.list`: a booted iOS simulator or an Android device of the computer. */
+export type MirrorDevice = {
+  /** `ios:<udid>` or `android:<serial>`. */
+  id: string;
+  platform: DevicePlatform;
+  kind: DeviceKind;
+  name: string;
+  /** For example `iOS 26.5` or `Android 15`. */
+  os?: string;
+  /** The simulator type (`iPhone-17`) or the AVD name. */
+  model?: string;
+  /** True when the mirror can try video; else it uses screenshots. */
+  video: boolean;
+  /** True when the mirror can send taps, text and keys. */
+  input: boolean;
+  /** True when this rpc process runs a mirror of the device. */
+  mirroring?: boolean;
+};
+/** `devices.list` result. `tools` says which programs herdlingd found; `scrcpy` is the pinned scrcpy server version. */
+export type DevicesList = {
+  devices: MirrorDevice[];
+  tools: { xcrun: boolean; idb: boolean; idb_companion?: boolean; adb: boolean };
+  scrcpy?: string;
+};
+/** `mirror.start` params. `allow_device` is needed for a real device; `max_size` (320–4096) caps the Android video edge. */
+export type MirrorStartParams = { device: string; allow_device?: boolean; max_size?: number };
+/**
+ * `mirror.start` result. The mirror server listens on `127.0.0.1:<port>`; the page is at `path`
+ * (`/m/<token>/`). `grant` is a preview grant for the port, as from `preview.open`.
+ */
+export type MirrorStart = {
+  device: string;
+  platform: DevicePlatform;
+  name: string;
+  port: number;
+  path: string;
+  grant: string;
+  expires_at: number;
+  source: "video" | "screenshots";
+  input: boolean;
+};
+/** `mirror.stop` params and result. `stopped` is false when no mirror of the device ran. */
+export type MirrorStopParams = { device: string };
+export type MirrorStop = { stopped: boolean };
+
 /**
  * `shell.watch` params. herdlingd sends one push when the command in the shell pane finishes
  * (the foreground goes from another process back to the shell). With `device_id`, only that

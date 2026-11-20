@@ -18,6 +18,7 @@ import { authorizedKeysCommand } from "./authorizedKeys";
 import { LOGIN_HINT, startsAtLogin } from "./boot";
 import { runtimeDownText } from "./coreInstall";
 import { HostNotices } from "./HostNotices";
+import { DevicesRow } from "./DevicesRow";
 import { IntegrationsRow } from "./IntegrationsRow";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
@@ -139,6 +140,7 @@ export function HostForm({ host }: { host?: Host }) {
       {host ? <CoreCard hostId={host.id} /> : null}
       {host ? <HostNotices hostId={host.id} /> : null}
       {host ? <IntegrationsRow hostId={host.id} card /> : null}
+      {host ? <DevicesRow hostId={host.id} /> : null}
       <Card>
         <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
         <Field

@@ -19,6 +19,8 @@ import type {
   PaneMove,
   PortsList,
   PreviewClose,
+  DevicesList,
+  MirrorStop,
   ShellUnwatch,
   ShellWatch,
   SessionStart,
@@ -363,6 +365,15 @@ export class DemoTransport implements LineTransport {
         if (!/^[0-9a-f]{32}$/.test(grant)) throw new DemoError("grant_invalid", "grant must be 32 lowercase hex characters");
         return { closed: true } satisfies PreviewClose;
       }
+      // The demo computer has no simulator: the app hides the device mirror for the demo host.
+      case "devices.list":
+        return { devices: [], tools: { xcrun: false, idb: false, adb: false } } satisfies DevicesList;
+      case "mirror.start":
+        need(p, "device", method);
+        throw new DemoError("unsupported", "the demo computer has no simulator");
+      case "mirror.stop":
+        need(p, "device", method);
+        return { stopped: false } satisfies MirrorStop;
       case "shell.watch": {
         const pane = need(p, "pane_id", method);
         const since = Math.floor(Date.now() / 1000);

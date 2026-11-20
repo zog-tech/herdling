@@ -36,6 +36,7 @@ import { herdrSupports } from "@/herdr/support";
 import { statusLabel, useTerminalStatus } from "@/herdr/terminalStatus";
 import { showsTerminal, terminalFolder, terminalPane, terminalTitle } from "@/herdr/terminals";
 import { useTerminalStatusPolling } from "@/herdr/useTerminalStatusPolling";
+import { mirrorSupportedNow } from "@/mirror/useMirror";
 import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
@@ -123,7 +124,7 @@ function showModelSheet(rpc: Parameters<typeof sendWithPending>[0], hostId: stri
 }
 
 /**
- * Restart, Resume (agents with a resume flag), Model (Claude Code), Changes, Preview, "Why this status?" (a herdr with
+ * Restart, Resume (agents with a resume flag), Model (Claude Code), Changes, Preview, Simulators, "Why this status?" (a herdr with
  * `agent.explain`), the three renames and Close for the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
  * (a host that lists `shell.watch`), Changes, Preview and Close.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
@@ -210,6 +211,10 @@ function useSessionMenu(
         onPick: () =>
           setTimeout(() => showPortSheet(hostId, paneId, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
       });
+    }
+    // The device mirror: the simulators and emulators of the computer.
+    if (mirrorSupportedNow(hostId)) {
+      items.push({ label: "Simulators", onPick: () => router.push(`/devices/${encodeURIComponent(hostId)}` as never) });
     }
     // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
     if (agent && allows(agent, "explain", hostId) && herdrSupports(hostId, EXPLAIN_METHOD)) {

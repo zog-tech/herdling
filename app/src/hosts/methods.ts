@@ -50,6 +50,9 @@ export const APP_METHODS = [
   "core.status",
   "core.install",
   "files.get",
+  "devices.list",
+  "mirror.start",
+  "mirror.stop",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */
