@@ -19,9 +19,11 @@ pub const MAX_ENTRIES: usize = 1000;
 pub const TEXT_MAX: usize = 256 << 10;
 /// Largest image that herdlingd sends. A larger image gives `too_large: true` and no bytes.
 pub const IMAGE_MAX: u64 = 20 << 20;
-/// Most image bytes in one result. The app asks for the next part with `offset`. A small part
-/// keeps each line short, so other calls on the channel do not wait long behind an image.
-pub const CHUNK: usize = 512 << 10;
+/// Most image bytes in one result (384 KiB, 512 KiB as base64). The app asks for the next part
+/// with `offset`. A small part keeps each line short, so other calls on the channel do not wait
+/// long behind an image. It is a multiple of 3: the base64 parts have no padding, so the app
+/// joins them as text.
+pub const CHUNK: usize = 384 << 10;
 /// Bytes read to tell a text file from a binary file.
 pub const SNIFF: usize = 8 << 10;
 

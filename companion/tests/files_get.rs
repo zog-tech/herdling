@@ -135,6 +135,8 @@ async fn sends_an_image_in_parts() {
     let bytes: Vec<u8> = (0..files::CHUNK + 100).map(|i| (i % 251) as u8).collect();
     std::fs::write(home.path().join("shot.png"), &bytes).unwrap();
     let b64 = base64::engine::general_purpose::STANDARD;
+    // The app joins the base64 parts as text: a part must have no padding.
+    assert_eq!(files::CHUNK % 3, 0);
     let r = call(home.path(), json!({"path": "~/shot.png"})).await;
     let res = &r["result"];
     assert_eq!(res["kind"], "image", "{r}");
