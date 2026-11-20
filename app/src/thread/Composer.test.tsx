@@ -4,7 +4,7 @@ import { join } from "path";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { hitTarget } from "@/theme/tokens";
+import { hitTarget, space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { MicButton } from "@/voice/MicButton";
 
@@ -234,8 +234,12 @@ test("wrapped_text_moves_the_buttons_to_a_row_under_it", async () => {
   const pad = () => prompt(tree!).props.style.paddingBottom;
   await act(async () => measure().props.onLayout({ nativeEvent: { layout: { height: 21 } } }));
   expect(pad()).toBe(10);
+  const row = () => tree!.root.findAll((n) => n.type === View && n.props.pointerEvents === "box-none")[0];
+  expect(row().props.style.position).toBe("absolute");
   await act(async () => measure().props.onLayout({ nativeEvent: { layout: { height: 63 } } }));
-  expect(pad()).toBe(hitTarget);
+  // The row is under the text box, not over it: the text can never scroll under the buttons.
+  expect(pad()).toBe(space.xs);
+  expect(row().props.style.position).toBeUndefined();
 });
 
 const idle = (agent = "claude") =>

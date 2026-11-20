@@ -67,8 +67,8 @@ const INSET = (hitTarget - INNER) / 2;
 const INNER_GAP = space.xs;
 /** Space between the record bar and the button next to it. */
 const BAR_GAP = space.sm;
-/** Height of the button row under wrapped text. */
-const BUTTON_ROW = hitTarget;
+/** Space between wrapped text and the button row under it. */
+const ROW_GAP = space.xs;
 /** Most matches the typed `/` menu renders. */
 const MENU_MAX = 50;
 
@@ -597,7 +597,7 @@ export const Composer = memo(function Composer({
           maxFontSizeMultiplier={denseScale.row}
           style={{
             minHeight: hitTarget,
-            maxHeight: voiceActive ? hitTarget : lineHeight * MAX_LINES + PAD_V * 2 + (expanded ? BUTTON_ROW : 0),
+            maxHeight: voiceActive ? hitTarget : lineHeight * MAX_LINES + PAD_V + (expanded ? ROW_GAP : PAD_V),
             opacity: voiceActive ? 0 : 1,
             color: colors.text,
             fontSize: type.size.body,
@@ -605,7 +605,9 @@ export const Composer = memo(function Composer({
             paddingLeft: expanded ? space.lg : leadInset,
             paddingRight: expanded ? space.lg : trailInset,
             paddingTop: PAD_V,
-            paddingBottom: expanded ? BUTTON_ROW : PAD_V,
+            // Wide layout: the button row is under the text box (not over it), so a scrolled text and
+            // the line of the cursor never go under the buttons.
+            paddingBottom: expanded ? ROW_GAP : PAD_V,
           }}
         />
         {voiceActive ? (
@@ -632,10 +634,9 @@ export const Composer = memo(function Composer({
         <View
           pointerEvents="box-none"
           style={{
-            position: "absolute",
-            left: INSET,
-            right: INSET,
-            bottom: INSET,
+            ...(expanded
+              ? { paddingHorizontal: INSET, paddingBottom: INSET }
+              : { position: "absolute" as const, left: INSET, right: INSET, bottom: INSET }),
             flexDirection: "row",
             alignItems: "center",
             gap: INNER_GAP,

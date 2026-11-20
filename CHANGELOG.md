@@ -218,6 +218,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
+  the buttons are in their own row under the text.
 - Overview: the "Update herdlingd" hint stays hidden when the host already runs the latest
   herdlingd release, also when the app knows newer methods than that release has.
 - "Simulators" on the host screen and in the session menu: a list of the iOS simulators and
