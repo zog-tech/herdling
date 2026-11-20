@@ -190,10 +190,26 @@ test("recording_with_apple_runs_live_and_the_live_text_lands", async () => {
   expect(calls).toEqual(["requestPermission", "startRecording:live"]);
   act(() => api.current!.dispatch({ type: "toggle" }));
   await flush();
-  expect(onText).toHaveBeenCalledWith("hello there");
+  expect(onText).toHaveBeenCalledWith("hello there", { send: false });
   expect(api.current!.caption).toBe("Apple");
   expect(api.current!.state.phase).toBe("idle");
   expect(mockDeleted).toEqual(["file:///cache/a.wav"]);
+});
+
+test("stop_and_send_passes_the_send_intent_with_the_text", async () => {
+  mockRecording = true;
+  mockStopResult = { uri: "file:///cache/a.wav", durationMs: 3000, text: "run the tests" };
+  const onText = jest.fn();
+  const { api } = mount(onText);
+  act(() => api.current!.dispatch({ type: "toggle" }));
+  await flush();
+  releasePermission("granted");
+  await flush();
+  act(() => api.current!.dispatch({ type: "stopAndSend" }));
+  await flush();
+  expect(onText).toHaveBeenCalledTimes(1);
+  expect(onText).toHaveBeenCalledWith("run the tests", { send: true });
+  expect(api.current!.state.phase).toBe("idle");
 });
 
 test("host_engine_records_a_file_and_uses_stt_make", async () => {
@@ -209,7 +225,7 @@ test("host_engine_records_a_file_and_uses_stt_make", async () => {
   act(() => api.current!.dispatch({ type: "toggle" }));
   await flush();
   expect(host).toHaveBeenCalledWith("file:///cache/rec.wav");
-  expect(onText).toHaveBeenCalledWith("from the host");
+  expect(onText).toHaveBeenCalledWith("from the host", { send: false });
   expect(api.current!.caption).toBe("Host");
   expect(mockDeleted).toEqual(["file:///cache/rec.wav"]);
 });
@@ -229,7 +245,7 @@ test("failed_transcription_keeps_the_file_then_retry_and_discard", async () => {
   expect(mockDeleted).toEqual([]);
   act(() => api.current!.dispatch({ type: "retry" }));
   await flush();
-  expect(onText).toHaveBeenCalledWith("second try");
+  expect(onText).toHaveBeenCalledWith("second try", { send: false });
   expect(mockDeleted).toEqual(["file:///cache/rec.wav"]);
 
   // A second failure, then Discard: the file goes.
@@ -265,7 +281,7 @@ test("halted_recording_is_transcribed_with_a_notice", async () => {
   act(() => listeners.onRecordingHalted.forEach((f) => f({ reason: "limit" })));
   await flush();
   expect(calls).toContain("stopRecording");
-  expect(onText).toHaveBeenCalledWith("long talk");
+  expect(onText).toHaveBeenCalledWith("long talk", { send: false });
   expect(api.current!.error).toBe("Recording stopped: it reached 10 minutes.");
 });
 

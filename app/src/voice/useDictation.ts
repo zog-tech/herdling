@@ -54,7 +54,8 @@ function currentEngine(): { engine: InputEngine; transcribers: Pick<Transcribers
  *
  * Builds with file recording: the microphone writes a WAV file, and after the stop an engine
  * turns it into text (Parakeet, the host, or the live Apple text). Older builds (build 5): live
- * Apple dictation only. The text goes to `onText`; it is never sent from here.
+ * Apple dictation only. The text goes to `onText`; it is never sent from here. `send` in the
+ * options is true when the user tapped send while recording: the caller then sends the prompt.
  * `hostStt`: the host's `stt.make` for a file, when the host has it.
  */
 export function useDictation({
@@ -62,7 +63,7 @@ export function useDictation({
   onPartial,
   hostStt,
 }: {
-  onText: (text: string) => void;
+  onText: (text: string, options: { send: boolean }) => void;
   onPartial?: (text: string) => void;
   hostStt?: (uri: string) => Promise<string>;
 }) {
@@ -152,7 +153,7 @@ export function useDictation({
 
   function run(fx: HoldEffect) {
     if (typeof fx === "object") {
-      handlers.current.onText(fx.text);
+      handlers.current.onText(fx.text, { send: !!fx.send });
       return;
     }
     switch (fx) {

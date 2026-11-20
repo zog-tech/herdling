@@ -151,3 +151,63 @@ test("halt_stops_and_transcribes_what_was_recorded", () => {
   expect(holdReducer(halted.state, { type: "halted" }).effects).toEqual([]);
   expect(holdReducer(idle, { type: "halted" })).toEqual({ state: idle, effects: [] });
 });
+
+describe("stop and send", () => {
+  test("stop_and_send_from_a_latched_recording_sends_the_text", () => {
+    const latched = run([{ type: "toggle" }]).state;
+    const r = holdReducer(latched, { type: "stopAndSend" });
+    expect(r.state).toMatchObject({ phase: "finishing", latched: false, send: true });
+    expect(r.effects).toEqual(["stop", "hapticStop"]);
+    // The intent stays through late partials.
+    const partial = holdReducer(r.state, { type: "partial", text: "ship" });
+    expect(partial.state.send).toBe(true);
+    const done = holdReducer(partial.state, { type: "final", text: " ship it " });
+    expect(done.state).toEqual(idle);
+    expect(done.effects).toEqual([{ text: "ship it", send: true }]);
+  });
+
+  test("stop_and_send_during_a_hold_and_while_armed_to_cancel", () => {
+    const held = run([{ type: "press", at: 1000 }]).state;
+    expect(holdReducer(held, { type: "stopAndSend" }).state).toMatchObject({ phase: "finishing", send: true });
+    const armed = run([{ type: "press" }, { type: "move", dx: 0, dy: -81 }]).state;
+    expect(holdReducer(armed, { type: "stopAndSend" }).state).toMatchObject({ phase: "finishing", send: true });
+    // The release that follows a send tap does nothing more.
+    const after = run([{ type: "stopAndSend" }, { type: "release", at: 1100 }], held);
+    expect(after.state).toMatchObject({ phase: "finishing", send: true });
+    expect(after.effects).toEqual(["stop", "hapticStop"]);
+  });
+
+  test("stop_and_send_is_ignored_when_not_recording", () => {
+    expect(holdReducer(idle, { type: "stopAndSend" })).toEqual({ state: idle, effects: [] });
+    const finishing = run([{ type: "toggle" }, { type: "toggle" }]).state;
+    expect(holdReducer(finishing, { type: "stopAndSend" })).toEqual({ state: finishing, effects: [] });
+    const failed = run([{ type: "failed" }], finishing).state;
+    expect(holdReducer(failed, { type: "stopAndSend" })).toEqual({ state: failed, effects: [] });
+  });
+
+  test("an_empty_transcript_after_a_send_tap_sends_nothing", () => {
+    const r = run([{ type: "toggle" }, { type: "stopAndSend" }, { type: "final", text: "  " }]);
+    expect(r.state).toEqual(idle);
+    expect(sends(r.effects)).toEqual([]);
+  });
+
+  test("a_failure_after_a_send_tap_drops_the_intent_and_retry_only_inserts", () => {
+    const failed = run([{ type: "toggle" }, { type: "stopAndSend" }, { type: "failed" }]).state;
+    expect(failed.phase).toBe("failed");
+    expect(failed.send).toBeUndefined();
+    const retried = run([{ type: "retry" }, { type: "final", text: "ok" }], failed);
+    expect(sends(retried.effects)).toEqual([{ text: "ok" }]);
+  });
+
+  test("cancel_and_error_after_a_send_tap_send_nothing", () => {
+    const sending = run([{ type: "toggle" }, { type: "stopAndSend" }]).state;
+    const err = run([{ type: "error" }, { type: "final", text: "late" }], sending);
+    expect(err.state).toEqual(idle);
+    expect(sends(err.effects)).toEqual([]);
+    // A forced cancel (the composer hides) does not end the transcription; the send intent stays.
+    expect(holdReducer(sending, { type: "cancel", force: true }).state).toEqual(sending);
+    // The next recording starts with no send intent.
+    const next = run([{ type: "final", text: "x" }, { type: "press" }], sending).state;
+    expect(next.send).toBeUndefined();
+  });
+});

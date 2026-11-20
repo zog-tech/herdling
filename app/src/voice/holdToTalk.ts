@@ -4,8 +4,10 @@
  * from the press point arms cancel. No text comes after a cancel, an error or an empty transcript.
  *
  * Tap-to-toggle: a release less than TAP_MS after the press keeps recording ("latched");
- * the next tap (or ✓) stops. `toggle` (the VoiceOver action and ✓) starts latched or stops.
+ * the next tap (or the stop button) stops. `toggle` (the VoiceOver action and stop) starts latched or stops.
+ * `stopAndSend` (the send button while recording) stops, and the text effect carries `send: true`.
  * When transcription fails, the recording stays ("failed") until `retry` or `discard`.
+ * A failure drops the send intent: a retry puts the text in the prompt box for a check, and never sends.
  */
 
 export type HoldState = {
@@ -16,6 +18,8 @@ export type HoldState = {
   latched?: boolean;
   /** Epoch ms of the press that started recording. */
   pressedAt?: number;
+  /** "finishing" after `stopAndSend`: the text is sent when it lands. */
+  send?: boolean;
 };
 
 export type HoldEvent =
@@ -24,8 +28,10 @@ export type HoldEvent =
   /** dx, dy: translation from the press point, in pt. */
   | { type: "move"; dx: number; dy: number }
   | { type: "release"; at?: number }
-  /** Start latched, or stop and send (VoiceOver activate). */
+  /** Start latched, or stop and put the text in the prompt box (VoiceOver activate, stop button). */
   | { type: "toggle" }
+  /** Stop, and send the text when it lands (the send button while recording). */
+  | { type: "stopAndSend" }
   /**
    * The gesture ended without a release (the system took the touch, the button went away).
    * `force`: also ends a latched recording (the button got disabled).
@@ -48,8 +54,8 @@ export type HoldEffect =
   | "cancel"
   | "retry"
   | "discard"
-  /** The text for the prompt box. */
-  | { text: string }
+  /** The text for the prompt box. `send`: send the prompt after the text goes in. */
+  | { text: string; send?: true }
   | "hapticStart"
   | "hapticCancel"
   | "hapticStop";
@@ -77,6 +83,9 @@ export function holdReducer(s: HoldState, e: HoldEvent): Result {
       if (s.phase === "idle") return { state: { phase: "recording", partial: "", latched: true }, effects: ["start", "hapticStart"] };
       if (live) return { state: { ...s, phase: "finishing", latched: false }, effects: ["stop", "hapticStop"] };
       return same(s);
+    case "stopAndSend":
+      if (live) return { state: { ...s, phase: "finishing", latched: false, send: true }, effects: ["stop", "hapticStop"] };
+      return same(s);
     case "move": {
       if (!live || s.latched) return same(s);
       const phase = Math.hypot(e.dx, e.dy) > CANCEL_DISTANCE ? "armedCancel" : "recording";
@@ -100,14 +109,14 @@ export function holdReducer(s: HoldState, e: HoldEvent): Result {
     case "final": {
       if (s.phase !== "finishing") return same(s);
       const text = e.text.trim();
-      return { state: IDLE, effects: text ? [{ text }] : [] };
+      return { state: IDLE, effects: text ? [s.send ? { text, send: true } : { text }] : [] };
     }
     case "error":
       return live || s.phase === "finishing" ? { state: IDLE, effects: ["cancel"] } : same(s);
     case "halted":
       return live ? { state: { ...s, phase: "finishing", latched: false }, effects: ["stop"] } : same(s);
     case "failed":
-      return s.phase === "finishing" ? same({ ...s, phase: "failed", partial: "" }) : same(s);
+      return s.phase === "finishing" ? same({ ...s, phase: "failed", partial: "", send: undefined }) : same(s);
     case "retry":
       return s.phase === "failed" ? { state: { ...s, phase: "finishing" }, effects: ["retry"] } : same(s);
     case "discard":
