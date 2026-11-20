@@ -202,6 +202,10 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Voice input in the prompt box: while the mic records, the send button stops, transcribes and
+  sends the prompt at once. A small stop button at the end of the record bar puts the text in the
+  box for editing. The mic leaves the row during a tapped recording, and the bar has a gap before
+  the buttons.
 - A permission menu of Claude Code shows the prompt above the options: the command, the description
   and the warning, in a small box that scrolls. "Show all" opens the full text. Before, the menu of a
   background subagent showed only "Do you want to proceed?" and not the command.

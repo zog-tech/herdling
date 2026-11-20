@@ -40,11 +40,13 @@ button, or leaving the session screen.
 
 ## Voice input
 
-Tap the mic to record. The input row shows a waveform and the time. Tap ✓ to stop and
-transcribe, or ✕ to discard. Hold the mic to record and release it to stop. A recording stops
+Tap the mic to record. The input row shows ✕, a waveform, the time and a stop button. Tap stop
+to transcribe into the prompt box, or ✕ to discard. Tap send to stop, transcribe and send the
+prompt at once. Hold the mic to record and release it to stop. A recording stops
 by itself after 10 minutes, or when a call or Siri takes the microphone; the app keeps what was
-recorded and transcribes it. The text goes into the prompt box after the text that is there. The
-app does not send it: you edit it and tap send.
+recorded and transcribes it. The text goes into the prompt box after the text that is there. After
+stop or a release, the app does not send it: you edit it and tap send. When the transcription
+fails after a send tap, nothing is sent; "Retry" puts the text in the prompt box.
 
 Settings > Voice input > Engine:
 
