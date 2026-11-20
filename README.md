@@ -50,6 +50,9 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 - **A chat view.** Read a session as a clean chat, with formatted replies, tool calls, subagents
   and permission buttons. It works with Claude Code, Codex, Pi, OpenCode, omp and Gemini CLI,
   with session resume and the command lists (`/`, `$` and `@`) of the first four.
+- **Files from the reply.** Tap a path that an agent writes, such as `docs/screens/` or
+  `~/proj/out.png`: a folder lists its files, an image opens with pinch zoom, and a text file
+  shows read-only.
 - **Saved prompts and search.** Chips above the empty prompt box hold your quick replies
   ("Continue", "Run the tests"): a tap puts the text in the box, and a long press sends it. Edit
   the list in Settings. Search a session (the magnifier, or ⌘F) and jump from match to match.

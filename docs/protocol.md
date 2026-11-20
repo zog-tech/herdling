@@ -451,6 +451,49 @@ The app puts each path on its own line at the end of the prompt, and the agent r
 - The document picker (`expo-document-picker`) is a native module. The app loads it only when the
   binary has it, so an older binary that gets new JavaScript hides "Files" in the "+" menu.
 
+## File viewer: `files.get`
+
+Since herdlingd 0.2.1. The app checks `hello.methods` first: a path in the thread is a link only
+when the host lists `files.get`. The method only reads. Params:
+
+```json
+{"path": "src/content/", "cwd"?: "/home/sam/proj", "pane_id"?: "t3", "hidden"?: false, "offset"?: 0}
+```
+
+- `path` is absolute, `~` or `~/…` (from the home folder), or relative. A relative path starts at
+  `cwd` (absolute, or `~/…`), else at the folder of `pane_id` (from the core). A relative path with
+  neither gives `bad_request`. A `~name/…` path gives `bad_request`.
+- herdlingd resolves symbolic links. `path` in the result is the canonical path. `name` is its
+  last part.
+
+The result has one of four kinds:
+
+```json
+{"path": "/home/sam/proj/docs", "name": "docs", "kind": "dir", "hidden": false, "truncated": false,
+ "entries": [{"name": "screens", "kind": "dir"}, {"name": "home-dark.png", "kind": "image", "size": 48213},
+             {"name": "README.md", "kind": "file", "size": 912}]}
+{"path": "/home/sam/proj/a.png", "name": "a.png", "kind": "image", "size": 48213, "mime": "image/png",
+ "offset": 0, "data_b64": "iVBORw0K...", "eof": true}
+{"path": "/home/sam/proj/README.md", "name": "README.md", "kind": "text", "size": 912, "text": "# proj\n...", "truncated": false}
+{"path": "/home/sam/proj/doc.pdf", "name": "doc.pdf", "kind": "other", "size": 80211, "mime": "application/pdf"}
+```
+
+- `dir`: folders first, then files, each sorted without case. Entry `kind` comes from the name
+  (`dir`, `image` or `file`): herdlingd does not open the files. `size` is missing for a folder
+  and for a broken link. Names that start with a dot show only with `hidden: true`. At most 1000
+  entries; `truncated` is true when the folder has more. Names that are not UTF-8 are left out.
+- `image`: a name that ends in `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.heic`, `.heif` or
+  `.bmp`. herdlingd sends at most 384 KiB of bytes from `offset` (default 0) in standard base64.
+  `eof` is true for the last part. The app asks again with the next `offset` until `eof`. The part
+  size is a multiple of 3, so the base64 parts join as text. An image larger than 20 MiB has
+  `"too_large": true` and no `data_b64`.
+- `text`: the first 8 KiB have no NUL byte and are valid UTF-8. `text` holds at most the first
+  256 KiB, cut on a character boundary. `truncated` is true when the file is longer.
+- `other`: any other file, and a FIFO, a socket or a device (herdlingd never reads those). `mime`
+  is set when herdlingd knows the type from the name.
+- Errors: `not_found` (no such path), `io_error` (for example no permission), `bad_request`.
+- An older herdlingd gives `unknown_method`. The app shows paths as plain code then.
+
 ## Git views: `git.status` and `git.diff`
 
 The app checks `hello.methods` before it calls these methods. Both take `{"cwd": "/abs/path"}` or

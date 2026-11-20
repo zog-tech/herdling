@@ -5,6 +5,13 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [herdlingd 0.2.1] - unreleased
+
+- New read-only method `files.get` for the file viewer of the app. It lists a folder (folders
+  first, at most 1000 entries, hidden entries on request), sends an image in parts of 384 KiB (at
+  most 20 MiB), and sends the first 256 KiB of a text file. A relative path starts at `cwd` or at
+  the folder of `pane_id`. It reads only regular files. See `docs/protocol.md`.
+
 ## [herdlingd 0.2.0] - 2026-11-15
 
 herdlingd 0.2.0 needs Herdr 2 (herdr-core). When no herdr-core is installed, it installs the pinned
@@ -202,6 +209,11 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Thread view: a tap on a file path in a reply opens it on the phone. Paths in inline code
+  (`/home/sam/proj/docs/`, `~/apps/proj`, `src/content/`, `README.md`) and absolute or `~/` paths
+  in the text are links. A folder lists its entries with thumbnails of small images, an image
+  opens full screen with pinch zoom and Share, a text file shows read-only in monospace (the first
+  256 KB), and another file shows its name, size and type. Needs herdlingd with `files.get`.
 - Thread view: a Claude Code menu with no numbers (for example "Held message from another session")
   shows its title, the message and the answer buttons. A tap moves the cursor with the arrow keys and presses Enter.
 - Thread view: a Claude Code prompt with a question in other words ("Allow this read outside the
