@@ -664,6 +664,97 @@ channels run at once per host; more connections wait. When a channel does not op
 first SSH connection (for example sshd `MaxSessions`), the module opens a second SSH connection
 for the preview.
 
+## Device mirror: `devices.list`, `mirror.start` and `mirror.stop`
+
+The app shows an iOS simulator or an Android emulator of the computer as video, and sends touches,
+keys and text back. The page comes through the browser preview tunnel above. The design is in
+`docs/superpowers/specs/2026-11-20-device-mirror-design.md`. The app checks `hello.methods` for
+`devices.list` and `mirror.start`, and the build for the web view and the preview tunnel.
+
+`devices.list` params: none. Result:
+
+```json
+{"devices": [
+   {"id": "ios:269EBED9-ADE0-4AF4-9067-6B649B12BCCB", "platform": "ios", "kind": "simulator",
+    "name": "iPhone 17", "os": "iOS 26.5", "model": "iPhone-17", "video": true, "input": true},
+   {"id": "android:emulator-5554", "platform": "android", "kind": "emulator", "name": "Pixel 8",
+    "os": "Android 15", "model": "Pixel_8", "video": true, "input": true, "mirroring": true},
+   {"id": "android:192.0.2.10:5555", "platform": "android", "kind": "device", "name": "Fire TV",
+    "model": "Fire TV", "video": true, "input": true}],
+ "tools": {"xcrun": true, "idb": true, "idb_companion": true, "adb": true},
+ "scrcpy": "5.0.1"}
+```
+
+- iOS: the booted simulators of `xcrun simctl list devices booted -j` (macOS only). `video` and
+  `input` are true when `idb` is found.
+- Android: the ready devices of `adb devices -l`. A serial `emulator-<port>` is an emulator; herdlingd
+  asks it for its AVD name (`adb emu avd name`) and its Android version. Any other serial is a real
+  device (`kind: "device"`): herdlingd sends it no command, and the app does not offer it.
+- herdlingd looks for the tools in `PATH`, `$ANDROID_HOME/platform-tools`,
+  `$ANDROID_SDK_ROOT/platform-tools`, `~/Library/Android/sdk/platform-tools`,
+  `~/Android/Sdk/platform-tools`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`.
+- `mirroring` is true when this rpc process runs a mirror of the device.
+
+`mirror.start` params: `{"device": "<id>", "allow_device"?: false, "max_size"?: 1280}`. Result:
+
+```json
+{"device": "android:emulator-5554", "platform": "android", "name": "Pixel 8", "port": 50271,
+ "path": "/m/<32 hex>/", "grant": "<32 hex>", "expires_at": 1767225600,
+ "source": "video", "input": true}
+```
+
+- herdlingd lists the devices again and refuses an id that is not there (`not_found`). A real
+  device needs `allow_device: true` (`unsupported`). A missing `xcrun` or `adb` gives
+  `not_installed`. `max_size` (320 to 4096) is the longest video edge of Android.
+- One mirror per device in each rpc process. A second call for the same device returns the same
+  `port` and `path` with a new grant.
+- The mirror server listens on `127.0.0.1:<port>`. `grant` is a preview grant for that port, as
+  from `preview.open`. The app starts the preview tunnel with it and loads
+  `http://localhost:<local port><path>`.
+- `source` is the first choice (`video`, or `screenshots` without idb). The page can still move to
+  screenshots (below).
+
+`mirror.stop` params: `{"device": "<id>"}`. Result: `{"stopped": true}`, or `false` when no mirror
+of the device ran. The app also calls `preview.close` with the grant.
+
+The mirror server:
+
+- Only two paths answer: `GET /m/<token>/` (the player page) and `GET /m/<token>/ws` (the WebSocket).
+  The token is 128 random bits; any other path gets `404`. The `Host` header must be `localhost`,
+  `127.0.0.1` or `[::1]` (with a port), else `403`. The WebSocket upgrade must have
+  `Origin: http://<Host>`, else `403`.
+- The page is one HTML file in the herdlingd binary. It makes no request to another host. Its
+  Content Security Policy allows inline code and connections to the page host only.
+- `ws?video=1`: the page can decode H.264 with WebCodecs. `video=0` moves the mirror to screenshots.
+- Server to page, binary: byte 0 is the kind (`1` H.264 access unit in Annex B, `2` JPEG, `3` PNG),
+  byte 1 the flags (bit 0: key frame), then the payload. A key frame carries the SPS and PPS.
+- Server to page, text: `{"type":"state","state":"waiting"|"starting"|"streaming"|"stopped","source":"video"|"screenshots","input":true,"platform":"ios","name":"..."}`
+  and `{"type":"error","message":"..."}`.
+- Page to server, text: `{"t":"touch","phase":"down"|"move"|"up"|"cancel","x":0.5,"y":0.25}`
+  (fractions of the frame), `{"t":"key","key":"home"|"back"|"app_switch"|"power"|"volume_up"|"volume_down"|"lock"|"siri"}`,
+  `{"t":"text","text":"..."}` (at most 1000 characters), `{"t":"rotate"}` (Android) and
+  `{"t":"keyframe"}` (the decoder needs a key frame). Other messages are ignored.
+- The app sends `key`, `text` and `rotate` to the page with `postMessage`, as the same JSON text.
+  The page posts `{"type":"mirror","state":...,"source":...,"input":...,"platform":...,"error"?:...}`.
+
+Sources:
+
+- Android: the scrcpy server, version and SHA-256 in `companion/scrcpy-pin.json`, from the official
+  GitHub release into `~/.local/share/herdling/scrcpy-server-v<version>` (checked before each use).
+  herdlingd pushes it to `/data/local/tmp/herdling-scrcpy.jar`, adds `adb forward tcp:0
+  localabstract:scrcpy_<scid>`, and runs `app_process` with `tunnel_forward=true audio=false
+  control=true video_codec=h264 send_device_meta=false clipboard_autosync=false cleanup=true`.
+  Input goes over the scrcpy control socket. When scrcpy does not start, screenshots
+  (`adb exec-out screencap -p`) and `adb shell input` take over.
+- iOS: `idb video-stream --format h264` and `idb ui tap|swipe|text|button`. idb takes points: the
+  scale comes from `idb describe --json`. When the video does not start, screenshots
+  (`xcrun simctl io <udid> screenshot`) take over, with idb input. An idb error "Failed to connect
+  to companion" gets one `idb disconnect <udid>` and one retry. Without idb, screenshots and view only.
+- The source starts when the first viewer connects and stops 10 s after the last viewer leaves.
+  The server closes after 5 minutes with no viewer, on `mirror.stop`, and when the rpc process ends.
+- `ports.list` leaves out the listeners of `herdlingd` itself, so a mirror server does not show as a
+  dev server.
+
 ## Command finished: `shell.watch`, `shell.unwatch` and `shell.watches`
 
 Since the herdlingd that lists `shell.watch`. The user asks for one push when the command in a

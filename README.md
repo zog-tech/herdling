@@ -76,6 +76,10 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
 - **herdr tools (herdr 0.9).** "Why this status?" shows how herdr found the status of an agent.
   "Agent integrations" lists the herdr hooks of each agent on a computer and installs a missing one.
   A close that would close a worktree group asks first.
+- **Simulators on the phone.** See an iOS simulator or an Android emulator of a computer as video,
+  and use it: tap, swipe, type text, and press Home, Back and Lock. Android uses the scrcpy server
+  (downloaded and checked by `herdlingd`), iOS uses idb. Without idb, the iOS simulator shows as
+  screenshots, view only.
 - **Meters.** The plan usage of Claude and Codex, and the CPU and memory of each computer.
 - **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The code is the password of
   a PAKE, so it never goes over the network. The phone gets its own SSH key that can only run

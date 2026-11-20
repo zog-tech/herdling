@@ -82,6 +82,7 @@ The path alias `@/` points to `app/src/`.
 | `thread/` | The chat view: thread items, follow, composer, permission choices, the pages of a tab (`PanePager.tsx`, rules in `herdr/tabPanes.ts`) |
 | `terminal/` | The ANSI terminal view, the key bar (`KeyBar.tsx`, rules in `keyRules.ts`, custom keys in `customKeys.ts`) the width modes (`fit.ts`, "Phone width"), and the renderer choice (`renderer.ts`: Terminal or Classic). `terminal/xterm/`: the xterm.js view (`XtermView`, a lazy web view on `pane.watch` `format: "vt"`), its pure bridge, layout, theme and search rules, and `assets.generated.ts` (made by `app/scripts/gen-xterm-assets.js`; run it after an `@xterm/*` version change) |
 | `preview/` | Browser preview: port list, tunnel, lazy `react-native-webview` loader (route `app/preview/`) |
+| `mirror/` | Device mirror: the device list rules (`devices.ts`), the tunnel state machine (`tunnel.ts`) and its runner (`useMirror.ts`), the page messages (`page.ts`); routes `app/devices/` and `app/mirror/` |
 | `push/` | Push token, registration with each computer, notification routing, the in-app banner (`banner.ts`, `BannerHost.tsx`) |
 | `voice/` | Recording, recognition, speech, summaries |
 | `usage/`, `automations/` | Plan usage meters and the automations tab |
@@ -102,6 +103,7 @@ The path alias `@/` points to `app/src/`.
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |
 | `git.rs` | Read-only git views (`git.status`, `git.diff`) and `git.worktree_add` (git, then a shell in a new Herdr 2 space) |
 | `ports.rs`, `proxy.rs` | Browser preview: `ports.list`, grants (`preview.open`, `preview.close`) and the loopback proxy channel |
+| `mirror/` | Device mirror (`devices.list`, `mirror.start`, `mirror.stop`): device parsers (`devices.rs`), the scrcpy pin (`pin.rs`, from `companion/scrcpy-pin.json`), the session state machine (`machine.rs`), stream and input rules (`stream.rs`, `input.rs`), the loopback server and its embedded page (`server.rs`, `page.html`) and the source I/O (`source.rs`) |
 | `core/` | Herdr 2 (herdr-core): socket resolution (`endpoint.rs`), the JSON-RPC client (`client.rs`), the entry ids (`ids.rs`), the snapshot projection (`project.rs`), the group rules (`groups.rs`), the git repo lookup (`repos.rs`), the action rules (`actions.rs`: labels, new ids, close, explain, groups), the start state machine (`start.rs`), call routing (`route.rs`), event lines (`events.rs`), the subscribe stream (`stream.rs`) and the serve tracker (`tracker.rs`). The terminal view: the framed wire (`frame.rs`), the emulator and its ANSI render (`screen.rs`), the attach stream state machine (`attach.rs`), its I/O (`term_watch.rs`) and the raw stream batcher of `format: "vt"` (`vt.rs`). `serve/core_watch.rs` sends its pushes |
 | `update.rs` | Self-update from the GitHub release: `update.check`, `update.apply`, `herdlingd update` |
 | `core_install/` | herdr-core install, update and status (`core.status`, `core.install`, `herdlingd core`): the pin (`pin.rs`, from `companion/core-pin.json`), the pure state machine (`machine.rs`), the herdr 1 guard (`guard.rs`) and the I/O driver (`mod.rs`) |

@@ -121,7 +121,9 @@ The page is one HTML file with inline CSS and JavaScript, embedded in the herdli
   for the next key frame.
 - Screenshots: each binary message is one JPEG or PNG. The page draws it with `createImageBitmap`.
 - Touch: pointer events on the canvas give positions from 0 to 1 in the frame. The page sends
-  `down`, `move` (at most one per animation frame) and `up` with the frame size.
+  `down`, `move` (at most one per animation frame) and `up`. herdlingd knows the frame size itself
+  (scrcpy session packets, the PNG header, `idb describe`), so the page does not send it.
+- When the decoder falls behind or fails, the page sends `{"t":"keyframe"}` and waits for a key frame.
 - The app sends commands to the page with `postMessage` (`{"t":"key","key":"home"}`,
   `{"t":"text","text":"..."}`, `{"t":"rotate"}`). The page sends them on the WebSocket. The page
   posts its state to the app (`ReactNativeWebView.postMessage`): connected, source, input, error.
@@ -151,10 +153,11 @@ Server to page, text: JSON objects.
 
 Page to server, text: JSON objects.
 
-- `{"t":"touch","phase":"down"|"move"|"up"|"cancel","x":0.5,"y":0.25,"w":1080,"h":2400}`
+- `{"t":"touch","phase":"down"|"move"|"up"|"cancel","x":0.5,"y":0.25}`
 - `{"t":"key","key":"home"|"back"|"app_switch"|"power"|"volume_up"|"volume_down"|"lock"|"siri"}`
 - `{"t":"text","text":"..."}` (at most 1000 characters)
 - `{"t":"rotate"}` (Android only)
+- `{"t":"keyframe"}`: the page decoder needs a key frame (scrcpy "reset video")
 
 An unknown message is ignored. Each input message is checked and changed to a device action by
 pure code (`mirror/input.rs`).
@@ -213,7 +216,8 @@ any ──mirror.stop or rpc exit──▶ Stopped (stop source, close server)
 - The phone side keeps the preview rules: the listener on the phone is on `127.0.0.1`, needs the
   preview cookie, and the proxy needs a live grant for this port and a listener of this user.
 - The page has a strict Content Security Policy (`default-src 'none'`, inline script and style
-  only, `connect-src` the same host, `img-src blob:`), and `Referrer-Policy: no-referrer`.
+  only, `connect-src` the page host and `ws://localhost:*` or `ws://127.0.0.1:*`, `img-src blob:`),
+  and `Referrer-Policy: no-referrer`.
 - The scrcpy server comes only from the pinned GitHub release URL and must match the pinned
   SHA-256. A file in the data folder with another checksum is downloaded again.
 - Real Android devices are listed with `kind: "device"` and are not offered by the app.
@@ -233,12 +237,24 @@ See `docs/protocol.md`, "Device mirror".
   menu has "Simulators" too. Both open the device list (`/devices/[hostId]`).
 - The device list shows the booted simulators and the emulators, with the tools that are
   missing. A tap opens the mirror screen (`/mirror/[hostId]/[device]`).
-- The mirror screen runs a tunnel state machine (`mirror/tunnel.ts`): `mirror.start`, then
-  `ssh.startPreview` with the grant, then the web view. It stops on close, on background and on a
-  lost connection, and calls `mirror.stop` and `preview.close` on close.
-- A toolbar: Close, Home, Back (Android), App switch (Android), Rotate (Android), Lock (iOS),
+- The mirror screen runs a tunnel state machine (`mirror/tunnel.ts`, run by `MirrorRunner` in
+  `mirror/useMirror.ts`): `mirror.start`, then `ssh.startPreview` with the grant, then the web view.
+  Background and a lost connection release the phone side (the computer keeps the source for the
+  grace time); close also calls `mirror.stop` and `preview.close`.
+- A toolbar: Close, Back, Home and Recent apps (Android), Home and Lock (iOS), Rotate (Android),
   and a Keyboard button that shows a text field. Send types the text on the device.
 - The demo host does not list `devices.list`, so it does not show the feature.
+
+## What was verified on a Mac
+
+- Android (API 35 emulator, scrcpy 5.0.1): H.264 video decoded with WebCodecs in Chromium, a tap
+  opened an app, Home and Back worked, typed text reached a search field. 10 s after the page
+  closed, no `app_process` ran on the emulator, the adb forward was gone, and no `adb shell` ran.
+- iOS (iOS 26.5 simulator, idb_companion build of 2026-08-19): `idb video-stream` made the
+  companion stop with a fatal error, the mirror moved to screenshots in about 2 s, `idb disconnect`
+  cleared the stale companion, and taps and the Home button worked through idb.
+- Not verified on a phone: the WebSocket through the phone's preview listener (the listener copies
+  raw bytes after the cookie check, as for a dev server with hot reload).
 
 ## Left for later
 

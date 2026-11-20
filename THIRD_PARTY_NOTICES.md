@@ -91,6 +91,14 @@ FluidInference from Hugging Face. The model is under the
 
 `cargo tree` in `companion/` shows the full list of crates.
 
+### scrcpy server (downloaded on request)
+
+`herdlingd` does not include the scrcpy server. When you open the mirror of an Android emulator,
+`herdlingd` downloads the pinned version of `scrcpy-server` from the official
+[scrcpy](https://github.com/Genymobile/scrcpy) GitHub release, checks its SHA-256
+(`companion/scrcpy-pin.json`), and runs it on the emulator. scrcpy is under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
 ## Services
 
 Herdling uses no Zog Tech server. Push notifications go from `herdlingd` to the Expo push service,

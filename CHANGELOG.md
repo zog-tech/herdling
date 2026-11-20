@@ -7,6 +7,15 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.1] - unreleased
 
+- Device mirror: new methods `devices.list`, `mirror.start` and `mirror.stop`. `devices.list` lists
+  the booted iOS simulators and the Android devices (emulators and real devices, marked). `mirror.start`
+  starts a small server on `127.0.0.1` with a player page and a WebSocket (a secret path, loopback
+  `Host` and same `Origin` only) and issues a preview grant for its port. Android uses the pinned
+  scrcpy server 5.0.1 (downloaded from the GitHub release, SHA-256 checked) for H.264 video and input;
+  iOS uses `idb video-stream` and `idb ui`. When video does not start, screenshots take over. The
+  source stops 10 s after the last viewer leaves, and every mirror stops when the rpc process ends.
+  `ports.list` leaves out these servers. See `docs/protocol.md`, "Device mirror".
+
 - New read-only method `files.get` for the file viewer of the app. It lists a folder (folders
   first, at most 1000 entries, hidden entries on request), sends an image in parts of 384 KiB (at
   most 20 MiB), and sends the first 256 KiB of a text file. A relative path starts at `cwd` or at
@@ -209,6 +218,10 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- "Simulators" on the host screen and in the session menu: a list of the iOS simulators and
+  Android emulators of the computer, and a mirror screen that shows the device as video through
+  the preview tunnel. Touches go to the device; a toolbar sends Home, Back, Recent apps, Lock,
+  Rotate and typed text. It needs herdlingd 0.2.1 and ships as an over-the-air update.
 - Thread view: a tap on a file path in a reply opens it on the phone. Paths in inline code
   (`/home/sam/proj/docs/`, `~/apps/proj`, `src/content/`, `README.md`) and absolute or `~/` paths
   in the text are links. A folder lists its entries with thumbnails of small images, an image
