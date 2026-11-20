@@ -1,0 +1,277 @@
+<!doctype html>
+<!--
+  The device mirror player of herdlingd. It shows the frames of the WebSocket next to this page
+  (H.264 with WebCodecs, or JPEG and PNG images) and sends touches back. It makes no request to
+  another host. The app sends keys and text with postMessage. See docs/protocol.md, "Device mirror".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Device mirror</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #d4d4d8; overflow: hidden;
+    font: 15px -apple-system, system-ui, sans-serif; -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; background: #000; }
+  #note { position: fixed; left: 16px; right: 16px; bottom: 24px; text-align: center; pointer-events: none; }
+  #note.hidden { display: none; }
+  #note p { margin: 0 0 12px; }
+  button { pointer-events: auto; font: inherit; color: #000; background: #e4e4e7; border: 0;
+    border-radius: 10px; padding: 10px 20px; min-height: 44px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="screen" width="2" height="2" aria-label="Device screen"></canvas></div>
+<div id="note" role="status" aria-live="polite"><p id="msg">Connecting…</p><button id="retry" hidden>Retry</button></div>
+<script>
+(() => {
+  "use strict";
+  const canvas = document.getElementById("screen");
+  const ctx = canvas.getContext("2d");
+  const note = document.getElementById("note");
+  const msg = document.getElementById("msg");
+  const retryButton = document.getElementById("retry");
+
+  const hasCodecs = typeof VideoDecoder === "function" && typeof EncodedVideoChunk === "function";
+  let useVideo = hasCodecs;
+  let ws = null;
+  let closing = false;
+  let state = { state: "connecting", source: useVideo ? "video" : "screenshots", input: false, platform: "" };
+  let decoder = null;
+  let codec = "";
+  let needKey = true;
+  let stamp = 0;
+  let pending = null;   // the newest decoded frame or image that is not drawn yet
+  let drawQueued = false;
+  let imageBusy = false;
+  let nextImage = null;
+  let frameW = 0, frameH = 0;
+
+  function post(extra) {
+    const m = Object.assign({ type: "mirror" }, state, extra || {});
+    try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(m)); } catch (e) {}
+  }
+
+  function show(text, retry) {
+    msg.textContent = text;
+    retryButton.hidden = !retry;
+    note.classList.toggle("hidden", !text);
+  }
+
+  function layout() {
+    if (!frameW || !frameH) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const s = Math.min(vw / frameW, vh / frameH);
+    canvas.style.width = Math.floor(frameW * s) + "px";
+    canvas.style.height = Math.floor(frameH * s) + "px";
+  }
+  window.addEventListener("resize", layout);
+
+  function draw() {
+    drawQueued = false;
+    const f = pending;
+    pending = null;
+    if (!f) return;
+    const w = f.displayWidth || f.width, h = f.displayHeight || f.height;
+    if (w !== frameW || h !== frameH) {
+      frameW = w; frameH = h;
+      canvas.width = w; canvas.height = h;
+      layout();
+    }
+    ctx.drawImage(f, 0, 0, w, h);
+    f.close();
+    if (state.state === "streaming") show("");
+  }
+
+  function present(f) {
+    if (pending) pending.close();   // no buffer: only the newest frame counts
+    pending = f;
+    if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); }
+  }
+
+  // The codec string avc1.PPCCLL from the first SPS of an Annex B unit.
+  function codecOf(b) {
+    for (let i = 0; i + 4 < b.length; i++) {
+      if (b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 1 && (b[i + 3] & 0x1f) === 7 && i + 6 < b.length) {
+        const hex = (n) => n.toString(16).padStart(2, "0");
+        return "avc1." + hex(b[i + 4]) + hex(b[i + 5]) + hex(b[i + 6]);
+      }
+    }
+    return "";
+  }
+
+  function resetDecoder() {
+    if (decoder) { try { decoder.close(); } catch (e) {} }
+    decoder = null;
+    codec = "";
+    needKey = true;
+  }
+
+  function toScreenshots(reason) {
+    // This phone cannot decode the stream: ask the computer for screenshots instead.
+    useVideo = false;
+    resetDecoder();
+    console.log("mirror: screenshots, " + reason);
+    reconnect();
+  }
+
+  async function onUnit(key, data) {
+    if (!useVideo) return;
+    if (needKey && !key) return;
+    if (key) {
+      const c = codecOf(data);
+      if (c && c !== codec) {
+        resetDecoder();
+        const config = { codec: c, optimizeForLatency: true, hardwareAcceleration: "no-preference" };
+        try {
+          const ok = await VideoDecoder.isConfigSupported(config);
+          if (!ok.supported) return toScreenshots("codec " + c + " not supported");
+        } catch (e) { return toScreenshots(String(e)); }
+        decoder = new VideoDecoder({ output: present, error: (e) => { console.log("mirror: decoder", e); resetDecoder(); sendJson({ t: "keyframe" }); } });
+        decoder.configure(config);
+        codec = c;
+      }
+      if (!decoder) return;
+      needKey = false;
+    }
+    if (!decoder || decoder.state !== "configured") return;
+    if (decoder.decodeQueueSize > 30 && !key) {
+      // The decoder falls behind: skip to the next key frame.
+      needKey = true;
+      sendJson({ t: "keyframe" });
+      return;
+    }
+    stamp += 16666;
+    try {
+      decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: stamp, data }));
+    } catch (e) { resetDecoder(); sendJson({ t: "keyframe" }); }
+  }
+
+  function onImage(type, data) {
+    nextImage = new Blob([data], { type });
+    if (!imageBusy) decodeImage();
+  }
+
+  function decodeImage() {
+    const blob = nextImage;
+    nextImage = null;
+    if (!blob) { imageBusy = false; return; }
+    imageBusy = true;
+    createImageBitmap(blob).then((bmp) => { present(bmp); decodeImage(); }, () => decodeImage());
+  }
+
+  function onText(t) {
+    let m;
+    try { m = JSON.parse(t); } catch (e) { return; }
+    if (m.type === "state") {
+      state = { state: m.state, source: m.source, input: !!m.input, platform: m.platform || "", name: m.name || "" };
+      if (m.source === "screenshots" && useVideo) resetDecoder();
+      if (m.state === "starting") show("Starting the device stream…");
+      else if (m.state === "waiting") show("Waiting for the device…", true);
+      else if (m.state === "stopped") show("The mirror stopped.", true);
+      post();
+    } else if (m.type === "error") {
+      show(m.message || "The device stream stopped.", true);
+      post({ error: m.message || "stopped" });
+    }
+  }
+
+  function sendJson(o) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(o));
+  }
+
+  function connect() {
+    closing = false;
+    show("Connecting…");
+    const proto = location.protocol === "https:" ? "wss://" : "ws://";
+    const sock = new WebSocket(proto + location.host + location.pathname + "ws?video=" + (useVideo ? 1 : 0));
+    sock.binaryType = "arraybuffer";
+    ws = sock;
+    sock.onmessage = (e) => {
+      if (typeof e.data === "string") return onText(e.data);
+      const b = new Uint8Array(e.data);
+      if (b.length < 3) return;
+      const kind = b[0], key = (b[1] & 1) === 1, data = b.subarray(2);
+      if (kind === 1) onUnit(key, data);
+      else if (kind === 2) onImage("image/jpeg", data);
+      else if (kind === 3) onImage("image/png", data);
+    };
+    sock.onclose = () => {
+      if (ws !== sock) return;
+      ws = null;
+      if (!closing) {
+        show("The connection to the computer closed.", true);
+        post({ state: "closed" });
+      }
+    };
+  }
+
+  function reconnect() {
+    closing = true;
+    if (ws) { const old = ws; ws = null; try { old.close(); } catch (e) {} }
+    resetDecoder();
+    connect();
+  }
+  retryButton.addEventListener("click", reconnect);
+
+  // Touch: one pointer, positions as fractions of the frame.
+  let down = false;
+  let moveQueued = null;
+  function frac(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    return { x, y };
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!e.isPrimary || !state.input) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    down = true;
+    sendJson(Object.assign({ t: "touch", phase: "down" }, frac(e)));
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!down || !e.isPrimary) return;
+    e.preventDefault();
+    const first = moveQueued === null;
+    moveQueued = frac(e);
+    if (first) requestAnimationFrame(() => {
+      if (moveQueued && down) sendJson(Object.assign({ t: "touch", phase: "move" }, moveQueued));
+      moveQueued = null;
+    });
+  });
+  function end(phase) {
+    return (e) => {
+      if (!down || !e.isPrimary) return;
+      e.preventDefault();
+      down = false;
+      moveQueued = null;
+      sendJson(Object.assign({ t: "touch", phase }, frac(e)));
+    };
+  }
+  canvas.addEventListener("pointerup", end("up"));
+  canvas.addEventListener("pointercancel", end("cancel"));
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Commands of the app toolbar: {"t":"key","key":"home"}, {"t":"text","text":"…"}, {"t":"rotate"}.
+  function fromApp(e) {
+    let m = e && e.data;
+    if (typeof m === "string") { try { m = JSON.parse(m); } catch (err) { return; } }
+    if (!m || typeof m !== "object") return;
+    if (m.t === "key" || m.t === "text" || m.t === "rotate") sendJson(m);
+    else if (m.t === "reconnect") reconnect();
+  }
+  window.addEventListener("message", fromApp);
+  document.addEventListener("message", fromApp);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !ws) reconnect();
+  });
+  window.herdlingMirror = { send: (m) => fromApp({ data: m }), state: () => state };
+
+  connect();
+})();
+</script>
+</body>
+</html>

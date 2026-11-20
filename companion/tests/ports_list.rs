@@ -135,6 +135,19 @@ fn build_marks_pane_ports_first_and_drops_others() {
     assert!(plain.iter().all(|i| i.pane_id.is_none()));
 }
 
+#[test]
+fn build_leaves_out_the_mirror_servers_of_herdlingd() {
+    use std::net::{IpAddr, Ipv4Addr};
+    let lo = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let listeners = vec![
+        ports::Listener { port: 50123, addr: lo, pid: Some(77) },
+        ports::Listener { port: 5173, addr: lo, pid: Some(4411) },
+    ];
+    let procs = vec![p(77, 1, "herdlingd", &["herdlingd", "rpc"]), p(4411, 1, "node", &["node", "vite"])];
+    let items = ports::build(&listeners, &procs, None, 7790);
+    assert_eq!(items.iter().map(|i| i.port).collect::<Vec<_>>(), vec![5173]);
+}
+
 async fn call(home: &Path, method: &str, params: Value) -> Value {
     let (mut tx, server_in) = tokio::io::duplex(1 << 16);
     let (server_out, client_rx) = tokio::io::duplex(1 << 20);

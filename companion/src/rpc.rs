@@ -92,6 +92,8 @@ pub struct Ctx {
     pub core_install: Option<crate::core_install::CoreInstallCtx>,
     /// What the running `pane.watch` streams of core panes know (full-screen app, rows).
     pub term_facts: crate::core::term_watch::Facts,
+    /// The device mirrors of this rpc process and their tools (`devices.list`, `mirror.start`).
+    pub mirror: crate::mirror::MirrorCtx,
 }
 
 impl Ctx {
@@ -125,6 +127,7 @@ impl Ctx {
             core_socket: None,
             core_install: None,
             term_facts: Default::default(),
+            mirror: Default::default(),
         }
     }
 }
@@ -295,6 +298,7 @@ where
             Ok(Err(e)) => {
                 // Input broke: treat like a vanished peer, but report the error.
                 abort_everything(&ctx, &mut tasks, &writer, writer_done).await;
+                ctx.mirror.mirrors.stop_all().await;
                 return Err(e.into());
             }
             Ok(Ok(Line::Eof)) => break Exit::Eof,
@@ -356,6 +360,8 @@ where
         }
         Exit::Dead => abort_everything(&ctx, &mut tasks, &writer, writer_done).await,
     }
+    // The process exits next with no drop: stop the mirror sources now.
+    ctx.mirror.mirrors.stop_all().await;
     Ok(())
 }
 
@@ -456,6 +462,9 @@ pub const METHODS: &[&str] = &[
     "core.status",
     "core.install",
     "files.get",
+    "devices.list",
+    "mirror.start",
+    "mirror.stop",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -511,6 +520,9 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Resu
         "core.status" => core_status(ctx).await,
         "core.install" => core_install(ctx).await,
         "files.get" => files_get(ctx, params).await,
+        "devices.list" => Ok(crate::mirror::devices_list(&ctx.mirror).await),
+        "mirror.start" => crate::mirror::mirror_start(&ctx.mirror, &ctx.home, &params).await,
+        "mirror.stop" => crate::mirror::mirror_stop(&ctx.mirror, &params).await,
         other => Err(err("unknown_method", format!("unknown method: {other}"))),
     }
 }

@@ -308,6 +308,7 @@ async fn main() -> Result<()> {
             let mut ctx = rpc::Ctx::new(home.clone());
             ctx.core_socket = herdlingd::core::endpoint::from_env(&home);
             ctx.core_install = Some(herdlingd::core_install::CoreInstallCtx::new(&home, ctx.core_socket.clone()));
+            ctx.mirror.tools = Some(herdlingd::mirror::devices::host_tools(&home));
             if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
                 ctx.update = Some(update::UpdateCtx::new(home, exe));
             }

@@ -290,6 +290,11 @@ pub fn build(listeners: &[Listener], procs: &[Proc], pane: Option<(&str, &[u32])
             continue;
         }
         let proc_ = l.pid.and_then(|p| by_pid.get(&p).copied());
+        // A device mirror server of herdlingd itself is not a dev server: the app opens it from
+        // "Simulators", not from the port list.
+        if proc_.is_some_and(|p| p.name == "herdlingd") {
+            continue;
+        }
         let item = PortInfo {
             port: l.port,
             addr: l.addr.to_string(),

@@ -16,6 +16,7 @@ pub mod group_cmd;
 pub mod herdr_update;
 pub mod hostcmd;
 pub mod input_order;
+pub mod mirror;
 pub mod install;
 pub mod pair;
 pub mod pair_v2;
