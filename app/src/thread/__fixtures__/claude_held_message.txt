@@ -1,0 +1,22 @@
+  The deploy continues.
+
+✻ Crunched for 1s · done 11:03 AM · 2 shells still running
+
+⏺ Held peer message — from uds:/tmp/cc-socks/40100.sock [verified pid 40100] (peer claims name: proj-34); preview: «Deploy lock notice from proj-34: the owner approved a merge
+  and deploy of the app now. I am building an integratio» …[1 line, 444 chars total — expand to review before approving] — not delivered to Claude (1 held). The sending session's permission mode
+  class doesn't match this session's. Review it below, or set "crossSessionInbound" to "accept".
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Held message from another session
+
+ Another Claude session sent a message: from uds:/tmp/cc-socks/40100.sock [verified pid 40100] (peer claims name: proj-34)
+
+ The sending session's permission mode class doesn't match this session's, so it wasn't delivered automatically.
+
+ Message body (this is what will be delivered):
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ Deploy lock notice from proj-34: the owner approved a merge and
+ │ …[1 line, 444 chars total — full body will be delivered on approve]
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ ❯ Deny — drop it and tell the sender it was declined
+   Deliver this message to Claude

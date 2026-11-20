@@ -301,6 +301,7 @@ export const Composer = memo(function Composer({
 
   /**
    * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).
+   * A menu with no numbers gets the arrow keys and Enter (`answerKeys`).
    * The screen is re-read first; a menu that changed or is gone gets no keys.
    */
   const pick = async (c: Choice) => {

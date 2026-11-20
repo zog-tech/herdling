@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 
 import { useHostConn } from "@/hosts/connection";
 
-import { NONE, parseChoices, parseMenu, sameChoices, type Choice, type Menu } from "./parseChoices";
+import { answerKeys, NONE, parseMenu, sameChoices, type Choice, type Menu } from "./parseChoices";
 
 export { destructiveKey, parseChoices, sameChoices, type Choice, type Menu } from "./parseChoices";
 
@@ -71,7 +71,9 @@ export function useChoiceMenu(hostId: string, paneId: string, blocked: boolean):
 type Rpc = { call<T>(method: string, params: unknown): Promise<T> };
 
 /**
- * Answers a permission menu with the bare digit of `choice` (`pane.send_keys`, no Enter).
+ * Answers a permission menu with `pane.send_keys` (`answerKeys`): the bare digit of `choice` for a
+ * numbered menu (no Enter), or the arrow keys from the `❯` option and Enter for a menu with no numbers.
+ * Each key goes in its own call, so the agent reads each arrow key before the Enter.
  * Re-reads the visible screen first and sends nothing ("stale") when the agent is no longer blocked
  * or the menu on screen is not the one the buttons show.
  */
@@ -86,9 +88,13 @@ export async function answerChoice(
     method: "pane.read",
     params: { pane_id: paneId, source: "visible", format: "text" },
   });
-  const now = parseChoices(r.read?.text ?? "");
-  const sameMenu = now.length === shown.length && now.every((c, i) => c.key === shown[i].key && c.label === shown[i].label);
+  const now = parseMenu(r.read?.text ?? "").choices;
+  const sameMenu =
+    now.length === shown.length &&
+    now.every((c, i) => c.key === shown[i].key && c.label === shown[i].label && c.numbered === shown[i].numbered);
   if (!stillBlocked() || !sameMenu || !shown.some((c) => c.key === choice.key)) return "stale";
-  await rpc.call("herdr.call", { method: "pane.send_keys", params: { pane_id: paneId, keys: [choice.key] } });
+  for (const key of answerKeys(now, choice)) {
+    await rpc.call("herdr.call", { method: "pane.send_keys", params: { pane_id: paneId, keys: [key] } });
+  }
   return "sent";
 }

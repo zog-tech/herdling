@@ -202,6 +202,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Thread view: a Claude Code menu with no numbers (for example "Held message from another session")
+  shows its title, the message and the answer buttons. A tap moves the cursor with the arrow keys and presses Enter.
 - Thread view: a Claude Code prompt with a question in other words ("Allow this read outside the
   working directories?") shows its title and file path above the buttons, as other permission prompts do.
 - Voice input in the prompt box: while the mic records, the send button stops, transcribes and

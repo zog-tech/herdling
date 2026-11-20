@@ -105,6 +105,18 @@ describe("ChoiceMenu with a permission menu", () => {
     expect(onPick).toHaveBeenCalledWith(menu.choices[2]);
   });
 
+  it("shows a menu with no numbers: the prompt title, the message and one row per option", () => {
+    const { t, onPick, menu } = render(fixture("claude_held_message"));
+    expect(texts(t)).toEqual(expect.arrayContaining(["Claude asks", "Held message from another session", menu.context!]));
+    expect(menu.context).toContain("Deploy lock notice from proj-34");
+    expect(byLabel(t, /^\d\. /).map((n) => n.props.accessibilityLabel)).toEqual([
+      "1. Deny — drop it and tell the sender it was declined",
+      "2. Deliver this message to Claude",
+    ]);
+    act(() => byLabel(t, /^2\. /)[0].props.onPress());
+    expect(onPick).toHaveBeenCalledWith(menu.choices[1]);
+  });
+
   it("says that the agent asks to choose when no question is found", () => {
     const { t } = render("❯ 1. Allow\n  2. Deny", { agent: undefined });
     expect(texts(t)).toContain("The agent asks you to choose");

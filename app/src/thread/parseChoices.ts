@@ -2,14 +2,18 @@
  * The pure rules of a permission menu on a terminal screen, with no React and no connection.
  * herdlingd has a Rust port (`companion/src/choices.rs`) that uses the same fixtures: keep both the same.
  * The display data (`parts`, `parseMenu`, `menuQuestion`, `choiceView`, `isFreeform`) is only in the app.
+ * The menus with no numbers (`scanUnnumbered`, `answerKeys`) are also only in the app: herdlingd
+ * answers a push with a digit, so `parseChoices` keeps to numbered menus.
  */
 
 /**
- * One numbered option of an agent's permission menu.
+ * One option of an agent's permission menu.
  * `parts`: the first line of the option and its continuation lines, for display only (from `parseMenu`).
  * `label` is all parts joined with a space; herdlingd matches answers on it.
+ * `numbered: false`: an option of a menu with no numbers on the screen (only from `parseMenu`). Its
+ * `key` is its place in the menu ("1".."n"), and the app answers with the arrow keys and Enter.
  */
-export type Choice = { key: string /* "1".."9" */; label: string; selected: boolean; parts?: string[] };
+export type Choice = { key: string /* "1".."9" */; label: string; selected: boolean; parts?: string[]; numbered?: false };
 
 export const NONE: Choice[] = [];
 const SCAN_LINES = 20;
@@ -31,6 +35,12 @@ const SOLID_RULE = /^[╭╰┌└+]?[─━═-]{3,}[╮╯┐┘+]?$/;
 const PROMPT_QUESTION = /^(?:…)?(?:(?:Do|Would) you (?:want|like) to|Allow)\b/i;
 /** The footer of a Claude Code permission prompt, also for a question in other words. */
 const PROMPT_FOOTER = /\bTab to amend\b/;
+/** The cursor line of a menu with no numbers: "❯ Deny". A numbered line (`CHOICE_LINE`) is not one. */
+const CURSOR_LINE = /^❯\s+(\S.*?)\s*$/;
+/** A key hint line under a menu ("Esc to cancel", "Enter to select · ↑/↓ to navigate"). */
+const MENU_FOOTER = /\b(?:Esc|Enter|Tab) to\b|↑\/↓/i;
+/** Most options of a menu with no numbers. */
+const MAX_OPTIONS = 9;
 /** A line of the agent's own output (a message or the prompt line): the context never goes past it. */
 const AGENT_LINE = /^\s*[⏺●❯›]\s/;
 
@@ -87,6 +97,51 @@ function scan(screen: string): Scan {
 }
 
 /**
+ * A menu with no numbers at the bottom of the screen ("❯ Deny" over "  Deliver this message").
+ * The rules are strict, so that ordinary output never becomes a menu:
+ * - Only blank lines and key hint lines (`MENU_FOOTER`) can follow the menu.
+ * - Exactly one option line has the `❯` cursor. Each option line starts at the label column of the
+ *   cursor line. A line indented deeper is a wrapped part of the option above it.
+ * - The menu has 2 to 9 options.
+ * - A blank line, a rule line or the top of the screen is directly above the menu.
+ * The idle prompt ("❯ " in a box) is no menu: a rule line follows it, and an empty "❯" has no label.
+ */
+function scanUnnumbered(lines: Line[]): Scan {
+  const none: Scan = { lines, block: NONE, start: -1 };
+  let end = lines.length;
+  while (end > 0 && (!lines[end - 1].text || MENU_FOOTER.test(lines[end - 1].text))) end--;
+  // The block: the lines above `end` up to a blank line or a rule line.
+  let top = end;
+  while (top > 0 && lines[top - 1].text && !isRule(lines[top - 1].raw)) top--;
+  const cursors: number[] = [];
+  for (let i = top; i < end; i++) {
+    if (CURSOR_LINE.test(lines[i].text) && !CHOICE_LINE.test(lines[i].text)) cursors.push(i);
+  }
+  if (cursors.length !== 1) return none;
+  const at = cursors[0];
+  const cursor = lines[at];
+  const col = cursor.indent + cursor.text.indexOf(CURSOR_LINE.exec(cursor.text)![1]);
+  // The first line of the block must be an option line: other text above the options is no menu.
+  if (top !== at && lines[top].indent !== col) return none;
+
+  const block: Choice[] = [];
+  for (let i = top; i < end; i++) {
+    const { indent, text } = lines[i];
+    if (i === at || indent === col) {
+      const label = i === at ? CURSOR_LINE.exec(text)![1] : text.trim();
+      block.push({ key: String(block.length + 1), label, selected: i === at, parts: [label], numbered: false });
+    } else if (indent > col && block.length) {
+      const last = block[block.length - 1];
+      last.label = `${last.label} ${text.trim()}`;
+      last.parts!.push(text.trim());
+    } else {
+      return none;
+    }
+  }
+  return block.length >= 2 && block.length <= MAX_OPTIONS ? { lines, block, start: top } : none;
+}
+
+/**
  * Numbered choices of a permission menu on the visible screen, or `[]`.
  * Looks only at the last 20 non-empty lines and takes the last block of consecutive choice lines.
  * A line indented deeper than the digit of the choice above it is a wrapped part of that label and is joined onto it.
@@ -108,11 +163,49 @@ export type Menu = { choices: Choice[]; question?: string; context?: string };
 /** `parseChoices`, `menuQuestion` and the prompt context in one pass, for the buttons in the app. */
 export function parseMenu(screen: string): Menu {
   const s = scan(screen);
-  if (!s.block.length) return { choices: NONE };
+  if (!s.block.length) return unnumberedMenu(scanUnnumbered(s.lines));
   const q = questionTop(s);
   const footer = s.lines.slice(-6).some((l) => PROMPT_FOOTER.test(l.text));
   const context = q.question && (PROMPT_QUESTION.test(q.question) || footer) ? contextAbove(s.lines, q.top) : undefined;
   return context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
+}
+
+/**
+ * A menu with no numbers, for display. The question is the text directly above the options, as for
+ * a numbered menu. When a box or a rule line is directly above the options (a "Held message"
+ * prompt), the question is the title of the prompt: the first line under its solid rule. The
+ * lines between the title and the options (the sender, the message body) are the `context`.
+ */
+function unnumberedMenu(s: Scan): Menu {
+  if (!s.block.length) return { choices: NONE };
+  const q = questionTop(s);
+  if (q.question) {
+    const footer = s.lines.slice(-6).some((l) => PROMPT_FOOTER.test(l.text));
+    const context = PROMPT_QUESTION.test(q.question) || footer ? contextAbove(s.lines, q.top) : undefined;
+    return context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
+  }
+  const title = promptTitle(s.lines, s.start);
+  if (title < 0) return { choices: s.block };
+  const question = s.lines[title].text.trim();
+  const context = contextAbove(s.lines, s.start, title);
+  return context ? { choices: s.block, question, context } : { choices: s.block, question };
+}
+
+/**
+ * The index of the prompt title above the line `start`: the first text line under the nearest solid
+ * rule. -1 when a line of the agent's output or the top of the screen comes first.
+ */
+function promptTitle(lines: Line[], start: number): number {
+  for (let i = start - 1; i >= 0; i--) {
+    const raw = lines[i].raw;
+    if (AGENT_LINE.test(raw)) return -1;
+    if (!SOLID_RULE.test(raw.trim())) continue;
+    for (let j = i + 1; j < start; j++) {
+      if (!isRule(lines[j].raw) && /[\p{L}\p{N}]/u.test(lines[j].text)) return j;
+    }
+    return -1;
+  }
+  return -1;
 }
 
 /**
@@ -153,13 +246,14 @@ function questionTop({ lines, start }: Scan): { question?: string; top: number }
 
 /**
  * The prompt body above the question line `top`, or undefined. It goes up to the solid rule of the
- * prompt frame, to a line of the agent's output, or to the top of the screen (a long command pushes
- * the frame off the screen). Rule lines inside the prompt are left out. Box side bars and trailing
- * white space are removed; the indent of the command stays, less the indent that all lines share.
+ * prompt frame, to a line of the agent's output, to the line `floor` (not included), or to the top of
+ * the screen (a long command pushes the frame off the screen). Rule lines inside the prompt are left
+ * out. Box side bars and trailing white space are removed; the indent of the command stays, less the
+ * indent that all lines share.
  */
-function contextAbove(lines: Line[], top: number): string | undefined {
+function contextAbove(lines: Line[], top: number, floor = -1): string | undefined {
   const taken: string[] = [];
-  for (let i = top - 1; i >= 0 && taken.length < CONTEXT_LINES; i--) {
+  for (let i = top - 1; i > floor && taken.length < CONTEXT_LINES; i--) {
     const raw = lines[i].raw;
     const bare = raw.trim();
     if (SOLID_RULE.test(bare)) break;
@@ -214,11 +308,31 @@ export function destructiveKey(choices: Choice[]): string | undefined {
   return undefined;
 }
 
-/** True when both lists have the same keys, labels, marker and parts. */
+/**
+ * The keys that answer `choice` with `pane.send_keys`, on the menu `now` (the screen as it is now).
+ * A numbered menu: the bare digit (Claude's selector confirms on it, so no Enter).
+ * A menu with no numbers: "down" or "up" from the `❯` option to `choice`, then "enter".
+ */
+export function answerKeys(now: Choice[], choice: Choice): string[] {
+  if (choice.numbered !== false) return [choice.key];
+  const from = Math.max(0, now.findIndex((c) => c.selected));
+  const to = Number(choice.key) - 1;
+  const steps = Array.from({ length: Math.abs(to - from) }, () => (to > from ? "down" : "up"));
+  return [...steps, "enter"];
+}
+
+/** True when both lists have the same keys, labels, marker, numbering and parts. */
 export function sameChoices(a: Choice[], b: Choice[]): boolean {
   return (
     a.length === b.length &&
-    a.every((c, i) => c.key === b[i].key && c.label === b[i].label && c.selected === b[i].selected && sameParts(c.parts, b[i].parts))
+    a.every(
+      (c, i) =>
+        c.key === b[i].key &&
+        c.label === b[i].label &&
+        c.selected === b[i].selected &&
+        c.numbered === b[i].numbered &&
+        sameParts(c.parts, b[i].parts),
+    )
   );
 }
 

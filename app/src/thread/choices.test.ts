@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { answerChoice, destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
-import { choiceView, isFreeform, labelMatches, menuQuestion, parseMenu, shortLabel, yesNo } from "./parseChoices";
+import { answerKeys, choiceView, isFreeform, labelMatches, menuQuestion, parseMenu, shortLabel, yesNo } from "./parseChoices";
 
 const mockCalls: { method: string; params: any }[] = [];
 let mockScreen = "";
@@ -198,7 +198,77 @@ describe("menuQuestion", () => {
     ]) {
       const s = fixture(name);
       expect(parseMenu(s).choices.map(({ key, label, selected }) => ({ key, label, selected }))).toEqual(parseChoices(s));
+      expect(parseMenu(s).choices.every((c) => c.numbered === undefined)).toBe(true);
     }
+  });
+});
+
+describe("parseMenu of a menu with no numbers", () => {
+  it("held_message: the options, the prompt title as the question and the message as the context", () => {
+    const menu = parseMenu(fixture("claude_held_message"));
+    expect(menu.choices).toEqual([
+      {
+        key: "1",
+        label: "Deny — drop it and tell the sender it was declined",
+        selected: true,
+        parts: ["Deny — drop it and tell the sender it was declined"],
+        numbered: false,
+      },
+      { key: "2", label: "Deliver this message to Claude", selected: false, parts: ["Deliver this message to Claude"], numbered: false },
+    ]);
+    expect(menu.question).toBe("Held message from another session");
+    expect(menu.context).toBe(
+      [
+        "Another Claude session sent a message: from uds:/tmp/cc-socks/40100.sock [verified pid 40100] (peer claims name: proj-34)",
+        "",
+        "The sending session's permission mode class doesn't match this session's, so it wasn't delivered automatically.",
+        "",
+        "Message body (this is what will be delivered):",
+        "Deploy lock notice from proj-34: the owner approved a merge and",
+        "…[1 line, 444 chars total — full body will be delivered on approve]",
+      ].join("\n"),
+    );
+  });
+
+  it("is not in parseChoices: herdlingd answers a push only on a numbered menu", () => {
+    expect(parseChoices(fixture("claude_held_message"))).toEqual([]);
+  });
+
+  it("leaves the idle prompt and numbered prose with no menu", () => {
+    expect(parseMenu(fixture("claude_idle_prompt"))).toEqual({ choices: [] });
+    expect(parseMenu(fixture("claude_numbered_prose"))).toEqual({ choices: [] });
+  });
+
+  it("takes the question directly above the options, and key hint lines below them", () => {
+    const menu = parseMenu("Pick a branch\n\n❯ main\n  dev\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n");
+    expect(menu.question).toBe("Pick a branch");
+    expect(menu.choices.map((c) => [c.label, c.selected])).toEqual([
+      ["main", true],
+      ["dev", false],
+    ]);
+    expect(menu.context).toBeUndefined();
+  });
+
+  it("joins a deeper line onto the option above it", () => {
+    const menu = parseMenu("\n❯ Deny\n  Deliver this message\n    to Claude\n");
+    expect(menu.choices.map((c) => c.label)).toEqual(["Deny", "Deliver this message to Claude"]);
+    expect(menu.choices[1].parts).toEqual(["Deliver this message", "to Claude"]);
+  });
+
+  it("finds no menu in ordinary output", () => {
+    // A typed prompt in the input box: a rule line follows it.
+    expect(parseMenu("❯ fix the test\n  and the build\n────────\n  ? for shortcuts\n").choices).toEqual([]);
+    // Text follows the options.
+    expect(parseMenu("❯ a\n  b\nsome output\n").choices).toEqual([]);
+    // Text at another indent directly above the options.
+    expect(parseMenu("Some text\n❯ a\n  b\n").choices).toEqual([]);
+    // One option only.
+    expect(parseMenu("\n❯ only one\n").choices).toEqual([]);
+    // No cursor, or two cursors.
+    expect(parseMenu("\n  a\n  b\n").choices).toEqual([]);
+    expect(parseMenu("\n❯ a\n❯ b\n").choices).toEqual([]);
+    // An empty prompt line.
+    expect(parseMenu("\n❯\n  b\n").choices).toEqual([]);
   });
 });
 
@@ -440,5 +510,57 @@ describe("answerChoice", () => {
     const rpc = new FakeRpc(fixture("claude_bash_permission"));
     await expect(answerChoice(rpc, "w1:p1", shown, shown[0], () => false)).resolves.toBe("stale");
     expect(rpc.calls.map((c) => c.method)).toEqual(["pane.read"]);
+  });
+
+  describe("a menu with no numbers", () => {
+    const held = fixture("claude_held_message");
+    const options = parseMenu(held).choices;
+    const keys = (rpc: FakeRpc) => rpc.calls.filter((c) => c.method === "pane.send_keys").map((c) => c.params.keys);
+
+    it("moves the cursor down to option 2 and presses Enter, one key in each call", async () => {
+      const rpc = new FakeRpc(held);
+      await expect(answerChoice(rpc, "w1:p1", options, options[1], () => true)).resolves.toBe("sent");
+      expect(rpc.calls).toEqual([
+        { method: "pane.read", params: { pane_id: "w1:p1", source: "visible", format: "text" } },
+        { method: "pane.send_keys", params: { pane_id: "w1:p1", keys: ["down"] } },
+        { method: "pane.send_keys", params: { pane_id: "w1:p1", keys: ["enter"] } },
+      ]);
+    });
+
+    it("presses only Enter for the option under the cursor", async () => {
+      const rpc = new FakeRpc(held);
+      await answerChoice(rpc, "w1:p1", options, options[0], () => true);
+      expect(keys(rpc)).toEqual([["enter"]]);
+    });
+
+    it("counts from the cursor on the screen now, not from the shown menu", async () => {
+      const moved = held.replace(" ❯ Deny", "   Deny").replace("   Deliver this", " ❯ Deliver this");
+      const rpc = new FakeRpc(moved);
+      await answerChoice(rpc, "w1:p1", options, options[0], () => true);
+      expect(keys(rpc)).toEqual([["up"], ["enter"]]);
+    });
+
+    it("sends nothing when a numbered menu with the same labels is on the screen", async () => {
+      const rpc = new FakeRpc("❯ 1. Deny — drop it and tell the sender it was declined\n  2. Deliver this message to Claude\n");
+      await expect(answerChoice(rpc, "w1:p1", options, options[1], () => true)).resolves.toBe("stale");
+      expect(keys(rpc)).toEqual([]);
+    });
+  });
+});
+
+describe("answerKeys", () => {
+  const menu = (labels: string[], at: number, numbered = false): Choice[] =>
+    labels.map((label, i) => ({ key: String(i + 1), label, selected: i === at, ...(numbered ? {} : { numbered: false as const }) }));
+
+  it("gives the bare digit for a numbered menu", () => {
+    const m = menu(["Yes", "No"], 0, true);
+    expect(answerKeys(m, m[1])).toEqual(["2"]);
+  });
+
+  it("gives the arrow keys from the cursor and Enter for a menu with no numbers", () => {
+    const m = menu(["a", "b", "c", "d"], 1);
+    expect(answerKeys(m, m[3])).toEqual(["down", "down", "enter"]);
+    expect(answerKeys(m, m[0])).toEqual(["up", "enter"]);
+    expect(answerKeys(m, m[1])).toEqual(["enter"]);
   });
 });

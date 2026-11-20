@@ -59,7 +59,8 @@ const AGENT_NAMES: Record<string, string> = {
  * up, because the prompt box needs the space. Each option is a row: the digit in a keycap, the
  * title, a "Recommended" chip and the detail (2 lines, the chevron shows all). The built-in
  * free-text options ("Type something.", "Chat about this") are small pills under the rows.
- * A tap sends the digit through `onPick`. The terminal cursor (`selected`) has no style: it means nothing on the phone.
+ * A tap answers through `onPick` (the digit, or the arrow keys and Enter for a menu with no numbers).
+ * A menu with no numbers also shows a keycap: the number is the place of the option. The terminal cursor (`selected`) has no style: it means nothing on the phone.
  */
 export function ChoiceMenu({
   choices,
