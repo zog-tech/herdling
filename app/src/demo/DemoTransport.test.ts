@@ -5,6 +5,7 @@ import type {
   AutomationRun,
   Boot,
   CommandList,
+  FileGet,
   FilePut,
   FsDirs,
   GitDiff,
@@ -189,6 +190,14 @@ describe("DemoTransport", () => {
     expect(check.latest).toBe(check.current);
     expect(await call<UpdateApply>("update.apply", {}).then(ok("update.apply"))).toMatchObject({ status: "up_to_date" });
     expect(await call<HerdrUpdate>("herdr.update", {}).then(ok("herdr.update"))).toMatchObject({ status: "up_to_date", handoff: "none" });
+
+    // The file viewer: a folder lists folders first, a relative path starts at the cwd.
+    const webapp = await call<FileGet>("files.get", { path: "~/projects/webapp/" }).then(ok("files.get"));
+    expect(webapp).toMatchObject({ kind: "dir", path: "/home/demo/projects/webapp" });
+    expect(webapp.kind === "dir" && webapp.entries.map((e) => e.name)).toEqual(["public", "src", "tests", "package.json", "README.md"]);
+    const readme = await call<FileGet>("files.get", { path: "README.md", cwd: "/home/demo/projects/api-server" });
+    expect(readme).toMatchObject({ kind: "text", name: "README.md", truncated: false });
+    expect(await callError("files.get", { path: "~/nope/x.md" })).toMatchObject({ code: "not_found" });
 
     const dirs = await call<{ path: string; dirs: string[]; recent_cwds: string[] }>("fs.dirs", {}).then(ok("fs.dirs"));
     expect(dirs.dirs).toContain("projects");

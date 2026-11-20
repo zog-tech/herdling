@@ -308,6 +308,8 @@ export class DemoTransport implements LineTransport {
         return s.recentSessions(str(p, "cwd"), str(p, "kind"), num(p, "limit") ?? 20);
       case "fs.dirs":
         return s.dirs(str(p, "path"), { hidden: p.hidden === true, recent: p.recent !== false });
+      case "files.get":
+        return s.file(need(p, "path", method), str(p, "cwd"), str(p, "pane_id"), p.hidden === true);
       // The demo computer has the agents of the demo, and some more.
       case "agents.installed":
         return {

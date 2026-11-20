@@ -3,6 +3,7 @@ import { Check, Copy, Play } from "lucide-react-native";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { codePath, findPaths } from "@/files/paths";
 import { useHostConn } from "@/hosts/connection";
 import { fontFamily } from "@/theme/fonts";
 import { colors, hitTarget, icon, radius, space, state, themed, type } from "@/theme/tokens";
@@ -12,6 +13,7 @@ import { ThreadLink } from "../LinkText";
 import { findLinks, linkTarget, replyMarkdownIt } from "../links";
 import { RunHostContext, ThreadPaneContext, type RunHost } from "../LiveToolContext";
 import { MenuPressable } from "../MenuPressable";
+import { PathLink, PathText } from "../PathText";
 import { copyText, type MenuTarget } from "../rowMenu";
 import { runAt, runnableCommand } from "../runCommand";
 
@@ -171,9 +173,29 @@ const rules: RenderRules = {
       </Text>
     );
   },
+  // A path in plain text (`/…` or `~/…`) opens in the file viewer. Text inside a link stays as it is.
+  text: (node, _children, parent, s, inherited = {}) => {
+    if (!parent.some((p) => p.type === "link") && findPaths(node.content).length > 0) {
+      return <PathText key={node.key} style={[inherited, s.text]} text={node.content} />;
+    }
+    return (
+      <Text key={node.key} style={[inherited, s.text]}>
+        {node.content}
+      </Text>
+    );
+  },
   // Inline code that is one URL is a link too: agents often put a dev server URL in backticks.
+  // Inline code that is one file path opens in the file viewer (see `files/paths.ts`).
   code_inline: (node, _children, _parent, s, inherited = {}) => {
     const url = codeUrl(node.content);
+    const path = url === undefined ? codePath(node.content) : null;
+    if (path !== null) {
+      return (
+        <PathLink key={node.key} path={path} style={[inherited, s.code_inline]}>
+          {node.content}
+        </PathLink>
+      );
+    }
     if (url === undefined) {
       return (
         <Text key={node.key} style={[inherited, s.code_inline]}>

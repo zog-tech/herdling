@@ -3,6 +3,8 @@ import type {
   AgentPreview,
   AgentStatus,
   CoreGroup,
+  FileEntry,
+  FileGet,
   FsDirs,
   GroupFields,
   GroupSource,
@@ -94,6 +96,25 @@ const DIRS: Record<string, string[]> = {
 
 /** Folders of the demo that are git repos. */
 const GIT_REPOS = new Set([WEBAPP, API, `${HOME}/projects/docs-site`, `${HOME}/projects/mobile-app`, `${HOME}/projects/design-system`]);
+
+/** Text files for `files.get`: the demo has no images, so the viewer shows folders and text. */
+const FILES: Record<string, string> = {
+  [`${WEBAPP}/README.md`]: "# webapp\n\nThe demo web app. Run `pnpm dev` and open http://localhost:5173.\n",
+  [`${WEBAPP}/package.json`]: '{\n  "name": "webapp",\n  "private": true,\n  "scripts": { "dev": "vite", "test": "vitest" }\n}\n',
+  [`${WEBAPP}/src/pages/index.tsx`]: "export default function Home() {\n  return <h1>Hello from the demo</h1>;\n}\n",
+  [`${API}/README.md`]: "# api-server\n\nThe demo API.\n",
+};
+
+/** `a/./b/../c` as `/a/c`, with no slash at the end. */
+function normalize(path: string): string {
+  const out: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") out.pop();
+    else out.push(part);
+  }
+  return `/${out.join("/")}`;
+}
 
 /** Recent agent folders, newest first, as herdlingd reads them from the agent logs. */
 /**
@@ -355,6 +376,24 @@ export class DemoScenario {
       hidden,
       recent_cwds: o?.recent === false ? [] : RECENT_CWDS,
     };
+  }
+
+  /** `files.get` on the demo tree: folders from `DIRS`, text files from `FILES`. No images. */
+  file(path: string, cwd: string | undefined, paneId: string | undefined, hidden: boolean): FileGet {
+    const home = path.replace(/^~(?=\/|$)/, HOME);
+    const base = cwd ?? (paneId ? this.agents.get(paneId)?.info.cwd : undefined) ?? WEBAPP;
+    const p = normalize(home.startsWith("/") ? home : `${base}/${home}`);
+    const name = p === "/" ? "/" : baseName(p);
+    const text = FILES[p];
+    if (text !== undefined) return { path: p, name, kind: "text", size: text.length, text, truncated: false };
+    const listing = this.dirs(p, { hidden: true, recent: false });
+    const prefix = p === "/" ? "/" : `${p}/`;
+    const files = Object.keys(FILES)
+      .filter((f) => f.startsWith(prefix) && !f.slice(prefix.length).includes("/"))
+      .map((f): FileEntry => ({ name: f.slice(prefix.length), kind: "file", size: FILES[f].length }))
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    const dirs = listing.dirs.filter((d) => hidden || !d.startsWith(".")).map((d): FileEntry => ({ name: d, kind: "dir" }));
+    return { path: p, name, kind: "dir", entries: [...dirs, ...files], truncated: false, hidden };
   }
 
   /** `pane.read`: a plausible terminal screen. `ansi` adds a few SGR colors. */

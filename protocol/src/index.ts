@@ -478,6 +478,43 @@ export type CommandList = { commands: CommandInfo[] };
 /** `files.put` result: where the host saved the file (`~/.cache/herdling/uploads/...`). Any file type, at most 25 MiB (10 MiB on an older herdlingd). */
 export type FilePut = { path: string };
 
+/**
+ * Params of `files.get`. `path` is absolute, `~/…`, or relative to `cwd` (else to the folder of
+ * `pane_id`). `hidden` lists hidden entries of a folder. `offset` asks for the next part of an image.
+ */
+export type FileGetParams = { path: string; cwd?: string; pane_id?: string; hidden?: boolean; offset?: number };
+
+/** One entry of a folder in `files.get`. `kind` comes from the name: herdlingd does not read the file. */
+export type FileEntry = { name: string; kind: "dir" | "image" | "file"; size?: number };
+
+/** `files.get` result for a folder: folders first, then files. At most 1000 entries. */
+export type FileDir = { path: string; name: string; kind: "dir"; entries: FileEntry[]; truncated: boolean; hidden: boolean };
+
+/**
+ * `files.get` result for an image. At most 384 KiB of bytes per call, from `offset`; `eof` is true
+ * for the last part. Each part except the last is a multiple of 3 bytes, so the base64 parts join as text. An image larger than 20 MiB has `too_large: true` and no bytes.
+ */
+export type FileImage = {
+  path: string;
+  name: string;
+  kind: "image";
+  size: number;
+  mime: string;
+  too_large?: boolean;
+  offset?: number;
+  data_b64?: string;
+  eof?: boolean;
+};
+
+/** `files.get` result for a text file: the first 256 KiB of text. */
+export type FileText = { path: string; name: string; kind: "text"; size: number; text: string; truncated: boolean };
+
+/** `files.get` result for a file that the viewer does not show. `mime` when herdlingd knows the type. */
+export type FileOther = { path: string; name: string; kind: "other"; size: number; mime?: string };
+
+/** `files.get` result. A missing path is the error `not_found`. */
+export type FileGet = FileDir | FileImage | FileText | FileOther;
+
 /** Params of `git.status`: a folder, or a pane whose folder herdr reports. */
 export type GitStatusParams = { cwd: string } | { pane_id: string };
 
