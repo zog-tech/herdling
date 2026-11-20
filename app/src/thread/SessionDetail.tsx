@@ -46,7 +46,8 @@ import { PanePager } from "@/thread/PanePager";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
 import { PendingBubbles } from "@/thread/items/PendingBubble";
-import { usePendingList } from "@/thread/pending";
+import { sendWithPending, usePendingList } from "@/thread/pending";
+import { canSwitchModel, hasModelItem, MODEL_BUSY_MESSAGE, MODELS, modelPrompt } from "@/thread/models";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
@@ -99,7 +100,30 @@ function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: 
 }
 
 /**
- * Restart, Resume (agents with a resume flag), Changes, Preview, "Why this status?" (a herdr with
+ * The Claude Code models as a sheet. A pick sends `/model <id>` as a prompt, with a pending bubble.
+ * The agent status is read at the pick: during a turn, `/model` does not wait in the queue.
+ */
+function showModelSheet(rpc: Parameters<typeof sendWithPending>[0], hostId: string, paneId: string) {
+  showActionSheet(
+    { title: "Model", message: "Claude Code also keeps the pick as the default for new sessions.", options: [...MODELS.map((m) => m.label), "Cancel"], cancelButtonIndex: MODELS.length },
+    (i) => {
+      const m = MODELS[i];
+      if (!m) return;
+      const status = useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status;
+      if (!canSwitchModel(status)) {
+        Alert.alert("Can't change the model now", MODEL_BUSY_MESSAGE);
+        return;
+      }
+      sendWithPending(rpc, hostId, paneId, modelPrompt(m)).then(haptics.commit, (e) => {
+        haptics.fail();
+        Alert.alert("Can't change the model", message(e));
+      });
+    },
+  );
+}
+
+/**
+ * Restart, Resume (agents with a resume flag), Model (Claude Code), Changes, Preview, "Why this status?" (a herdr with
  * `agent.explain`), the three renames and Close for the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
  * (a host that lists `shell.watch`), Changes, Preview and Close.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
@@ -167,6 +191,13 @@ function useSessionMenu(
       items.push({
         label: "Resume older session",
         onPick: () => router.push(`/resume/${hostId}/${paneId}` as never),
+      });
+    }
+    if (agent && hasModelItem(agent.agent)) {
+      items.push({
+        label: "Model",
+        // After the menu closes, so the two sheets do not overlap.
+        onPick: () => setTimeout(() => showModelSheet(rpc, hostId, paneId), 0),
       });
     }
     if (listsMethod(hello, "git.status")) {
