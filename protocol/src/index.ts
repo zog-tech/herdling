@@ -679,7 +679,8 @@ export type MirrorDevice = {
 /** `devices.list` result. `tools` says which programs herdlingd found; `scrcpy` is the pinned scrcpy server version. */
 export type DevicesList = {
   devices: MirrorDevice[];
-  tools: { xcrun: boolean; idb: boolean; idb_companion?: boolean; adb: boolean };
+  /** `sim_video` (herdlingd 0.2.1): the `sim-video` tool of idb 1.7.8 and later, for the iOS video. */
+  tools: { xcrun: boolean; idb: boolean; idb_companion?: boolean; sim_video?: boolean; adb: boolean };
   scrcpy?: string;
 };
 /** `mirror.start` params. `allow_device` is needed for a real device; `max_size` (320–4096) caps the Android video edge. */

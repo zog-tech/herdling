@@ -33,7 +33,11 @@ export function deviceDetail(d: MirrorDevice): string {
 export function toolHints(tools: DevicesList["tools"], macos: boolean): string[] {
   const hints: string[] = [];
   if (macos && !tools.xcrun) hints.push("Install Xcode to see iOS simulators.");
-  if (macos && tools.xcrun && !tools.idb) hints.push("Install idb (fb-idb and idb-companion) for video and touch on iOS simulators.");
+  if (macos && tools.xcrun && !tools.idb) {
+    hints.push(tools.sim_video ? "Install idb (fb-idb) for touch on iOS simulators." : "Install idb (fb-idb and idb-companion) for video and touch on iOS simulators.");
+  }
+  // An older herdlingd does not send `sim_video`: no hint then.
+  if (macos && tools.xcrun && tools.idb && tools.sim_video === false) hints.push("Update idb-companion to 1.7.8 or later for smooth video on iOS simulators.");
   if (!tools.adb) hints.push("Install the Android SDK platform tools (adb) to see Android emulators.");
   return hints;
 }

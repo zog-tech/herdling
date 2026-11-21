@@ -53,6 +53,9 @@ test("detail_lines_and_tool_hints", () => {
   expect(deviceDetail(dev({ video: false, input: false }))).toBe("iOS simulator · Screenshots, view only");
   expect(deviceDetail(dev({ platform: "android", kind: "emulator", os: "Android 15", video: true, input: true }))).toBe("Android 15 · Video and touch");
   expect(toolHints({ xcrun: true, idb: true, adb: true }, true)).toEqual([]);
+  expect(toolHints({ xcrun: true, idb: true, sim_video: true, adb: true }, true)).toEqual([]);
+  expect(toolHints({ xcrun: true, idb: true, sim_video: false, adb: true }, true)).toEqual([expect.stringMatching(/1\.7\.8/)]);
+  expect(toolHints({ xcrun: true, idb: false, sim_video: true, adb: true }, true)).toEqual([expect.stringMatching(/for touch/)]);
   expect(toolHints({ xcrun: true, idb: false, adb: true }, true)).toEqual([expect.stringMatching(/idb/)]);
   expect(toolHints({ xcrun: false, idb: false, adb: false }, true)).toHaveLength(2);
   // Linux: no iOS hints.
