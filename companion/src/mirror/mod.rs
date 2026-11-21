@@ -34,7 +34,7 @@ use stream::{Frame, FrameCache, FrameKind};
 pub const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Frames queued for each viewer before it lags.
 const FRAME_QUEUE: usize = 64;
-/// The longest edge of the Android video (scrcpy `max_size`).
+/// The longest edge of the video (scrcpy `max_size`, the `--scale` of sim-video).
 pub const DEFAULT_MAX_SIZE: u32 = 1280;
 
 /// A command for the running source.
@@ -315,6 +315,7 @@ pub async fn devices_list(m: &MirrorCtx) -> Value {
             "xcrun": tools.xcrun.is_some(),
             "idb": tools.idb.is_some(),
             "idb_companion": tools.idb_companion.is_some(),
+            "sim_video": tools.sim_video.is_some(),
             "adb": tools.adb.is_some(),
         },
         "scrcpy": pin::embedded().version,

@@ -681,12 +681,14 @@ keys and text back. The page comes through the browser preview tunnel above. The
     "os": "Android 15", "model": "Pixel_8", "video": true, "input": true, "mirroring": true},
    {"id": "android:192.0.2.10:5555", "platform": "android", "kind": "device", "name": "Fire TV",
     "model": "Fire TV", "video": true, "input": true}],
- "tools": {"xcrun": true, "idb": true, "idb_companion": true, "adb": true},
+ "tools": {"xcrun": true, "idb": true, "idb_companion": true, "sim_video": true, "adb": true},
  "scrcpy": "5.0.1"}
 ```
 
-- iOS: the booted simulators of `xcrun simctl list devices booted -j` (macOS only). `video` and
-  `input` are true when `idb` is found.
+- iOS: the booted simulators of `xcrun simctl list devices booted -j` (macOS only). `video` is true
+  when `sim-video` or `idb` is found, `input` when `idb` is found. `tools.sim_video` (herdlingd
+  0.2.1) tells if `sim-video` is found: on the search path, or next to the real `idb_companion`
+  (the Homebrew formula keeps it in `libexec`).
 - Android: the ready devices of `adb devices -l`. A serial `emulator-<port>` is an emulator; herdlingd
   asks it for its AVD name (`adb emu avd name`) and its Android version. Any other serial is a real
   device (`kind: "device"`): herdlingd sends it no command, and the app does not offer it.
@@ -746,7 +748,12 @@ Sources:
   control=true video_codec=h264 send_device_meta=false clipboard_autosync=false cleanup=true`.
   Input goes over the scrcpy control socket. When scrcpy does not start, screenshots
   (`adb exec-out screencap -p`) and `adb shell input` take over.
-- iOS: `idb video-stream --format h264` and `idb ui tap|swipe|text|button`. idb takes points: the
+- iOS video: `sim-video stream --set ~/Library/Developer/CoreSimulator/Devices --udid <udid>
+  --transport annex-b --key-frame-rate 1 [--scale <s>] -` when `sim-video` (idb 1.7.8 and later) is
+  found. It sends a frame on each screen update (nothing while the screen is idle) and stops when
+  its stdin ends. `--scale` keeps the longest edge at or below `max_size`; the pixel size comes from
+  `xcrun simctl io <udid> enumerate`. Without `sim-video`: `idb video-stream --format h264`.
+- iOS input: `idb ui tap|swipe|text|button`. idb takes points: the
   scale comes from `idb describe --json`. When the video does not start, screenshots
   (`xcrun simctl io <udid> screenshot`) take over, with idb input. An idb error "Failed to connect
   to companion" gets one `idb disconnect <udid>` and one retry. Without idb, screenshots and view only.

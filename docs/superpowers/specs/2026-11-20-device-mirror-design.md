@@ -80,8 +80,14 @@ device pixels in the current rotation.
 
 ### iOS simulator
 
-1. Video: `idb video-stream --udid <udid> --format h264` writes raw H.264 (Annex B) to stdout.
-   herdlingd splits it into access units and finds the key frames (IDR, with SPS and PPS).
+1. Video: `sim-video stream --set <device set> --udid <udid> --transport annex-b -` writes raw
+   H.264 (Annex B) to stdout. `sim-video` comes with idb 1.7.8 and later (the release archive
+   `idb-companion.macos-arm64.tar.gz`; the Homebrew formula keeps it in `libexec` beside
+   `idb_companion`). It reads the simulator framebuffer through CoreSimulator and encodes with
+   VideoToolbox, so it needs no gRPC companion and no screen recording permission. It stops when
+   its stdin ends, so herdlingd keeps the stdin pipe open. Without `sim-video`, herdlingd uses
+   `idb video-stream --udid <udid> --format h264`. herdlingd splits the stream into access units
+   and finds the key frames (IDR, with SPS and PPS).
 2. Input: `idb ui tap|swipe|text|button --udid <udid>` (buttons `HOME`, `LOCK`, `SIDE_BUTTON`,
    `SIRI`). idb takes points. herdlingd reads the screen scale (`density`) from
    `idb describe --udid <udid> --json` once and divides the frame pixels by it.
@@ -90,7 +96,10 @@ device pixels in the current rotation.
    for the simulator itself. The companion is a shared daemon, like the adb server: herdlingd
    does not stop it. herdlingd stops only its own `idb video-stream` process.
 4. Some `idb_companion` builds stop with a fatal error on `video-stream` (seen with the build of
-   2026-08-19 on iOS 26.5). The client then reports "Connection lost", and the next idb calls
+   2026-08-19 on iOS 26.5). The cause is in the companion: its video handler reads the first
+   request with one iterator of the gRPC request stream and then loops over the stream with a
+   second iterator, and the grpc-swift 1 stream allows only one ("NIOThrowingAsyncSequenceProducer
+   allows only a single AsyncIterator"). idb 1.7.x (grpc-swift 2) does not have this fault. The client then reports "Connection lost", and the next idb calls
    fail with "Failed to connect to companion" until `idb disconnect <udid>` clears the stale
    entry. herdlingd handles this: when the video source fails before the first frame, it runs
    `idb disconnect <udid>` once, uses screenshots for this mirror, and keeps the idb input.
@@ -253,6 +262,11 @@ See `docs/protocol.md`, "Device mirror".
 - iOS (iOS 26.5 simulator, idb_companion build of 2026-08-19): `idb video-stream` made the
   companion stop with a fatal error, the mirror moved to screenshots in about 2 s, `idb disconnect`
   cleared the stale companion, and taps and the Home button worked through idb.
+- iOS (iOS 26.5 simulator, `sim-video` of idb 1.7.8): through `mirror.start` and the WebSocket,
+  the source stayed on video at 588x1280 (`max_size` 1280), up to 58 fps during an animation and
+  no frames while idle, first frame in about 0.5 s, and a screen change reached the WebSocket
+  about 100 ms after `simctl` applied it. `ffprobe` decoded every frame (H.264 High, no B-frames).
+  `sim-video` also ran from a launchd job. A missing `sim-video` moved the mirror to screenshots.
 - Not verified on a phone: the WebSocket through the phone's preview listener (the listener copies
   raw bytes after the cookie check, as for a dev server with hot reload).
 

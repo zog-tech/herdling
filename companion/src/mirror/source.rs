@@ -1,5 +1,5 @@
-//! The I/O of the mirror sources: the scrcpy server on an Android emulator, `idb video-stream` on
-//! an iOS simulator, and the screenshot loops of both. Each source runs until its stop signal or
+//! The I/O of the mirror sources: the scrcpy server on an Android emulator, `sim-video stream` (or
+//! `idb video-stream`) on an iOS simulator, and the screenshot loops of both. Each source runs until its stop signal or
 //! an error, publishes frames to the hub, and reports `Ready` and `Ended` to the session.
 //!
 //! The rules (stream parsing, input mapping, argument lists) are pure, in `stream.rs` and
@@ -33,7 +33,7 @@ const CMD_TIMEOUT: Duration = Duration::from_secs(10);
 const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the scrcpy server may take to accept the video connection.
 const CONNECT_WINDOW: Duration = Duration::from_secs(10);
-/// The H.264 pipe of idb is quiet this long after a frame: the last NAL is complete.
+/// The H.264 pipe of sim-video or idb is quiet this long after a frame: the last NAL is complete.
 const QUIET: Duration = Duration::from_millis(20);
 /// At most one "reset video" to scrcpy in this time.
 const KEY_FRAME_EVERY: Duration = Duration::from_secs(1);
@@ -469,8 +469,88 @@ async fn idb_disconnect(tools: &Tools, udid: &str) {
     }
 }
 
+/// The key frame interval of sim-video in seconds. A new viewer starts at the last key frame.
+const SIM_VIDEO_KEY_FRAME_SECS: &str = "1";
+
+/// The arguments of `sim-video stream`: raw Annex B on stdout. Without `--fps`, a frame comes
+/// on each screen update, so an idle screen sends nothing.
+pub fn sim_video_args(udid: &str, device_set: &Path, scale: Option<f64>) -> Vec<String> {
+    let mut a: Vec<String> = vec!["stream".into(), "--set".into(), device_set.display().to_string(), "--udid".into(), udid.into()];
+    a.extend(["--transport".into(), "annex-b".into(), "--key-frame-rate".into(), SIM_VIDEO_KEY_FRAME_SECS.into()]);
+    if let Some(s) = scale {
+        a.extend(["--scale".into(), format!("{s:.4}")]);
+    }
+    a.push("-".into());
+    a
+}
+
+/// The pixel size of the main display, from `xcrun simctl io <udid> enumerate`: the first
+/// `Default width` and `Default height` pair.
+pub fn parse_io_enumerate(text: &str) -> Option<(u32, u32)> {
+    let value = |l: &str, key: &str| l.trim().strip_prefix(key).and_then(|v| v.trim().parse::<u32>().ok());
+    let mut width = None;
+    for l in text.lines() {
+        if let Some(w) = value(l, "Default width:") {
+            width = Some(w);
+        } else if let (Some(w), Some(h)) = (width, value(l, "Default height:")) {
+            return (w > 0 && h > 0).then_some((w, h));
+        }
+    }
+    None
+}
+
+/// The `--scale` of sim-video that keeps the longest edge at or below `max_size`. None when the
+/// screen is small enough. The scale rounds down, so the edge never grows above `max_size`.
+pub fn sim_video_scale((w, h): (u32, u32), max_size: u32) -> Option<f64> {
+    let long = w.max(h);
+    if long <= max_size || long == 0 {
+        return None;
+    }
+    let s = (f64::from(max_size) / f64::from(long) * 10_000.0).floor() / 10_000.0;
+    (s > 0.0).then_some(s)
+}
+
+/// The simulator video of `sim-video stream`. It reads the simulator framebuffer through
+/// CoreSimulator and encodes with VideoToolbox: no gRPC companion and no screen recording
+/// permission. The input still goes through `idb ui`.
+async fn sim_video(a: &Args, udid: &str, program: &Path, cmds: mpsc::Receiver<SourceCmd>, ready: &mut Ready) -> Result<(), Fail> {
+    let tools = a.env.tools.clone();
+    let scale = match &tools.xcrun {
+        Some(x) => {
+            let mut c = command(x);
+            c.args(["simctl", "io", udid, "enumerate"]);
+            let out = run_cmd(c, CMD_TIMEOUT).await.ok();
+            out.and_then(|o| parse_io_enumerate(&String::from_utf8_lossy(&o))).and_then(|d| sim_video_scale(d, a.env.max_size))
+        }
+        None => None,
+    };
+    let set = a.env.home.join("Library/Developer/CoreSimulator/Devices");
+    let mut c = command(program);
+    // sim-video stops when its stdin ends: the pipe stays open while the source runs.
+    c.args(sim_video_args(udid, &set, scale)).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = c.spawn().map_err(|e| fallback(format!("sim-video: {e}")))?;
+    let stdin = child.stdin.take();
+    let err_tail = keep_stderr(&mut child);
+    let mut out = child.stdout.take().ok_or_else(|| fallback("sim-video has no output"))?;
+    let (t2, u2) = (tools.clone(), udid.to_string());
+    let inputs = tokio::spawn(async move { idb_input(&t2, &u2, cmds).await });
+    let mut stop = a.stop.clone();
+    let r = h264_pipe(&mut out, &mut stop, |u| {
+        a.hub.publish(FrameKind::H264, u.key, &u.data);
+        ready.mark();
+    })
+    .await;
+    inputs.abort();
+    drop(stdin);
+    drop(child);
+    r.map_err(|e| fallback(format!("{e}: {}", tail_text(&err_tail.lock().unwrap()))))
+}
+
 async fn ios_video(a: &Args, udid: &str, cmds: mpsc::Receiver<SourceCmd>, ready: &mut Ready) -> Result<(), Fail> {
     let tools = a.env.tools.clone();
+    if let Some(sv) = tools.sim_video.clone() {
+        return sim_video(a, udid, &sv, cmds, ready).await;
+    }
     let mut c = idb(&tools).ok_or_else(|| fallback("idb is not installed"))?;
     c.args(["video-stream", "--udid", udid, "--format", "h264"]).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = c.spawn().map_err(|e| fallback(format!("idb video-stream: {e}")))?;

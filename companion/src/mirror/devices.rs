@@ -70,6 +70,8 @@ pub struct Tools {
     pub adb: Option<PathBuf>,
     pub idb: Option<PathBuf>,
     pub idb_companion: Option<PathBuf>,
+    /// `sim-video` of idb (v1.7.8 and later): H.264 of a simulator, without the gRPC companion.
+    pub sim_video: Option<PathBuf>,
 }
 
 /// The folders searched for the tools: `PATH`, then the usual install folders. The rpc process
@@ -99,14 +101,30 @@ pub fn find_tools(dirs: &[PathBuf], macos: bool, exists: &dyn Fn(&Path) -> bool)
         adb: find("adb"),
         idb: find("idb"),
         idb_companion: find("idb_companion"),
+        sim_video: find(SIM_VIDEO),
     }
+}
+
+/// The file name of the simulator video tool of idb.
+pub const SIM_VIDEO: &str = "sim-video";
+
+/// Where `sim-video` is when it is not on the search path: next to the real `idb_companion`.
+/// The Homebrew formula of idb puts the whole release in `libexec` and links only
+/// `idb_companion` into `bin`. `companion_real` is the companion path with its links resolved.
+pub fn sim_video_beside(companion_real: &Path) -> Option<PathBuf> {
+    Some(companion_real.parent()?.join(SIM_VIDEO))
 }
 
 /// The tools of this computer, from the environment.
 pub fn host_tools(home: &Path) -> Tools {
     let android: Vec<String> = ["ANDROID_HOME", "ANDROID_SDK_ROOT"].iter().filter_map(|k| std::env::var(k).ok()).collect();
     let dirs = search_dirs(std::env::var("PATH").ok().as_deref(), home, &android);
-    find_tools(&dirs, cfg!(target_os = "macos"), &|p| p.is_file())
+    let mut t = find_tools(&dirs, cfg!(target_os = "macos"), &|p| p.is_file());
+    if t.sim_video.is_none() {
+        let real = t.idb_companion.as_deref().and_then(|c| std::fs::canonicalize(c).ok());
+        t.sim_video = real.as_deref().and_then(sim_video_beside).filter(|p| p.is_file());
+    }
+    t
 }
 
 /// `com.apple.CoreSimulator.SimRuntime.iOS-26-5` → `iOS 26.5`. None for an unknown form.
@@ -145,7 +163,8 @@ pub fn is_emulator(serial: &str) -> bool {
 }
 
 /// The booted iOS simulators of `xcrun simctl list devices booted -j`. Only iOS runtimes count.
-pub fn parse_simctl(json: &Value, idb: bool) -> Vec<Device> {
+/// `video`: `sim-video` or idb is there; `input`: idb is there.
+pub fn parse_simctl(json: &Value, video: bool, input: bool) -> Vec<Device> {
     let mut out = Vec::new();
     let Some(runtimes) = json.get("devices").and_then(Value::as_object) else { return out };
     for (runtime, list) in runtimes {
@@ -170,8 +189,8 @@ pub fn parse_simctl(json: &Value, idb: bool) -> Vec<Device> {
                 name: name.chars().take(80).collect(),
                 os: os.clone(),
                 model: d.get("deviceTypeIdentifier").and_then(Value::as_str).and_then(device_type),
-                video: idb,
-                input: idb,
+                video,
+                input,
             });
         }
     }
@@ -250,7 +269,7 @@ pub async fn list(tools: &Tools) -> Vec<Device> {
         let Some(out) = run_out(xcrun, &["simctl", "list", "devices", "booted", "-j"], LIST_TIMEOUT).await else {
             return Vec::new();
         };
-        serde_json::from_slice::<Value>(&out).map(|v| parse_simctl(&v, tools.idb.is_some())).unwrap_or_default()
+        serde_json::from_slice::<Value>(&out).map(|v| parse_simctl(&v, tools.idb.is_some() || tools.sim_video.is_some(), tools.idb.is_some())).unwrap_or_default()
     };
     let android = async {
         let Some(adb) = &tools.adb else { return Vec::new() };

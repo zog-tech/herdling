@@ -26,7 +26,7 @@ fn simctl_list_gives_booted_ios_simulators() {
             {"udid": "AAAAAAAA-2222-3333-4444-555555555555", "name": "Watch", "state": "Booted"}
         ]
     }});
-    let d = devices::parse_simctl(&v, true);
+    let d = devices::parse_simctl(&v, true, true);
     assert_eq!(d.len(), 1);
     assert_eq!(d[0].id, "ios:269EBED9-ADE0-4AF4-9067-6B649B12BCCB");
     assert_eq!(d[0].platform, Platform::Ios);
@@ -34,10 +34,13 @@ fn simctl_list_gives_booted_ios_simulators() {
     assert_eq!(d[0].os.as_deref(), Some("iOS 26.5"));
     assert_eq!(d[0].model.as_deref(), Some("iPhone-17"));
     assert!(d[0].video && d[0].input);
-    // Without idb: screenshots and view only.
-    let d = devices::parse_simctl(&v, false);
+    // sim-video without idb: video, view only.
+    let d = devices::parse_simctl(&v, true, false);
+    assert!(d[0].video && !d[0].input);
+    // Without idb and sim-video: screenshots and view only.
+    let d = devices::parse_simctl(&v, false, false);
     assert!(!d[0].video && !d[0].input);
-    assert!(devices::parse_simctl(&json!({}), true).is_empty());
+    assert!(devices::parse_simctl(&json!({}), true, true).is_empty());
 }
 
 #[test]
@@ -102,14 +105,23 @@ fn tools_are_found_in_path_and_usual_folders() {
     assert!(dirs.contains(&PathBuf::from("/home/sam/.local/bin")));
     // No double entries.
     assert_eq!(dirs.iter().filter(|d| d.as_path() == Path::new("/usr/bin")).count(), 1);
-    let have = ["/home/sam/Library/Android/sdk/platform-tools/adb", "/home/sam/.local/bin/idb", "/usr/bin/xcrun"];
+    let have = ["/home/sam/Library/Android/sdk/platform-tools/adb", "/home/sam/.local/bin/idb", "/usr/bin/xcrun", "/opt/x/sim-video"];
     let t = devices::find_tools(&dirs, true, &|p| have.iter().any(|h| Path::new(h) == p));
     assert_eq!(t.adb.as_deref(), Some(Path::new("/home/sam/Library/Android/sdk/platform-tools/adb")));
     assert_eq!(t.idb.as_deref(), Some(Path::new("/home/sam/.local/bin/idb")));
     assert_eq!(t.xcrun.as_deref(), Some(Path::new("/usr/bin/xcrun")));
     assert!(t.idb_companion.is_none());
+    assert_eq!(t.sim_video.as_deref(), Some(Path::new("/opt/x/sim-video")));
     // xcrun counts only on macOS.
     assert!(devices::find_tools(&dirs, false, &|p| have.iter().any(|h| Path::new(h) == p)).xcrun.is_none());
+}
+
+#[test]
+fn sim_video_sits_beside_the_real_companion() {
+    // Homebrew: bin/idb_companion links to libexec/idb_companion, and sim-video is in libexec.
+    let real = Path::new("/opt/homebrew/Cellar/idb-companion/1.7.8/libexec/idb_companion");
+    assert_eq!(devices::sim_video_beside(real), Some(PathBuf::from("/opt/homebrew/Cellar/idb-companion/1.7.8/libexec/sim-video")));
+    assert_eq!(devices::sim_video_beside(Path::new("/")), None);
 }
 
 // ------------------------------------------------------------------ pin
@@ -486,4 +498,42 @@ fn an_idle_server_stops_and_stop_ends_everything() {
     let (s, fx) = run(&s, Input::Tick, t0 + machine::SERVER_IDLE * 2);
     assert!(fx.is_empty());
     assert!(matches!(s.phase, machine::Phase::Waiting { .. }));
+}
+
+// ------------------------------------------------------------------ sim-video
+
+const IO_ENUMERATE: &str = "Port:\n    UUID: 1524D59B-8500-45F9-9E5C-D45F714C0CA7\n    Class: Unknown\n    Port Identifier: com.apple.display.captureservice\n\nPort:\n    Class: Display\n    Port Identifier: com.apple.framebuffer.display\n    Default width: 1206\n    Default height: 2622\n    Default pixel format: 'BGRA'\n\nPort:\n    Class: Display\n    Default width: 640\n    Default height: 480\n";
+
+#[test]
+fn io_enumerate_gives_the_first_display_size() {
+    use herdlingd::mirror::source::parse_io_enumerate;
+    assert_eq!(parse_io_enumerate(IO_ENUMERATE), Some((1206, 2622)));
+    assert_eq!(parse_io_enumerate("Port:\n    Default width: 0\n    Default height: 10\n"), None);
+    assert_eq!(parse_io_enumerate("Default height: 10\n"), None);
+    assert_eq!(parse_io_enumerate(""), None);
+}
+
+#[test]
+fn sim_video_scale_keeps_the_long_edge_in_max_size() {
+    use herdlingd::mirror::source::sim_video_scale;
+    let s = sim_video_scale((1206, 2622), 1280).unwrap();
+    assert_eq!(s, 0.4881);
+    assert!((2622.0 * s).round() <= 1280.0);
+    assert_eq!(sim_video_scale((1206, 2622), 4096), None);
+    assert_eq!(sim_video_scale((1280, 720), 1280), None);
+    assert_eq!(sim_video_scale((0, 0), 1280), None);
+}
+
+#[test]
+fn sim_video_args_stream_annex_b_to_stdout() {
+    use herdlingd::mirror::source::sim_video_args;
+    let set = Path::new("/home/sam/Library/Developer/CoreSimulator/Devices");
+    let a = sim_video_args("269EBED9-ADE0-4AF4-9067-6B649B12BCCB", set, Some(0.4881));
+    assert_eq!(a[0], "stream");
+    assert!(a.windows(2).any(|w| w == ["--set", "/home/sam/Library/Developer/CoreSimulator/Devices"]));
+    assert!(a.windows(2).any(|w| w == ["--udid", "269EBED9-ADE0-4AF4-9067-6B649B12BCCB"]));
+    assert!(a.windows(2).any(|w| w == ["--transport", "annex-b"]));
+    assert!(a.windows(2).any(|w| w == ["--scale", "0.4881"]));
+    assert_eq!(a.last().map(String::as_str), Some("-"));
+    assert!(!sim_video_args("U", set, None).iter().any(|x| x == "--scale"));
 }

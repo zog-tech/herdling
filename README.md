@@ -78,7 +78,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   A close that would close a worktree group asks first.
 - **Simulators on the phone.** See an iOS simulator or an Android emulator of a computer as video,
   and use it: tap, swipe, type text, and press Home, Back and Lock. Android uses the scrcpy server
-  (downloaded and checked by `herdlingd`), iOS uses idb. Without idb, the iOS simulator shows as
+  (downloaded and checked by `herdlingd`). iOS uses `sim-video` of idb 1.7.8 or later for the video
+  (else `idb video-stream`) and idb for the input. Without idb, the iOS simulator shows as
   screenshots, view only.
 - **Meters.** The plan usage of Claude and Codex, and the CPU and memory of each computer.
 - **Pairing with a QR code.** `herdlingd pair` shows a one-time code. The code is the password of

@@ -12,7 +12,8 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
   starts a small server on `127.0.0.1` with a player page and a WebSocket (a secret path, loopback
   `Host` and same `Origin` only) and issues a preview grant for its port. Android uses the pinned
   scrcpy server 5.0.1 (downloaded from the GitHub release, SHA-256 checked) for H.264 video and input;
-  iOS uses `idb video-stream` and `idb ui`. When video does not start, screenshots take over. The
+  iOS uses `sim-video stream` of idb 1.7.8 and later for the video (else `idb video-stream`) and
+  `idb ui` for the input. When video does not start, screenshots take over. The
   source stops 10 s after the last viewer leaves, and every mirror stops when the rpc process ends.
   `ports.list` leaves out these servers. See `docs/protocol.md`, "Device mirror".
 
