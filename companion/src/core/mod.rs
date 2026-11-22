@@ -15,6 +15,7 @@ pub mod project;
 pub mod repos;
 pub mod route;
 pub mod screen;
+pub mod seen;
 pub mod start;
 pub mod stream;
 pub mod term_watch;

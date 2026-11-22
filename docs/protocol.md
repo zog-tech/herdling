@@ -1031,6 +1031,11 @@ group falls back to the folder name.
 - `agent` is the reported app as a Herdling kind (`claude`, `codex`, ...). `display_agent` is the
   reported app when the kind is unknown (null for a known kind), `name` the entry name (see
   above), `state_change_seq` the time of the last status change.
+- `turn` (herdlingd 0.2.1): the turn counter of the terminal. The core adds one each time the
+  status leaves `working`.
+  `seen_turn` (herdlingd 0.2.1): the `herdling.seen` label, see `agent.mark_seen`.
+  `herdr_seen_turn` (herdlingd 0.2.1): the `herdr.seen` label of the Herdr desktop app, the last
+  turn the user saw there. Each field is left out when it is not known.
 - With no core socket or no core answer, the call gives `herdr_unavailable` (old apps show
   "herdr is not running").
 
@@ -1140,6 +1145,35 @@ shows now.
   not known if the Herdr app moves a terminal that it holds when its labels change.
 - A repo or folder group gives `unsupported`: the folder places those terminals.
 - An unknown pane gives `pane_not_found`; a bad target gives `bad_request`.
+
+### `agent.mark_seen`
+
+Added in herdlingd 0.2.1. The app checks `hello.methods` before it calls it.
+
+Params: `pane_id` (a core pane) and `turn` (a number of 0 or more): the user saw the result of
+this turn. Result: `{pane_id, seen_turn}`, the turn that the `herdling.seen` label holds now
+(0 when it has none).
+
+- herdlingd writes the turn in the `herdling.seen` label of the terminal. No other label changes.
+  The `herdr.seen` label of the Herdr desktop app is read only.
+- The label only grows. A lower or equal turn writes nothing.
+- The label never passes the current `turn` of the terminal. The core turn goes up each time the
+  status leaves `working`, so a result that comes later has a higher turn and stays unread.
+- An unknown pane gives `pane_not_found`; a missing or bad `turn` gives `bad_request`.
+
+How the app uses it:
+
+- A finished agent counts as read when one of these covers it: the local mark of the phone
+  (`state_change_seq`), or `seen_turn` or `herdr_seen_turn` at least as high as `turn`. An agent
+  at `turn` 0 never finished work, so it has nothing to read.
+- When the user sees a finished agent, the app sends its `turn` about 1.5 s later. It sends
+  only to a host that lists the method. A failed call goes again at the next snapshot or the
+  next mark; there is no queue.
+- The labels stay on the computer. After a reinstall, and on a second phone, the snapshot
+  gives the read state back.
+- An older app does not call the method and ignores the new fields. An older herdlingd does
+  not list the method and sends no new fields: the app uses its local marks only, as before.
+- A label change makes no event: the app sees a new value at its next snapshot.
 
 ### `session.start`
 

@@ -7,6 +7,12 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.1] - unreleased
 
+- Read state on the computer: new method `agent.mark_seen` writes the last seen turn of an agent
+  in the `herdling.seen` label. The label only grows and never passes the current turn. Snapshot
+  agent entries have the new optional fields `turn`, `seen_turn` (`herdling.seen`) and
+  `herdr_seen_turn` (the `herdr.seen` label of the Herdr desktop app). See `docs/protocol.md`,
+  "`agent.mark_seen`".
+
 - Device mirror: new methods `devices.list`, `mirror.start` and `mirror.stop`. `devices.list` lists
   the booted iOS simulators and the Android devices (emulators and real devices, marked). `mirror.start`
   starts a small server on `127.0.0.1` with a player page and a WebSocket (a secret path, loopback
