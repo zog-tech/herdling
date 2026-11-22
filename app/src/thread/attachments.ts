@@ -139,6 +139,20 @@ export function videoCaption(v: Pick<Video, "duration" | "size">): string {
     .join(" · ");
 }
 
+/** A video from the edit menu paste, as the native module gives it (see `modules/paste`). */
+export type PastedVideoEvent = { uri?: string; name: string; size: number; mime?: string; duration?: number; error?: string };
+
+/**
+ * What a pasted video does: it becomes a video attachment, or the composer shows an error.
+ * `room` is the count of items that still fit; `chunked` says if the host takes an upload in parts.
+ */
+export function fromPastedVideo(e: PastedVideoEvent, room: number, chunked: boolean): { video: Video } | { error: string } {
+  if (e.error === "too_large" || (e.uri && e.size > videoLimit(chunked))) return { error: tooLargeVideoText([e.name], chunked) };
+  if (e.error || !e.uri) return { error: `Could not paste the video: ${e.error ?? "no file"}` };
+  if (room <= 0) return { error: `You can attach up to ${MAX_ATTACHMENTS} items.` };
+  return { video: { kind: "video", uri: e.uri, name: e.name, size: e.size, duration: e.duration, mime: e.mime } };
+}
+
 /** "12 KB", "3.4 MB". */
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.zogtech.herdling'
+version = '1.0.0'
+
+android {
+  namespace "com.zogtech.herdling.paste"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // ViewCompat.setOnReceiveContentListener. The app has a newer androidx.core through appcompat.
+  implementation 'androidx.core:core:1.9.0'
+}

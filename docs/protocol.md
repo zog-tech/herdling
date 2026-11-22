@@ -494,7 +494,16 @@ for an unknown id.
   and calls `files.put_abort`. A failure also calls `files.put_abort`. In both cases nothing is sent.
 - An agent cannot open a video file, so the app puts one line before a video path:
   `(The next file is a video. Use ffmpeg to look at frames if you need them.)`
-- This is JavaScript only. It uses expo-image-picker and expo-file-system, which every build has.
+- The picker and the upload are JavaScript only. They use expo-image-picker and expo-file-system,
+  which every build has.
+- Paste: a video copied to the clipboard pastes into the prompt box with the edit menu, the same as
+  an image. This needs native code in `app/modules/paste`, so only a new build has it. On iOS the
+  `HerdlingPaste` module has the constant `video: true` and the event `onPasteVideo`: the hook adds
+  "Paste" for a movie type (`public.movie` and its subtypes) and saves the movie to a file in the
+  temporary folder. On Android the `HerdlingVideoPaste` module puts an `OnReceiveContentListener`
+  for `video/*` on the focused prompt box and copies the video to the cache folder. JS gets a file
+  URI, never base64. A video over the limit of the host is not copied (`error: "too_large"`). An
+  older binary that gets new JavaScript has neither, so it does not offer video paste.
 
 ## File viewer: `files.get`
 

@@ -13,6 +13,7 @@ import {
   CHUNK_BYTES,
   documentsAvailable,
   formatDuration,
+  fromPastedVideo,
   MAX_VIDEO_BYTES,
   pathLines,
   pickMedia,
@@ -447,5 +448,14 @@ describe("videos", () => {
   test("room_counts_a_video_as_an_item_not_a_photo", () => {
     expect(photoRoom([video(), video()])).toBe(4);
     expect(fileRoom([video(), video()])).toBe(MAX_ATTACHMENTS - 2);
+  });
+
+  test("a_pasted_video_becomes_an_attachment_or_an_error", () => {
+    const ok = { uri: "file:///cache/herdling-paste/a.mov", name: "clip.mov", size: 10, duration: 1000, mime: "video/quicktime" };
+    expect(fromPastedVideo(ok, 1, true)).toEqual({ video: { kind: "video", ...ok } });
+    expect(fromPastedVideo(ok, 0, true)).toEqual({ error: `You can attach up to ${MAX_ATTACHMENTS} items.` });
+    expect(fromPastedVideo({ name: "big.mov", size: 1, error: "too_large" }, 1, true)).toEqual({ error: tooLargeVideoText(["big.mov"], true) });
+    expect(fromPastedVideo({ ...ok, size: MAX_FILE_BYTES + 1 }, 1, false)).toEqual({ error: tooLargeVideoText(["clip.mov"], false) });
+    expect(fromPastedVideo({ name: "x.mov", size: 0, error: "No access" }, 1, true)).toEqual({ error: "Could not paste the video: No access" });
   });
 });

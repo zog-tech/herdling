@@ -22,13 +22,14 @@ import { appendDictation, hostTranscriber } from "@/voice/transcribe";
 import { useDictation } from "@/voice/useDictation";
 import { DelayedSpinner } from "@/ui/Delayed";
 
-import { addPasteImageListener, hasNativePaste, type PastedImage } from "../../modules/paste";
+import { addPasteImageListener, addPasteVideoListener, hasNativePaste, hasVideoPaste, type PastedImage, type PastedVideo } from "../../modules/paste";
 import {
   canChunk,
   clipboardAvailable,
   documentsAvailable,
   fileRoom,
   formatBytes,
+  fromPastedVideo,
   MAX_ATTACHMENTS,
   MAX_FILE_BYTES,
   MAX_PHOTOS,
@@ -99,7 +100,7 @@ export const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, " ").tri
  * After "Type something." the agent shows a text field and stays blocked, so `agent.prompt` fails:
  * the next send types the text into the pane and presses Enter ("free-text mode").
  * The "+" button attaches photos and files (uploaded with `files.put`, their paths go at the end of the prompt)
- * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image. Typing `/` shows the matching commands.
+ * and opens the full list of slash commands. A long press on the box and "Paste" attaches a clipboard image (or a video, on builds with video paste). Typing `/` shows the matching commands.
  * A long text paste becomes a "Pasted text #n" chip (see `pastedText.ts`) and goes as a `.txt` file on send.
  * While the box is empty and has the focus, saved prompts show as chips (see `savedPrompts.ts`).
  * Memoized: the session screen re-renders on every thread update, and the props are plain values.
@@ -303,12 +304,38 @@ export const Composer = memo(function Composer({
   };
   const onPastedImageRef = useRef(onPastedImage);
   onPastedImageRef.current = onPastedImage;
+  /** The attachments, read by the video paste listener between renders. */
+  const photosNow = useRef(photos);
+  photosNow.current = photos;
+  /** Attaches a video pasted from the edit menu: the same video attachment as a picked one. */
+  const onPastedVideo = (v: PastedVideo) => {
+    if (!hasMethod(hello, "files.put")) {
+      setError("This host cannot receive videos.");
+      return;
+    }
+    const r = fromPastedVideo(v, fileRoom(photosNow.current), canChunk(hello));
+    if ("error" in r) {
+      setError(r.error);
+      return;
+    }
+    photosNow.current = [...photosNow.current, r.video];
+    setPhotos((cur) => [...cur, r.video].slice(0, MAX_ATTACHMENTS));
+    if (error) setError(undefined);
+  };
+  const onPastedVideoRef = useRef(onPastedVideo);
+  onPastedVideoRef.current = onPastedVideo;
+  const videoMax = videoLimit(canChunk(hello));
   // Listen only while the box is focused: the native hook is on only while a listener is,
-  // so "Paste" shows for an image in this box and in no other input.
+  // so "Paste" shows for an image (or a video) in this box and in no other input.
   useEffect(() => {
     if (!focused || !visible || voiceActive) return;
-    return addPasteImageListener((img) => onPastedImageRef.current(img));
-  }, [focused, visible, voiceActive]);
+    const offImage = addPasteImageListener((img) => onPastedImageRef.current(img));
+    const offVideo = hasVideoPaste ? addPasteVideoListener((v) => onPastedVideoRef.current(v), videoMax) : undefined;
+    return () => {
+      offImage();
+      offVideo?.();
+    };
+  }, [focused, visible, voiceActive, videoMax]);
 
   /**
    * Answers the menu with the bare digit: Claude's selector confirms on it, so no Enter (nothing lands in the prompt box).

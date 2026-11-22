@@ -229,6 +229,9 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
   1080p H.264 copy. A video goes in 4 MiB parts, up to 500 MB, with "Uploading 1 of 2 · 34%" and
   a Cancel button. A short line before the video path tells the agent to look at frames with
   ffmpeg. With an older herdlingd, videos up to 25 MB go in one call. Ships as an over-the-air update.
+- Prompt box: paste a copied video with the edit menu ("Paste"), the same as an image. It becomes
+  the same video attachment as a picked one. Needs a new app build (native code in
+  `app/modules/paste`); older builds keep the picker.
 
 - Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
   the buttons are in their own row under the text.

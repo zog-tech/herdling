@@ -130,6 +130,7 @@ jest.mock("expo-file-system", () => ({
 jest.mock("expo-clipboard", () => ({ getImageAsync: jest.fn() }));
 // The native paste hook: on by default, like build 7 and later.
 let mockNativePaste = true;
+const mockVideoListeners = new Map<(e: unknown) => void, number>();
 const mockPasteListeners = new Set<(e: { base64: string; width: number; height: number }) => void>();
 jest.mock("../../modules/paste", () => ({
   get hasNativePaste() {
@@ -138,6 +139,11 @@ jest.mock("../../modules/paste", () => ({
   addPasteImageListener: (cb: (e: { base64: string; width: number; height: number }) => void) => {
     mockPasteListeners.add(cb);
     return () => mockPasteListeners.delete(cb);
+  },
+  hasVideoPaste: true,
+  addPasteVideoListener: (cb: (e: unknown) => void, max: number) => {
+    mockVideoListeners.set(cb, max);
+    return () => mockVideoListeners.delete(cb);
   },
 }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
@@ -506,6 +512,28 @@ test("a_picked_video_goes_up_in_parts_with_a_note_before_its_path", async () => 
     ["files.put_end", undefined],
   ]);
   expect(prompts()).toEqual([`What happens at 0:30?\n${VIDEO_NOTE}\n/up/clip.mp4`]);
+});
+
+test("a_video_pasted_from_the_edit_menu_becomes_a_video_attachment", async () => {
+  idle();
+  mockHello = helloWith(["files.put", "files.put_begin", "files.put_chunk", "files.put_end", "files.put_abort"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  expect(mockVideoListeners.size).toBe(0);
+  await act(async () => prompt(tree!).props.onFocus());
+  // Only while the box has the focus, with the limit of this host.
+  expect([...mockVideoListeners.values()]).toEqual([500 * 1024 * 1024]);
+  const paste = (e: unknown) => act(async () => [...mockVideoListeners.keys()].forEach((cb) => cb(e)));
+  await paste({ name: "big.mov", size: 600 * 1024 * 1024, error: "too_large" });
+  const texts = () => tree!.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+  expect(texts()).toContain("Too large to attach (max 500.0 MB): big.mov");
+  await paste({ uri: "file:///cache/herdling-paste/x.mov", name: "clip.mov", size: 10, duration: 3000 });
+  expect(byLabel(tree!, "Remove clip.mov")).toHaveLength(1);
+  await press(tree!, "Send");
+  expect(prompts()).toEqual([`${VIDEO_NOTE}\n/up/clip.mp4`]);
+  await act(async () => prompt(tree!).props.onBlur());
+  expect(mockVideoListeners.size).toBe(0);
 });
 
 test("a_large_video_on_an_older_herdlingd_is_not_attached", async () => {
