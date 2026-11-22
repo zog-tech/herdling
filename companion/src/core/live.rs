@@ -113,12 +113,20 @@ async fn placed(sock: &CoreSocket, timeout: Duration) -> Result<Projection, RpcE
     projection(sock, timeout).await.map_err(rpc_err)
 }
 
-/// A new shell at `place` (see [`actions::place_labels`]) in `cwd`. Returns the new terminal
-/// address and the workspace and tab ids that the projection gives it.
-pub async fn run_shell(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: Option<&str>) -> Result<(String, String, String), RpcError> {
+/// A new terminal at `place` (see [`actions::place_labels`]) in `cwd`: the login shell, or
+/// `argv` when given. Returns the new terminal address and the workspace and tab ids that the
+/// projection gives it.
+pub async fn run_shell(
+    sock: &CoreSocket,
+    timeout: Duration,
+    place: &actions::Place,
+    cwd: Option<&str>,
+    argv: Option<Vec<String>>,
+) -> Result<(String, String, String), RpcError> {
     let ids = actions::fresh_ids();
     let shell = std::env::var("SHELL").ok();
-    let params = actions::run_params(cwd, actions::place_labels(place, &ids), actions::shell_argv(shell.as_deref()));
+    let argv = argv.unwrap_or_else(|| actions::shell_argv(shell.as_deref()));
+    let params = actions::run_params(cwd, actions::place_labels(place, &ids), argv);
     let mut c = connect(sock, timeout).await?;
     require(&mut c, &["terminal.run"]).await?;
     let t = c.call("terminal.run", params).await.map_err(rpc_err)?;
@@ -167,6 +175,38 @@ pub async fn send_line(sock: &CoreSocket, timeout: Duration, addr: &str, params:
                 _ => Err(typing::unconfirmed_error()),
             }
         }
+    }
+}
+
+/// Waits until the shell in `addr` can take a typed command (see [`typing::shell_ready`]), at
+/// most [`typing::READY_LIMIT`]. A shell that still starts at the end gets the command, as
+/// before; a shell that asks a question gives `shell_not_ready`. A read that fails cannot tell,
+/// so the command is typed.
+async fn wait_ready(sock: &CoreSocket, addr: &str) -> Result<(), RpcError> {
+    let end = tokio::time::Instant::now() + typing::READY_LIMIT;
+    let mut last: Option<String> = None;
+    let seen = loop {
+        let read = async {
+            let mut c = Client::connect(&sock.current(), AFTER_CHECK).await?;
+            let t = c.call("terminal.get", json!({ "terminal": addr })).await?;
+            let r = c.call("terminal.read", json!({ "terminal": addr, "lines": 0 })).await?;
+            Ok::<_, CoreError>((t, r.get("text").and_then(Value::as_str).unwrap_or("").to_string()))
+        };
+        let Ok(Ok((t, screen))) = tokio::time::timeout(AFTER_CHECK, read).await else { return Ok(()) };
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        let seen = typing::shell_ready(&t, &screen, last.as_deref(), now_ms);
+        if seen == typing::Ready::Yes {
+            return Ok(());
+        }
+        last = Some(screen);
+        if tokio::time::Instant::now() + typing::READY_GAP >= end {
+            break seen;
+        }
+        tokio::time::sleep(typing::READY_GAP).await;
+    };
+    match seen {
+        typing::Ready::Question => Err(typing::shell_question_error()),
+        _ => Ok(()),
     }
 }
 
@@ -241,14 +281,21 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
         Action::Type { addr, text, keys, fallback } => Box::pin(type_in(sock, timeout, &addr, &text, &keys, fallback)).await,
         Action::Run { kind, workspace, cwd } => {
             let place = place(sock, timeout, workspace.as_deref()).await?;
-            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
+            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref(), None).await?;
             Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
         }
         Action::Start { addr, kind, args } => {
             let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
             let login = std::env::var("SHELL").ok();
             let line = actions::agent_line(&kind, &args, actions::family_of_terminal(&t, login.as_deref()))?;
-            send(sock, timeout, &addr, &line).await?;
+            // The wait and the send share one input deadline, well within the app timeout.
+            let deadline = tokio::time::Instant::now() + typing::INPUT_TIMEOUT;
+            INPUT_DEADLINE
+                .scope(deadline, async {
+                    wait_ready(sock, &addr).await?;
+                    send(sock, timeout, &addr, &line).await
+                })
+                .await?;
             Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
         }
         Action::Prompt { addr, text } => {
@@ -506,7 +553,7 @@ pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::
         for effect in effects {
             match effect {
                 Effect::Run => {
-                    input = Some(match run_shell(sock, timeout, place, Some(cwd)).await {
+                    input = Some(match run_shell(sock, timeout, place, Some(cwd), plan.argv.clone()).await {
                         Ok((addr, ws, tab)) => {
                             ids = Some((ws, tab));
                             Input::Ran(addr)
@@ -516,7 +563,11 @@ pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::
                     });
                 }
                 Effect::Type { addr, line } => {
-                    input = Some(match send(sock, timeout, &addr, &line).await {
+                    let typed = async {
+                        wait_ready(sock, &addr).await?;
+                        send(sock, timeout, &addr, &line).await
+                    };
+                    input = Some(match typed.await {
                         Ok(_) => Input::Typed,
                         Err(e) => Input::Failed(e.message),
                     });

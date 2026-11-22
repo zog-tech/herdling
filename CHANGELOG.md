@@ -7,6 +7,20 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.1] - unreleased
 
+- `agent.prompt` checks that the Enter submitted the text. With a large image, Claude Code can
+  take the pasted path after the Enter of the core, so the text stayed in the input box, not sent,
+  and the app showed "Queued". herdlingd now reads the input box after a send that did not start
+  a turn, presses Enter once more, and gives the new error `not_submitted` when the text still
+  stays. A send of the same text again presses Enter on the text in the box and does not paste it
+  twice. See `docs/protocol.md`, "Typing on Herdr 2".
+
+- `session.start` no longer types the agent command into a new shell. For bash, zsh and ksh the
+  new terminal runs `<shell> -l -i -c '<agent command>; exec <shell> -l'`. Before, a startup file
+  that read a key (for example the update question of oh-my-zsh) took the first letter of the
+  command, and the shell ran `laude` for `claude`. `agent.start` in a new terminal (restart,
+  resume, worktree) now waits until the shell is ready, and gives the new error `shell_not_ready`
+  when the shell asks a question.
+
 - Device mirror: new methods `devices.list`, `mirror.start` and `mirror.stop`. `devices.list` lists
   the booted iOS simulators and the Android devices (emulators and real devices, marked). `mirror.start`
   starts a small server on `127.0.0.1` with a player page and a WebSocket (a secret path, loopback

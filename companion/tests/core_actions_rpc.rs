@@ -430,8 +430,17 @@ async fn session_start_runs_types_and_prompts() {
     assert_eq!(r["result"]["workspace_id"], "space:s1");
     assert_eq!(r["result"]["prompt_error"], Value::Null);
     let sends: Vec<Value> = s.core.calls_of("terminal.send").into_iter().map(|c| c["text"].clone()).collect();
-    assert_eq!(sends, [json!("claude --model opus"), json!("fix the login form")]);
-    assert_eq!(s.core.calls_of("terminal.run")[0]["labels"]["herdr.space"], "s1");
+    let run = &s.core.calls_of("terminal.run")[0];
+    // bash, zsh and ksh run the agent line as their command; other shells get it typed.
+    let shell = std::env::var("SHELL").ok();
+    if herdlingd::core::actions::agent_argv(shell.as_deref(), "claude").is_some() {
+        assert_eq!(run["argv"][3], "-c", "{run}");
+        assert!(run["argv"][4].as_str().unwrap().starts_with("claude --model opus; exec "), "{run}");
+        assert_eq!(sends, [json!("fix the login form")]);
+    } else {
+        assert_eq!(sends, [json!("claude --model opus"), json!("fix the login form")]);
+    }
+    assert_eq!(run["labels"]["herdr.space"], "s1");
     // No workspace: a new space.
     let r = sess.call("session.start", json!({"cwd": "/home/sam/web", "kind": "codex"})).await;
     assert!(r["result"]["workspace_id"].as_str().unwrap().starts_with("space:sp"), "{r}");

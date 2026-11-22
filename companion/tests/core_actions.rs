@@ -313,3 +313,22 @@ fn close_members_with_the_panes_that_the_app_showed() {
     // Unknown ids stay errors.
     assert_eq!(actions::close_members(&p, &Scope::Workspace("g:gone".into()), Some(&ids(&["t1"]))).unwrap_err().code, "workspace_not_found");
 }
+
+#[test]
+fn bash_zsh_and_ksh_run_the_agent_as_their_command() {
+    let argv = |shell: &str, line: &str| actions::agent_argv(Some(shell), line);
+    assert_eq!(
+        argv("/bin/zsh", "claude --model 'a b'").unwrap(),
+        ["/bin/zsh", "-l", "-i", "-c", "claude --model 'a b'; exec /bin/zsh -l"]
+    );
+    assert_eq!(argv("/usr/local/bin/bash", "codex").unwrap()[4], "codex; exec /usr/local/bin/bash -l");
+    assert_eq!(argv("/bin/ksh", "codex").unwrap()[0], "/bin/ksh");
+    // A shell path with a space is quoted for the second shell.
+    assert_eq!(argv("/opt/my shells/zsh", "codex").unwrap()[4], "codex; exec '/opt/my shells/zsh' -l");
+    // Other shells, and no absolute path: the command is typed.
+    assert_eq!(argv("/usr/bin/fish", "codex"), None);
+    assert_eq!(argv("/bin/sh", "codex"), None);
+    assert_eq!(argv("/usr/bin/nu", "codex"), None);
+    assert_eq!(argv("zsh", "codex"), None);
+    assert_eq!(actions::agent_argv(None, "codex"), None);
+}

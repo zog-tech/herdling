@@ -226,11 +226,14 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
         }
         "terminal.run" => {
             let address = format!("t{}", st.terminals.len() + 1);
+            // A shell that runs a command (`-c`) runs the agent, as a typed command does.
+            let runs_agent = st.send_starts_agent && params["argv"].as_array().is_some_and(|a| a.iter().any(|x| x == "-c"));
             let t = json!({
                 "address": address, "name": null, "argv": params["argv"], "cwd": params["cwd"], "state": "live",
                 "labels": params.get("labels").cloned().unwrap_or(json!({})), "pid": 500,
                 "foreground": {"pid": 500, "name": "zsh", "argv": ["zsh"], "cwd": params["cwd"]},
-                "status": null, "title": "zsh", "keep": params["keep"],
+                "status": if runs_agent { json!({"state": "idle", "app": "Claude Code"}) } else { Value::Null },
+                "title": "zsh", "keep": params["keep"],
             });
             st.terminals.push(t.clone());
             Ok(t)

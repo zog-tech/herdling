@@ -1182,7 +1182,7 @@ async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     drop(c);
     let mut w = crate::git::worktree_add_git(&plan).await?;
     let place = crate::core::actions::Place::NewSpace;
-    let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path)).await?;
+    let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path), None).await?;
     w.via = "herdr";
     w.workspace_id = Some(ws);
     w.tab_id = Some(tab);
@@ -1480,9 +1480,14 @@ async fn session_start(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         Some(_) => return Err(err("bad_request", "session.start: args must be an array")),
     };
     let prompt = params.get("prompt").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).map(String::from);
-    // The new shell is the login shell (`core::live::run_shell`): quote for its family.
-    let family = actions::ShellFamily::of(std::env::var("SHELL").ok().as_deref());
-    let plan = start::Plan { line: actions::agent_line(kind, &args, family)?, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
+    // The new terminal runs the login shell (`core::live::run_shell`): quote for its family.
+    let shell = std::env::var("SHELL").ok();
+    let family = actions::ShellFamily::of(shell.as_deref());
+    let line = actions::agent_line(kind, &args, family)?;
+    // bash, zsh and ksh run the agent line as their command, so nothing is typed into a shell
+    // that still starts.
+    let argv = actions::agent_argv(shell.as_deref(), &line);
+    let plan = start::Plan { line, argv, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
     let sock = core_sock(ctx)?;
     let place = live::place(sock, ctx.herdr_timeout, params.get("workspace_id").and_then(Value::as_str)).await?;
     let s = live::start_agent(sock, ctx.herdr_timeout, &place, cwd, &plan).await?;
