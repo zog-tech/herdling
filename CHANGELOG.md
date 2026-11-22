@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [herdlingd 0.2.1] - unreleased
+## [herdlingd 0.2.1] - 2026-11-22
 
 - Large attachments: new methods `files.put_begin`, `files.put_chunk`, `files.put_end` and
   `files.put_abort` upload a file of up to 500 MiB in parts of up to 8 MiB, in order. A part out of
