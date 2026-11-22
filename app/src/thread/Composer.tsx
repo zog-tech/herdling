@@ -402,7 +402,7 @@ export const Composer = memo(function Composer({
       );
     }
   };
-  /** "Send now" on a saved prompt chip: the text goes as it is, and the box keeps its draft. */
+  /** A tap on a saved prompt chip: the text goes as it is, with the send haptic. The box keeps its draft. */
   const sendSaved = (t: string) => {
     if (!online || busy.current || voiceActive) return;
     haptics.press();
@@ -537,7 +537,7 @@ export const Composer = memo(function Composer({
         </PhotoStrip>
       ) : null}
       {showSaved ? (
-        <SavedPromptRow prompts={savedPrompts} canSend={online && !sending && !picking} onPick={pickSaved} onSend={sendSaved} />
+        <SavedPromptRow prompts={savedPrompts} canSend={online && !sending && !picking && !voiceActive} onPick={pickSaved} onSend={sendSaved} />
       ) : null}
       {partial ? (
         <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>

@@ -233,6 +233,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Saved prompts: a tap on a chip sends the text at once. While a send cannot go, the tap puts the
+  text in the box. A long press offers "Put in the box".
 - Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
   the buttons are in their own row under the text.
 - Overview: the "Update herdlingd" hint stays hidden when the host already runs the latest
