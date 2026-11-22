@@ -19,6 +19,7 @@ import type {
   MacSettingsPane,
   PaneAnswer,
   PaneMove,
+  AgentMarkSeen,
   PortsList,
   PreviewClose,
   DevicesList,
@@ -421,6 +422,12 @@ export class DemoTransport implements LineTransport {
         const targets = [str(p, "workspace_id") !== undefined, p.new_space === true, str(p, "group") !== undefined].filter(Boolean).length;
         if (targets !== 1) throw new DemoError("bad_request", "pane.move takes exactly one of workspace_id, new_space and group");
         return this.scenario.movePane(pane, { workspaceId: str(p, "workspace_id"), newSpace: p.new_space === true, group: str(p, "group") }) satisfies PaneMove;
+      }
+      // The demo agents have no turns, so the app sends no marks; answer the same way as herdlingd.
+      case "agent.mark_seen": {
+        const turn = typeof p.turn === "number" && p.turn >= 0 ? p.turn : undefined;
+        if (turn === undefined) throw new DemoError("bad_request", "agent.mark_seen requires turn");
+        return { pane_id: need(p, "pane_id", method), seen_turn: turn } satisfies AgentMarkSeen;
       }
       case "session.start": {
         const args = Array.isArray(p.args) ? p.args.filter((a): a is string => typeof a === "string") : undefined;

@@ -22,7 +22,7 @@ pub struct RpcRequest {
     pub params: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RpcError {
     pub code: String,
     pub message: String,

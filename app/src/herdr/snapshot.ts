@@ -1,5 +1,7 @@
 import type { AgentStatus, GroupFields, SnapshotBackend } from "@herdling/protocol";
 
+import { isRead } from "./readState";
+
 /** Subset of herdr `session.snapshot` the app uses. Extra fields from herdr are kept as they come. */
 export type AgentInfo = {
   pane_id: string;
@@ -14,6 +16,12 @@ export type AgentInfo = {
   cwd?: string | null;
   /** Grows on each status change. The herdr schema does not require it, so treat a missing value as 0. */
   state_change_seq?: number;
+  /** Herdr 2: the turn counter of the terminal; it goes up each time the status leaves `working`. Missing from older herdlingd. */
+  turn?: number;
+  /** Herdr 2: the last turn the user saw in Herdling (`herdling.seen` label, `agent.mark_seen`). */
+  seen_turn?: number;
+  /** Herdr 2: the last turn the user saw in the Herdr desktop app (`herdr.seen` label). */
+  herdr_seen_turn?: number;
   terminal_title_stripped?: string | null;
   /** The agent's own name (`agent.rename`); null or missing when it has none. */
   name?: string | null;
@@ -175,8 +183,8 @@ export const paneKey = (hostId: string, paneId: string) => `${hostId}:${paneId}`
 export type NeedsYou = { hostId: string; agent: AgentInfo };
 
 /**
- * Agents that wait for the user: `blocked` first, then `idle`/`done` agents whose
- * `state_change_seq` is newer than the last-seen value. Newest first within each group.
+ * Agents that wait for the user: `blocked` first, then `idle`/`done` agents that are not read
+ * (`isRead`: no local or host mark covers them). Newest first within each group.
  */
 export function needsYou(
   hosts: { hostId: string; snapshot: Snapshot }[],
@@ -189,7 +197,7 @@ export function needsYou(
       if (agent.agent_status === "blocked") blocked.push({ hostId, agent });
       else if (
         (agent.agent_status === "idle" || agent.agent_status === "done") &&
-        (agent.state_change_seq ?? 0) > (seen[paneKey(hostId, agent.pane_id)] ?? 0)
+        !isRead(agent, seen[paneKey(hostId, agent.pane_id)])
       )
         finished.push({ hostId, agent });
     }

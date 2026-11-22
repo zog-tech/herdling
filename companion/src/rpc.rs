@@ -457,6 +457,7 @@ pub const METHODS: &[&str] = &[
     "shell.watches",
     "groups.list",
     "pane.move",
+    "agent.mark_seen",
     "session.start",
     "machines.suggest",
     "core.status",
@@ -523,6 +524,7 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Resu
         "shell.watches" => shell_watches(ctx).await,
         "groups.list" => groups_list(ctx).await,
         "pane.move" => pane_move(ctx, params).await,
+        "agent.mark_seen" => agent_mark_seen(ctx, params).await,
         "session.start" => session_start(ctx, params).await,
         "machines.suggest" => machines_suggest(ctx).await,
         "core.status" => core_status(ctx).await,
@@ -1239,7 +1241,7 @@ async fn git_worktree_add(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     drop(c);
     let mut w = crate::git::worktree_add_git(&plan).await?;
     let place = crate::core::actions::Place::NewSpace;
-    let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path)).await?;
+    let (addr, ws, tab) = crate::core::live::run_shell(sock, ctx.herdr_timeout, &place, Some(&w.path), None).await?;
     w.via = "herdr";
     w.workspace_id = Some(ws);
     w.tab_id = Some(tab);
@@ -1521,6 +1523,26 @@ async fn pane_move(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
     Ok(json!({ "pane_id": pane, "workspace_id": ws, "tab_id": tab }))
 }
 
+/// `agent.mark_seen`: keeps on the computer that the user saw turn `turn` of a Herdr 2 agent, in
+/// the `herdling.seen` label. The label only grows and never passes the turn that shows now
+/// ([`crate::core::seen::mark`]). Changes no other label.
+async fn agent_mark_seen(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    use crate::core::{live, project, seen};
+    let pane = str_param(&params, "pane_id", "agent.mark_seen")?.to_string();
+    let turn = params.get("turn").and_then(Value::as_u64).ok_or_else(|| err("bad_request", "agent.mark_seen requires turn (a number of 0 or more)"))?;
+    let sock = core_sock(ctx)?;
+    let addr = project::address(&pane).ok_or_else(|| err("pane_not_found", format!("no Herdr 2 terminal {pane}")))?.to_string();
+    let t = live::record(sock, ctx.herdr_timeout, &pane).await.map_err(live::rpc_err)?;
+    let stored = match seen::mark(&t, turn) {
+        seen::Mark::Write(n) => {
+            live::label(sock, ctx.herdr_timeout, &addr, seen::labels(n)).await?;
+            n
+        }
+        seen::Mark::Keep(n) => n,
+    };
+    Ok(json!({ "pane_id": pane, "seen_turn": stored }))
+}
+
 /// `session.start`: starts an agent on the core in a Herdr app space (an existing one, or a new
 /// one when `workspace_id` is missing) or in a group, then sends the first prompt. See
 /// [`crate::core::start`].
@@ -1537,9 +1559,14 @@ async fn session_start(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         Some(_) => return Err(err("bad_request", "session.start: args must be an array")),
     };
     let prompt = params.get("prompt").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).map(String::from);
-    // The new shell is the login shell (`core::live::run_shell`): quote for its family.
-    let family = actions::ShellFamily::of(std::env::var("SHELL").ok().as_deref());
-    let plan = start::Plan { line: actions::agent_line(kind, &args, family)?, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
+    // The new terminal runs the login shell (`core::live::run_shell`): quote for its family.
+    let shell = std::env::var("SHELL").ok();
+    let family = actions::ShellFamily::of(shell.as_deref());
+    let line = actions::agent_line(kind, &args, family)?;
+    // bash, zsh and ksh run the agent line as their command, so nothing is typed into a shell
+    // that still starts.
+    let argv = actions::agent_argv(shell.as_deref(), &line);
+    let plan = start::Plan { line, argv, prompt, max_tries: start::MAX_TRIES, wait: start::WAIT };
     let sock = core_sock(ctx)?;
     let place = live::place(sock, ctx.herdr_timeout, params.get("workspace_id").and_then(Value::as_str)).await?;
     let s = live::start_agent(sock, ctx.herdr_timeout, &place, cwd, &plan).await?;

@@ -267,7 +267,7 @@ The message box at the bottom ("Message the agent"):
 - **Videos.** A video can be up to 500 MB (25 MB with an older herdlingd). On iPhone, the app makes a 1080p H.264 copy first. You can also copy a video (for example with **Copy** in Photos), then long-press the box and tap **Paste**. The upload shows its progress, and **Cancel** stops it. An agent cannot watch a video, so a short line before the path tells it to look at frames with ffmpeg. Install ffmpeg on the computer for this.
 - **Commands and skills.** Type `/` as the first character to see the agent's commands. For Codex, type `$` for skills. For OpenCode, type `@` for skills. Or tap **+**, then **Commands & skills**.
 - **Speak.** Tap the mic to record and tap again to stop, or hold the mic and release. Slide away to cancel. The text goes into the box. Herdling does not send it until you tap send.
-- **Send now.** A message that you send while Claude Code works waits in its queue ("Queued"). Tap **Send now** under it to stop the current turn. Claude Code then gets the queued messages at once.
+- **Send now.** A message that you send while Claude Code works waits in its queue ("Queued"). Tap the **Send now** button beside it to stop the current turn. Claude Code then gets the queued messages at once.
 
 The header has a speaker button (**Speak replies**) and a **...** menu: **Restart**, **Resume older session**, **Model** (Claude Code: Default, Opus, Sonnet or Haiku, while the agent is idle), rename, and **Close** (stops the agent and closes its pane).
 

@@ -243,6 +243,7 @@ pub fn agent_entry(t: &Value, tab: &str, ws: &str, name: &str) -> Option<Value> 
     if let Some(parent) = parent_pane_id(t) {
         entry["parent_id"] = json!(parent);
     }
+    super::seen::add_fields(&mut entry, t);
     Some(entry)
 }
 

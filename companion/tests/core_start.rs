@@ -7,7 +7,7 @@ use herdlingd::core::start::{begin, step, Effect, Input, Outcome, Plan, State};
 use serde_json::json;
 
 fn plan(prompt: Option<&str>) -> Plan {
-    Plan { line: "claude".into(), prompt: prompt.map(String::from), max_tries: 3, wait: Duration::from_millis(5) }
+    Plan { line: "claude".into(), argv: None, prompt: prompt.map(String::from), max_tries: 3, wait: Duration::from_millis(5) }
 }
 
 fn waiting(tries: u32) -> State {
@@ -80,4 +80,13 @@ fn unexpected_inputs_stop() {
     assert!(matches!(&e[..], [Effect::Kill(_), Effect::Finish(Outcome::Failed(_))]), "{e:?}");
     let (_, e) = step(waiting(1), Input::Ran("t5".into()), &p);
     assert!(matches!(&e[..], [Effect::Finish(Outcome::Started { prompt_error: Some(_), .. })]), "{e:?}");
+}
+
+#[test]
+fn a_terminal_that_runs_the_agent_types_nothing() {
+    let argv = Some(vec!["/bin/zsh".to_string(), "-l".into(), "-i".into(), "-c".into(), "claude; exec /bin/zsh -l".into()]);
+    let p = Plan { argv: argv.clone(), ..plan(None) };
+    assert_eq!(step(State::Shell, Input::Ran("t4".into()), &p), (State::Done, vec![started(None)]));
+    let p = Plan { argv, ..plan(Some("hi")) };
+    assert_eq!(step(State::Shell, Input::Ran("t4".into()), &p), (waiting(1), vec![Effect::Get("t4".into())]));
 }

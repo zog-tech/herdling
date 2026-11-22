@@ -118,3 +118,42 @@ fn the_modes_come_from_the_first_paint() {
     assert_eq!(typing::modes_of(b"\x1b[?1h\x1b[H~"), Modes { app_cursor: true });
     assert_eq!(typing::modes_of(b"\x1b[?1h\x1b[?1l"), Modes { app_cursor: false });
 }
+
+fn fresh_shell(fg_pid: u64) -> serde_json::Value {
+    json!({ "created_ms": 1_000_000, "pid": 40, "foreground": { "pid": fg_pid, "name": "zsh" } })
+}
+
+#[test]
+fn a_new_shell_is_ready_when_its_prompt_is_quiet() {
+    use typing::{shell_ready, Ready};
+    let t = fresh_shell(40);
+    let now = 1_002_000;
+    let prompt = "Last login: Mon\n➜  proj ";
+    assert_eq!(shell_ready(&t, prompt, None, now), Ready::Wait, "the first look waits for a second one");
+    assert_eq!(shell_ready(&t, prompt, Some("Last login: Mon"), now), Ready::Wait, "the screen changed");
+    assert_eq!(shell_ready(&t, prompt, Some(prompt), now), Ready::Yes);
+    assert_eq!(shell_ready(&t, "sam@studio ~ % ", Some("sam@studio ~ % "), now), Ready::Yes);
+    assert_eq!(shell_ready(&t, "\n\n", Some("\n\n"), now), Ready::Wait, "an empty screen");
+    // A program that a startup file runs holds the foreground.
+    assert_eq!(shell_ready(&fresh_shell(41), prompt, Some(prompt), now), Ready::Wait);
+}
+
+#[test]
+fn a_new_shell_that_asks_gets_no_command() {
+    use typing::{shell_ready, Ready};
+    let t = fresh_shell(40);
+    let now = 1_002_000;
+    for q in ["[oh-my-zsh] Would you like to update? [Y/n] ", "Password:", "Continue? (y/N)", "Really?"] {
+        assert_eq!(shell_ready(&t, q, Some(q), now), Ready::Question, "{q}");
+    }
+    assert_eq!(typing::shell_question_error().code, "shell_not_ready");
+}
+
+#[test]
+fn an_old_shell_is_ready_at_once() {
+    use typing::{shell_ready, Ready};
+    let t = fresh_shell(41);
+    let now = 1_000_000 + typing::FRESH_MS + 1;
+    assert_eq!(shell_ready(&t, "Continue? [Y/n]", None, now), Ready::Yes);
+    assert_eq!(shell_ready(&json!({}), "", None, now), Ready::Yes, "no start time: an old terminal");
+}

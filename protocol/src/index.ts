@@ -756,6 +756,15 @@ export type PaneMoveParams = { pane_id: string } & ({ workspace_id: string } | {
 export type PaneMove = { pane_id: string; workspace_id: string | null; tab_id: string | null };
 
 /**
+ * `agent.mark_seen` params: the user saw turn `turn` of the Herdr 2 agent `pane_id`. herdlingd
+ * keeps it in the `herdling.seen` label of the terminal. The label only grows, and never passes
+ * the current turn of the terminal.
+ */
+export type AgentMarkSeenParams = { pane_id: string; turn: number };
+/** `agent.mark_seen` result: the turn that the label holds now (0 when it has none). */
+export type AgentMarkSeen = { pane_id: string; seen_turn: number };
+
+/**
  * `session.start` params: starts an agent on the Herdr 2 core. `cwd` is an absolute path, `kind`
  * an agent kind with a known program. `workspace_id`: a space (`hc:space:<id>`) or a group
  * (`hc:g:<key>`); missing makes a new space. `args` are agent arguments (for example a resume).

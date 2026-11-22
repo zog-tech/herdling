@@ -1,6 +1,10 @@
-//! The steps of `session.start` on the core, as a pure state machine: start a shell, type the
-//! agent command, wait until the agent reports a status, send the first prompt. `core::live`
-//! runs the effects and feeds the results back.
+//! The steps of `session.start` on the core, as a pure state machine: start the terminal, wait
+//! until the agent reports a status, send the first prompt. `core::live` runs the effects and
+//! feeds the results back.
+//!
+//! For bash, zsh and ksh the new terminal runs the agent command itself (`Plan::argv`), so no
+//! key can go to a startup file of the shell. For other shells herdlingd starts the shell and
+//! types the command once the shell is ready (`core::typing::shell_ready`).
 //!
 //! Once the agent command is typed, the agent runs: a failed or late prompt does not fail the
 //! start. It comes back as `prompt_error`, so the app opens the agent and offers the prompt again.
@@ -16,6 +20,9 @@ use super::project::agent_status;
 pub struct Plan {
     /// The agent command line (`core::actions::agent_line`).
     pub line: String,
+    /// The program of the new terminal when it runs the agent itself
+    /// (`core::actions::agent_argv`). None: start a shell and type `line` into it.
+    pub argv: Option<Vec<String>>,
     /// The first prompt, if any.
     pub prompt: Option<String>,
     /// Most `terminal.get` checks before the prompt is given up.
@@ -68,7 +75,8 @@ pub enum Outcome {
 /// What the caller does next.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
-    /// Start the shell (the place and folder are the caller's).
+    /// Start the terminal (the place and folder are the caller's), with `Plan::argv` as its
+    /// program when it has one.
     Run,
     Type { addr: String, line: String },
     Wait(Duration),
@@ -91,6 +99,8 @@ fn started(addr: String, prompt_error: Option<String>) -> Vec<Effect> {
 /// The next state and effects after `input` in `state`.
 pub fn step(state: State, input: Input, plan: &Plan) -> (State, Vec<Effect>) {
     match (state, input) {
+        // The terminal runs the agent itself: nothing to type.
+        (State::Shell, Input::Ran(addr)) if plan.argv.is_some() => step(State::Command { addr }, Input::Typed, plan),
         (State::Shell, Input::Ran(addr)) => {
             let line = plan.line.clone();
             (State::Command { addr: addr.clone() }, vec![Effect::Type { addr, line }])

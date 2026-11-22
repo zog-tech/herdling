@@ -22,6 +22,7 @@ import type {
   MacOpenSettings,
   PaneAnswer,
   PaneMove,
+  AgentMarkSeen,
   PortsList,
   PreviewClose,
   DevicesList,
@@ -330,6 +331,8 @@ describe("DemoTransport", () => {
     expect(await callError("pane.move", { pane_id: "t14" })).toMatchObject({ code: "bad_request" });
     const moved = await call<PaneMove>("pane.move", { pane_id: "t14", workspace_id: "space:r1" }).then(ok("pane.move"));
     expect(moved).toMatchObject({ pane_id: "t14", workspace_id: "space:r1" });
+    expect(await call<AgentMarkSeen>("agent.mark_seen", { pane_id: "t14", turn: 2 }).then(ok("agent.mark_seen"))).toEqual({ pane_id: "t14", seen_turn: 2 });
+    expect(await callError("agent.mark_seen", { pane_id: "t14" })).toMatchObject({ code: "bad_request" });
     // The repo group was empty after the move, so it went away.
     expect((await call<GroupsList>("groups.list")).groups.map((g) => g.workspace_id)).not.toContain("g:api-server");
     const started = await call<SessionStart>("session.start", { cwd: "/home/demo/projects/webapp", kind: "claude", prompt: "Hello" }).then(ok("session.start"));
