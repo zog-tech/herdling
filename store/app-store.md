@@ -33,7 +33,7 @@ SEE EVERY AGENT
 One board shows the agents on all of your computers. Each tile shows the agent's logo, its status, what it is doing now and its last reply. The ones that need an answer come first. Group the board by folder, by computer or by Herdr space. Usage meters show how much of your plan is left, and each computer shows its CPU and memory.
 
 READ AND REPLY
-Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or speak your prompt. Long pasted text goes in as an attachment, so your prompt stays readable. One status line shows when the agent and its subagents are working; tap it to open a subagent.
+Open an agent to read its session as a clean chat, with formatted replies, tool calls and subagents. Switch to the live terminal with one tap. Type a reply, answer a question, attach a photo or a video, or speak your prompt. Long pasted text goes in as an attachment, so your prompt stays readable. One status line shows when the agent and its subagents are working; tap it to open a subagent.
 
 RUN COMMANDS
 Open a plain shell in any folder on your computer and type commands in a live terminal, with a key row for Esc, Tab, Ctrl and the arrows. When an agent suggests a shell command, tap the play button on it to run it in a new shell or in an open terminal. Nothing runs until you check the command and tap Run.
@@ -146,7 +146,7 @@ How to review the whole app:
 Permission prompts. Each prompt appears only when the matching feature is used:
 - Camera: when you tap "Scan QR code" to pair a real computer.
 - Microphone and speech recognition: when you tap the mic button to speak a prompt.
-- Photos: when you attach a photo to a prompt.
+- Photos: when you attach a photo or a video to a prompt.
 - Local network: when the app looks for real computers on the network.
 - Notifications: to tell the user when an agent finishes or needs input.
 You can decline every prompt; the demo still works.

@@ -24,6 +24,7 @@ import { DelayedSpinner } from "@/ui/Delayed";
 
 import { addPasteImageListener, hasNativePaste, type PastedImage } from "../../modules/paste";
 import {
+  canChunk,
   clipboardAvailable,
   documentsAvailable,
   fileRoom,
@@ -32,16 +33,23 @@ import {
   MAX_FILE_BYTES,
   MAX_PHOTOS,
   pasteImage,
+  pathLines,
   photoRoom,
   photosAvailable,
   pickFiles,
-  pickPhotos,
+  pickMedia,
   PresenterError,
+  splitTooLarge,
+  tooLargeVideoText,
+  UploadCanceled,
   uploadErrorText,
+  uploadLabel,
   uploadPhotos,
+  videoLimit,
   withPaths,
   type Attachment,
   type Photo,
+  type UploadProgress,
 } from "./attachments";
 import { ChoiceMenu } from "./ChoiceMenu";
 import { answerChoice, destructiveKey, useChoiceMenu, type Choice } from "./choices";
@@ -154,8 +162,11 @@ export const Composer = memo(function Composer({
   const online = status === "online" && !!rpc;
   /** Photos and files to attach to the next prompt. */
   const [photos, setPhotos] = useState<Attachment[]>([]);
-  /** While attachments upload: how many are done. */
-  const [uploaded, setUploaded] = useState<number>();
+  /** While attachments upload: which one, and how much of it. */
+  const [progress, setProgress] = useState<UploadProgress>();
+  /** The cancel of the running upload. Aborted by "Cancel" and when the composer unmounts. */
+  const uploadAbort = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => uploadAbort.current?.abort(), []);
   const [plusOpen, setPlusOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   /** Bumped when the sheet opens: a new sheet starts with an empty search. */
@@ -348,21 +359,31 @@ export const Composer = memo(function Composer({
     setPlusOpen(false);
     const sent = photos;
     const sentPastes = pastes;
+    const items = [...sent, ...sentPastes];
     let paths: string[] = [];
-    if (sent.length + sentPastes.length > 0) {
-      setUploaded(0);
+    if (items.length > 0) {
+      const abort = new AbortController();
+      uploadAbort.current = abort;
+      setProgress({ index: 0, total: items.length, fraction: 0 });
       try {
-        paths = await uploadPhotos(rpc, [...sent, ...sentPastes], setUploaded);
+        paths = await uploadPhotos(rpc, items, undefined, undefined, {
+          chunked: canChunk(hello),
+          onProgress: setProgress,
+          signal: abort.signal,
+        });
       } catch (e) {
-        haptics.fail();
-        setError(`Upload failed, nothing sent: ${uploadErrorText(e)}`);
+        const canceled = e instanceof UploadCanceled;
+        if (!canceled) haptics.fail();
+        setError(canceled ? "Upload canceled, nothing sent." : `Upload failed, nothing sent: ${uploadErrorText(e)}`);
         if (!fromInput && !latest.current.trim()) putText(prompt);
-        setUploaded(undefined);
         return;
+      } finally {
+        uploadAbort.current = undefined;
+        setProgress(undefined);
       }
-      setUploaded(undefined);
     }
-    const full = withPaths(prompt, paths);
+    // A video path comes after a short note: the agent cannot open a video directly.
+    const full = withPaths(prompt, pathLines(items, paths));
     if (sent.length > 0) setPhotos((cur) => cur.filter((p) => !sent.includes(p)));
     pasteChips.sent(sentPastes);
     // The prompt now shows as a pending bubble in the thread, so the box empties at once.
@@ -425,8 +446,12 @@ export const Composer = memo(function Composer({
   const attachPhotos = async () => {
     setPlusOpen(false);
     try {
-      const picked = await pickPhotos(photoRoom(photos));
-      if (picked.length > 0) setPhotos((cur) => [...cur, ...picked].slice(0, MAX_ATTACHMENTS));
+      const picked = await pickMedia(fileRoom(photos), photoRoom(photos));
+      const chunked = canChunk(hello);
+      const { fit, tooLarge } = splitTooLarge(picked, videoLimit(chunked));
+      if (fit.length > 0) setPhotos((cur) => [...cur, ...fit].slice(0, MAX_ATTACHMENTS));
+      if (tooLarge.length > 0) setError(tooLargeVideoText(tooLarge, chunked));
+      else if (error) setError(undefined);
     } catch (e) {
       setError(e instanceof PresenterError ? e.message : `Could not open the photo library: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -520,16 +545,21 @@ export const Composer = memo(function Composer({
       {showMenu ? <CommandMenu commands={matches} onPick={insertCommand} /> : null}
       {plusOpen && showPlus && !showMenu ? (
         <PlusMenu
-          onPhotos={canAttach && photoRoom(photos) > 0 ? () => void attachPhotos() : undefined}
+          onPhotos={canAttach && fileRoom(photos) > 0 ? () => void attachPhotos() : undefined}
           onFiles={canAttachFiles && fileRoom(photos) > 0 ? () => void attachFiles() : undefined}
           onPaste={canPasteRow ? () => void pasteClipboard() : undefined}
           onCommands={slash.supported ? openSheet : undefined}
         />
       ) : null}
-      {uploaded !== undefined ? (
-        <Text variant="small" muted accessibilityLiveRegion="polite">
-          Uploading {Math.min(uploaded + 1, photos.length + pastes.length)} of {photos.length + pastes.length}…
-        </Text>
+      {progress !== undefined ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text variant="small" muted accessibilityLiveRegion="polite" style={{ flex: 1 }}>
+            {uploadLabel(progress)}
+          </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel upload" hitSlop={12} onPress={() => uploadAbort.current?.abort()}>
+            <Text variant="small">Cancel</Text>
+          </Pressable>
+        </View>
       ) : null}
       {photos.length > 0 || pastes.length > 0 ? (
         <PhotoStrip photos={photos} disabled={sending} onRemove={(p) => setPhotos((cur) => cur.filter((x) => x !== p))}>

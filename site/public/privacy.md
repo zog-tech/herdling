@@ -77,7 +77,7 @@ The only outside services that the app or herdlingd contact are Expo (updates an
 
 - **Camera:** to scan the pairing QR code. No pictures are saved.
 - **Microphone and speech recognition:** for the mic button only.
-- **Photos:** to attach photos that you pick to a prompt. The app sees only the photos you pick.
+- **Photos:** to attach photos and videos that you pick to a prompt. The app sees only the photos and videos you pick.
 - **Local network:** to find and connect to your computers on your network.
 - **Notifications:** to tell you when an agent finishes or needs you.
 

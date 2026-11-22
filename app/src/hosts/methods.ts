@@ -53,6 +53,10 @@ export const APP_METHODS = [
   "devices.list",
   "mirror.start",
   "mirror.stop",
+  "files.put_begin",
+  "files.put_chunk",
+  "files.put_end",
+  "files.put_abort",
 ] as const;
 
 /** True when the host has the method. True too when the host does not say (an older herdlingd): the caller tries and falls back. */

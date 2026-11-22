@@ -419,7 +419,8 @@ The message box at the bottom ("Message the agent"):
 
 - **Send text.** The box grows to 5 lines.
 - **Answer questions.** When an agent asks a numbered question (for example a permission prompt), one button shows for each choice. Tap a choice to answer.
-- **Attach photos.** Tap **+**, then **Photos**, or long-press the box and paste an image. Up to 4 photos. The photos go to the computer, and their paths go at the end of your message, so the agent can read them.
+- **Attach photos, videos and files.** Tap **+**, then **Photos and videos** or **Files**, or long-press the box and paste an image. Up to 4 photos and 6 attachments in all. The attachments go to the computer, and their paths go at the end of your message, so the agent can read them.
+- **Videos.** A video can be up to 500 MB (25 MB with an older herdlingd). On iPhone, the app makes a 1080p H.264 copy first. The upload shows its progress, and **Cancel** stops it. An agent cannot watch a video, so a short line before the path tells it to look at frames with ffmpeg. Install ffmpeg on the computer for this.
 - **Commands and skills.** Type `/` as the first character to see the agent's commands. For Codex, type `$` for skills. For OpenCode, type `@` for skills. Or tap **+**, then **Commands & skills**.
 - **Speak.** Tap the mic to record and tap again to stop, or hold the mic and release. Slide away to cancel. The text goes into the box. Herdling does not send it until you tap send.
 - **Send now.** A message that you send while Claude Code works waits in its queue ("Queued"). Tap **Send now** under it to stop the current turn. Claude Code then gets the queued messages at once.
@@ -580,7 +581,7 @@ summary_command = ["/usr/local/bin/ollama", "run", "llama3.2"]
 | `~/.config/herdling/config.toml` | The config file. |
 | `~/.config/herdling/pair.json` | The open pairing window (only while `herdlingd pair` runs). |
 | `~/.ssh/authorized_keys` | One line per paired phone, ending in `herdling:<phone name>`, limited to `herdlingd rpc`. |
-| `~/.cache/herdling/uploads/` | Photos and files that you attach. Deleted after 7 days. Maximum 25 MB each (10 MB with an older herdlingd). |
+| `~/.cache/herdling/uploads/` | Photos, videos and files that you attach. Deleted after 7 days. Maximum 25 MB each (10 MB with an older herdlingd), and 500 MB for a video. |
 | `~/Library/LaunchAgents/com.zogtech.herdlingd.plist` | The macOS service. |
 | `~/Library/Logs/herdlingd.log` | The macOS service log. |
 | `~/.config/systemd/user/herdlingd.service` | The Linux service. Log: `journalctl --user -u herdlingd.service`. |
@@ -977,7 +978,7 @@ The only outside services that the app or herdlingd contact are Expo (updates an
 
 - **Camera:** to scan the pairing QR code. No pictures are saved.
 - **Microphone and speech recognition:** for the mic button only.
-- **Photos:** to attach photos that you pick to a prompt. The app sees only the photos you pick.
+- **Photos:** to attach photos and videos that you pick to a prompt. The app sees only the photos and videos you pick.
 - **Local network:** to find and connect to your computers on your network.
 - **Notifications:** to tell you when an agent finishes or needs you.
 

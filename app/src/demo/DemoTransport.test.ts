@@ -7,6 +7,8 @@ import type {
   CommandList,
   FileGet,
   FilePut,
+  FilePutBegin,
+  FilePutChunk,
   FsDirs,
   GitDiff,
   GitStatus,
@@ -252,6 +254,13 @@ describe("DemoTransport", () => {
 
     const put = await call<FilePut>("files.put", { name: "screen shot.png", data_b64: "AAAA" }).then(ok("files.put"));
     expect(put.path).toMatch(/^~\/\.cache\/herdling\/uploads\/.*screen_shot\.png$/);
+    const begin = await call<FilePutBegin>("files.put_begin", { name: "my clip.mp4", size: 6 }).then(ok("files.put_begin"));
+    const part = await call<FilePutChunk>("files.put_chunk", { upload_id: begin.upload_id, offset: 0, data_b64: "YWJjZGVm" }).then(ok("files.put_chunk"));
+    expect(part.received).toBe(6);
+    const end = await call<FilePut>("files.put_end", { upload_id: begin.upload_id }).then(ok("files.put_end"));
+    expect(end.path).toMatch(/my_clip\.mp4$/);
+    const second = await call<FilePutBegin>("files.put_begin", { name: "b.mp4", size: 1 });
+    await call("files.put_abort", { upload_id: second.upload_id }).then(ok("files.put_abort"));
 
     const status = await call<GitStatus>("git.status", { pane_id: "t1" }).then(ok("git.status"));
     expect(status).toMatchObject({ is_repo: true, branch: expect.any(String) });

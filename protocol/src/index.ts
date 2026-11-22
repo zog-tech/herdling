@@ -479,6 +479,17 @@ export type CommandList = { commands: CommandInfo[] };
 export type FilePut = { path: string };
 
 /**
+ * `files.put_begin` result: the id of a new upload in parts, the part size to use and the largest
+ * file. Params: `{name, size}`. Then `files.put_chunk` `{upload_id, offset, data_b64}` (result
+ * `FilePutChunk`) in order, and `files.put_end` `{upload_id}` (result `FilePut`). `files.put_abort`
+ * `{upload_id}` deletes a partial upload. Since herdlingd 0.2.1; check `hello.methods`.
+ */
+export type FilePutBegin = { upload_id: string; chunk_bytes?: number; max_bytes?: number };
+
+/** `files.put_chunk` result: the bytes received so far. */
+export type FilePutChunk = { received: number };
+
+/**
  * Params of `files.get`. `path` is absolute, `~/…`, or relative to `cwd` (else to the folder of
  * `pane_id`). `hidden` lists hidden entries of a folder. `offset` asks for the next part of an image.
  */

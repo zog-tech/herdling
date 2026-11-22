@@ -7,6 +7,12 @@ The app version is in `app/app.json`. The `herdlingd` version is in `companion/C
 
 ## [herdlingd 0.2.1] - unreleased
 
+- Large attachments: new methods `files.put_begin`, `files.put_chunk`, `files.put_end` and
+  `files.put_abort` upload a file of up to 500 MiB in parts of up to 8 MiB, in order. A part out of
+  order gives the new error code `bad_offset`. Partial uploads are in
+  `~/.cache/herdling/uploads/.partial/` and are deleted after 1 hour with no new part. The complete
+  file follows the rules of `files.put`. See `docs/protocol.md`, "Large attachments".
+
 - Device mirror: new methods `devices.list`, `mirror.start` and `mirror.stop`. `devices.list` lists
   the booted iOS simulators and the Android devices (emulators and real devices, marked). `mirror.start`
   starts a small server on `127.0.0.1` with a player page and a WebSocket (a secret path, loopback
@@ -218,6 +224,11 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
   removed by the result of the old watch.
 
 ## [Unreleased app]
+
+- Prompt box: attach videos. The "+" row "Photos and videos" picks both. On iOS the app sends a
+  1080p H.264 copy. A video goes in 4 MiB parts, up to 500 MB, with "Uploading 1 of 2 · 34%" and
+  a Cancel button. A short line before the video path tells the agent to look at frames with
+  ffmpeg. With an older herdlingd, videos up to 25 MB go in one call. Ships as an over-the-air update.
 
 - Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
   the buttons are in their own row under the text.

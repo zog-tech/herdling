@@ -12,6 +12,7 @@ import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 
+import { VIDEO_NOTE } from "./attachments";
 import { clearCommandsCache } from "./commands";
 import { pendingOf, usePending } from "./pending";
 import { RpcError } from "@/rpc/RpcClient";
@@ -60,6 +61,9 @@ const mockRpc = {
       return {};
     }
     if (method === "commands.list") return { commands: mockByKind[params.kind] ?? mockCommands };
+    if (method === "files.put_begin") return { upload_id: "u1", chunk_bytes: 4 };
+    if (method === "files.put_chunk") return { received: params.offset + 4 };
+    if (method === "files.put_end") return { path: "/up/clip.mp4" };
     if (method === "files.put") {
       if (mockUploadFails) throw new Error("disk full");
       return { path: `/up/${mockRpcCalls.filter((c) => c.method === "files.put").length}-${params.name}` };
@@ -91,6 +95,7 @@ jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({
 jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
   UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" },
+  VideoExportPreset: { H264_1920x1080: 7 },
 }));
 // The test runtime has no ExpoClipboard native module: report it as present.
 // The document picker is present only when a test sets `mockDocPicker`.
@@ -112,6 +117,13 @@ jest.mock("expo-file-system", () => ({
     }
     base64() {
       return Promise.resolve(`b64-of-${this.mockUri}`);
+    }
+    // A video of 10 bytes, read in parts.
+    get size() {
+      return 10;
+    }
+    open() {
+      return { readBytes: async (n: number) => new Uint8Array(n), close: () => {} };
     }
   },
 }));
@@ -441,15 +453,15 @@ test("attach_photos_uploads_them_then_sends_the_paths", async () => {
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
   });
   await press(tree!, "Add");
-  expect(byLabel(tree!, "Photos")).toHaveLength(1);
+  expect(byLabel(tree!, "Photos and videos")).toHaveLength(1);
   expect(byLabel(tree!, "Commands & skills")).toHaveLength(1);
 
   pickerReturns(["IMG_1.HEIC", "b.png"]);
-  await press(tree!, "Photos");
+  await press(tree!, "Photos and videos");
   expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(
-    expect.objectContaining({ allowsMultipleSelection: true, selectionLimit: 4, quality: 0.8, base64: true, mediaTypes: ["images"] }),
+    expect.objectContaining({ allowsMultipleSelection: true, selectionLimit: 6, quality: 0.8, base64: true, mediaTypes: ["images", "videos"] }),
   );
-  expect(byLabel(tree!, "Photos")).toHaveLength(0);
+  expect(byLabel(tree!, "Photos and videos")).toHaveLength(0);
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(1);
   expect(byLabel(tree!, "Remove photo 2")).toHaveLength(1);
 
@@ -469,6 +481,50 @@ test("attach_photos_uploads_them_then_sends_the_paths", async () => {
   expect(haptics.commit).not.toHaveBeenCalled();
 });
 
+test("a_picked_video_goes_up_in_parts_with_a_note_before_its_path", async () => {
+  idle();
+  mockHello = helloWith(["files.put", "files.put_begin", "files.put_chunk", "files.put_end", "files.put_abort"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
+    canceled: false,
+    assets: [{ type: "video", uri: "file:///cache/clip.mp4", fileName: "IMG_7.MOV", fileSize: 10, duration: 42_000, base64: null }],
+  });
+  await press(tree!, "Photos and videos");
+  expect(byLabel(tree!, "Remove IMG_7.mp4")).toHaveLength(1);
+  expect(tree!.root.findAll((n) => n.props.accessibilityLabel === "Video IMG_7.mp4, 0:42 · 10 B")).not.toHaveLength(0);
+  await act(async () => prompt(tree!).props.onChangeText("What happens at 0:30?"));
+  await press(tree!, "Send");
+  const calls = mockRpcCalls.filter((c) => c.method.startsWith("files.")).map((c) => [c.method, c.params.offset]);
+  expect(calls).toEqual([
+    ["files.put_begin", undefined],
+    ["files.put_chunk", 0],
+    ["files.put_chunk", 4],
+    ["files.put_chunk", 8],
+    ["files.put_end", undefined],
+  ]);
+  expect(prompts()).toEqual([`What happens at 0:30?\n${VIDEO_NOTE}\n/up/clip.mp4`]);
+});
+
+test("a_large_video_on_an_older_herdlingd_is_not_attached", async () => {
+  idle();
+  mockHello = helloWith(["files.put"]);
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await press(tree!, "Add");
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
+    canceled: false,
+    assets: [{ type: "video", uri: "file:///cache/big.mp4", fileName: "big.mp4", fileSize: 30 * 1024 * 1024, base64: null }],
+  });
+  await press(tree!, "Photos and videos");
+  expect(byLabel(tree!, "Remove big.mp4")).toHaveLength(0);
+  const texts = tree!.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+  expect(texts).toContain("Too large to attach (max 25.0 MB): big.mp4. Update herdlingd for videos up to 500.0 MB.");
+});
+
 test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
   idle();
   mockUploadFails = true;
@@ -477,7 +533,7 @@ test("a_failed_upload_sends_nothing_and_shows_the_error", async () => {
   });
   await press(tree!, "Add");
   pickerReturns(["a.jpg"]);
-  await press(tree!, "Photos");
+  await press(tree!, "Photos and videos");
   await act(async () => prompt(tree!).props.onChangeText("look"));
   await press(tree!, "Send");
   expect(prompts()).toEqual([]);
@@ -575,7 +631,7 @@ test("a_removed_photo_is_not_uploaded", async () => {
   });
   await press(tree!, "Add");
   pickerReturns(["a.jpg", "b.jpg"]);
-  await press(tree!, "Photos");
+  await press(tree!, "Photos and videos");
   await press(tree!, "Remove photo 1");
   await press(tree!, "Send");
   expect(mockRpcCalls.filter((c) => c.method === "files.put").map((c) => c.params.name)).toEqual(["b.jpg"]);
@@ -621,7 +677,7 @@ test("plus_menu_rows_follow_the_host_methods", async () => {
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
   });
   await press(tree!, "Add");
-  expect(byLabel(tree!, "Photos")).toHaveLength(1);
+  expect(byLabel(tree!, "Photos and videos")).toHaveLength(1);
   expect(byLabel(tree!, "Commands & skills")).toHaveLength(0);
   act(() => tree!.unmount());
 
@@ -630,7 +686,7 @@ test("plus_menu_rows_follow_the_host_methods", async () => {
     tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
   });
   await press(tree!, "Add");
-  expect(byLabel(tree!, "Photos")).toHaveLength(0);
+  expect(byLabel(tree!, "Photos and videos")).toHaveLength(0);
   expect(byLabel(tree!, "Commands & skills")).toHaveLength(1);
   act(() => tree!.unmount());
 
@@ -712,7 +768,7 @@ test("edit_menu_paste_stops_at_the_photo_max", async () => {
   await mountWithPut();
   pickerReturns(["a.jpg", "b.jpg", "c.jpg"]);
   await press(tree!, "Add");
-  await press(tree!, "Photos");
+  await press(tree!, "Photos and videos");
   await focusPrompt(tree!);
   await pasteFromMenu("AAA");
   await pasteFromMenu("BBB");

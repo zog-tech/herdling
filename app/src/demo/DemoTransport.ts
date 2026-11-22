@@ -6,6 +6,8 @@ import type {
   CommandInfo,
   CommandList,
   FilePut,
+  FilePutBegin,
+  FilePutChunk,
   GroupsList,
   Boot,
   Hello,
@@ -123,6 +125,9 @@ export class DemoTransport implements LineTransport {
   private readonly integrations = new DemoIntegrations();
   /** Shell panes with "Notify me when it finishes": pane id to the watch. The demo sends no push. */
   private shellWatches = new Map<string, ShellWatch>();
+  /** Uploads in parts that are open: the name and the bytes received. */
+  private uploads = new Map<string, { name: string; received: number }>();
+  private uploadSeq = 0;
   private readonly runs: AutomationRun[] = makeRuns();
   private cpu = 18;
 
@@ -349,6 +354,29 @@ export class DemoTransport implements LineTransport {
         const name = (str(p, "name") ?? "upload").replace(/[^\w.-]+/g, "_");
         return { path: `~/.cache/herdling/uploads/${Date.now()}-${name}` } satisfies FilePut;
       }
+      // An upload in parts: the demo keeps only the name and the byte count.
+      case "files.put_begin": {
+        const id = `demo${String(++this.uploadSeq).padStart(28, "0")}`;
+        this.uploads.set(id, { name: (str(p, "name") ?? "upload").replace(/[^\w.-]+/g, "_"), received: 0 });
+        return { upload_id: id, chunk_bytes: 4 << 20, max_bytes: 500 << 20 } satisfies FilePutBegin;
+      }
+      case "files.put_chunk": {
+        const u = this.uploads.get(need(p, "upload_id", method));
+        if (!u) throw new DemoError("not_found", "files.put_chunk: no upload with this upload_id");
+        const data = str(p, "data_b64") ?? "";
+        u.received += Math.floor((data.length * 3) / 4) - (data.match(/=*$/)?.[0].length ?? 0);
+        return { received: u.received } satisfies FilePutChunk;
+      }
+      case "files.put_end": {
+        const id = need(p, "upload_id", method);
+        const u = this.uploads.get(id);
+        if (!u) throw new DemoError("not_found", "files.put_end: no upload with this upload_id");
+        this.uploads.delete(id);
+        return { path: `~/.cache/herdling/uploads/${Date.now()}-${u.name}` } satisfies FilePut;
+      }
+      case "files.put_abort":
+        this.uploads.delete(need(p, "upload_id", method));
+        return {};
       case "git.status":
         return demoGitStatus(this.gitCwd(p, method));
       case "git.diff":
