@@ -24,7 +24,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
-`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`.
+`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`, `not_submitted`, `shell_not_ready`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -1065,6 +1065,20 @@ Since herdlingd 0.2.0. The app calls do not change (`pane.send_input`, `pane.sen
 - When a typing call to a pane fails, the calls to that pane that arrived before the failure do
   not run. Their error is `dropped` (or `busy` when they ran out of time), and nothing was typed.
   A later Enter does not run a half-typed command.
+- `agent.prompt` checks that the Enter submitted the text (since herdlingd 0.2.1). An agent can
+  take a paste in its own time: Claude Code turns a pasted image path into an `[Image #N]` chip,
+  and with a large image the Enter of the core arrives first and does nothing. The core then
+  answers `started: false`. After such an answer for an agent that did not work, herdlingd reads
+  the screen. When the input box (between two rule lines `────`) holds only the text and stays
+  the same for 250 ms, herdlingd presses Enter once more with `terminal.keys` and checks again.
+  A text that still stays gives the error `not_submitted`. A box that holds the text together
+  with other text gets no Enter and gives `not_submitted` too. With no such box, or a text that
+  the box does not show, herdlingd cannot tell, and the answer of the core stays. A success after
+  the second Enter has `enter_again: true`. All of it stays within the 10 seconds.
+- Before the paste, `agent.prompt` looks at the input box. When it holds only the same text, as
+  typed text (an earlier `not_submitted`), herdlingd presses Enter on it and does not paste it
+  again. So a retry does not type the text twice. Dim text, such as the suggestion that Claude
+  Code shows in an empty box, does not count. An agent that is blocked gets no such Enter.
 
 ### Calls on a core id
 
@@ -1077,12 +1091,12 @@ the core.
 | `pane.read` | `terminal.read` (plain text; `source: "visible"` reads the screen only; `revision` is 0). With `format: "ansi"`: one passive `terminal.attach`, see "Terminal view" |
 | `pane.send_input` text + `["enter"]`, `pane.send_text` with a final newline | `terminal.send` (`force: true`) |
 | `pane.send_keys`, `pane.send_input` with keys, `pane.send_input` or `pane.send_text` without Enter | typed at once as raw bytes on a short `terminal.attach` stream (see "Typing on Herdr 2"). A core without `terminal.attach` gets `terminal.keys`, only when each character has a key |
-| `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs |
+| `agent.prompt` | `terminal.send`. A terminal with no 7501 status gives `agent_not_ready` ("not an active named agent yet"), so a prompt never goes into the shell before the agent runs. A text that stays in the input box of the agent gives `not_submitted` (see "Typing on Herdr 2") |
 | `pane.get`, `pane.process_info` | `terminal.get`, in the herdr 1 shapes. `pane.get` of a pane with a running `pane.watch` also has `scroll` |
 | `pane.close` | `terminal.kill` |
 | `tab.create` on `space:<id>` or `g:<key>` | `terminal.run` of a login shell in `cwd`, with labels (see "New terminals"). The answer has `workspace`, `tab` and `root_pane` |
 | `workspace.create` | the same, in a new space. 0.1.x apps send `backend: "core"`; old apps send no `backend`. Both go to the core on 0.2.0 |
-| `agent.start` on a pane | types the agent command (`<program> <args>`) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used. Each argument is quoted for the shell in the pane (its foreground program, else the `SHELL` of herdlingd): POSIX quotes for sh, bash, zsh and the like, fish quotes for fish, double quotes for Nushell. Another shell takes only plain words. An argument with a control character, or one that the shell cannot take, gives `bad_request` and types nothing |
+| `agent.start` on a pane | types the agent command (`<program> <args>`) with `terminal.send`. The program comes from the agent kind; an unknown kind gives `bad_request`. `name` is not used. Each argument is quoted for the shell in the pane (its foreground program, else the `SHELL` of herdlingd): POSIX quotes for sh, bash, zsh and the like, fish quotes for fish, double quotes for Nushell. Another shell takes only plain words. An argument with a control character, or one that the shell cannot take, gives `bad_request` and types nothing. In a terminal younger than 30 seconds (a new tab of a restart or a worktree), herdlingd first waits up to 5 seconds until the screen of the shell is quiet: a startup file can still run and read a key. When the last line then asks a question (it ends with `?`, `]`, `)` or `:`, for example `[Y/n]`), the call gives `shell_not_ready` and types nothing. A shell that still starts after 5 seconds gets the command, as before |
 | `agent.rename` | `terminal.label` `herdling.name` (an empty or null name removes it) |
 | `tab.rename` of `task:<address>` | the same for that terminal |
 | `tab.rename` of `tab:<id>`, `workspace.rename` | `unsupported`: the Herdr app owns those names |
@@ -1113,8 +1127,7 @@ the core.
 ### New terminals
 
 herdlingd starts a terminal as the Herdr app does: the login shell of the user (`$SHELL -l`, else
-the core's own shell) with `keep: true` and no parent. Then it types the agent command. It sets
-only these labels:
+the core's own shell) with `keep: true` and no parent. It sets only these labels:
 
 | Place | Labels |
 |---|---|
@@ -1181,10 +1194,19 @@ Params: `cwd` (an absolute path), `kind` (an agent kind with a known program), o
 `workspace_id` (`space:<id>` or `g:<key>`; missing makes a new space), `prompt` and `args`.
 Result: `{pane_id, workspace_id, tab_id, prompt_error}`.
 
-herdlingd starts a shell (see "New terminals"), types the agent command, waits up to 60 seconds
-for the agent to report a 7501 status, then sends the prompt. When the command cannot be typed,
-herdlingd kills the new shell and gives `start_failed`. When the prompt does not go in, the agent
-still runs and `prompt_error` says why.
+herdlingd starts a terminal (see "New terminals"), waits up to 60 seconds for the agent to report
+a 7501 status, then sends the prompt. When the prompt does not go in, the agent still runs and
+`prompt_error` says why.
+
+- Since herdlingd 0.2.1, when the login shell is bash, zsh or ksh (an absolute `SHELL`), the new
+  terminal runs the agent itself: `argv` is `[<shell>, "-l", "-i", "-c", "<agent command>; exec
+  <shell> -l"]`. Nothing is typed, so a startup file that reads a key (for example the update
+  question of oh-my-zsh) or a slow one cannot take a part of the command. The startup files are
+  the same as for a typed command, and an interactive login shell stays when the agent ends. A
+  question of a startup file shows in the terminal; the agent starts after the user answers it.
+- With another shell, herdlingd starts the shell and types the agent command, after the same
+  wait for a ready shell as `agent.start`. When the command cannot be typed, herdlingd kills the
+  new shell and gives `start_failed`.
 
 ### Worktrees on the core
 

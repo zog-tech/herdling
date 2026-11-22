@@ -181,3 +181,62 @@ pub fn unconfirmed_error() -> crate::types::RpcError {
             .into(),
     }
 }
+
+/// A terminal younger than this can still run the startup files of its shell. An older one is
+/// typed into at once.
+pub const FRESH_MS: u64 = 30_000;
+
+/// The longest wait for a new shell to show its prompt before the agent command is typed.
+pub const READY_LIMIT: Duration = Duration::from_secs(5);
+
+/// The pause between two checks of a new shell.
+pub const READY_GAP: Duration = Duration::from_millis(200);
+
+/// Whether a shell can take a typed command now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ready {
+    /// Type now.
+    Yes,
+    /// The shell still starts: check again.
+    Wait,
+    /// The screen is quiet and its last line asks a question (`[Y/n]`, `Password:`). A typed
+    /// command would answer it.
+    Question,
+}
+
+/// Whether the shell in terminal `t` (a `terminal.get` record) can take a typed command. `screen`
+/// is its screen text now and `last` the screen of the check before; `now_ms` is the time.
+///
+/// A new shell runs its startup files first. A startup file can read one key (oh-my-zsh asks
+/// "update? [Y/n]"), and that key is then the first letter of the command. So a new shell gets the
+/// command only when its screen is quiet and its last line does not look like a question. A
+/// terminal older than [`FRESH_MS`] is ready.
+pub fn shell_ready(t: &Value, screen: &str, last: Option<&str>, now_ms: u64) -> Ready {
+    let created = t.get("created_ms").and_then(Value::as_u64).unwrap_or(0);
+    if now_ms.saturating_sub(created) > FRESH_MS {
+        return Ready::Yes;
+    }
+    // A program that a startup file runs holds the foreground.
+    let fg = t.pointer("/foreground/pid").and_then(Value::as_u64);
+    if fg.is_some() && fg != t.get("pid").and_then(Value::as_u64) {
+        return Ready::Wait;
+    }
+    let Some(line) = screen.lines().map(str::trim).rfind(|l| !l.is_empty()) else { return Ready::Wait };
+    if last != Some(screen) {
+        return Ready::Wait;
+    }
+    if line.ends_with(['?', ']', ')', ':']) {
+        return Ready::Question;
+    }
+    Ready::Yes
+}
+
+/// The error of an agent command that was not typed: the new shell asks a question.
+pub fn shell_question_error() -> crate::types::RpcError {
+    crate::types::RpcError {
+        code: "shell_not_ready".into(),
+        message: "Not started: the shell in the new terminal asks a question, so the agent command was not typed. \
+                  Answer it in the terminal, then start the agent again."
+            .into(),
+    }
+}

@@ -11,6 +11,7 @@ use super::endpoint::CoreSocket;
 use super::project::{self, Projection};
 use super::actions;
 use super::route::{self, Action};
+use super::submit::{self, Input};
 use super::typing;
 use crate::preview::PreviewState;
 use crate::types::{AgentPreview, AgentStatus, RpcError};
@@ -112,12 +113,20 @@ async fn placed(sock: &CoreSocket, timeout: Duration) -> Result<Projection, RpcE
     projection(sock, timeout).await.map_err(rpc_err)
 }
 
-/// A new shell at `place` (see [`actions::place_labels`]) in `cwd`. Returns the new terminal
-/// address and the workspace and tab ids that the projection gives it.
-pub async fn run_shell(sock: &CoreSocket, timeout: Duration, place: &actions::Place, cwd: Option<&str>) -> Result<(String, String, String), RpcError> {
+/// A new terminal at `place` (see [`actions::place_labels`]) in `cwd`: the login shell, or
+/// `argv` when given. Returns the new terminal address and the workspace and tab ids that the
+/// projection gives it.
+pub async fn run_shell(
+    sock: &CoreSocket,
+    timeout: Duration,
+    place: &actions::Place,
+    cwd: Option<&str>,
+    argv: Option<Vec<String>>,
+) -> Result<(String, String, String), RpcError> {
     let ids = actions::fresh_ids();
     let shell = std::env::var("SHELL").ok();
-    let params = actions::run_params(cwd, actions::place_labels(place, &ids), actions::shell_argv(shell.as_deref()));
+    let argv = argv.unwrap_or_else(|| actions::shell_argv(shell.as_deref()));
+    let params = actions::run_params(cwd, actions::place_labels(place, &ids), argv);
     let mut c = connect(sock, timeout).await?;
     require(&mut c, &["terminal.run"]).await?;
     let t = c.call("terminal.run", params).await.map_err(rpc_err)?;
@@ -166,6 +175,38 @@ pub async fn send_line(sock: &CoreSocket, timeout: Duration, addr: &str, params:
                 _ => Err(typing::unconfirmed_error()),
             }
         }
+    }
+}
+
+/// Waits until the shell in `addr` can take a typed command (see [`typing::shell_ready`]), at
+/// most [`typing::READY_LIMIT`]. A shell that still starts at the end gets the command, as
+/// before; a shell that asks a question gives `shell_not_ready`. A read that fails cannot tell,
+/// so the command is typed.
+async fn wait_ready(sock: &CoreSocket, addr: &str) -> Result<(), RpcError> {
+    let end = tokio::time::Instant::now() + typing::READY_LIMIT;
+    let mut last: Option<String> = None;
+    let seen = loop {
+        let read = async {
+            let mut c = Client::connect(&sock.current(), AFTER_CHECK).await?;
+            let t = c.call("terminal.get", json!({ "terminal": addr })).await?;
+            let r = c.call("terminal.read", json!({ "terminal": addr, "lines": 0 })).await?;
+            Ok::<_, CoreError>((t, r.get("text").and_then(Value::as_str).unwrap_or("").to_string()))
+        };
+        let Ok(Ok((t, screen))) = tokio::time::timeout(AFTER_CHECK, read).await else { return Ok(()) };
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        let seen = typing::shell_ready(&t, &screen, last.as_deref(), now_ms);
+        if seen == typing::Ready::Yes {
+            return Ok(());
+        }
+        last = Some(screen);
+        if tokio::time::Instant::now() + typing::READY_GAP >= end {
+            break seen;
+        }
+        tokio::time::sleep(typing::READY_GAP).await;
+    };
+    match seen {
+        typing::Ready::Question => Err(typing::shell_question_error()),
+        _ => Ok(()),
     }
 }
 
@@ -240,14 +281,21 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
         Action::Type { addr, text, keys, fallback } => Box::pin(type_in(sock, timeout, &addr, &text, &keys, fallback)).await,
         Action::Run { kind, workspace, cwd } => {
             let place = place(sock, timeout, workspace.as_deref()).await?;
-            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref()).await?;
+            let (addr, ws, tab) = run_shell(sock, timeout, &place, cwd.as_deref(), None).await?;
             Ok(actions::created(kind, &ws, &tab, &project::pane_id(&addr)))
         }
         Action::Start { addr, kind, args } => {
             let t = once(sock, timeout, "terminal.get", json!({ "terminal": addr })).await.map_err(rpc_err)?;
             let login = std::env::var("SHELL").ok();
             let line = actions::agent_line(&kind, &args, actions::family_of_terminal(&t, login.as_deref()))?;
-            send(sock, timeout, &addr, &line).await?;
+            // The wait and the send share one input deadline, well within the app timeout.
+            let deadline = tokio::time::Instant::now() + typing::INPUT_TIMEOUT;
+            INPUT_DEADLINE
+                .scope(deadline, async {
+                    wait_ready(sock, &addr).await?;
+                    send(sock, timeout, &addr, &line).await
+                })
+                .await?;
             Ok(json!({ "type": "agent_started", "agent": { "pane_id": project::pane_id(&addr) } }))
         }
         Action::Prompt { addr, text } => {
@@ -259,7 +307,7 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
                     message: format!("not an active named agent yet: {} has reported no agent status", project::pane_id(&addr)),
                 });
             }
-            send(sock, timeout, &addr, &text).await
+            prompt(sock, timeout, &addr, &text, &t).await
         }
         Action::Label { addr, labels } => Ok(project::pane_get(&label(sock, timeout, &addr, labels).await?)),
         Action::Kill(scope, shown) => {
@@ -284,6 +332,101 @@ pub async fn run(sock: &CoreSocket, timeout: Duration, action: Action) -> Result
             Ok(actions::explain(&t, screen.get("text").and_then(Value::as_str).unwrap_or("")))
         }
         Action::WorkspaceGet(id) => Ok(actions::workspace_get(&placed(sock, timeout).await?, &id)?),
+    }
+}
+
+/// `agent.prompt` on an agent with the terminal record `before`: the send, then the check that
+/// the Enter submitted the text (see `core::submit`). Bounded by [`input_deadline`].
+async fn prompt(sock: &CoreSocket, timeout: Duration, addr: &str, text: &str, before: &Value) -> Result<Value, RpcError> {
+    let deadline = input_deadline();
+    let needle = submit::needle(text);
+    // A box that holds only this text is an earlier send that was not submitted: press Enter.
+    let blocked = before.pointer("/status/state").and_then(Value::as_str) == Some("blocked");
+    if let Some(n) = needle.as_ref().filter(|_| !blocked) {
+        if let Input::Screen { text: screen, .. } = read_terminal(sock, deadline, addr).await {
+            if submit::input_box(&screen).is_some_and(|b| submit::only(&b, n)) && typed_only(sock, deadline, addr, n).await {
+                let (check, state, effects) = submit::begin_leftover(before, n.clone());
+                let answer = json!({ "turn": before.get("turn"), "status": before.pointer("/status/state") });
+                return drive_submit(sock, timeout, addr, deadline, &check, state, effects, answer).await;
+            }
+        }
+    }
+    let answer = send(sock, timeout, addr, text).await?;
+    match submit::begin(&answer, before, needle) {
+        (Some(check), state, effects) => drive_submit(sock, timeout, addr, deadline, &check, state, effects, answer).await,
+        (None, ..) => Ok(answer),
+    }
+}
+
+/// True when the input box of `addr` holds only the text of `n` as typed text. An agent can show
+/// a suggestion for the next prompt in the empty box, in dim text (Claude Code does). The plain
+/// screen text cannot tell it from typed text, so this reads the screen with its attributes.
+async fn typed_only(sock: &CoreSocket, deadline: tokio::time::Instant, addr: &str, n: &submit::Needle) -> bool {
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now()).min(AFTER_CHECK);
+    match super::term_watch::snapshot(sock, left, addr, 0).await {
+        Ok(ansi) => submit::input_box(&submit::without_dim(&ansi)).is_some_and(|b| submit::only(&b, n)),
+        Err(_) => false,
+    }
+}
+
+/// One read for `core::submit`: the record and the screen of `addr`, bounded by `deadline`.
+async fn read_terminal(sock: &CoreSocket, deadline: tokio::time::Instant, addr: &str) -> Input {
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now()).min(AFTER_CHECK);
+    let read = async {
+        let mut c = Client::connect(&sock.current(), left).await?;
+        let t = c.call("terminal.get", json!({ "terminal": addr })).await?;
+        let r = c.call("terminal.read", json!({ "terminal": addr, "lines": 0 })).await?;
+        Ok::<_, CoreError>((t, r))
+    };
+    match tokio::time::timeout(left, read).await {
+        Ok(Ok((t, r))) => Input::Screen {
+            turn: t.get("turn").and_then(Value::as_u64),
+            working: t.pointer("/status/state").and_then(Value::as_str) == Some("working"),
+            text: r.get("text").and_then(Value::as_str).unwrap_or("").to_string(),
+        },
+        _ => Input::Failed,
+    }
+}
+
+/// Runs the effects of `core::submit` until it finishes. `answer` is the answer of the send.
+#[allow(clippy::too_many_arguments)]
+async fn drive_submit(
+    sock: &CoreSocket,
+    timeout: Duration,
+    addr: &str,
+    deadline: tokio::time::Instant,
+    check: &submit::Check,
+    mut state: submit::State,
+    mut effects: Vec<submit::Effect>,
+    answer: Value,
+) -> Result<Value, RpcError> {
+    use submit::{Effect, Outcome};
+    loop {
+        let mut input = None;
+        for effect in effects {
+            match effect {
+                Effect::Wait(d) => tokio::time::sleep_until((tokio::time::Instant::now() + d).min(deadline)).await,
+                Effect::Read => input = Some(read_terminal(sock, deadline, addr).await),
+                Effect::Enter => {
+                    let keys = ["enter".to_string()];
+                    input = Some(Input::Keyed(keys_by_core(sock, timeout, deadline, addr, &keys).await.map(|_| ())));
+                }
+                Effect::Finish(Outcome::Sent) => return Ok(answer),
+                Effect::Finish(Outcome::Submitted) => {
+                    let mut a = answer;
+                    if let Some(o) = a.as_object_mut() {
+                        o.insert("enter_again".into(), json!(true));
+                    }
+                    return Ok(a);
+                }
+                Effect::Finish(Outcome::NotSubmitted) => return Err(submit::not_submitted_error()),
+                Effect::Finish(Outcome::Mixed) => return Err(submit::mixed_error()),
+                Effect::Finish(Outcome::Failed(e)) => return Err(e),
+            }
+        }
+        let Some(i) = input else { return Ok(answer) };
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        (state, effects) = submit::step(state, i, check, left);
     }
 }
 
@@ -410,7 +553,7 @@ pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::
         for effect in effects {
             match effect {
                 Effect::Run => {
-                    input = Some(match run_shell(sock, timeout, place, Some(cwd)).await {
+                    input = Some(match run_shell(sock, timeout, place, Some(cwd), plan.argv.clone()).await {
                         Ok((addr, ws, tab)) => {
                             ids = Some((ws, tab));
                             Input::Ran(addr)
@@ -420,7 +563,11 @@ pub async fn start_agent(sock: &CoreSocket, timeout: Duration, place: &actions::
                     });
                 }
                 Effect::Type { addr, line } => {
-                    input = Some(match send(sock, timeout, &addr, &line).await {
+                    let typed = async {
+                        wait_ready(sock, &addr).await?;
+                        send(sock, timeout, &addr, &line).await
+                    };
+                    input = Some(match typed.await {
                         Ok(_) => Input::Typed,
                         Err(e) => Input::Failed(e.message),
                     });

@@ -54,7 +54,7 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   `~/proj/out.png`: a folder lists its files, an image opens with pinch zoom, and a text file
   shows read-only.
 - **Saved prompts and search.** Chips above the empty prompt box hold your quick replies
-  ("Continue", "Run the tests"): a tap puts the text in the box, and a long press sends it. Edit
+  ("Continue", "Run the tests"): a tap sends the text, and a long press puts it in the box. Edit
   the list in Settings. Search a session (the magnifier, or ⌘F) and jump from match to match.
 - **The real terminal.** Switch to the live terminal of any agent, with Esc, Tab, Ctrl-C, the
   arrow keys and Enter. It works with every agent that herdr runs. The computer pushes each new

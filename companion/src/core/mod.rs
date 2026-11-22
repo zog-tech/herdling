@@ -18,6 +18,7 @@ pub mod screen;
 pub mod seen;
 pub mod start;
 pub mod stream;
+pub mod submit;
 pub mod term_watch;
 pub mod typing;
 pub mod tracker;
