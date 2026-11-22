@@ -71,6 +71,30 @@ test("the_bubble_labels", () => {
   expect(pendingLabel({ state: "queued" })).toBe("Queued");
   expect(pendingLabel({ state: "failed" })).toBe("Not sent · Retry");
   expect(pendingLabel({ state: "unconfirmed" })).toBe("No reply · Retry");
+  expect(pendingLabel({ state: "held" })).toBe("In the terminal input · Retry");
+});
+
+test("a_text_left_in_the_terminal_input_is_held_and_retryable", async () => {
+  const rpc = {
+    call: jest.fn().mockRejectedValueOnce(new RpcError("not_submitted", "Not sent: the text is in the input of the terminal")).mockResolvedValueOnce({}),
+  };
+  await expect(sendWithPending(rpc, H, P, "look\n/home/sam/.cache/herdling/uploads/a.png")).rejects.toThrow("Not sent");
+  const [p] = pendingOf(H, P);
+  expect(p.state).toBe("held");
+  // A retry sends the same text; herdlingd presses Enter on the text in the input.
+  await sendWithPending(rpc, H, P, p.text, p.id);
+  expect(rpc.call).toHaveBeenCalledTimes(2);
+  expect(rpc.call.mock.calls[1][1]).toEqual({ method: "agent.prompt", params: { target: P, text: p.text } });
+  expect(states()).toEqual([`${p.text}:queued`]);
+});
+
+test("a_held_prompt_goes_when_the_log_shows_it", async () => {
+  const rpc = { call: jest.fn().mockRejectedValueOnce(new RpcError("not_submitted", "not sent")) };
+  await expect(sendWithPending(rpc, H, P, "go on")).rejects.toThrow();
+  // A person pressed Enter at the computer.
+  reconcilePending(H, P, []);
+  reconcilePending(H, P, [user("u1", "go on")]);
+  expect(states()).toEqual([]);
 });
 
 test("the_log_copy_removes_the_bubble_but_an_older_copy_does_not", () => {

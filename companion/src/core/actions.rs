@@ -145,6 +145,23 @@ pub fn shell_argv(shell: Option<&str>) -> Vec<String> {
     }
 }
 
+/// The program of a new terminal that starts an agent: the login shell `shell` runs the agent
+/// command `line`, then turns into an interactive login shell, so the shell stays after the agent
+/// ends. Nothing is typed, so a startup file that reads a key (an update question) or a slow one
+/// cannot eat a part of the command. `-i` loads the same files as a typed command gets.
+///
+/// Only for bash, zsh and ksh, which take `-l -i -c` as one would expect. None for another shell
+/// or a shell that is not an absolute path: the caller then types the command.
+pub fn agent_argv(shell: Option<&str>, line: &str) -> Option<Vec<String>> {
+    let shell = shell.filter(|s| s.starts_with('/'))?;
+    let name = shell.rsplit('/').next().unwrap_or("");
+    if !matches!(name, "bash" | "zsh" | "ksh" | "mksh") {
+        return None;
+    }
+    let again = quote_for(ShellFamily::Posix, shell).ok()?;
+    Some(vec![shell.to_string(), "-l".into(), "-i".into(), "-c".into(), format!("{line}; exec {again} -l")])
+}
+
 /// The `terminal.run` params of a new shell. `keep` as the Herdr app sets it; `no_parent` so
 /// a herdlingd that runs in a core terminal does not make the new shell its helper. With no
 /// `cwd` the core picks the folder.

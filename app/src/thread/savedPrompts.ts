@@ -1,6 +1,7 @@
 /**
  * Saved prompts (quick replies): short texts that the composer shows as chips while the prompt box
- * is empty and has the focus. A tap puts the text in the box; a long press offers "Send now".
+ * is empty and has the focus. A tap sends the text at once (or puts it in the box while a send
+ * cannot go); a long press offers "Put in the box".
  * The list stays on the phone only. The functions here are the pure rules; the store persists the
  * list like the other settings.
  */

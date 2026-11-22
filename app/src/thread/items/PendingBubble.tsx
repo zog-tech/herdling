@@ -5,7 +5,7 @@ import Animated, { cubicBezier } from "react-native-reanimated";
 
 import { useHostConn } from "@/hosts/connection";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { colors, hitTarget, motion, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, radius, space, state } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -21,7 +21,10 @@ const fadeIn = { animationName: FADE_IN, animationDuration: motion.crossfadeMs, 
 
 /**
  * One prompt the log does not show yet: the user bubble, dimmed, with its state under it.
- * `sendNow`: the bubble waits in the queue of a working Claude Code pane, so it shows "Send now".
+ * `sendNow`: the bubble waits in the queue of a working Claude Code pane, so a "Send now" button
+ * sits at the left of the bubble, in the space that a right-aligned bubble leaves. The row wraps:
+ * when the bubble and the button do not fit on one line, the button goes under the bubble at the
+ * right. Thus the button never makes the bubble narrower than its usual width.
  */
 export const PendingBubble = memo(function PendingBubble({
   hostId,
@@ -38,7 +41,8 @@ export const PendingBubble = memo(function PendingBubble({
   const retryable = canRetry(p);
   /** A timeout: the prompt can still arrive, so a softer color than a refused send. */
   const unconfirmed = p.state === "unconfirmed";
-  const tone = unconfirmed ? colors.status.blocked : colors.danger;
+  const held = p.state === "held";
+  const tone = unconfirmed || held ? colors.status.blocked : colors.danger;
   const label = pendingLabel(p);
   // The photo paths at the end show as "N images", as in a delivered bubble.
   const shown = splitUploads(p.text);
@@ -48,15 +52,31 @@ export const PendingBubble = memo(function PendingBubble({
   };
   return (
     <View style={{ gap: space.xs }}>
-      <View style={{ opacity: retryable ? 1 : 0.7 }}>
-        <UserBubble text={shown.text} images={shown.images || undefined} />
-      </View>
+      {sendNow && !retryable ? (
+        // Row reverse: the bubble takes the right edge first. The button follows at its left, or wraps under it.
+        <View style={{ flexDirection: "row-reverse", flexWrap: "wrap", alignItems: "center", gap: space.sm }}>
+          <View style={{ opacity: 0.7, maxWidth: "88%" }}>
+            <UserBubble text={shown.text} images={shown.images || undefined} maxWidth="100%" />
+          </View>
+          <SendNowButton hostId={hostId} paneId={paneId} />
+        </View>
+      ) : (
+        <View style={{ opacity: retryable ? 1 : 0.7 }}>
+          <UserBubble text={shown.text} images={shown.images || undefined} />
+        </View>
+      )}
       {/* Keyed by state: each change mounts the new line, which fades in. */}
       <Animated.View key={p.state} style={fadeIn}>
       {retryable ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={unconfirmed ? "No reply. The prompt can still arrive." : `Not sent. ${p.error ?? ""}`.trim()}
+          accessibilityLabel={
+            unconfirmed
+              ? "No reply. The prompt can still arrive."
+              : held
+                ? "Not sent. The text is in the terminal input. Enter did not submit it."
+                : `Not sent. ${p.error ?? ""}`.trim()
+          }
           accessibilityHint="Sends it again. Long press removes it."
           accessibilityActions={[{ name: "activate" }, { name: "remove", label: "Remove" }]}
           onAccessibilityAction={(e) => (e.nativeEvent.actionName === "remove" ? removePending(hostId, paneId, p.id) : retry())}
@@ -79,9 +99,7 @@ export const PendingBubble = memo(function PendingBubble({
           </Text>
         </Pressable>
       ) : (
-        <View style={{ alignSelf: "flex-end", flexDirection: "row", alignItems: "center", gap: space.md }}>
-          {sendNow ? <SendNowAction hostId={hostId} paneId={paneId} /> : null}
-          <View
+        <View
           accessible
           accessibilityLabel={`Your message, ${label}`}
           style={{ alignSelf: "flex-end", flexDirection: "row", alignItems: "center", gap: space.xs }}
@@ -90,7 +108,6 @@ export const PendingBubble = memo(function PendingBubble({
           <Text variant="caption" muted>
             {label}
           </Text>
-          </View>
         </View>
       )}
       </Animated.View>
@@ -98,20 +115,38 @@ export const PendingBubble = memo(function PendingBubble({
   );
 });
 
+/** The pill of "Send now" and of its flow states, so the place keeps its shape. A function: the colors follow the theme. */
+const pill = () =>
+  ({
+    minHeight: hitTarget,
+    maxWidth: "100%",
+    flexShrink: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.xs,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  }) as const;
+
 /**
- * "Send now" next to the state line of a queued prompt: one Esc stops the turn, and Claude Code
- * sends its queued prompts at once (`sendNowMachine.ts`). The flow is per pane, so every queued
- * bubble of the pane shows the same state.
+ * "Send now" beside a queued prompt: one Esc stops the turn, and Claude Code sends its queued
+ * prompts at once (`sendNowMachine.ts`). The flow is per pane; its "Sending now…" and error states
+ * show in the same place. An outline button, not gold: it interrupts the agent, and the gold send
+ * button of the composer stays the one primary action.
  */
-function SendNowAction({ hostId, paneId }: { hostId: string; paneId: string }) {
+function SendNowButton({ hostId, paneId }: { hostId: string; paneId: string }) {
   const { rpc } = useHostConn(hostId);
   const flow = useSendNow(hostId, paneId);
   const busy = sendNowLabel(flow);
   if (flow.phase === "sending" || flow.phase === "sent") {
     return (
-      <Text variant="caption" muted accessibilityLiveRegion="polite">
-        {busy}
-      </Text>
+      <View style={[pill(), { borderColor: colors.edge }]}>
+        <Text variant="small" muted accessibilityLiveRegion="polite" maxFontSizeMultiplier={denseScale.row}>
+          {busy}
+        </Text>
+      </View>
     );
   }
   const failed = flow.phase === "failed";
@@ -121,24 +156,23 @@ function SendNowAction({ hostId, paneId }: { hostId: string; paneId: string }) {
     const working = useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "working";
     sendNowDispatch(rpc, hostId, paneId, { type: "tap", working });
   };
+  const fg = failed ? colors.danger : colors.text;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={failed ? `${busy}. Send now` : "Send now"}
       accessibilityHint="Stops the current turn. The agent then gets the queued messages."
+      accessibilityState={{ disabled: !rpc }}
       onPress={tap}
       disabled={!rpc}
-      hitSlop={8}
       style={({ pressed }) => ({
-        minHeight: hitTarget - 16,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs,
-        opacity: pressed ? state.pressedOpacity : 1,
+        ...pill(),
+        backgroundColor: pressed ? colors.raised : colors.card,
+        opacity: rpc ? 1 : state.disabledOpacity,
       })}
     >
-      {failed ? <CircleAlert size={12} color={colors.danger} /> : <ArrowUp size={12} color={colors.text} />}
-      <Text variant="caption" bold color={failed ? colors.danger : colors.text}>
+      {failed ? <CircleAlert size={icon.sm} color={fg} /> : <ArrowUp size={icon.sm} color={fg} />}
+      <Text variant="small" bold color={fg} numberOfLines={2} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
         {failed ? `${busy} · Retry` : "Send now"}
       </Text>
     </Pressable>

@@ -61,6 +61,8 @@ pub struct State {
     pub send_delay: Option<std::time::Duration>,
     /// The texts that a delayed `terminal.send` typed (after its wait).
     pub typed: Vec<String>,
+    /// The answer of `terminal.send`. None: `{"turn": 3, "status": "idle"}`.
+    pub send_answer: Option<Value>,
 }
 
 /// The methods that the fake answers.
@@ -208,6 +210,11 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
                 let rec = st.terminals.iter_mut().find(|t| t["address"] == a).unwrap();
                 rec["status"] = json!({"state": "idle", "app": "Claude Code"});
             }
+            if method == "terminal.send" {
+                if let Some(a) = &st.send_answer {
+                    return Ok(a.clone());
+                }
+            }
             Ok(json!({"turn": 3, "status": "idle"}))
         }
         "terminal.kill" => {
@@ -219,11 +226,14 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
         }
         "terminal.run" => {
             let address = format!("t{}", st.terminals.len() + 1);
+            // A shell that runs a command (`-c`) runs the agent, as a typed command does.
+            let runs_agent = st.send_starts_agent && params["argv"].as_array().is_some_and(|a| a.iter().any(|x| x == "-c"));
             let t = json!({
                 "address": address, "name": null, "argv": params["argv"], "cwd": params["cwd"], "state": "live",
                 "labels": params.get("labels").cloned().unwrap_or(json!({})), "pid": 500,
                 "foreground": {"pid": 500, "name": "zsh", "argv": ["zsh"], "cwd": params["cwd"]},
-                "status": null, "title": "zsh", "keep": params["keep"],
+                "status": if runs_agent { json!({"state": "idle", "app": "Claude Code"}) } else { Value::Null },
+                "title": "zsh", "keep": params["keep"],
             });
             st.terminals.push(t.clone());
             Ok(t)

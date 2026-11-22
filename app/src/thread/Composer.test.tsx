@@ -16,7 +16,8 @@ import { clearCommandsCache } from "./commands";
 import { pendingOf, usePending } from "./pending";
 import { RpcError } from "@/rpc/RpcClient";
 
-import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE, UNCONFIRMED_MESSAGE } from "./Composer";
+import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE, NOT_SUBMITTED_MESSAGE, UNCONFIRMED_MESSAGE } from "./Composer";
+import { SavedPromptRow } from "./SavedPromptRow";
 
 const screen = readFileSync(join(__dirname, "__fixtures__", "claude_bash_permission.txt"), "utf8");
 
@@ -501,6 +502,20 @@ test("a_timeout_says_the_prompt_can_still_arrive", async () => {
   expect(texts).toContain("No reply from the computer. The prompt can still arrive.");
   expect(texts).toContain(UNCONFIRMED_MESSAGE);
   expect(texts.some((t) => t.startsWith("Not sent"))).toBe(false);
+});
+
+test("a_text_left_in_the_terminal_input_says_so_and_is_not_queued", async () => {
+  idle();
+  mockSendGate = () => Promise.reject(new RpcError("not_submitted", "Not sent: the text is in the input of the terminal"));
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("look at this"));
+  await press(tree!, "Send");
+  expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["held"]);
+  const texts = tree!.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+  expect(texts).toContain(NOT_SUBMITTED_MESSAGE);
+  expect(texts).not.toContain("Queued");
 });
 
 describe("one send or pick at a time", () => {
@@ -1026,36 +1041,53 @@ describe("saved prompts", () => {
     expect(chip(tree!, "Continue")).toHaveLength(0);
   });
 
-  test("a tap puts the text in the box and sends nothing", async () => {
+  test("a tap sends the text at once, and a double tap sends once", async () => {
     await mount();
     await act(async () => prompt(tree!).props.onFocus());
-    await act(async () => chip(tree!, "Run the tests")[0].props.onPress());
+    const [c] = chip(tree!, "Run the tests");
+    await act(async () => {
+      c.props.onPress();
+      c.props.onPress();
+    });
     await flush();
-    expect(prompt(tree!).props.value).toBe("Run the tests");
-    expect(prompts()).toEqual([]);
-    expect(chip(tree!, "Continue")).toHaveLength(0);
+    expect(prompts()).toEqual(["Run the tests"]);
+    expect(prompt(tree!).props.value).toBe("");
   });
 
-  test("a long press offers Send now, and a double send goes once", async () => {
+  test("a tap while a send cannot go puts the text in the box", () => {
+    const onPick = jest.fn();
+    const onSend = jest.fn();
+    let row: ReactTestRenderer;
+    act(() => {
+      row = create(<SavedPromptRow prompts={["Continue"]} canSend={false} onPick={onPick} onSend={onSend} />);
+    });
+    const [c] = chip(row!, "Continue");
+    expect(c.props.accessibilityHint).toBe("Puts the text in the box.");
+    act(() => c.props.onPress());
+    expect(onPick).toHaveBeenCalledWith("Continue");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  test("a long press offers only Put in the box", async () => {
     await mount();
     await act(async () => prompt(tree!).props.onFocus());
     await act(async () => chip(tree!, "Yes, go ahead")[0].props.onLongPress());
     const [opts, pick] = showSheet().mock.calls[0];
-    expect(opts.options).toEqual(["Send now", "Put in the box", "Cancel"]);
-    await act(async () => {
-      pick(0);
-      pick(0);
-    });
+    expect(opts.options).toEqual(["Put in the box", "Cancel"]);
+    await act(async () => pick(0));
     await flush();
-    expect(prompts()).toEqual(["Yes, go ahead"]);
-    expect(prompt(tree!).props.value).toBe("");
+    expect(prompt(tree!).props.value).toBe("Yes, go ahead");
+    expect(prompts()).toEqual([]);
   });
 
-  test("the VoiceOver action sends the text", async () => {
+  test("the VoiceOver action puts the text in the box", async () => {
     await mount();
     await act(async () => prompt(tree!).props.onFocus());
-    await act(async () => chip(tree!, "Continue")[0].props.onAccessibilityAction({ nativeEvent: { actionName: "send" } }));
+    const [c] = chip(tree!, "Continue");
+    expect(c.props.accessibilityHint).toBe("Sends the text. Long press to put it in the box.");
+    await act(async () => c.props.onAccessibilityAction({ nativeEvent: { actionName: "fill" } }));
     await flush();
-    expect(prompts()).toEqual(["Continue"]);
+    expect(prompt(tree!).props.value).toBe("Continue");
+    expect(prompts()).toEqual([]);
   });
 });
