@@ -24,7 +24,7 @@ The app talks to `herdlingd` on each host. This page lists the rules for both si
 
 `bad_request`, `unknown_method`, `not_found`, `not_installed`, `io_error`, `internal`, `timeout`, `herdr_unavailable`, `upstream_error`, `command_failed`, `no_command`, `bad_output`, `automate_failed`, `too_large`, `update_unavailable`, `bad_signature`, `unsupported_target`, `checksum_mismatch`, `downgrade`, `update_in_progress`, `busy`, `managed_install`, `not_a_repo`, `already_exists`,
 `unsupported_platform`, `stale`, `port_not_listening`, `grant_invalid`, `unsupported`, `download_failed`, `install_failed`,
-`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`.
+`core_not_running`, `core_install_failed`, `bad_pin`, `install_timeout`, `dropped`, `bad_offset`.
 
 A `herdr.call` error can also carry a code from herdr itself.
 
@@ -450,6 +450,51 @@ The app puts each path on its own line at the end of the prompt, and the agent r
 - herdlingd deletes uploads older than 7 days on the next call.
 - The document picker (`expo-document-picker`) is a native module. The app loads it only when the
   binary has it, so an older binary that gets new JavaScript hides "Files" in the "+" menu.
+
+## Large attachments: `files.put_begin`, `files.put_chunk`, `files.put_end`, `files.put_abort`
+
+Since herdlingd 0.2.1. These methods upload a large file (a video) in parts. One request line
+cannot hold a large file, and one large line blocks the channel for the other calls. The app checks
+`hello.methods` for `files.put_begin` first. These are new methods, not new fields of `files.put`:
+an older herdlingd ignores unknown params, so it would save each part as a full file.
+
+1. `files.put_begin` params: `{"name": "clip.mp4", "size": 73400320}`. `size` is the full size in
+   bytes. Result: `{"upload_id": "<32 hex chars>", "chunk_bytes": 4194304, "max_bytes": 524288000}`.
+2. `files.put_chunk` params: `{"upload_id": "...", "offset": 0, "data_b64": "..."}`, one call per
+   part, in order. Result: `{"received": 4194304}` (the bytes received so far).
+3. `files.put_end` params: `{"upload_id": "..."}`. Result: `{"path": "/home/sam/.cache/herdling/uploads/<unix-ms>-clip.mp4"}`,
+   the same as `files.put`.
+
+`files.put_abort` params: `{"upload_id": "..."}`. It deletes the partial upload. Result: `{}`, also
+for an unknown id.
+
+- At most 500 MiB (`max_bytes`). A larger `size` gives `too_large`.
+- A part is at most 8 MiB decoded (`too_large`). The app uses `chunk_bytes` (4 MiB), and sends the
+  next part only after the answer to the last one.
+- `offset` must be the number of bytes received so far. A gap or a part sent two times gives
+  `bad_offset`; the message names the next offset. A part past `size` gives `bad_request`.
+- `files.put_end` before all bytes are there gives `bad_request`. The upload stays open.
+- An unknown or used `upload_id` gives `not_found`. herdlingd accepts only the ids that it makes.
+- A second part of the same upload at the same time gives `busy`. At most 4 uploads are open at the
+  same time (`busy`).
+- The partial file is in `~/.cache/herdling/uploads/.partial/` (folder 0700, files 0600). herdlingd
+  deletes a partial upload that got no part for 1 hour on the next `files.put_begin`. The complete
+  file follows the rules of `files.put`: the same name rules, mode 0600, deleted after 7 days.
+- The state is on disk, so the parts can come over different rpc processes.
+
+### Videos in the app
+
+- The "+" menu row "Photos and videos" picks both from the library. On iOS, the picker exports each
+  video as H.264, at most 1920x1080, in an MP4 (`VideoExportPreset.H264_1920x1080`): every ffmpeg
+  reads it, and a long 4K clip gets much smaller. Android has no export option, so the app sends the
+  original file.
+- A video goes in parts when the host lists `files.put_begin`. With an older herdlingd it goes in one
+  `files.put` call, so the limit is 25 MiB; the app tells the user to update herdlingd for larger videos.
+- The app shows "Uploading 1 of 2 · 34%" and a **Cancel** button. Cancel stops before the next part
+  and calls `files.put_abort`. A failure also calls `files.put_abort`. In both cases nothing is sent.
+- An agent cannot open a video file, so the app puts one line before a video path:
+  `(The next file is a video. Use ffmpeg to look at frames if you need them.)`
+- This is JavaScript only. It uses expo-image-picker and expo-file-system, which every build has.
 
 ## File viewer: `files.get`
 

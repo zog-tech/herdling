@@ -465,6 +465,10 @@ pub const METHODS: &[&str] = &[
     "devices.list",
     "mirror.start",
     "mirror.stop",
+    "files.put_begin",
+    "files.put_chunk",
+    "files.put_end",
+    "files.put_abort",
 ];
 
 /// Add new methods to `METHODS` too.
@@ -495,6 +499,10 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Resu
         "agents.preview" => agents_preview(ctx, params).await,
         "commands.list" => commands_list(ctx, params).await,
         "files.put" => files_put(ctx, params).await,
+        "files.put_begin" => files_put_begin(ctx, params).await,
+        "files.put_chunk" => files_put_chunk(ctx, params).await,
+        "files.put_end" => files_put_end(ctx, params).await,
+        "files.put_abort" => files_put_abort(ctx, params).await,
         "stt.make" => stt_make(ctx, params).await,
         "update.check" => update_check(ctx, params).await,
         "update.apply" => update_apply(ctx, params).await,
@@ -1110,6 +1118,55 @@ async fn files_put(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
         .await
         .map_err(|e| err("internal", e.to_string()))??;
     Ok(json!({ "path": path.to_string_lossy() }))
+}
+
+/// Starts an upload in parts. See [`crate::uploads::begin`].
+async fn files_put_begin(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let name = str_param(&params, "name", "files.put_begin")?.to_string();
+    let size = params
+        .get("size")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| err("bad_request", "files.put_begin requires size"))?;
+    let home = ctx.home.clone();
+    let begin = tokio::task::spawn_blocking(move || crate::uploads::begin(&home, &name, size, std::time::SystemTime::now()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    serde_json::to_value(begin).map_err(|e| err("internal", e.to_string()))
+}
+
+/// Appends one part of an upload. See [`crate::uploads::chunk`].
+async fn files_put_chunk(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = str_param(&params, "upload_id", "files.put_chunk")?.to_string();
+    let data = str_param(&params, "data_b64", "files.put_chunk")?.to_string();
+    let offset = params
+        .get("offset")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| err("bad_request", "files.put_chunk requires offset"))?;
+    let home = ctx.home.clone();
+    let received = tokio::task::spawn_blocking(move || crate::uploads::chunk(&home, &id, offset, &data))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    Ok(json!({ "received": received }))
+}
+
+/// Finishes an upload in parts. See [`crate::uploads::end`].
+async fn files_put_end(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = str_param(&params, "upload_id", "files.put_end")?.to_string();
+    let home = ctx.home.clone();
+    let path = tokio::task::spawn_blocking(move || crate::uploads::end(&home, &id, std::time::SystemTime::now()))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    Ok(json!({ "path": path.to_string_lossy() }))
+}
+
+/// Deletes a partial upload. See [`crate::uploads::abort`].
+async fn files_put_abort(ctx: &Ctx, params: Value) -> Result<Value, RpcError> {
+    let id = str_param(&params, "upload_id", "files.put_abort")?.to_string();
+    let home = ctx.home.clone();
+    tokio::task::spawn_blocking(move || crate::uploads::abort(&home, &id))
+        .await
+        .map_err(|e| err("internal", e.to_string()))??;
+    Ok(json!({}))
 }
 
 /// A read-only look at one path for the file viewer. See [`crate::files`]. A relative path
