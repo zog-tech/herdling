@@ -1,6 +1,6 @@
 import { Image as ImageIcon } from "lucide-react-native";
 import { memo, useState } from "react";
-import { View } from "react-native";
+import { View, type DimensionValue } from "react-native";
 
 import { colors, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
@@ -16,9 +16,18 @@ const LONG_CHARS = 400;
  * The user's prompt: a right-aligned bubble. A long press opens the row menu (Copy, Select text,
  * Share, Quote in reply); a tap on a long prompt still shows or hides the rest. URLs are links with
  * their own tap and menu. The text is not `selectable`: on iOS that adds its own long press, which
- * fights the menu.
+ * fights the menu. `maxWidth`: its share of the parent width. A parent that already limits the
+ * width (the queued bubble with "Send now" beside it) passes "100%".
  */
-export const UserBubble = memo(function UserBubble({ text, images }: { text: string; images?: number }) {
+export const UserBubble = memo(function UserBubble({
+  text,
+  images,
+  maxWidth = "88%",
+}: {
+  text: string;
+  images?: number;
+  maxWidth?: DimensionValue;
+}) {
   const long = text.length > LONG_CHARS || text.split("\n").length > COLLAPSED_LINES;
   const [open, setOpen] = useState(false);
   return (
@@ -29,7 +38,7 @@ export const UserBubble = memo(function UserBubble({ text, images }: { text: str
       accessibilityState={long ? { expanded: open } : undefined}
       accessibilityHint={long ? (open ? "Collapses the message" : "Shows the full message") : undefined}
       onPress={long ? () => setOpen((o) => !o) : undefined}
-      style={{ alignSelf: "flex-end", maxWidth: "88%" }}
+      style={{ alignSelf: "flex-end", maxWidth }}
     >
       <View
         style={{

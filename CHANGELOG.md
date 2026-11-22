@@ -233,6 +233,8 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Queued messages: "Send now" is a button at the left of the queued bubble, not a link in the
+  state line. With a long message or on a narrow phone, it goes under the bubble.
 - Saved prompts: a tap on a chip sends the text at once. While a send cannot go, the tap puts the
   text in the box. A long press offers "Put in the box".
 - Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
