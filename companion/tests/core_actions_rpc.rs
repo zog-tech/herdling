@@ -583,3 +583,70 @@ async fn space_id_with_a_colon_is_not_found() {
     }
     assert!(s.core.calls_of("terminal.run").is_empty());
 }
+
+const RULE: &str = "────────────────────────────────────────";
+
+/// A Claude Code screen whose input box holds `input`.
+fn box_screen(input: &str) -> String {
+    format!("⏺ done\n\n{RULE}\n❯ {input}\n{RULE}\n  status line")
+}
+
+#[tokio::test]
+async fn a_prompt_that_stays_in_the_input_is_not_submitted() {
+    let s = setup_with(|st| {
+        st.screen = box_screen("[Image #2]look at this");
+        st.send_answer = Some(json!({"started": false, "status": "idle", "turn": 3}));
+    });
+    let mut ctx = s.ctx();
+    ctx.input_timeout = Duration::from_secs(3);
+    let mut sess = Session::start(ctx);
+    let r = sess.herdr("agent.prompt", json!({"target": "t3", "text": "look at this\n/home/sam/.cache/herdling/uploads/a.png"})).await;
+    assert_eq!(r["error"]["code"], "not_submitted", "{r}");
+    assert_eq!(s.core.calls_of("terminal.send").len(), 1);
+    // One more Enter went in, through the key path of the core.
+    let keys: Vec<Value> = s.core.calls_of("terminal.keys").into_iter().map(|c| c["keys"].clone()).collect();
+    assert_eq!(keys, [json!(["enter"])]);
+}
+
+#[tokio::test]
+async fn a_prompt_that_starts_a_turn_is_not_checked() {
+    let s = setup_with(|st| {
+        st.screen = box_screen("look at this");
+        st.send_answer = Some(json!({"started": true, "status": "idle", "turn": 3}));
+    });
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr("agent.prompt", json!({"target": "t3", "text": "look at this"})).await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+    assert!(s.core.calls_of("terminal.keys").is_empty());
+}
+
+#[tokio::test]
+async fn a_resend_of_a_text_in_the_input_presses_enter_only() {
+    let s = setup_with(|st| {
+        st.screen = box_screen("look at this");
+        st.attach = true;
+        st.paint = box_screen("look at this").replace('\n', "\r\n").into_bytes();
+    });
+    let mut ctx = s.ctx();
+    ctx.input_timeout = Duration::from_secs(2);
+    let mut sess = Session::start(ctx);
+    let r = sess.herdr("agent.prompt", json!({"target": "t3", "text": "look at this"})).await;
+    // The fake screen does not change, so the text stays; but nothing is typed twice.
+    assert_eq!(r["error"]["code"], "not_submitted", "{r}");
+    assert!(s.core.calls_of("terminal.send").is_empty());
+    assert_eq!(s.core.calls_of("terminal.keys").len(), 1);
+}
+
+#[tokio::test]
+async fn a_dim_suggestion_in_the_input_is_no_leftover() {
+    let s = setup_with(|st| {
+        st.screen = box_screen("look at this");
+        st.attach = true;
+        st.paint = format!("{RULE}\r\n❯ \x1b[2mlook at this\x1b[0m\r\n{RULE}").into_bytes();
+    });
+    let mut sess = Session::start(s.ctx());
+    let r = sess.herdr("agent.prompt", json!({"target": "t3", "text": "look at this"})).await;
+    assert!(r["result"].is_object(), "{r}");
+    assert_eq!(s.core.calls_of("terminal.send").len(), 1);
+    assert!(s.core.calls_of("terminal.keys").is_empty());
+}

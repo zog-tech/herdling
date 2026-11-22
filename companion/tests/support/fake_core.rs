@@ -61,6 +61,8 @@ pub struct State {
     pub send_delay: Option<std::time::Duration>,
     /// The texts that a delayed `terminal.send` typed (after its wait).
     pub typed: Vec<String>,
+    /// The answer of `terminal.send`. None: `{"turn": 3, "status": "idle"}`.
+    pub send_answer: Option<Value>,
 }
 
 /// The methods that the fake answers.
@@ -207,6 +209,11 @@ fn answer(st: &mut State, method: &str, params: &Value) -> Result<Value, (String
                 let a = t["address"].clone();
                 let rec = st.terminals.iter_mut().find(|t| t["address"] == a).unwrap();
                 rec["status"] = json!({"state": "idle", "app": "Claude Code"});
+            }
+            if method == "terminal.send" {
+                if let Some(a) = &st.send_answer {
+                    return Ok(a.clone());
+                }
             }
             Ok(json!({"turn": 3, "status": "idle"}))
         }

@@ -1060,6 +1060,20 @@ Since herdlingd 0.2.0. The app calls do not change (`pane.send_input`, `pane.sen
 - When a typing call to a pane fails, the calls to that pane that arrived before the failure do
   not run. Their error is `dropped` (or `busy` when they ran out of time), and nothing was typed.
   A later Enter does not run a half-typed command.
+- `agent.prompt` checks that the Enter submitted the text (since herdlingd 0.2.1). An agent can
+  take a paste in its own time: Claude Code turns a pasted image path into an `[Image #N]` chip,
+  and with a large image the Enter of the core arrives first and does nothing. The core then
+  answers `started: false`. After such an answer for an agent that did not work, herdlingd reads
+  the screen. When the input box (between two rule lines `────`) holds only the text and stays
+  the same for 250 ms, herdlingd presses Enter once more with `terminal.keys` and checks again.
+  A text that still stays gives the error `not_submitted`. A box that holds the text together
+  with other text gets no Enter and gives `not_submitted` too. With no such box, or a text that
+  the box does not show, herdlingd cannot tell, and the answer of the core stays. A success after
+  the second Enter has `enter_again: true`. All of it stays within the 10 seconds.
+- Before the paste, `agent.prompt` looks at the input box. When it holds only the same text, as
+  typed text (an earlier `not_submitted`), herdlingd presses Enter on it and does not paste it
+  again. So a retry does not type the text twice. Dim text, such as the suggestion that Claude
+  Code shows in an empty box, does not count. An agent that is blocked gets no such Enter.
 
 ### Calls on a core id
 
