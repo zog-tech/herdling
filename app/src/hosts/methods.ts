@@ -45,6 +45,7 @@ export const APP_METHODS = [
   "shell.watches",
   "groups.list",
   "pane.move",
+  "agent.mark_seen",
   "session.start",
   "machines.suggest",
   "core.status",

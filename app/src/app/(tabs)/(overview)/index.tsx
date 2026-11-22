@@ -31,6 +31,7 @@ import { canMove } from "@/herdr/moveGroup";
 import { rememberedArgs } from "@/newSession/startOptionsMemory";
 import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
+import { useSeenSync } from "@/herdr/seenSync";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
 import { boardTerminals, terminalPanes, type BoardTerminal } from "@/herdr/terminals";
 import { useTerminalStatusPolling } from "@/herdr/useTerminalStatusPolling";
@@ -83,6 +84,7 @@ function HostWatcher({ hostId, focused, terminalsShown }: { hostId: string; focu
   useEffect(() => {
     if (snapshot && !snapshot.stale) pruneSeen(hostId, snapshot.panes.map((p) => p.pane_id));
   }, [hostId, snapshot]);
+  useSeenSync(hostId, snapshot);
   useEffect(() => () => setHostSnapshot(hostId, undefined), [hostId]);
   return null;
 }

@@ -225,6 +225,11 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Board: the "Ready" state of a session is kept on the computer, so it stays after an app reset
+  or reinstall and is the same on each phone. A session also counts as read when the Herdr
+  desktop app shows that the user saw its last turn there. It needs herdlingd 0.2.1 and ships as
+  an over-the-air update. With an older herdlingd the app uses its own marks, as before.
+
 - Prompt box: long text no longer goes under the "+", mic and send buttons. When the text wraps,
   the buttons are in their own row under the text.
 - Overview: the "Update herdlingd" hint stays hidden when the host already runs the latest

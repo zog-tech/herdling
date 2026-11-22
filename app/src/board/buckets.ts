@@ -1,6 +1,7 @@
 import type { AgentPreview, AgentStatus } from "@herdling/protocol";
 
 import { agentSubtitle, agentTitle, secondaryTitle } from "@/herdr/names";
+import { isRead, type ReadFields } from "@/herdr/readState";
 import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from "@/herdr/snapshot";
 
 import { backgroundLine, hasBackground } from "./background";
@@ -21,11 +22,11 @@ export const BUCKET_LABEL: Record<Bucket, string> = {
 };
 
 /**
- * Bucket of one agent. `seenSeq` is the last `state_change_seq` the user saw for the pane.
- * blocked → needs_you; working → working; idle/done finished after the last look → ready;
- * everything else (seen idle/done, unknown) → idle.
+ * Bucket of one agent. `seenSeq` is the last `state_change_seq` the user saw for the pane on this
+ * phone. blocked → needs_you; working → working; idle/done that is not read (`isRead`: no local or
+ * host mark covers it) → ready; everything else (read idle/done, unknown) → idle.
  */
-export function bucketOf(agent: Pick<AgentInfo, "agent_status" | "state_change_seq">, seenSeq: number | undefined): Bucket {
+export function bucketOf(agent: Pick<AgentInfo, "agent_status"> & ReadFields, seenSeq: number | undefined): Bucket {
   switch (agent.agent_status) {
     case "blocked":
       return "needs_you";
@@ -33,7 +34,7 @@ export function bucketOf(agent: Pick<AgentInfo, "agent_status" | "state_change_s
       return "working";
     case "idle":
     case "done":
-      return (agent.state_change_seq ?? 0) > (seenSeq ?? 0) ? "ready" : "idle";
+      return isRead(agent, seenSeq) ? "idle" : "ready";
     default:
       return "idle";
   }
