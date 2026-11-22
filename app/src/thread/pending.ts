@@ -12,9 +12,12 @@ import type { RpcClient } from "@/rpc/RpcClient";
 /**
  * `sending`: the call is in flight. `queued`: the agent took it, the log has no copy yet.
  * `unconfirmed`: the call timed out. The host can have sent it to the agent, so a log copy still
- * removes the bubble. `failed`: the host refused the call or did not get it.
+ * removes the bubble. `held`: the text is in the input box of the terminal, but Enter did not
+ * submit it (`not_submitted`, herdlingd 0.2.1). A person can still press Enter at the computer, so
+ * a log copy removes the bubble. A retry presses Enter on that text; herdlingd does not type it
+ * twice. `failed`: the host refused the call or did not get it.
  */
-export type PendingState = "sending" | "queued" | "unconfirmed" | "failed";
+export type PendingState = "sending" | "queued" | "unconfirmed" | "held" | "failed";
 
 /** The state line under a pending bubble. The two last states take a tap to send again. */
 export function pendingLabel(p: Pick<Pending, "state">): string {
@@ -25,13 +28,15 @@ export function pendingLabel(p: Pick<Pending, "state">): string {
       return "Queued";
     case "unconfirmed":
       return "No reply · Retry";
+    case "held":
+      return "In the terminal input · Retry";
     case "failed":
       return "Not sent · Retry";
   }
 }
 
 /** True when a tap on the state line sends the prompt again. */
-export const canRetry = (p: Pick<Pending, "state">) => p.state === "failed" || p.state === "unconfirmed";
+export const canRetry = (p: Pick<Pending, "state">) => p.state === "failed" || p.state === "unconfirmed" || p.state === "held";
 
 export type Pending = {
   id: string;
@@ -176,11 +181,20 @@ export function reconcilePending(hostId: string, paneId: string, items: ThreadIt
 
 type Rpc = Pick<RpcClient, "call">;
 
+/** The bubble state after a send error: a timeout can still arrive, a `not_submitted` text waits in the input. */
+export function stateOfError(e: unknown): PendingState {
+  const code = (e as { code?: unknown })?.code;
+  if (code === "timeout") return "unconfirmed";
+  if (code === "not_submitted") return "held";
+  return "failed";
+}
+
 /**
  * Sends `text` to the agent with a pending bubble for it. With `retryId`, sends that failed or
  * unconfirmed bubble again instead of adding one; a retry of a bubble in another state does
  * nothing (a double tap). Throws the send error after the bubble shows it. A timeout makes the
  * bubble `unconfirmed`, not `failed`: the host can have sent the prompt before the reply was lost.
+ * A `not_submitted` error makes it `held`.
  */
 export async function sendWithPending(
   rpc: Rpc,
@@ -204,7 +218,7 @@ export async function sendWithPending(
     await rpc.call("herdr.call", { method: "agent.prompt", params: { target: paneId, text } });
     setPendingState(hostId, paneId, id, "queued");
   } catch (e) {
-    const state = (e as { code?: unknown })?.code === "timeout" ? "unconfirmed" : "failed";
+    const state = stateOfError(e);
     setPendingState(hostId, paneId, id, state, e instanceof Error ? e.message : String(e));
     throw e;
   }

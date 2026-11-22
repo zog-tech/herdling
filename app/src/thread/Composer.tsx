@@ -75,6 +75,8 @@ const MENU_MAX = 50;
 export const BLOCKED_MESSAGE = "Agent is waiting for a choice — open the terminal";
 /** Shown when a prompt send timed out: the host can have sent it, so the user checks before a retry. */
 export const UNCONFIRMED_MESSAGE = "No reply from the computer. The prompt can still arrive.";
+/** herdlingd 0.2.1 `not_submitted`: the text is in the terminal input, and Enter did not submit it. */
+export const NOT_SUBMITTED_MESSAGE = "Not sent: the text is in the terminal input. Tap Retry to press Enter on it, or open the terminal.";
 /** Shown after "Type something." was picked: the next send goes into the agent's text field. */
 export const FREEFORM_MESSAGE = "Type your answer, then send it to the agent";
 
@@ -398,7 +400,9 @@ export const Composer = memo(function Composer({
           ? BLOCKED_MESSAGE
           : code === "timeout"
             ? UNCONFIRMED_MESSAGE
-            : `Not sent: ${e instanceof Error ? e.message : String(e)}`,
+            : code === "not_submitted"
+              ? NOT_SUBMITTED_MESSAGE
+              : `Not sent: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   };

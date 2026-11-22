@@ -233,6 +233,10 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Queued messages: a prompt that herdlingd 0.2.1 reports as `not_submitted` (the text is in the
+  terminal input, but Enter did not submit it) no longer shows "Queued". The bubble shows "In the
+  terminal input · Retry", and a retry presses Enter on that text. An older herdlingd does not
+  report it.
 - Queued messages: "Send now" is a button at the left of the queued bubble, not a link in the
   state line. With a long message or on a narrow phone, it goes under the bubble.
 - Saved prompts: a tap on a chip sends the text at once. While a send cannot go, the tap puts the

@@ -41,7 +41,8 @@ export const PendingBubble = memo(function PendingBubble({
   const retryable = canRetry(p);
   /** A timeout: the prompt can still arrive, so a softer color than a refused send. */
   const unconfirmed = p.state === "unconfirmed";
-  const tone = unconfirmed ? colors.status.blocked : colors.danger;
+  const held = p.state === "held";
+  const tone = unconfirmed || held ? colors.status.blocked : colors.danger;
   const label = pendingLabel(p);
   // The photo paths at the end show as "N images", as in a delivered bubble.
   const shown = splitUploads(p.text);
@@ -69,7 +70,13 @@ export const PendingBubble = memo(function PendingBubble({
       {retryable ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={unconfirmed ? "No reply. The prompt can still arrive." : `Not sent. ${p.error ?? ""}`.trim()}
+          accessibilityLabel={
+            unconfirmed
+              ? "No reply. The prompt can still arrive."
+              : held
+                ? "Not sent. The text is in the terminal input. Enter did not submit it."
+                : `Not sent. ${p.error ?? ""}`.trim()
+          }
           accessibilityHint="Sends it again. Long press removes it."
           accessibilityActions={[{ name: "activate" }, { name: "remove", label: "Remove" }]}
           onAccessibilityAction={(e) => (e.nativeEvent.actionName === "remove" ? removePending(hostId, paneId, p.id) : retry())}

@@ -16,7 +16,7 @@ import { clearCommandsCache } from "./commands";
 import { pendingOf, usePending } from "./pending";
 import { RpcError } from "@/rpc/RpcClient";
 
-import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE, UNCONFIRMED_MESSAGE } from "./Composer";
+import { BLOCKED_MESSAGE, Composer, FREEFORM_MESSAGE, NOT_SUBMITTED_MESSAGE, UNCONFIRMED_MESSAGE } from "./Composer";
 import { SavedPromptRow } from "./SavedPromptRow";
 
 const screen = readFileSync(join(__dirname, "__fixtures__", "claude_bash_permission.txt"), "utf8");
@@ -502,6 +502,20 @@ test("a_timeout_says_the_prompt_can_still_arrive", async () => {
   expect(texts).toContain("No reply from the computer. The prompt can still arrive.");
   expect(texts).toContain(UNCONFIRMED_MESSAGE);
   expect(texts.some((t) => t.startsWith("Not sent"))).toBe(false);
+});
+
+test("a_text_left_in_the_terminal_input_says_so_and_is_not_queued", async () => {
+  idle();
+  mockSendGate = () => Promise.reject(new RpcError("not_submitted", "Not sent: the text is in the input of the terminal"));
+  await act(async () => {
+    tree = create(<Composer hostId="host-1" paneId="w1:p1" bottomInset={0} />);
+  });
+  await act(async () => prompt(tree!).props.onChangeText("look at this"));
+  await press(tree!, "Send");
+  expect(pendingOf("host-1", "w1:p1").map((p) => p.state)).toEqual(["held"]);
+  const texts = tree!.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
+  expect(texts).toContain(NOT_SUBMITTED_MESSAGE);
+  expect(texts).not.toContain("Queued");
 });
 
 describe("one send or pick at a time", () => {
