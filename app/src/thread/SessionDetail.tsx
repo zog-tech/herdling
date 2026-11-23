@@ -7,7 +7,7 @@
 import type { PortInfo } from "@herdling/protocol";
 import { Stack, useIsFocused, useRouter } from "expo-router";
 import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Alert, Keyboard, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
@@ -42,6 +42,7 @@ import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
 import { NOTIFY_LABEL, STOP_NOTIFY_LABEL, useShellWatch } from "@/terminal/shellWatch";
 import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
+import { AgentInfoPopover, type Anchor } from "@/thread/AgentInfoPopover";
 import { Composer } from "@/thread/Composer";
 import { PanePager } from "@/thread/PanePager";
 import { SwipePanContext } from "@/thread/HScrollView";
@@ -79,6 +80,9 @@ const MODES = [
   { id: "thread", label: "Thread" },
   { id: "terminal", label: "Terminal" },
 ] as const satisfies readonly { id: Mode; label: string }[];
+
+/** How long the agent card waits for the measure of the title before it opens without it. */
+const MEASURE_WAIT_MS = 150;
 
 /** A bar button in the header: 44 pt, the icon centered. */
 const HEADER_BUTTON = { width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" } as const;
@@ -251,7 +255,10 @@ function useSessionMenu(
     );
   }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports, shellWatch]);
 
-  return { open, busy, enabled: !!rpc && (!!agent || terminal) && !busy, ports };
+  // The "Change model" row of the agent card: the same sheet as the "Model" item.
+  const changeModel = rpc && agent && hasModelItem(agent.agent) ? () => showModelSheet(rpc, hostId, paneId) : undefined;
+
+  return { open, busy, enabled: !!rpc && (!!agent || terminal) && !busy, ports, changeModel };
 }
 
 const SWIPE_DISTANCE = 80;
@@ -408,7 +415,10 @@ function ThreadBody({
 
 type Menu = ReturnType<typeof useSessionMenu>;
 
-/** The agent (or terminal) mark, then the title (long press for the menu) and "host · agent" or the busy text of the menu. */
+/**
+ * The agent (or terminal) mark, then the title and "host · agent" or the busy text of the menu.
+ * A tap on an agent's title drops down the agent card (the agent and its model). A long press opens the menu.
+ */
 function SessionTitle({
   kind,
   terminal,
@@ -416,6 +426,7 @@ function SessionTitle({
   subtitle,
   menu,
   inline,
+  model,
 }: {
   kind: string | undefined;
   terminal: boolean;
@@ -423,13 +434,32 @@ function SessionTitle({
   subtitle: string;
   menu: Menu;
   inline: boolean;
+  model: string | undefined;
 }) {
+  const ref = useRef<ComponentRef<typeof View> | null>(null);
+  const [card, setCard] = useState<{ anchor: Anchor | undefined }>();
+  const agentKind = terminal ? undefined : kind;
+  const openCard = () => {
+    haptics.tap();
+    const el = ref.current;
+    // Without a measure (rare), the card opens at the top of the screen.
+    let placed = false;
+    const fallback = setTimeout(() => !placed && setCard({ anchor: undefined }), MEASURE_WAIT_MS);
+    el?.measureInWindow?.((x, y, width, height) => {
+      placed = true;
+      clearTimeout(fallback);
+      setCard({ anchor: { x, y, width, height } });
+    });
+  };
+  const closeCard = () => setCard(undefined);
   return (
     <Pressable
+      ref={ref}
+      onPress={agentKind ? openCard : undefined}
       onLongPress={menu.open}
       accessibilityRole="button"
       accessibilityLabel={title}
-      accessibilityHint="Long press for session actions"
+      accessibilityHint={agentKind ? "Shows the agent and its model. Long press for session actions" : "Long press for session actions"}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -447,6 +477,24 @@ function SessionTitle({
           {menu.busy ?? subtitle}
         </Text>
       </View>
+      {agentKind ? (
+        <AgentInfoPopover
+          visible={!!card}
+          anchor={card?.anchor}
+          kind={agentKind}
+          model={model}
+          onClose={closeCard}
+          onChangeModel={
+            menu.changeModel
+              ? () => {
+                  closeCard();
+                  // After the card closes, so the card and the sheet do not overlap.
+                  setTimeout(() => menu.changeModel?.(), 0);
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </Pressable>
   );
 }
@@ -519,6 +567,7 @@ export function SessionHeader({
   title,
   subtitle,
   menu,
+  model,
 }: {
   placement: "native" | "inline";
   hostId: string;
@@ -530,12 +579,16 @@ export function SessionHeader({
   title: string;
   subtitle: string;
   menu: Menu;
+  /** The model the agent uses now (`Thread.model`), for the agent card. Undefined when unknown. */
+  model?: string;
 }) {
   if (placement === "native") {
     return (
       <Stack.Screen
         options={{
-          headerTitle: () => <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline={false} />,
+          headerTitle: () => (
+            <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline={false} model={model} />
+          ),
           headerRight: () => <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />,
         }}
       />
@@ -543,7 +596,7 @@ export function SessionHeader({
   }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingLeft: space.lg, paddingRight: space.xs }}>
-      <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline />
+      <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline model={model} />
       <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />
     </View>
   );
@@ -690,6 +743,7 @@ export function SessionDetail({
         title={title}
         subtitle={terminal ? `${hostName} · ${termStatus ? statusLabel(termStatus) : "Terminal"}` : kind ? `${hostName} · ${kind}` : hostName}
         menu={menu}
+        model={thread.model}
       />
       <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingLeft: space.lg, paddingRight: space.xs }}>
@@ -783,6 +837,7 @@ export function SessionDetail({
             initialText={promptError ? prompt : undefined}
             initialError={promptError ? `Prompt not sent: ${promptError}` : undefined}
             visible={mode === "thread" && focused && !searchOpen}
+            model={thread.model}
           />
         </View>
       )}

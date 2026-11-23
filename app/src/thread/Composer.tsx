@@ -15,6 +15,7 @@ import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { sendLine } from "@/terminal/keys";
 import { useKeyCommand } from "@/ui/keyCommands";
+import { Tag } from "@/ui/Tag";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
 import { RecordBar } from "@/voice/RecordBar";
@@ -57,6 +58,7 @@ import { answerChoice, destructiveKey, moveTab, useChoiceMenu, type Choice, type
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
+import { modelLabel } from "./modelLabel";
 import { isFreeform } from "./parseChoices";
 import { sendWithPending } from "./pending";
 import { PhotoStrip, PlusButton, PlusMenu } from "./PlusMenu";
@@ -116,6 +118,7 @@ export const Composer = memo(function Composer({
   visible = true,
   autoFocus,
   onDraftChange,
+  model,
 }: {
   hostId: string;
   paneId: string;
@@ -129,6 +132,8 @@ export const Composer = memo(function Composer({
   autoFocus?: boolean;
   /** Called when the box gets or loses unsent text or photos (a sheet asks before it closes). */
   onDraftChange?: (hasDraft: boolean) => void;
+  /** The model the agent uses now (raw id). Shows as a small tag above the box; nothing when unknown. */
+  model?: string;
 }) {
   const reduced = useReducedMotion();
   const { rpc, status, hello } = useHostConn(hostId);
@@ -275,6 +280,7 @@ export const Composer = memo(function Composer({
   /** Builds without the document picker (older binaries that got this code over the air) hide "Files". */
   const canAttachFiles = hasMethod(hello, "files.put") && documentsAvailable();
   const showPlus = canAttach || canAttachFiles || slash.supported;
+  const modelText = modelLabel(model);
   /** Text padding in the one-line layout: room for "+" on the left, and the mic and send on the right. */
   const leadInset = showPlus ? INSET + INNER + INNER_GAP : space.lg;
   const trailInset = INSET + INNER + (visible ? INNER + INNER_GAP : 0) + INNER_GAP;
@@ -631,6 +637,12 @@ export const Composer = memo(function Composer({
         <Text variant="small" muted numberOfLines={3} accessibilityLabel={`Heard: ${partial}`}>
           {partial}
         </Text>
+      ) : null}
+      {/* The model tag: quiet, and away while a menu or a question takes the space above the box. */}
+      {modelText && !showChoices && !showMenu && !(plusOpen && showPlus) ? (
+        <View style={{ flexDirection: "row", paddingHorizontal: space.xs }}>
+          <Tag label={modelText} accessibilityLabel={`Model: ${modelText}`} />
+        </View>
       ) : null}
       {/*
         The prompt pill: one glass capsule with "+", the text, the mic and send inside. On one line

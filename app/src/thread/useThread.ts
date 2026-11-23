@@ -26,6 +26,8 @@ export type Thread = {
   loadOlder: () => void;
   loadingOlder: boolean;
   hasOlder: boolean;
+  /** The model the agent uses now (`ThreadPage.model`, then follow updates). Undefined when unknown. */
+  model?: string;
 };
 
 /** Retry delay while the log file does not exist yet. */
@@ -62,6 +64,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
   const [status, setStatus] = useState<FollowStatus>(rpc ? "loading" : "offline");
   const [error, setError] = useState<string>();
   const [hasOlder, setHasOlder] = useState(false);
+  const [model, setModel] = useState<string>();
   const [loadingOlder, setLoadingOlder] = useState(false);
   /** Bumped to run resolve → get → follow again. */
   const [epoch, setEpoch] = useState(0);
@@ -85,6 +88,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
     setItems([]);
     setRef(undefined);
     setHasOlder(false);
+    setModel(undefined);
     // The effect below runs after this one and sets "offline" when there is no rpc.
     setStatus("loading");
     setError(undefined);
@@ -126,6 +130,7 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
           source.current = undefined;
           setItems([]);
           setHasOlder(false);
+          setModel(undefined);
           setStatus("no_session");
           setError(undefined);
           failures.current = 0;
@@ -160,12 +165,15 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
         loadingOlderRef.current = false;
         setItems((cur) => (overlaps ? mergeItems(cur, page.items) : page.items));
         setHasOlder(cursor != null);
+        // The newest page has the current model; a new log with none yet clears the old one.
+        setModel(page.model || undefined);
         const u = await rpc.stream<FollowData>(
           "thread.follow",
           { log_path: logPath, from: page.end },
           followHandler({
             isDead: () => dead,
             setItems,
+            onModel: setModel,
             onEnded: (e) => {
               // The log went away (for example a new session in the same pane): resolve again.
               unsub = undefined;
@@ -266,5 +274,5 @@ export function useThread(hostId: string, paneId: string, agentStatus?: AgentSta
     });
   }, []);
 
-  return { ref, items, status, error, loadOlder, loadingOlder, hasOlder };
+  return { ref, items, status, error, loadOlder, loadingOlder, hasOlder, model };
 }
