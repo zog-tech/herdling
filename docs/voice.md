@@ -53,8 +53,11 @@ Settings > Voice input > Engine:
 - **Parakeet** (on the iPhone): NVIDIA Parakeet TDT 0.6B through FluidAudio and Core ML. The
   model downloads only when you tap Download in Settings: "English (Parakeet v2)" (about
   465 MB) or "Multilingual (Parakeet v3)", 25 European languages (about 485 MB). The download
-  uses Wi-Fi only, unless you allow cellular. The model stays in Application Support and is not
-  in the iCloud backup. The app loads it on the first recording and unloads it when iOS needs the
+  uses Wi-Fi only, unless you allow cellular. The model is in the App Group container
+  `group.com.zogtech.models`, so other Zog Tech apps on the phone (for example ZogNotes) use the
+  same files and do not download them again. Delete removes the model for all of these apps.
+  The model is not in the iCloud backup. Builds without the App Group keep the model in
+  Application Support; a new build moves it into the group on first use. The app loads it on the first recording and unloads it when iOS needs the
   memory or the app goes to the background.
 - **Host**: the app sends the recording (WAV, 16 kHz mono) to `stt.make`, which runs the host's
   `stt_command`.
@@ -79,6 +82,11 @@ native module `ParakeetModule` in `app/modules/ssh` (FluidAudio 0.17.7, exact ve
 Native can build only one static pod with a Swift package, and the ssh pod already has Citadel.
 The JS side checks for both (`recordingAvailable()`, `parakeetAvailable()`), so an OTA update on an
 older build falls back to live dictation.
+
+The model storage is in `app/modules/ssh/ios/SharedModels.swift`. Other Zog Tech apps copy this
+file byte for byte. Its header holds the contract: the FluidAudio version, the pinned Hugging Face
+revisions, the folder layout in the App Group, the lock and the migration from Application Support.
+Change it only together with the other apps.
 
 Settings > Voice > Speech log also shows voice input events: the engine, the length of the
 recording, the time to transcribe it and errors.

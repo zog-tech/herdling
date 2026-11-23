@@ -79,8 +79,14 @@ export function cancelParakeetDownload(): void {
   void Native.cancelParakeetDownload().catch(() => {});
 }
 
+/** Deletes `model`. A failure (for example "busy") goes to `error`. */
 export async function deleteParakeet(model: ParakeetModel): Promise<void> {
-  await Native.deleteParakeet(model).catch(() => {});
+  useParakeet.setState({ error: undefined });
+  try {
+    await Native.deleteParakeet(model);
+  } catch (e) {
+    useParakeet.setState({ error: downloadError(e) });
+  }
   await refreshParakeet();
 }
 

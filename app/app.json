@@ -10,6 +10,11 @@
     "ios": {
       "bundleIdentifier": "com.zogtech.herdling",
       "supportsTablet": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.zogtech.models"
+        ]
+      },
       "infoPlist": {
         "UISupportedInterfaceOrientations~ipad": [
           "UIInterfaceOrientationPortrait",

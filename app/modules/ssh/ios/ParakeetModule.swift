@@ -65,7 +65,12 @@ public class ParakeetModule: Module {
     }
 
     AsyncFunction("remove") { (name: String) async throws in
-      await self.parakeet.delete(try model(name))
+      let m = try model(name)
+      do {
+        try await self.parakeet.delete(m)
+      } catch {
+        throw parakeetException(error)
+      }
     }
 
     AsyncFunction("transcribe") { (uri: String, name: String) async throws -> String in
