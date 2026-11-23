@@ -504,6 +504,30 @@ for an unknown id.
   for `video/*` on the focused prompt box and copies the video to the cache folder. JS gets a file
   URI, never base64. A video over the limit of the host is not copied (`error: "too_large"`). An
   older binary that gets new JavaScript has neither, so it does not offer video paste.
+- A file (not a photo) larger than 25 MiB also goes in parts when the host lists `files.put_begin`.
+  herdlingd takes any file type: it only cleans the name.
+
+### Share to Herdling
+
+Another app shares a link, a text, photos, videos or files to Herdling. The app uses no new RPC
+method: the files go up with `files.put` (or in parts, as above), and the prompt goes with
+`agent.prompt`, the same as from the prompt box.
+
+- Native side: `expo-share-intent`. On iOS a share extension (bundle id
+  `com.zogtech.herdling.ShareExtension`) copies the shared items into the App Group
+  `group.com.zogtech.herdling` and opens `herdling://dataUrl=herdlingShareKey#<type>`.
+  `app/src/app/+native-intent.tsx` sends that link to `/share`. On Android the main activity takes
+  `ACTION_SEND` and `ACTION_SEND_MULTIPLE` for every MIME type.
+- The share screen shows a preview. For a link, the phone fetches the page (HTML only, 8 s at most)
+  and reads `og:title` and `og:image` (then the Twitter tags, then `<title>`). With no preview it
+  shows the plain link.
+- The prompt: the note, then `Shared link: <url>` and `Title: <title>`, then `Shared text:` and the
+  text, then the file paths (a video path after the video line, a HEIC path after
+  `(The next file is a HEIC image. Convert it to JPEG first, for example with sips or ImageMagick.)`).
+  A text over 800 characters or 10 lines goes as `shared-text.txt`.
+- The limits are the same as in the prompt box: 6 items and 4 photos per prompt.
+- After the send, and when the user closes the share screen, the app deletes the copies of the iOS
+  extension in the App Group folder. It never deletes the files of another app.
 
 ## File viewer: `files.get`
 
@@ -1375,3 +1399,9 @@ An over-the-air update ships JavaScript only. It cannot ship native code.
 1. Compare the native dependencies in `app/package.json` and the plugins in `app/app.json` with the oldest build still in use.
 2. If a native module is new, ship a new build first.
 3. Then send the OTA update.
+
+Native modules that came after the first builds, and how the JavaScript checks for each one:
+
+| Module | Check | Without it |
+|---|---|---|
+| `ExpoShareIntentModule` (`expo-share-intent`) | `requireOptionalNativeModule` in `app/src/share/native.ts` | Herdling does not show in the share sheet; `/share` shows "Nothing to share" |

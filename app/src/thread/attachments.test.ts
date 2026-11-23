@@ -14,6 +14,8 @@ import {
   documentsAvailable,
   formatDuration,
   fromPastedVideo,
+  HEIC_NOTE,
+  isHeicName,
   MAX_VIDEO_BYTES,
   pathLines,
   pickMedia,
@@ -305,6 +307,22 @@ describe("videos", () => {
     expect(uploadLabel({ index: 1, total: 2, fraction: 1 })).toBe("Uploading 2 of 2 · 100%");
   });
 
+  test("a_photo_without_data_is_read_from_its_uri", async () => {
+    const { rpc, calls } = chunkRpc();
+    const read = jest.fn(async (uri: string) => `data-of-${uri}`);
+    const paths = await uploadPhotos(rpc, [{ uri: "file:///shared/IMG_1.HEIC", name: "IMG_1.HEIC", base64: "" }, { uri: "u", name: "p.jpg", base64: "AAAA" }], undefined, read);
+    expect(paths).toEqual(["/up/IMG_1.HEIC", "/up/p.jpg"]);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(calls.map((c) => c.params.data_b64)).toEqual(["data-of-file:///shared/IMG_1.HEIC", "AAAA"]);
+  });
+
+  test("a_heic_path_comes_after_its_note", () => {
+    const items: Attachment[] = [{ uri: "u", name: "IMG_1.HEIC", base64: "" }, { kind: "file", uri: "f", name: "scan.heif" }, { kind: "file", uri: "g", name: "a.png" }];
+    expect(pathLines(items, ["/up/1.HEIC", "/up/scan.heif", "/up/a.png"])).toEqual([HEIC_NOTE, "/up/1.HEIC", HEIC_NOTE, "/up/scan.heif", "/up/a.png"]);
+    expect(isHeicName("x.heic")).toBe(true);
+    expect(isHeicName("x.jpg")).toBe(false);
+  });
+
   test("a_video_path_comes_after_the_note", () => {
     const items: Attachment[] = [{ uri: "u", name: "p.jpg", base64: "" }, video()];
     expect(pathLines(items, ["/up/p.jpg", "/up/clip.mp4"])).toEqual(["/up/p.jpg", VIDEO_NOTE, "/up/clip.mp4"]);
@@ -457,5 +475,22 @@ describe("videos", () => {
     expect(fromPastedVideo({ name: "big.mov", size: 1, error: "too_large" }, 1, true)).toEqual({ error: tooLargeVideoText(["big.mov"], true) });
     expect(fromPastedVideo({ ...ok, size: MAX_FILE_BYTES + 1 }, 1, false)).toEqual({ error: tooLargeVideoText(["clip.mov"], false) });
     expect(fromPastedVideo({ name: "x.mov", size: 0, error: "No access" }, 1, true)).toEqual({ error: "Could not paste the video: No access" });
+  });
+
+  test("a_large_file_goes_in_parts_on_a_host_that_can_take_them", async () => {
+    const big = MAX_FILE_BYTES + 1;
+    expect(uploadRoute({ kind: "file", uri: "f", name: "f.pdf", size: big }, true)).toBe("chunked");
+    expect(uploadRoute({ kind: "file", uri: "f", name: "f.pdf", size: big }, false)).toBe("single");
+    expect(uploadRoute({ kind: "file", uri: "f", name: "f.pdf" }, true, big)).toBe("chunked");
+    expect(uploadRoute({ kind: "file", uri: "f", name: "f.pdf", size: 10 }, true)).toBe("single");
+    // A shared file with no size: the upload reads the real size to choose the route.
+    const { rpc, calls } = chunkRpc();
+    const files = { ...fakeFile(10), size: async () => big };
+    const paths = await uploadPhotos(rpc, [{ kind: "file", uri: "f", name: "f.pdf" }], undefined, async () => "", {
+      chunked: true,
+      files: { ...files, open: fakeFile(10).open },
+    });
+    expect(paths).toEqual(["/up/clip.mp4"]);
+    expect(calls[0]).toEqual({ method: "files.put_begin", params: { name: "f.pdf", size: big } });
   });
 });

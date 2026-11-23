@@ -62,6 +62,8 @@ Herdling is not made by or affiliated with the makers of herdr, Claude Code, Cod
   at once, for a hardware keyboard. In a shell, chips show your last 20 commands: a tap puts one
   in the box, and a long press runs or removes it. A full-screen app with no scrollback (Claude
   Code in fullscreen mode, `less`, `vim`) gets Page Up and Page Down buttons.
+- **Share to Herdling.** Share a link, a text, photos, videos or files from any app. Herdling
+  shows a preview of the link, takes a note, and sends it all to the agent you pick.
 - **A notification when it matters.** `herdlingd` sends a push when an agent finishes or waits
   for you. A tap opens that session. In a shell, "Notify me when it finishes" sends one push when
   a long command ends.

@@ -41,6 +41,14 @@ const CONTROL_TIMEOUT_MS = 30_000;
  * so the line tells it how to see the frames.
  */
 export const VIDEO_NOTE = "(The next file is a video. Use ffmpeg to look at frames if you need them.)";
+/**
+ * The line before the path of a HEIC image. The picker converts photos to JPEG, but a photo shared
+ * from another app keeps its format, and most agents cannot read HEIC.
+ */
+export const HEIC_NOTE = "(The next file is a HEIC image. Convert it to JPEG first, for example with sips or ImageMagick.)";
+
+/** True for a HEIC or HEIF file name. */
+export const isHeicName = (name: string) => /\.(heic|heif)$/i.test(name);
 
 /**
  * True when this binary has the photo picker. Builds before the picker was added do not, and an
@@ -66,7 +74,10 @@ export function documentsAvailable(): boolean {
   return requireOptionalNativeModule("ExpoDocumentPicker") != null;
 }
 
-/** A picked photo, ready to upload. */
+/**
+ * A picked photo, ready to upload. An empty `base64` means: read the data from `uri` at upload
+ * (an image shared from another app).
+ */
 export type Photo = { uri: string; name: string; base64: string; kind?: "photo" };
 
 /** A picked document (text, code, a log, PDF, JSON, CSV, zip, ...). Its data is read only at upload. */
@@ -81,7 +92,7 @@ export type Video = { kind: "video"; uri: string; name: string; size?: number; d
 /** A photo, a file or a video on the next prompt. */
 export type Attachment = Photo | DocFile | Video;
 
-export const isFile = (a: Attachment): a is DocFile => a.kind === "file";
+export const isFile = (a: Attachment | PastedText): a is DocFile => a.kind === "file";
 export const isVideo = (a: Attachment | PastedText): a is Video => a.kind === "video";
 export const isPhoto = (a: Attachment): a is Photo => a.kind === undefined || a.kind === "photo";
 
@@ -382,9 +393,14 @@ export function planChunks(size: number, chunkBytes: number): Chunk[] {
 /** How one item goes up: in parts (`files.put_begin`), or in one `files.put` call. */
 export type UploadRoute = "chunked" | "single";
 
-/** Videos go in parts when the host can take that. All other items, and videos on an older herdlingd, go in one call. */
-export function uploadRoute(item: Attachment | PastedText, chunked: boolean): UploadRoute {
-  return chunked && item.kind === "video" ? "chunked" : "single";
+/**
+ * Videos go in parts when the host can take that. A file larger than `MAX_FILE_BYTES` (`size`, the
+ * real size when known) goes in parts too. All other items, and every item on an older herdlingd, go in one call.
+ */
+export function uploadRoute(item: Attachment | PastedText, chunked: boolean, size?: number): UploadRoute {
+  if (!chunked) return "single";
+  if (item.kind === "video") return "chunked";
+  return item.kind === "file" && (size ?? item.size ?? 0) > MAX_FILE_BYTES ? "chunked" : "single";
 }
 
 /** The error of an upload that the user stopped. Nothing is sent. */
@@ -483,8 +499,10 @@ export async function uploadPhotos(
   for (const [index, a] of items.entries()) {
     check();
     opts.onProgress?.({ index, total, fraction: 0 });
-    if (uploadRoute(a, !!opts.chunked) === "chunked") {
-      const v = a as Video;
+    // A shared file can come with no size: read the real size to choose the route.
+    const size = opts.chunked && isFile(a) && a.size == null ? await (opts.files ?? fileReader).size(a.uri) : undefined;
+    if (uploadRoute(a, !!opts.chunked, size) === "chunked") {
+      const v = a as Video | DocFile;
       paths.push(await uploadVideo(rpc, v, (fraction) => opts.onProgress?.({ index, total, fraction }), check, opts.files));
     } else {
       if (isVideo(a)) {
@@ -492,7 +510,7 @@ export async function uploadPhotos(
         const size = await (opts.files ?? fileReader).size(a.uri);
         if (size > MAX_FILE_BYTES) throw Object.assign(new Error(tooLargeVideoText([a.name], false)), { code: "too_large_video" });
       }
-      const data = a.kind === "text" ? utf8Base64(a.text) : isFile(a) || isVideo(a) ? await read(a.uri) : a.base64;
+      const data = a.kind === "text" ? utf8Base64(a.text) : isFile(a) || isVideo(a) || !a.base64 ? await read(a.uri) : a.base64;
       check();
       const timeout = a.kind === "file" || a.kind === "text" || a.kind === "video" ? FILE_UPLOAD_TIMEOUT_MS : UPLOAD_TIMEOUT_MS;
       const r = await rpc.call<FilePut>("files.put", { name: a.name, data_b64: data }, timeout);
@@ -505,13 +523,13 @@ export async function uploadPhotos(
 }
 
 /**
- * Uploads one video in parts: `files.put_begin`, one `files.put_chunk` per part in order, then
+ * Uploads one video (or a large file) in parts: `files.put_begin`, one `files.put_chunk` per part in order, then
  * `files.put_end`. On any failure (or a cancel) it asks herdlingd to delete the partial file
  * (`files.put_abort`, best effort) and throws. `check` throws to stop between parts.
  */
 export async function uploadVideo(
   rpc: RpcClient,
-  v: Video,
+  v: Pick<Video, "uri" | "name">,
   onFraction: (f: number) => void,
   check: () => void = () => {},
   files: FileReader = fileReader,
@@ -551,10 +569,15 @@ export function uploadErrorText(e: unknown): string {
 
 /**
  * The attachment lines of the prompt: each path on its own line, in the order of `items`.
- * A video path comes after `VIDEO_NOTE`. `paths[i]` is the path of `items[i]`.
+ * A video path comes after `VIDEO_NOTE`, a HEIC image path after `HEIC_NOTE`. `paths[i]` is the path of `items[i]`.
  */
 export function pathLines(items: readonly (Attachment | PastedText)[], paths: readonly string[]): string[] {
-  return paths.flatMap((p, i) => (items[i] && isVideo(items[i]) ? [VIDEO_NOTE, p] : [p]));
+  return paths.flatMap((p, i) => {
+    const item = items[i];
+    if (item && isVideo(item)) return [VIDEO_NOTE, p];
+    if (item && item.kind !== "text" && isHeicName(item.name)) return [HEIC_NOTE, p];
+    return [p];
+  });
 }
 
 /** The prompt text, then each path on its own line. The agents read the files at these paths. */
