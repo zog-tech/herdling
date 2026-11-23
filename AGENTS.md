@@ -98,7 +98,7 @@ The path alias `@/` points to `app/src/`.
 | `main.rs` | Subcommands: `rpc`, `serve`, `pair`, `enroll`, `install [--dry-run]`, `update`, `core`, `proxy`, `group`, `version` |
 | `group_cmd.rs` | `herdlingd group`: the `herdling.group` label of the own Herdr 2 terminal |
 | `rpc.rs` | The RPC loop and `METHODS` (must match the dispatch; a test checks it) |
-| `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI |
+| `claude/`, `transcript/` | Claude Code log parsing, and the adapters for Codex, Pi, OpenCode, omp and Gemini CLI. `transcript/model.rs`: the model the agent uses now (`ThreadPage.model`) |
 | `serve/` | The user service: the Herdr 2 watch (`core_watch.rs`), the shell watches (`shells.rs`), push debounce, Bonjour, the pairing HTTP endpoint |
 | `pair.rs`, `enroll.rs` | Pairing window, code checks and the `authorized_keys` line |
 | `install.rs` | launchd agent (`com.zogtech.herdlingd`) or systemd user unit |

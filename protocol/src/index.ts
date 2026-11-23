@@ -258,7 +258,17 @@ export type ThreadItem =
  * cursor = byte offset for the older page (null at file start); end = file size at read time, used as thread.follow `from`.
  * OpenCode logs use message `seq` values, and Gemini CLI logs use item indexes, for `cursor` and `before`. The app passes them back as they are.
  */
-export type ThreadPage = { items: ThreadItem[]; cursor: number | null; end: number };
+export type ThreadPage = {
+  items: ThreadItem[];
+  cursor: number | null;
+  end: number;
+  /**
+   * The model the agent uses now, on the newest page only (no `before`): the id from the log
+   * (`claude-opus-5-5`, `gpt-5.5`) or the name of a `/model` switch (`Opus 5.5`). Missing when the
+   * log shows no model yet, and on an older herdlingd.
+   */
+  model?: string;
+};
 /** `thread.subagent` result: a page plus the subagent transcript path (the `thread.follow` log). */
 export type SubagentPage = ThreadPage & {
   log_path: string;

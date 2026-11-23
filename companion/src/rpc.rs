@@ -539,8 +539,17 @@ async fn dispatch(ctx: &Ctx, out: &Out, method: &str, mut params: Value) -> Resu
 
 async fn thread_get(params: Value) -> Result<Value, RpcError> {
     let path = str_param(&params, "log_path", "thread.get")?.to_string();
-    let page = read_page(path, &params).await?;
-    serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))
+    let newest = params.get("before").and_then(Value::as_u64).is_none();
+    let page = read_page(path.clone(), &params).await?;
+    let mut v = serde_json::to_value(page).map_err(|e| err("internal", e.to_string()))?;
+    // The newest page also tells the current model. An older page does not need it.
+    if newest {
+        let model = tokio::task::spawn_blocking(move || transcript::model::current(&path)).await.ok().flatten();
+        if let (Some(m), Some(o)) = (model, v.as_object_mut()) {
+            o.insert("model".into(), json!(m));
+        }
+    }
+    Ok(v)
 }
 
 fn str_param<'a>(params: &'a Value, key: &str, method: &str) -> Result<&'a str, RpcError> {
@@ -849,6 +858,7 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
         _ => err("io_error", e.to_string()),
     })?;
     let claude_log = transcript::Agent::of_log(&log) == transcript::Agent::Claude;
+    let mut models = transcript::model::ModelWatch::new(&log, from);
     let out = out.clone();
     let stream = ctx.streams.spawn("thread", move |id| async move {
         let mut failures = 0u32;
@@ -872,8 +882,16 @@ fn thread_follow(ctx: &Ctx, out: &Out, params: Value) -> Result<Value, RpcError>
             failures = if polled.is_err() { failures + 1 } else { 0 };
             match polled {
                 Ok(Some((items, offset))) => {
-                    if !items.is_empty() && !notify(&out, &id, json!({ "items": items, "offset": offset })).await {
-                        return;
+                    // A `/model` switch or a reply with a new model adds `model` to the event.
+                    let model = models.poll(offset);
+                    if !items.is_empty() || model.is_some() {
+                        let mut data = json!({ "items": items, "offset": offset });
+                        if let Some(m) = model {
+                            data["model"] = json!(m);
+                        }
+                        if !notify(&out, &id, data).await {
+                            return;
+                        }
                     }
                 }
                 Ok(None) => {}

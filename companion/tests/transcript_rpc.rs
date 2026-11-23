@@ -179,3 +179,36 @@ async fn rpc_preview_of_a_codex_pane_reads_its_log() {
     assert_eq!(p["activity"], "Running cargo build --release");
     assert_eq!(p["last_reply"], "Starting the build now.");
 }
+
+#[tokio::test]
+async fn rpc_thread_get_and_follow_send_the_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let log = home.join(".claude/projects/-home-sam-project/s1.jsonl");
+    let reply = |uuid: &str, model: &str| {
+        json!({"type":"assistant","uuid":uuid,"isSidechain":false,"timestamp":"2026-11-01T10:00:01.000Z",
+            "message":{"model":model,"role":"assistant","content":[{"type":"text","text":"Done."}]}})
+    };
+    let mut text = reply("a1", "claude-opus-5-5").to_string() + "\n";
+    write(&log, &text);
+    let mut s = Session::start(Ctx::new(home.clone()));
+    let r = s.call("thread.get", json!({"log_path": log, "limit": 10})).await;
+    assert_eq!(r["result"]["model"], "claude-opus-5-5");
+    // An older page has no model field.
+    let r = s.call("thread.get", json!({"log_path": log, "limit": 10, "before": text.len()})).await;
+    assert!(r["result"].get("model").is_none());
+    let r = s.call("thread.follow", json!({"log_path": log, "from": text.len()})).await;
+    assert!(r["result"]["stream"].is_string());
+    text += &(json!({"type":"user","uuid":"c1","isSidechain":false,"timestamp":"2026-11-01T10:00:02.000Z",
+        "message":{"role":"user","content":"<local-command-stdout>Set model to `Sonnet 5.5` and saved as your default for new sessions</local-command-stdout>"}})
+        .to_string()
+        + "\n");
+    std::fs::write(&log, &text).unwrap();
+    let ev = s.line().await;
+    assert_eq!(ev["params"]["data"]["model"], "Sonnet 5.5");
+    text += &(reply("a2", "claude-sonnet-5-5").to_string() + "\n");
+    std::fs::write(&log, &text).unwrap();
+    let ev = s.line().await;
+    assert_eq!(ev["params"]["data"]["model"], "claude-sonnet-5-5");
+    assert_eq!(ev["params"]["data"]["items"][0]["markdown"], "Done.");
+}
