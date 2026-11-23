@@ -1,0 +1,18 @@
+⏺ I have four questions before I start.
+
+────────────────────────────────────────
+←  ☐ Share    ☐ C…  ☐ R… ☐ D… ✔ Submit →
+  fl…
+
+How should sharing start?
+
+❯ 1. Share sheet
+     Open the native share sheet.
+  2. Copy link
+     Copy a link to the clipboard.
+  3. Type something.
+────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to
+navigate · Esc to cancel

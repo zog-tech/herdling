@@ -53,7 +53,7 @@ import {
   type UploadProgress,
 } from "./attachments";
 import { ChoiceMenu } from "./ChoiceMenu";
-import { answerChoice, destructiveKey, useChoiceMenu, type Choice } from "./choices";
+import { answerChoice, destructiveKey, moveTab, useChoiceMenu, type Choice, type TabMove } from "./choices";
 import { CommandMenu } from "./CommandMenu";
 import { CommandSheet } from "./CommandSheet";
 import { commandQuery, commandsFor, commandTriggers, filterCommands, useCommands } from "./commands";
@@ -241,7 +241,8 @@ export const Composer = memo(function Composer({
   const blocked = useSnapshots(
     (s) => s.byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked",
   );
-  const { choices, question, context } = useChoiceMenu(hostId, paneId, blocked && online && visible);
+  const menu = useChoiceMenu(hostId, paneId, blocked && online && visible);
+  const { choices, question, context, tabs, next } = menu;
   /**
    * The menu (array from `useChoices`) that was answered or found stale. Its buttons stay hidden;
    * `useChoices` returns a new array only when the screen shows a different menu or the status changes.
@@ -354,10 +355,33 @@ export const Composer = memo(function Composer({
       useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked";
     try {
       const r = await answerChoice(rpc, paneId, shown, c, stillBlocked);
-      setAnswered(shown);
+      // A checkbox only turns on or off: the question stays, so its buttons stay too.
+      if (c.checked === undefined || r === "stale") setAnswered(shown);
       if (r === "sent") (c.key === destructiveKey(shown) ? haptics.warn : haptics.commit)();
       // "Type something." opens a text field in the agent: the next send types into it.
       if (r === "sent" && isFreeform(c) && /^Type/i.test(c.label)) setFreeformPane(paneKey);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      busy.current = false;
+      setPicking(false);
+    }
+  };
+
+  /**
+   * Moves to another question tab of an AskUserQuestion with more than one question (`moveTab`).
+   * The buttons stay: the next screen read shows the new tab.
+   */
+  const pickTab = async (move: TabMove) => {
+    if (!rpc || !online || busy.current) return;
+    busy.current = true;
+    setPicking(true);
+    setError(undefined);
+    const stillBlocked = () =>
+      useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status === "blocked";
+    try {
+      const r = await moveTab(rpc, paneId, menu, move, stillBlocked);
+      if (r === "sent") haptics.tap();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -542,8 +566,11 @@ export const Composer = memo(function Composer({
           choices={choices}
           question={question}
           context={context}
+          tabs={tabs}
+          next={next}
           agent={agentKind}
           onPick={(c) => void pick(c)}
+          onTab={(m) => void pickTab(m)}
           onType={() => inputRef.current?.focus()}
           disabled={picking || sending}
         />
