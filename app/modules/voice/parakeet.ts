@@ -3,7 +3,13 @@ import { requireOptionalNativeModule, type NativeModule } from "expo";
 /** "v2": English, best recall. "v3": 25 European languages. */
 export type ParakeetModel = "v2" | "v3";
 
-export type ParakeetModelStatus = { installed: boolean; bytes: number; downloading: boolean };
+export type ParakeetModelStatus = {
+  installed: boolean;
+  bytes: number;
+  downloading: boolean;
+  /** True when the files are in the App Group that other Zog Tech apps share. Builds before shared storage leave it out. */
+  shared?: boolean;
+};
 
 type ParakeetEvents = {
   /** Model download progress, 0 to 1. */
@@ -55,7 +61,7 @@ export function cancelParakeetDownload(): Promise<void> {
   return Native ? Native.cancelDownload() : Promise.resolve();
 }
 
-/** Deletes a downloaded model. */
+/** Deletes a downloaded model. Rejects with "busy" while a download of it runs (here or in another Zog Tech app). */
 export function deleteParakeet(model: ParakeetModel): Promise<void> {
   return Native ? Native.remove(model) : Promise.resolve();
 }

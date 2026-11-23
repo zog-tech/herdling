@@ -105,10 +105,17 @@ function ModelRow({ model }: { model: ParakeetModel }) {
   const size = status.installed ? formatBytes(status.bytes) : `about ${formatBytes(MODEL_BYTES[model])}`;
 
   const confirmDelete = () =>
-    Alert.alert(`Delete ${MODEL_LABEL[model]}?`, `This frees ${formatBytes(status.bytes)}. You can download it again later.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => void deleteParakeet(model) },
-    ]);
+    Alert.alert(
+      `Delete ${MODEL_LABEL[model]}?`,
+      // Shared storage: the delete also removes the files for other Zog Tech apps on this phone.
+      status.shared
+        ? `This frees ${formatBytes(status.bytes)} for all Zog Tech apps that share the model. You can download it again later.`
+        : `This frees ${formatBytes(status.bytes)}. You can download it again later.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => void deleteParakeet(model) },
+      ],
+    );
 
   const trailing = mine ? (
     <IconAction label="Cancel download" Icon={X} onPress={cancelParakeetDownload} />

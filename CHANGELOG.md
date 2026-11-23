@@ -245,6 +245,12 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Voice input: the Parakeet models are in an App Group container that other Zog Tech apps share
+  (`group.com.zogtech.models`). An app that needs the same model uses the files and does not
+  download them again. The first start moves a downloaded model from Application Support into the
+  group. Delete removes the model for all of these apps, and the Delete prompt says so. Needs a
+  new app build.
+
 - Prompt box: attach videos. The "+" row "Photos and videos" picks both. On iOS the app sends a
   1080p H.264 copy. A video goes in 4 MiB parts, up to 500 MB, with "Uploading 1 of 2 · 34%" and
   a Cancel button. A short line before the video path tells the agent to look at frames with
