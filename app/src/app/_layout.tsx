@@ -18,6 +18,7 @@ import { addBanners, BannerHost, bannerShowing } from "@/push/BannerHost";
 import { bannerFromPush } from "@/push/banner";
 import { registerChoiceCategory } from "@/push/choiceActions";
 import { showBannerFor, useNotificationRouting } from "@/push/useNotificationRouting";
+import { ShareBridge } from "@/share/ShareBridge";
 import { useAppFonts } from "@/theme/fonts";
 import { colors } from "@/theme/tokens";
 import { AppShortcuts } from "@/ui/AppShortcuts";
@@ -102,6 +103,8 @@ export default function RootLayout() {
       <ThemedRoot key={themeKey} />
       {/* These render no views, so a theme change does not need to mount them again. */}
       <NotificationRouting />
+      {/* A share from another app opens the share screen. Nothing on a binary without the share module. */}
+      <ShareBridge />
       <CrashRoute />
       {/* Two columns on wide windows (iPad, tablets): moves the session between the column and its route. */}
       <LayoutSync />
@@ -134,6 +137,7 @@ function ThemedRoot() {
         <Stack.Screen name="devices/[hostId]" options={{ ...hostHeader, title: "Simulators" }} />
         <Stack.Screen name="new" options={{ ...modalHeader, title: "New session" }} />
         <Stack.Screen name="jump" options={{ ...modalHeader, title: "Jump to a terminal" }} />
+        <Stack.Screen name="share" options={{ ...modalHeader, title: "Share to Herdling" }} />
         <Stack.Screen name="resume/[hostId]/[paneId]" options={{ ...modalHeader, title: "Resume session" }} />
         <Stack.Screen name="restart/[hostId]/[paneId]" options={{ ...modalHeader, title: "Restart agent" }} />
         <Stack.Screen name="explain/[hostId]/[paneId]" options={{ ...modalHeader, title: "Why this status?" }} />

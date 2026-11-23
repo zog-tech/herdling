@@ -118,6 +118,29 @@
         {
           "photosPermission": "Herdling attaches photos you pick to prompts for your agents."
         }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsText": true,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+            "NSExtensionActivationSupportsImageWithMaxCount": 6,
+            "NSExtensionActivationSupportsMovieWithMaxCount": 6,
+            "NSExtensionActivationSupportsFileWithMaxCount": 6
+          },
+          "iosShareExtensionName": "Herdling Share",
+          "iosShareExtensionBundleIdentifier": "com.zogtech.herdling.ShareExtension",
+          "iosAppGroupIdentifier": "group.com.zogtech.herdling",
+          "androidIntentFilters": [
+            "text/*",
+            "*/*"
+          ],
+          "androidMultiIntentFilters": [
+            "*/*"
+          ]
+        }
       ]
     ],
     "experiments": {

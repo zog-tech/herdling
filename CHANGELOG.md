@@ -245,6 +245,17 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Share to Herdling: share a link, a text, photos, videos or other files (PDF, logs, zip) from
+  the share sheet of any app. Herdling opens a share screen with a preview (for a link, the title
+  and the image from the Open Graph tags of the page, fetched by the phone), a note, and the agents
+  of all online computers. Send uploads the files like the prompt box (videos and files over 25 MB
+  in parts, with Cancel), sends the prompt to the agent and opens its thread. A long text goes as
+  a `.txt` file. A HEIC photo gets a line that tells the agent to convert it. Needs a new app build
+  (`expo-share-intent`: an iOS share extension with an App Group, Android ACTION_SEND filters).
+  Older builds that get this code over the air do not show Herdling in the share sheet.
+- Prompt box: a picked file over 25 MB now goes in parts to a herdlingd that takes uploads in
+  parts (0.2.1), as a video does. Before, herdlingd refused it.
+
 - Prompt box: attach videos. The "+" row "Photos and videos" picks both. On iOS the app sends a
   1080p H.264 copy. A video goes in 4 MiB parts, up to 500 MB, with "Uploading 1 of 2 · 34%" and
   a Cancel button. A short line before the video path tells the agent to look at frames with
