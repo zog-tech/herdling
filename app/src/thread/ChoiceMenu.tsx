@@ -1,4 +1,15 @@
-import { ChevronDown, ChevronUp, Maximize2, MessagesSquare, PenLine } from "lucide-react-native";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ListChecks,
+  Maximize2,
+  MessagesSquare,
+  PenLine,
+  Square,
+  SquareCheck,
+} from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
@@ -7,7 +18,9 @@ import { colors, denseScale, hitTarget, icon, radius, space, state, type } from 
 import { useKeyboardHeight } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
 
+import { HScrollView } from "./HScrollView";
 import { choiceView, destructiveKey, isFreeform, type Choice } from "./parseChoices";
+import type { QuestionTabs, TabMove } from "./questionTabs";
 import { openSelectText } from "./selectText";
 
 /** The menu takes at most this share of the window height and scrolls inside, so the thread stays visible. */
@@ -61,18 +74,30 @@ const AGENT_NAMES: Record<string, string> = {
  * free-text options ("Type something.", "Chat about this") are small pills under the rows.
  * A tap answers through `onPick` (the digit, or the arrow keys and Enter for a menu with no numbers).
  * A menu with no numbers also shows a keycap: the number is the place of the option. The terminal cursor (`selected`) has no style: it means nothing on the phone.
+ * An AskUserQuestion with more than one question shows its tabs above the header (`TabStrip`): a
+ * tap on a tab, or on the arrows, moves through `onTab`. A multi-select option shows a checkbox in
+ * place of the keycap; a tap turns it on or off. "Next" goes to the next tab.
  */
 export function ChoiceMenu({
   choices,
   question,
   context,
   agent,
+  tabs,
+  next,
   onPick,
+  onTab,
   onType,
   disabled,
 }: {
   choices: Choice[];
   question?: string;
+  /** The question tabs (`parseMenu`). */
+  tabs?: QuestionTabs;
+  /** The "Next" row of a multi-select question (`parseMenu`). */
+  next?: { selected: boolean };
+  /** A move to another question tab. */
+  onTab?: (move: TabMove) => void;
   /** The body of the permission prompt above the question (`parseMenu`). */
   context?: string;
   /** The herdr agent kind, for "Claude asks". */
@@ -94,6 +119,7 @@ export function ChoiceMenu({
 
   return (
     <View style={{ maxHeight: menuMax, gap: space.sm, opacity: disabled ? state.disabledOpacity : 1 }}>
+      {tabs && onTab ? <TabStrip tabs={tabs} disabled={disabled} onTab={onTab} /> : null}
       <View
         style={{
           gap: space.xs / 2,
@@ -132,6 +158,7 @@ export function ChoiceMenu({
         {rows.map((c) => (
           <OptionRow key={c.key} choice={c} destructive={c.key === danger} disabled={disabled} onPick={onPick} />
         ))}
+        {next && onTab ? <NextButton disabled={disabled} onPress={() => onTab({ by: 1 })} /> : null}
         {freeform.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingTop: space.xs }}>
             {freeform.map((c) => (
@@ -203,6 +230,113 @@ function PromptContext({ text, maxHeight }: { text: string; maxHeight: number })
   );
 }
 
+/**
+ * The tabs of an AskUserQuestion with more than one question, in one row that scrolls sideways,
+ * between a "previous" and a "next" arrow. The current tab has the selected style. An answered
+ * tab has a check; the last tab ("Submit") has a list icon. The arrows show also while the current
+ * tab is unknown: they move one tab from where the terminal is.
+ */
+export function TabStrip({ tabs, disabled, onTab }: { tabs: QuestionTabs; disabled?: boolean; onTab: (move: TabMove) => void }) {
+  const at = tabs.current;
+  const last = tabs.items.length - 1;
+  const questions = tabs.items.filter((t) => !t.submit).length;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
+      <ArrowButton dir={-1} disabled={disabled || at === 0} onPress={() => onTab({ by: -1 })} />
+      <HScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: space.xs, alignItems: "center" }} showsHorizontalScrollIndicator={false}>
+        {tabs.items.map((t, i) => {
+          const current = i === at;
+          const Icon = t.submit ? ListChecks : t.answered ? SquareCheck : Square;
+          const tint = current ? colors.accent : t.answered ? colors.text : colors.textMuted;
+          return (
+            <Pressable
+              key={i}
+              accessibilityRole="tab"
+              accessibilityLabel={tabLabel(t, i, questions)}
+              accessibilityState={{ selected: current, disabled: !!disabled }}
+              disabled={disabled}
+              onPress={() => onTab({ to: i })}
+              style={({ pressed }) => ({
+                minHeight: hitTarget,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: space.xs,
+                paddingHorizontal: space.md,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: current ? colors.accent : colors.divider,
+                backgroundColor: current ? colors.accentTint : pressed ? colors.raised : colors.card,
+              })}
+            >
+              <Icon size={icon.sm} color={tint} strokeWidth={icon.strokeWidth} />
+              <Text variant="small" bold={current} color={current ? colors.accent : colors.text} maxFontSizeMultiplier={denseScale.row}>
+                {t.title || (t.submit ? "Submit" : `Question ${i + 1}`)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </HScrollView>
+      <ArrowButton dir={1} disabled={disabled || at === last} onPress={() => onTab({ by: 1 })} />
+    </View>
+  );
+}
+
+/** "Content, question 2 of 3, answered" for VoiceOver and TalkBack. `questions`: the tabs that are not "Submit". */
+export function tabLabel(tab: QuestionTabs["items"][number], i: number, questions: number): string {
+  if (tab.submit) return `${tab.title || "Submit"}, review the answers`;
+  return [tab.title || `Question ${i + 1}`, `question ${i + 1} of ${questions}`, tab.answered ? "answered" : "not answered"].join(", ");
+}
+
+function ArrowButton({ dir, disabled, onPress }: { dir: -1 | 1; disabled?: boolean; onPress: () => void }) {
+  const Icon = dir < 0 ? ChevronLeft : ChevronRight;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={dir < 0 ? "Previous question" : "Next question"}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: hitTarget,
+        minHeight: hitTarget,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedOpacity : 1,
+      })}
+    >
+      <Icon size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+    </Pressable>
+  );
+}
+
+/** The "Next" row of a multi-select question: it goes to the next tab. */
+function NextButton({ disabled, onPress }: { disabled?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Next"
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        alignSelf: "flex-start",
+        minHeight: hitTarget,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.xs,
+        paddingHorizontal: space.md,
+        borderRadius: radius.pill,
+        backgroundColor: pressed ? colors.accentPressed : colors.accent,
+      })}
+    >
+      <Text variant="small" bold color={colors.onAccent} maxFontSizeMultiplier={denseScale.row}>
+        Next
+      </Text>
+      <ChevronRight size={icon.sm} color={colors.onAccent} strokeWidth={icon.strokeWidth} />
+    </Pressable>
+  );
+}
+
 /** "1. Title. Detail. Recommended" for VoiceOver and TalkBack. The detail is always complete here. */
 export function optionLabel(choice: Choice): string {
   const v = choiceView(choice);
@@ -224,6 +358,8 @@ function OptionRow({
   onPick: (c: Choice) => void;
 }) {
   const v = choiceView(choice);
+  const checkbox = choice.checked !== undefined;
+  const Box = choice.checked ? SquareCheck : Square;
   const [pressed, setPressed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [cut, setCut] = useState(() => (v.detail?.length ?? 0) > DETAIL_GUESS);
@@ -241,9 +377,9 @@ function OptionRow({
       }}
     >
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={checkbox ? "checkbox" : "button"}
         accessibilityLabel={optionLabel(choice)}
-        accessibilityState={{ disabled: !!disabled, selected: choice.selected }}
+        accessibilityState={checkbox ? { disabled: !!disabled, checked: !!choice.checked } : { disabled: !!disabled, selected: choice.selected }}
         disabled={disabled}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
@@ -259,20 +395,26 @@ function OptionRow({
           paddingRight: showMore ? 0 : space.md,
         }}
       >
-        <View
-          style={{
-            minWidth: KEYCAP,
-            minHeight: KEYCAP,
-            borderRadius: radius.sm,
-            backgroundColor: colors.raised,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text variant="caption" mono muted maxFontSizeMultiplier={denseScale.pill}>
-            {choice.key}
-          </Text>
-        </View>
+        {checkbox ? (
+          <View style={{ minWidth: KEYCAP, minHeight: KEYCAP, alignItems: "center", justifyContent: "center" }}>
+            <Box size={icon.md} color={choice.checked ? colors.accent : colors.textMuted} strokeWidth={icon.strokeWidth} />
+          </View>
+        ) : (
+          <View
+            style={{
+              minWidth: KEYCAP,
+              minHeight: KEYCAP,
+              borderRadius: radius.sm,
+              backgroundColor: colors.raised,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text variant="caption" mono muted maxFontSizeMultiplier={denseScale.pill}>
+              {choice.key}
+            </Text>
+          </View>
+        )}
         <View style={{ flex: 1, gap: space.xs / 2 }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.sm, rowGap: space.xs / 2 }}>
             <Text bold color={destructive ? colors.danger : colors.text} numberOfLines={TITLE_LINES} style={{ flexShrink: 1 }}>

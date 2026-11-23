@@ -6,14 +6,25 @@
  * answers a push with a digit, so `parseChoices` keeps to numbered menus.
  */
 
+import { CHECKBOX, NEXT_CURSOR, tabsAbove, type QuestionTabs } from "./questionTabs";
+
 /**
  * One option of an agent's permission menu.
  * `parts`: the first line of the option and its continuation lines, for display only (from `parseMenu`).
  * `label` is all parts joined with a space; herdlingd matches answers on it.
  * `numbered: false`: an option of a menu with no numbers on the screen (only from `parseMenu`). Its
  * `key` is its place in the menu ("1".."n"), and the app answers with the arrow keys and Enter.
+ * `checked`: an option of a multi-select question ("[✔] Title"), only from `parseMenu`. The digit
+ * turns its checkbox on or off. The label and the parts have no checkbox.
  */
-export type Choice = { key: string /* "1".."9" */; label: string; selected: boolean; parts?: string[]; numbered?: false };
+export type Choice = {
+  key: string /* "1".."9" */;
+  label: string;
+  selected: boolean;
+  parts?: string[];
+  numbered?: false;
+  checked?: boolean;
+};
 
 export const NONE: Choice[] = [];
 const SCAN_LINES = 20;
@@ -57,8 +68,12 @@ function screenLines(screen: string): Line[] {
   });
 }
 
-/** The rules of `parseChoices`, plus the parts of each option and the place of the block. */
-function scan(screen: string): Scan {
+/**
+ * The rules of `parseChoices`, plus the parts of each option and the place of the block.
+ * `cursors`: the number of option lines with the `❯` marker (0 when the cursor is on the "Next"
+ * row of a multi-select question).
+ */
+function scan(screen: string, cursors = 1): Scan {
   const lines = screenLines(screen);
   const visible = lines
     .map((l, at) => ({ ...l, at }))
@@ -92,7 +107,7 @@ function scan(screen: string): Scan {
   }
 
   const valid =
-    block.length >= 2 && block.every((c, i) => c.key === String(i + 1)) && block.filter((c) => c.selected).length === 1;
+    block.length >= 2 && block.every((c, i) => c.key === String(i + 1)) && block.filter((c) => c.selected).length === cursors;
   return valid ? { lines, block, start } : { lines, block: NONE, start: -1 };
 }
 
@@ -158,16 +173,97 @@ export function parseChoices(screen: string): Choice[] {
  * `context`: the body of a Claude Code permission prompt above the question (the title, the command,
  * the description, a warning), as screen lines. Undefined for other menus.
  */
-export type Menu = { choices: Choice[]; question?: string; context?: string };
+export type Menu = {
+  choices: Choice[];
+  question?: string;
+  context?: string;
+  /** The question tabs of an AskUserQuestion with more than one question (`questionTabs.ts`). */
+  tabs?: QuestionTabs;
+  /** The "Next" row of a multi-select question. `selected`: the cursor is on it. */
+  next?: { selected: boolean };
+};
+
+/** A numbered option with a checkbox: the line above the "Next" row of a multi-select question. */
+const CHECKBOX_LINE = /^\s*(?:[❯›>]\s*)?\d\.\s+\[[ ✔✓xX×]\]\s/;
 
 /** `parseChoices`, `menuQuestion` and the prompt context in one pass, for the buttons in the app. */
 export function parseMenu(screen: string): Menu {
-  const s = scan(screen);
+  const raw = screen.split(/\r?\n/);
+  // The cursor on the "Next" row of a multi-select question: no option line has the marker.
+  const nextAt = nextCursorLine(raw);
+  if (nextAt >= 0) raw[nextAt] = raw[nextAt].replace("❯", " ");
+  const s = nextAt >= 0 ? scan(raw.join("\n"), 0) : scan(screen);
   if (!s.block.length) return unnumberedMenu(scanUnnumbered(s.lines));
   const q = questionTop(s);
   const footer = s.lines.slice(-6).some((l) => PROMPT_FOOTER.test(l.text));
   const context = q.question && (PROMPT_QUESTION.test(q.question) || footer) ? contextAbove(s.lines, q.top) : undefined;
-  return context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
+  const menu: Menu = context ? { choices: s.block, question: q.question, context } : { choices: s.block, question: q.question };
+  return questionParts(menu, s, nextAt >= 0);
+}
+
+/** The line of the "Next" row with the cursor on it, right under a checkbox option, or -1. */
+function nextCursorLine(raw: string[]): number {
+  for (let i = raw.length - 1; i > 0; i--) {
+    if (!NEXT_CURSOR.test(raw[i])) continue;
+    let j = i - 1;
+    while (j >= 0 && !raw[j].trim()) j--;
+    return j >= 0 && CHECKBOX_LINE.test(raw[j]) ? i : -1;
+  }
+  return -1;
+}
+
+/**
+ * The parts of an AskUserQuestion menu: the checkboxes and the "Next" row of a multi-select
+ * question, and the tab bar of a menu with more than one question. On the review screen (the
+ * "Submit" tab) the question is "Review your answers" and the context is the list of answers.
+ */
+function questionParts(menu: Menu, s: Scan, nextSelected: boolean): Menu {
+  let out = menu;
+  if (menu.choices.some((c) => CHECKBOX.test(c.parts?.[0] ?? ""))) {
+    const choices = menu.choices.map((c): Choice => {
+      const m = CHECKBOX.exec(c.parts?.[0] ?? "");
+      if (!m) return c;
+      const parts = [c.parts![0].slice(m[0].length), ...c.parts!.slice(1)];
+      return { ...c, label: parts.join(" "), parts, checked: m[1] !== " " };
+    });
+    let last = -1;
+    choices.forEach((c, i) => {
+      if (c.checked !== undefined) last = i;
+    });
+    // The "Next" row is indented deeper than the digit, so the scan takes it as a part of the last checkbox option.
+    const parts = choices[last].parts!;
+    if (parts.length > 1 && parts[parts.length - 1] === "Next") {
+      const kept = parts.slice(0, -1);
+      choices[last] = { ...choices[last], parts: kept, label: kept.join(" ") };
+      out = { ...out, choices, next: { selected: nextSelected } };
+    } else {
+      out = { ...out, choices };
+    }
+  }
+  const found = tabsAbove(
+    s.lines.map((l) => l.raw),
+    s.start,
+  );
+  if (!found) return out;
+  out = { ...out, tabs: found.tabs };
+  if (found.review >= 0) {
+    const review = reviewContext(s.lines.slice(found.review + 1, s.start).map((l) => l.raw));
+    out = { ...out, question: s.lines[found.review].raw.trim(), context: review };
+  }
+  return out;
+}
+
+/** The answers on the review screen, less the indent that all lines share, or undefined. */
+function reviewContext(raw: string[]): string | undefined {
+  const body = raw.map((l) => l.trimEnd());
+  const filled = body.filter((l) => l.trim());
+  if (!filled.length) return undefined;
+  const shared = Math.min(...filled.map((l) => /^ */.exec(l)![0].length));
+  return body
+    .map((l) => (l.trim() ? l.slice(shared) : ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "");
 }
 
 /**
@@ -294,6 +390,11 @@ export function choiceView(choice: Choice): ChoiceView {
   return { title, detail: detail || undefined, recommended: /\(recommended\)/i.test(choice.label) };
 }
 
+/** True for the "Type something" option of Claude Code: a text field on the screen. */
+function isTypeRow(choice: Choice): boolean {
+  return /^Type something\.?$/i.test(choice.label.trim());
+}
+
 /** True for the built-in free-text options of Claude Code: "Type something." and "Chat about this". */
 export function isFreeform(choice: Choice): boolean {
   const label = choice.label.trim();
@@ -312,16 +413,22 @@ export function destructiveKey(choices: Choice[]): string | undefined {
  * The keys that answer `choice` with `pane.send_keys`, on the menu `now` (the screen as it is now).
  * A numbered menu: the bare digit (Claude's selector confirms on it, so no Enter).
  * A menu with no numbers: "down" or "up" from the `❯` option to `choice`, then "enter".
+ * With the cursor on the "Type something" row, a digit goes into its text field. So the keys
+ * start with "up" (off the row), and a pick of that row itself sends no key.
  */
 export function answerKeys(now: Choice[], choice: Choice): string[] {
-  if (choice.numbered !== false) return [choice.key];
+  if (choice.numbered !== false) {
+    const at = now.find((c) => c.selected);
+    if (!at || !isTypeRow(at)) return [choice.key];
+    return at.key === choice.key ? [] : ["up", choice.key];
+  }
   const from = Math.max(0, now.findIndex((c) => c.selected));
   const to = Number(choice.key) - 1;
   const steps = Array.from({ length: Math.abs(to - from) }, () => (to > from ? "down" : "up"));
   return [...steps, "enter"];
 }
 
-/** True when both lists have the same keys, labels, marker, numbering and parts. */
+/** True when both lists have the same keys, labels, marker, numbering, checkbox and parts. */
 export function sameChoices(a: Choice[], b: Choice[]): boolean {
   return (
     a.length === b.length &&
@@ -331,6 +438,7 @@ export function sameChoices(a: Choice[], b: Choice[]): boolean {
         c.label === b[i].label &&
         c.selected === b[i].selected &&
         c.numbered === b[i].numbered &&
+        c.checked === b[i].checked &&
         sameParts(c.parts, b[i].parts),
     )
   );

@@ -1,10 +1,12 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { Text } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import { ChoiceMenu, contextMaxHeight, menuMaxHeight } from "./ChoiceMenu";
 import { parseMenu, type Choice } from "./parseChoices";
+import type { TabMove } from "./questionTabs";
 
 let mockKeyboard = 0;
 jest.mock("@/ui/KeyboardAvoider", () => ({ useKeyboardHeight: () => mockKeyboard }));
@@ -170,4 +172,88 @@ describe("ChoiceMenu with a prompt context", () => {
 test("context_max_height_is_8_lines_or_less_on_a_small_menu", () => {
   expect(contextMaxHeight(440)).toBe(8 * 18 + 16);
   expect(contextMaxHeight(200)).toBe(80);
+});
+
+describe("ChoiceMenu with question tabs (AskUserQuestion with more than one question)", () => {
+  const trees: ReactTestRenderer[] = [];
+  afterEach(() => {
+    act(() => trees.splice(0).forEach((t) => t.unmount()));
+  });
+  function renderTabs(screen: string, current?: number) {
+    const menu = parseMenu(screen);
+    const tabs = menu.tabs && current !== undefined ? { ...menu.tabs, current } : menu.tabs;
+    const onPick = jest.fn<void, [Choice]>();
+    const onTab = jest.fn<void, [TabMove]>();
+    let t!: ReactTestRenderer;
+    act(() => {
+      t = create(
+        <GestureHandlerRootView>
+          <ChoiceMenu choices={menu.choices} question={menu.question} context={menu.context} tabs={tabs} next={menu.next} agent="claude" onPick={onPick} onTab={onTab} />
+        </GestureHandlerRootView>,
+      );
+    });
+    trees.push(t);
+    return { t, onPick, onTab, menu };
+  }
+  const tabsOf = (t: ReactTestRenderer) => pressables(t).filter((n) => n.props.accessibilityRole === "tab");
+
+  it("shows every tab with its title and answered state, and marks the current tab", () => {
+    const { t } = renderTabs(fixture("claude_question_tabs_answered"), 1);
+    expect(tabsOf(t).map((n) => [n.props.accessibilityLabel, n.props.accessibilityState.selected])).toEqual([
+      ["Share flow, question 1 of 3, answered", false],
+      ["Content, question 2 of 3, answered", true],
+      ["Release, question 3 of 3, not answered", false],
+      ["Submit, review the answers", false],
+    ]);
+    expect(texts(t)).toEqual(expect.arrayContaining(["Share flow", "Content", "Release", "Submit"]));
+  });
+
+  it("a tap on a tab moves to it; the arrows move one tab", () => {
+    const { t, onTab } = renderTabs(fixture("claude_question_tabs"), 0);
+    act(() => tabsOf(t)[2].props.onPress());
+    expect(onTab).toHaveBeenLastCalledWith({ to: 2 });
+    act(() => byLabel(t, /^Next question$/)[0].props.onPress());
+    expect(onTab).toHaveBeenLastCalledWith({ by: 1 });
+    // The first tab is current: "Previous question" is off.
+    expect(byLabel(t, /^Previous question$/)[0].props.disabled).toBe(true);
+  });
+
+  it("with no known current tab, no tab is selected and both arrows stay on", () => {
+    const { t, onTab } = renderTabs(fixture("claude_question_tabs"));
+    expect(tabsOf(t).every((n) => !n.props.accessibilityState.selected)).toBe(true);
+    expect(byLabel(t, /^Previous question$/)[0].props.disabled).toBeFalsy();
+    act(() => byLabel(t, /^Previous question$/)[0].props.onPress());
+    expect(onTab).toHaveBeenLastCalledWith({ by: -1 });
+  });
+
+  it("a multi-select question: checkboxes with their state, a tap toggles, Next goes on", () => {
+    const { t, onPick, onTab, menu } = renderTabs(fixture("claude_question_tabs_multi"), 1);
+    const boxes = pressables(t).filter((n) => n.props.accessibilityRole === "checkbox");
+    expect(boxes.map((n) => [n.props.accessibilityLabel, n.props.accessibilityState.checked])).toEqual([
+      ["1. Title. Includes the title", true],
+      ["2. Summary. Includes the summary", false],
+      ["3. Screenshot. Includes a screenshot", true],
+    ]);
+    act(() => boxes[1].props.onPress());
+    expect(onPick).toHaveBeenLastCalledWith(menu.choices[1]);
+    expect(texts(t)).toEqual(expect.arrayContaining(["Type an answer", "Chat about this", "Next"]));
+    act(() => byLabel(t, /^Next$/)[0].props.onPress());
+    expect(onTab).toHaveBeenLastCalledWith({ by: 1 });
+  });
+
+  it("the review screen: the answers as context, Submit as an option", () => {
+    const { t, onPick, menu } = renderTabs(fixture("claude_question_tabs_submit"));
+    expect(tabsOf(t)[3].props.accessibilityState.selected).toBe(true);
+    expect(byLabel(t, /^Next question$/)[0].props.disabled).toBe(true);
+    expect(texts(t)).toEqual(expect.arrayContaining(["Review your answers"]));
+    expect(texts(t).some((s) => s.includes("→ Title, Screenshot"))).toBe(true);
+    act(() => byLabel(t, /^1\. Submit answers$/)[0].props.onPress());
+    expect(onPick).toHaveBeenLastCalledWith(menu.choices[0]);
+  });
+
+  it("shows no tabs for a single question", () => {
+    const { t } = renderTabs(fixture("claude_ask_user_question"));
+    expect(tabsOf(t)).toHaveLength(0);
+    expect(byLabel(t, /question$/)).toHaveLength(0);
+  });
 });

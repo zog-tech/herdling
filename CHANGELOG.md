@@ -245,6 +245,13 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Choice menu: a Claude Code question with more than one question (AskUserQuestion with tabs)
+  shows its tabs above the question, with the answered state and the current tab. A tap on a tab
+  or on the arrows moves to that question in the terminal. A multi-select question shows its
+  checkboxes, a tap turns one on or off, and "Next" goes to the next question. The "Submit" tab
+  shows the answers and the "Submit answers" option. Before, only the current question showed and
+  the other questions could not be reached. Ships as an over-the-air update.
+
 - Prompt box: attach videos. The "+" row "Photos and videos" picks both. On iOS the app sends a
   1080p H.264 copy. A video goes in 4 MiB parts, up to 500 MB, with "Uploading 1 of 2 · 34%" and
   a Cancel button. A short line before the video path tells the agent to look at frames with

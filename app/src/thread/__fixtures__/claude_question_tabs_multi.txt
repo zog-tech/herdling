@@ -1,0 +1,19 @@
+⏺ I have three questions before I start.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Share flow  ☒ Content  ☐ Release  ✔ Submit  →
+
+What should the share include?
+
+❯ 1. [✔] Title
+         Includes the title
+  2. [ ] Summary
+         Includes the summary
+  3. [✔] Screenshot
+         Includes a screenshot
+  4. [ ] Type something
+     Next
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

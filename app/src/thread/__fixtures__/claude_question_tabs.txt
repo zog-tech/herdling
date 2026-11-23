@@ -1,0 +1,16 @@
+⏺ I have three questions before I start.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Share flow  ☐ Content  ☐ Release  ✔ Submit  →
+
+How should sharing start?
+
+❯ 1. Share sheet
+     Uses the system share sheet
+  2. Copy link
+     Copies a link
+  3. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
