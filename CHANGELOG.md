@@ -5,7 +5,7 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
-## [Unreleased herdlingd]
+## [herdlingd 0.2.2] - 2026-11-23
 
 - The model of the agent: the newest page of `thread.get` has the new optional field `model`, and
   a `thread.follow` event has `model` when the model changes. herdlingd reads the newest model of
