@@ -26,6 +26,9 @@ import { PausableClock } from "./clock";
 export type DemoNotice = { kind: "needs_you" | "finished"; paneId: string; title: string; body: string; choices?: string[] };
 
 /** An error with an RPC error code (the transport sends it as `{code, message}`). */
+/** The model each demo agent kind shows (`ThreadPage.model`). */
+const DEMO_MODELS: Record<string, string> = { claude: "claude-opus-5-5", codex: "gpt-5.5" };
+
 export class DemoError extends Error {
   constructor(
     readonly code: string,
@@ -300,7 +303,10 @@ export class DemoScenario {
     const items = this.logItems(logPath);
     const end = before === undefined ? items.length : Math.min(Math.max(0, before), items.length);
     const start = Math.max(0, end - Math.max(1, limit));
-    return { items: items.slice(start, end), cursor: start > 0 ? start : null, end: items.length };
+    const page: ThreadPage = { items: items.slice(start, end), cursor: start > 0 ? start : null, end: items.length };
+    // The newest page of an agent tells its model, as herdlingd does.
+    const model = before === undefined ? DEMO_MODELS[this.agentByLog(logPath)?.info.agent ?? ""] : undefined;
+    return model ? { ...page, model } : page;
   }
 
   subagentPage(parentLog: string, agentId: string, before: number | undefined, limit: number): SubagentPage {

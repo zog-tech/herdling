@@ -9,6 +9,7 @@ pub mod background;
 pub mod codex;
 pub mod gemini;
 pub mod jsonl;
+pub mod model;
 pub mod omp;
 pub mod opencode;
 pub mod pi;

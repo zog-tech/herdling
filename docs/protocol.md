@@ -438,6 +438,26 @@ Errors: `bad_request` (a missing or other pane), `unsupported_platform` (not mac
   size, and `thread.follow` sends a changed item again with the same `id`. Its resume flag is
   `--resume <session UUID>`.
 
+### The model of the agent: `model`
+
+The newest page of `thread.get` (no `before`) has an optional `model` field: the model the agent
+uses now. A `thread.follow` event has `model` when the model changes; the first change after the
+start of the stream always comes. herdlingd reads the newest model signal of the transcript:
+
+| Agent | Signal |
+|---|---|
+| Claude Code | `message.model` of a main-chain assistant line, or the `/model` output ("Set model to `Opus 5.5` …") |
+| Codex | `payload.model` of a `turn_context` line |
+| Pi, omp | `modelId` of a `model_change` entry, or `message.model` of an assistant message |
+| Gemini CLI | `model` of a `gemini` message (JSON lines files only) |
+| OpenCode | `model.id` of the newest assistant row |
+
+The value is the id that the agent wrote (`claude-opus-5-5`, `gpt-5.5`), or the name of a `/model`
+switch (`Opus 5.5`). Subagent lines (`isSidechain`) and placeholders such as `<synthetic>` do not
+count. A page reads back at most 4 MiB from the end; a follow reads only the new lines. The field is
+missing when the log shows no model yet, on an older page, and on an older herdlingd. The app then
+shows no model.
+
 ## Attachments: `files.put`
 
 Params: `{"name": "crash.log", "data_b64": "..."}`. Result: `{"path": "/home/sam/.cache/herdling/uploads/<unix-ms>-crash.log"}`.

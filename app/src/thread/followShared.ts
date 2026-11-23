@@ -4,8 +4,11 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { mergeItems } from "./merge";
 import type { FollowStatus } from "./useThread";
 
-/** `agent_running`: on a subagent transcript, false when the subagent stopped (newer hosts only). */
-export type FollowData = { items: ThreadItem[]; offset: number; agent_running?: boolean } | { error: string };
+/**
+ * `agent_running`: on a subagent transcript, false when the subagent stopped (newer hosts only).
+ * `model`: the model the agent uses now, sent when it changes (newer hosts only).
+ */
+export type FollowData = { items: ThreadItem[]; offset: number; agent_running?: boolean; model?: string } | { error: string };
 
 export const PAGE_SIZE = 40;
 /** Retry delays after failures; the last value repeats. */
@@ -39,6 +42,7 @@ export function followHandler(opts: {
   setItems: Dispatch<SetStateAction<ThreadItem[]>>;
   onEnded: (e: Error) => void;
   onAgentRunning?: (running: boolean) => void;
+  onModel?: (model: string) => void;
 }) {
   return (d: FollowData) => {
     if (opts.isDead()) return;
@@ -48,6 +52,7 @@ export function followHandler(opts: {
     }
     if (d.items.length > 0) opts.setItems((prev) => mergeItems(prev, d.items));
     if (typeof d.agent_running === "boolean") opts.onAgentRunning?.(d.agent_running);
+    if (typeof d.model === "string" && d.model) opts.onModel?.(d.model);
   };
 }
 

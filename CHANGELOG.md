@@ -5,6 +5,14 @@ All notable changes to Herdling are in this file. The format follows
 
 The app version is in `app/app.json`. The `herdlingd` version is in `companion/Cargo.toml`.
 
+## [Unreleased herdlingd]
+
+- The model of the agent: the newest page of `thread.get` has the new optional field `model`, and
+  a `thread.follow` event has `model` when the model changes. herdlingd reads the newest model of
+  the transcript (Claude Code, Codex, Pi, omp, Gemini CLI and OpenCode). For Claude Code, a `/model`
+  switch shows before the next reply; subagent lines and `<synthetic>` do not count. See
+  `docs/protocol.md`, "The model of the agent".
+
 ## [herdlingd 0.2.1] - 2026-11-22
 
 - Large attachments: new methods `files.put_begin`, `files.put_chunk`, `files.put_end` and
@@ -245,6 +253,10 @@ version itself (also after an update from 0.1.9). herdr 1 sessions do not show i
 
 ## [Unreleased app]
 
+- Session screen: the model of the agent shows as a small tag above the prompt box ("Opus 5.5",
+  "Sonnet 5.5 · 1M", "gpt-5.5"). A tap on the title drops down a card with the agent and its
+  model, and "Change model" for Claude Code. With no known model (an older herdlingd, or no reply
+  yet) nothing shows. Ships as an over-the-air update.
 - Choice menu: a Claude Code question with more than one question (AskUserQuestion with tabs)
   shows its tabs above the question, with the answered state and the current tab. A tap on a tab
   or on the arrows moves to that question in the terminal. A multi-select question shows its

@@ -13,14 +13,24 @@ import { SessionDetail } from "./SessionDetail";
 
 type Ref = { kind: string; session: string | null; log_path: string | null; cwd: string | null };
 let mockRef: Ref | null = null;
+/** The newest page of `thread.get`. Null: the log does not exist yet. */
+let mockPage: object | null = null;
+/** The data handler of the newest `thread.follow` stream. */
+let mockFollow: ((d: unknown) => void) | undefined;
 const notFound = () => Object.assign(new Error("no log"), { code: "not_found" });
 const mockRpc = {
   srttMs: undefined as number | undefined,
   onSrtt: () => () => {},
-  stream: async () => () => {},
+  stream: async (_method: string, _params: unknown, onData: (d: unknown) => void) => {
+    mockFollow = onData;
+    return () => {};
+  },
   call: async (method: string, params: { method?: string }) => {
     if (method === "thread.resolve") return mockRef;
-    if (method === "thread.get") throw notFound();
+    if (method === "thread.get") {
+      if (mockPage) return mockPage;
+      throw notFound();
+    }
     if (method === "herdr.call" && params.method === "pane.read") return { read: { text: "" } };
     if (method === "ports.list") return { ports: [] };
     return {};
@@ -109,6 +119,8 @@ beforeEach(() => {
   jest.useFakeTimers();
   mockRef = null;
   mockMethods = [];
+  mockPage = null;
+  mockFollow = undefined;
 });
 afterEach(() => {
   act(() => tree?.unmount());
@@ -285,4 +297,60 @@ test("command_f_opens_the_search_of_the_thread", async () => {
   await flush();
   expect(hasLabel(t, "Close search")).toBe(true);
   expect(t.root.findAll((n) => n.props.placeholder === "Search the thread").length).toBeGreaterThan(0);
+});
+
+describe("the model of the agent", () => {
+  const claudeLog = () => {
+    setHostSnapshot("h", fresh([{ ...noKind, agent: "claude", agent_status: "idle", name: "Fix the build" }]));
+    mockRef = { kind: "claude", session: "s1", log_path: "/home/sam/.claude/projects/x/s1.jsonl", cwd: "/home/sam/proj" };
+  };
+  const tagged = (t: ReactTestRenderer, label: string) => hasLabel(t, `Model: ${label}`);
+
+  test("the_composer_shows_the_model_of_the_newest_page", async () => {
+    claudeLog();
+    mockPage = { items: [], cursor: null, end: 10, model: "claude-opus-5-5" };
+    const t = await open();
+    expect(texts(t)).toContain("Opus 5.5");
+    expect(tagged(t, "Opus 5.5")).toBe(true);
+  });
+
+  test("a_follow_event_with_a_new_model_updates_the_tag", async () => {
+    claudeLog();
+    mockPage = { items: [], cursor: null, end: 10, model: "claude-opus-5-5" };
+    const t = await open();
+    act(() => mockFollow?.({ items: [], offset: 20, model: "Sonnet 5.5" }));
+    await flush();
+    expect(texts(t)).toContain("Sonnet 5.5");
+    expect(texts(t)).not.toContain("Opus 5.5");
+  });
+
+  test("no_model_shows_no_tag_and_no_unknown_text", async () => {
+    claudeLog();
+    mockPage = { items: [], cursor: null, end: 10 };
+    const t = await open();
+    expect(t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Model:")).length).toBe(0);
+    expect(texts(t).some((x) => /unknown/i.test(x))).toBe(false);
+  });
+
+  test("a_tap_on_the_title_drops_down_the_agent_card", async () => {
+    claudeLog();
+    mockMethods = ["agent.prompt"];
+    mockPage = { items: [], cursor: null, end: 10, model: "claude-opus-5-5[1m]" };
+    const t = await open();
+    expect(texts(t)).not.toContain("Claude Code");
+    const title = t.root.find((n) => n.props.accessibilityHint === "Shows the agent and its model. Long press for session actions");
+    act(() => title.props.onPress());
+    // The test renderer does not measure: the card opens after the wait.
+    act(() => jest.advanceTimersByTime(200));
+    await flush();
+    expect(texts(t)).toContain("Claude Code");
+    expect(texts(t)).toContain("Opus 5.5 · 1M");
+    // The raw id shows under the label.
+    expect(texts(t)).toContain("claude-opus-5-5[1m]");
+    expect(hasLabel(t, "Change model")).toBe(true);
+    const close = t.root.findAll((n) => n.props.accessibilityLabel === "Close" && typeof n.props.onPress === "function")[0];
+    act(() => close.props.onPress());
+    await flush();
+    expect(texts(t)).not.toContain("Claude Code");
+  });
 });
