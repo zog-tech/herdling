@@ -1,6 +1,6 @@
 import type { Snapshot } from "@/herdr/snapshot";
 
-import { closeSpaceParams, firstTab, hostSpaces, tabLabel } from "./spaces";
+import { closeSpaceParams, firstTab, hostSpaces, shortFolder, spaceDetail, spaceFolder, tabLabel } from "./spaces";
 
 const snap: Snapshot = {
   workspaces: [
@@ -65,4 +65,42 @@ test("the close of a Herdr 2 space names the panes that the screen showed", () =
   expect(closeSpaceParams(space, true)).toEqual({ workspace_id: "hc:space:1", pane_ids: ["hc:t1", "hc:t2", "hc:t3"] });
   // herdr 1 knows no `pane_ids`.
   expect(closeSpaceParams(space, false)).toEqual({ workspace_id: "hc:space:1" });
+});
+
+describe("row detail", () => {
+  it("finds the folder of a space from its first agent, else its first pane", () => {
+    const withCwd: Snapshot = {
+      ...snap,
+      agents: snap.agents.map((a) => (a.pane_id === "hc:t2" ? { ...a, cwd: "/Users/jane/dev/pay" } : a)),
+      panes: snap.panes.map((p) => (p.pane_id === "hc:t4" ? { ...p, foreground_cwd: "/home/sam/docs" } : p)),
+    };
+    expect(spaceFolder(withCwd, "hc:space:1")).toBe("/Users/jane/dev/pay");
+    expect(spaceFolder(withCwd, "hc:space:2")).toBe("/home/sam/docs");
+    expect(spaceFolder(snap, "hc:space:1")).toBeUndefined();
+  });
+
+  it("shortens the home folder and cuts a long path in the middle", () => {
+    expect(shortFolder("/Users/jane/dev/pay/")).toBe("~/dev/pay");
+    expect(shortFolder("/home/sam")).toBe("~");
+    expect(shortFolder("/srv/app")).toBe("/srv/app");
+    const long = shortFolder("/Users/jane/dev/apps/very-long-project-name/packages/web", 24);
+    expect(long).toHaveLength(24);
+    expect(long.startsWith("~/dev")).toBe(true);
+    expect(long).toContain("…");
+    expect(long.endsWith("web")).toBe(true);
+  });
+
+  it("tells two spaces with one name apart by their folder", () => {
+    const a = spaceDetail({ folder: "/Users/jane/a/sandbox", paneCount: 3, workingCount: 1 });
+    const b = spaceDetail({ folder: "/Users/jane/b/sandbox", paneCount: 1, workingCount: 0 });
+    expect(a).toBe("~/a/sandbox · 3 panes · 1 working");
+    expect(b).toBe("~/b/sandbox · 1 pane");
+    expect(spaceDetail({ paneCount: 0, workingCount: 0 })).toBe("0 panes");
+  });
+
+  it("fills the counts of a space", () => {
+    const s = hostSpaces(snap);
+    expect(s[0]).toMatchObject({ paneCount: 3, workingCount: 1 });
+    expect(s[1]).toMatchObject({ paneCount: 2, workingCount: 1 });
+  });
 });

@@ -1,18 +1,19 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ExternalLink, KeyRound } from "lucide-react-native";
+import { CircleAlert, ExternalLink, KeyRound } from "lucide-react-native";
 import { useState } from "react";
-import { Linking, View } from "react-native";
+import { Linking } from "react-native";
 
+import { Lead, Outcome, Working } from "@/hosts/flowParts";
 import { HERDR_URL } from "@/hosts/installer";
 import { useHosts } from "@/hosts/store";
 import { updateWithPassword } from "@/hosts/updates";
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
-import { DelayedSpinner } from "@/ui/Delayed";
+import { colors, icon } from "@/theme/tokens";
+import { ActionBar } from "@/ui/ActionBar";
 import { Field } from "@/ui/Field";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
-import { Text } from "@/ui/Text";
+import { StateNotice } from "@/ui/StateNotice";
 
 /**
  * Updates a herdlingd that is too old to update itself: one password login runs the installer,
@@ -30,7 +31,7 @@ export default function UpdateWithPasswordScreen() {
   if (!host)
     return (
       <Screen>
-        <Text muted>Host not found.</Text>
+        <StateNotice Icon={CircleAlert} message="Computer not found." />
       </Screen>
     );
 
@@ -51,65 +52,56 @@ export default function UpdateWithPasswordScreen() {
     }
   };
 
+  const footer = done ? (
+    <ActionBar primary={{ label: "Done", onPress: () => router.back() }} />
+  ) : (
+    <ActionBar
+      keyboard
+      primary={{ label: "Update herdlingd", Icon: KeyRound, loading: busy, disabled: password === "" || !host.fingerprint, onPress: () => void run() }}
+    />
+  );
+
   return (
-    <Screen>
-      <Card>
-        <Text variant="small" muted>
-          Herdling logs in to {host.user}@{host.address} once with your SSH password and runs the herdlingd installer. It
-          downloads the latest herdlingd from GitHub, checks it, installs it to ~/.local/bin and restarts the user
-          service. No admin rights. The password is not kept.
-        </Text>
-        {host.fingerprint ? null : (
-          <Text color={colors.danger}>The host key is not pinned yet. Connect the host once first.</Text>
-        )}
-        {done ? null : (
-          <Field
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            textContentType="password"
-            autoComplete="off"
-            importantForAutofill="no"
-            editable={!busy}
-            onSubmitEditing={() => void run()}
-          />
-        )}
-        {busy ? (
-          <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <DelayedSpinner color={colors.textMuted} />
-            <Text muted style={{ flex: 1 }}>
-              Installing herdlingd. This can take a minute…
-            </Text>
-          </View>
-        ) : null}
-        {error ? (
-          <Text color={colors.danger} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-        ) : null}
-        {error?.includes(HERDR_URL) ? (
-          <Button label="Open herdr.dev" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
-        ) : null}
-        {done ? (
-          <Text color={colors.status.done} accessibilityLiveRegion="polite">
-            {done}
-          </Text>
-        ) : null}
-      </Card>
-      <View style={{ gap: space.md }}>
-        {done ? (
-          <Button label="Done" onPress={() => router.back()} />
-        ) : (
-          <Button
-            label="Update herdlingd"
-            Icon={KeyRound}
-            loading={busy}
-            disabled={password === "" || !host.fingerprint}
-            onPress={() => void run()}
-          />
-        )}
-      </View>
+    <Screen flush footer={footer}>
+      <Lead>
+        Herdling logs in to {host.user}@{host.address} once with your SSH password and runs the herdlingd installer. It
+        downloads the latest herdlingd from GitHub, checks it, installs it to ~/.local/bin and restarts the user service.
+        No admin rights. The password is not kept.
+      </Lead>
+      {host.fingerprint ? null : <Outcome ok={false} text="The host key is not pinned yet. Connect the computer once first." />}
+      {done ? null : (
+        <Section title="Login" footer="The password is used for this update only.">
+          <Group>
+            <Pad>
+              <Field
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                textContentType="password"
+                autoComplete="off"
+                importantForAutofill="no"
+                editable={!busy}
+                onSubmitEditing={() => void run()}
+              />
+            </Pad>
+          </Group>
+        </Section>
+      )}
+      {busy ? <Working text="Installing herdlingd. This can take a minute…" /> : null}
+      {error ? <Outcome ok={false} text={error} /> : null}
+      {error?.includes(HERDR_URL) ? (
+        <Section title="Help">
+          <Group>
+            <Row
+              title="Open herdr.dev"
+              leading={<ExternalLink size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+              onPress={() => void Linking.openURL(HERDR_URL)}
+            />
+          </Group>
+        </Section>
+      ) : null}
+      {done ? <Outcome ok text={done} /> : null}
     </Screen>
   );
 }

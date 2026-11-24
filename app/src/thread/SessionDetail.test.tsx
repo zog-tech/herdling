@@ -38,6 +38,7 @@ const mockRpc = {
 };
 /** The methods that the host lists in `hello`. */
 let mockMethods: string[] = [];
+import { useSessionSpeak } from "@/voice/settings";
 jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: mockMethods } }),
   getHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: { methods: mockMethods } }),
@@ -61,6 +62,7 @@ jest.mock("expo-router", () => {
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
 jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("@/voice/MicButton", () => ({ MicButton: () => null }));
 jest.mock("@/voice/RecordBar", () => ({ RecordBar: () => null }));
 jest.mock("@/voice/useDictation", () => ({
@@ -94,6 +96,21 @@ const flush = async () => {
 const texts = (t: ReactTestRenderer) =>
   t.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string);
 
+/** The tabs of the Thread / Terminal switch in the header. */
+const segments = (t: ReactTestRenderer) =>
+  t.root.findAll((n) => n.props.accessibilityRole === "tab" && typeof n.props.onPress === "function").map((n) => n.props.accessibilityLabel as string);
+const hasLabel = (t: ReactTestRenderer, label: string) => t.root.findAll((n) => n.props.accessibilityLabel === label).length > 0;
+type Menu = { title?: string; detail?: string; sections: { title?: string; items: { label: string; value?: string; checked?: boolean; destructive?: boolean; onPick: () => void }[] }[] };
+const menuMock = () => jest.requireMock<{ showMenu: jest.Mock }>("@/ui/MenuSheet").showMenu;
+/** Opens the "⋯" menu and gives the menu it shows. */
+const openMenu = (t: ReactTestRenderer): Menu => {
+  const before = menuMock().mock.calls.length;
+  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
+  return menuMock().mock.calls[before][0] as Menu;
+};
+const labels = (m: Menu) => m.sections.flatMap((s) => s.items.map((i) => i.label));
+const item = (m: Menu, label: string) => m.sections.flatMap((s) => s.items).find((i) => i.label === label)!;
+
 /** A workspace, a tab and a pane that herdr just made for the new session. */
 const fresh = (agents: Snapshot["agents"]): Snapshot => ({
   workspaces: [{ workspace_id: "w9", label: "proj", number: 9, agent_status: "unknown" }],
@@ -125,6 +142,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
+  useSessionSpeak.setState({ bySession: {} });
   setHostSnapshot("h", undefined);
   resetExpected();
   jest.useRealTimers();
@@ -152,11 +170,8 @@ test("an_agent_with_no_thread_log_shows_its_terminal_under_thread", async () => 
   mockRef = { kind: "amp", session: null, log_path: null, cwd: null };
   const t = await open();
   expect(texts(t)).toContain("No conversation log for this agent. Showing its terminal.");
-  expect(texts(t)).toContain("Thread");
+  expect(segments(t)).toContain("Thread");
 });
-
-const segments = (t: ReactTestRenderer) => texts(t).filter((x) => x === "Thread" || x === "Terminal");
-const hasLabel = (t: ReactTestRenderer, label: string) => t.root.findAll((n) => n.props.accessibilityLabel === label).length > 0;
 
 test("a_pane_with_no_agent_opens_as_a_terminal_only", async () => {
   const snap = fresh([]);
@@ -171,16 +186,18 @@ test("a_pane_with_no_agent_opens_as_a_terminal_only", async () => {
   expect(all).toContain("h · Terminal");
   expect(segments(t)).toEqual([]);
   expect(all).not.toContain("No conversation log for this agent. Showing its terminal.");
-  expect(hasLabel(t, "Speak replies")).toBe(false);
-  expect(hasLabel(t, "Search the terminal")).toBe(true);
   expect(hasLabel(t, "Session actions")).toBe(true);
+  // The menu: Find, but no Speak replies (a terminal has no replies).
+  const menu = openMenu(t);
+  expect(labels(menu)).toContain("Find");
+  expect(labels(menu)).not.toContain("Speak replies");
 });
 
 test("a_new_shell_before_the_snapshot_shows_it_opens_as_a_terminal", async () => {
   const t = await open({ shell: true });
   expect(texts(t)).toContain("Terminal");
-  expect(texts(t)).not.toContain("Thread");
-  expect(hasLabel(t, "Search the terminal")).toBe(true);
+  expect(segments(t)).toEqual([]);
+  expect(labels(openMenu(t))).toContain("Find");
 });
 
 test("a_pane_that_expects_an_agent_shows_no_terminal_view_before_the_agent_appears", async () => {
@@ -202,8 +219,7 @@ test("an_expected_shell_with_no_route_hint_opens_as_a_terminal_at_once", async (
   expectPane("h", "p9", "shell");
   const t = await open();
   expect(texts(t)).toContain("Terminal");
-  expect(texts(t)).not.toContain("Thread");
-  expect(hasLabel(t, "Search the terminal")).toBe(true);
+  expect(segments(t)).toEqual([]);
 });
 
 test("an_agent_mark_expires_and_a_pane_with_no_agent_becomes_a_terminal", async () => {
@@ -224,19 +240,20 @@ test("closing_a_terminal_asks_then_closes_its_pane", async () => {
   const snap = fresh([]);
   setHostSnapshot("h", snap);
   const t = await open();
-  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
-  const [menu, pick] = showActionSheet.mock.calls[0];
+  const menu = openMenu(t);
   // No agent actions: no Restart and no renames.
-  expect(menu.options).not.toContain("Restart");
+  expect(labels(menu)).not.toContain("Restart");
   // An older herdlingd does not list shell.watch: no notify option.
-  expect(menu.options).not.toContain("Notify me when it finishes");
-  expect(menu.options.at(-2)).toBe("Close");
+  expect(labels(menu)).not.toContain("Notify me when it finishes");
+  // Close is the last row, destructive, in the last section.
+  const last = menu.sections.at(-1)!;
+  expect(last.items.at(-1)).toMatchObject({ label: "Close", destructive: true });
   // The confirm sheet waits for its answer: do not wait for the pick itself.
   act(() => {
-    pick(menu.options.indexOf("Close"));
+    item(menu, "Close").onPick();
   });
   await flush();
-  const [confirm, yes] = showActionSheet.mock.calls[1];
+  const [confirm, yes] = showActionSheet.mock.calls[0];
   expect(confirm.title).toBe("Close this terminal?");
   act(() => {
     yes(0);
@@ -247,24 +264,20 @@ test("closing_a_terminal_asks_then_closes_its_pane", async () => {
 });
 
 test("a_terminal_on_a_new_host_can_notify_when_its_command_finishes", async () => {
-  const { showActionSheet } = jest.requireMock<{ showActionSheet: jest.Mock }>("@/ui/nativeSheet");
-  showActionSheet.mockReset();
   mockMethods = ["shell.watch", "shell.unwatch", "shell.watches"];
   const call = jest.spyOn(mockRpc, "call");
   setHostSnapshot("h", fresh([]));
   const t = await open();
   expect(call).toHaveBeenCalledWith("shell.watches");
-  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
-  const [menu, pick] = showActionSheet.mock.calls[0];
-  expect(menu.options[0]).toBe("Notify me when it finishes");
+  const menu = openMenu(t);
+  expect(menu.sections[0].items[0].label).toBe("Notify me when it finishes");
   act(() => {
-    pick(0);
+    item(menu, "Notify me when it finishes").onPick();
   });
   await flush();
   expect(call).toHaveBeenCalledWith("shell.watch", { pane_id: "p9", device_id: "d_test" });
   // The next menu offers to turn it off.
-  act(() => t.root.find((n) => n.props.accessibilityLabel === "Session actions" && typeof n.props.onPress === "function").props.onPress());
-  expect(showActionSheet.mock.calls[1][0].options[0]).toBe("Do not notify me when it finishes");
+  expect(labels(openMenu(t))).toContain("Do not notify me when it finishes");
   call.mockRestore();
 });
 
@@ -297,6 +310,79 @@ test("command_f_opens_the_search_of_the_thread", async () => {
   await flush();
   expect(hasLabel(t, "Close search")).toBe(true);
   expect(t.root.findAll((n) => n.props.placeholder === "Search the thread").length).toBeGreaterThan(0);
+});
+
+describe("the session header and its menu", () => {
+  const claude = () => {
+    setHostSnapshot("h", fresh([{ ...noKind, agent: "claude", agent_status: "idle", name: "Fix the build" }]));
+    mockRef = { kind: "claude", session: "s1", log_path: "/home/sam/.claude/projects/x/s1.jsonl", cwd: "/home/sam/proj" };
+    mockPage = { items: [], cursor: null, end: 10, model: "claude-opus-5-5" };
+  };
+
+  test("the_header_shows_the_title_the_detail_line_and_the_compact_switch", async () => {
+    claude();
+    const t = await open();
+    expect(texts(t)).toContain("Fix the build");
+    expect(texts(t)).toContain("h · Claude Code · Opus 5.5");
+    expect(segments(t)).toEqual(["Thread", "Terminal"]);
+    // The old search button and speaker button are gone from the header.
+    expect(hasLabel(t, "Search the thread")).toBe(false);
+    expect(hasLabel(t, "Speak replies")).toBe(false);
+    // The switch changes the view: no composer in Terminal.
+    act(() => t.root.find((n) => n.props.accessibilityRole === "tab" && n.props.accessibilityLabel === "Terminal" && typeof n.props.onPress === "function").props.onPress());
+    await flush();
+    const terminalTab = t.root.find((n) => n.props.accessibilityRole === "tab" && n.props.accessibilityLabel === "Terminal" && typeof n.props.onPress === "function");
+    expect(terminalTab.props.accessibilityState).toEqual({ selected: true });
+  });
+
+  test("the_menu_has_the_sections_of_the_spec_in_order", async () => {
+    claude();
+    mockMethods = ["git.status", "agent.prompt"];
+    const t = await open();
+    const menu = openMenu(t);
+    expect(menu.title).toBe("Fix the build");
+    expect(menu.sections.map((s) => s.title)).toEqual(["This session", "Work", "Help", "History", undefined]);
+    const session = menu.sections[0].items;
+    expect(session[0]).toMatchObject({ label: "Model", value: "Opus 5.5" });
+    expect(session.map((i) => i.label)).toEqual(expect.arrayContaining(["Speak replies", "Find"]));
+    expect(session.at(-1)?.label).toBe("Find");
+    expect(menu.sections[1].items.map((i) => i.label)).toContain("Changes");
+  });
+
+  test("find_in_the_menu_opens_the_search", async () => {
+    claude();
+    const t = await open();
+    expect(hasLabel(t, "Close search")).toBe(false);
+    const menu = openMenu(t);
+    act(() => item(menu, "Find").onPick());
+    await flush();
+    expect(hasLabel(t, "Close search")).toBe(true);
+  });
+
+  test("the_model_row_opens_a_menu_with_a_check_on_the_current_family", async () => {
+    claude();
+    const t = await open();
+    const before = menuMock().mock.calls.length;
+    const menu = openMenu(t);
+    act(() => item(menu, "Model").onPick());
+    const models = menuMock().mock.calls[before + 1][0] as Menu;
+    expect(models.title).toBe("Model");
+    expect(models.sections[0].items.find((i) => i.checked)?.label).toBe("Opus");
+  });
+});
+
+// A block body in `act`: the store action returns the promise of the persist write, and an `act`
+// callback that returns a promise is an async act. Not awaited, it leaves the act scope open and
+// every later render in this file comes up empty.
+test("speak_replies_in_the_menu_shows_its_state_and_turns_it", async () => {
+  setHostSnapshot("h", fresh([{ ...noKind, agent: "claude", agent_status: "idle", name: "Fix the build" }]));
+  const t = await open();
+  const row = item(openMenu(t), "Speak replies");
+  expect(row.value).toBe("Off");
+  act(() => {
+    row.onPick();
+  });
+  expect(useSessionSpeak.getState().bySession["h:p9"]).toBe(true);
 });
 
 describe("the model of the agent", () => {

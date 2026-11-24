@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, TriangleAlert } from "lucide-react-native";
 import { useMemo } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHosts } from "@/hosts/store";
-import { colors, hitTarget, space } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, space } from "@/theme/tokens";
+import { IconButton } from "@/ui/IconButton";
 import { RunHostContext } from "@/thread/LiveToolContext";
 import { ThreadList } from "@/thread/ThreadList";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
@@ -43,7 +44,7 @@ export default function SubagentScreen() {
       status === "loading"
         ? null
         : status === "offline"
-          ? "Host offline."
+          ? "Computer offline."
           : status === "error"
             ? `Can't load the subagent thread: ${thread.error ?? "unknown error"}. Retrying…`
             : "No messages yet.";
@@ -89,22 +90,24 @@ export default function SubagentScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* The same header row as the session screen: glass back button, a two-line title, one detail line. */}
       <View
-        style={{ paddingTop: insets.top, paddingBottom: space.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, flexDirection: "row", alignItems: "center", paddingRight: space.lg, gap: space.xs }}
+        style={{
+          paddingTop: insets.top,
+          paddingBottom: space.xs,
+          paddingLeft: space.sm + insets.left,
+          paddingRight: space.lg + insets.right,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.sm,
+        }}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          onPress={back}
-          style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-        >
-          <ChevronLeft size={26} color={colors.text} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text bold numberOfLines={1}>
+        <IconButton label="Back" Icon={ChevronLeft} size="header" glass onPress={back} />
+        <View style={{ flex: 1, minWidth: 0, minHeight: hitTarget, justifyContent: "center", paddingVertical: space.xs }}>
+          <Text variant="headline" numberOfLines={2} maxFontSizeMultiplier={denseScale.row}>
             {title || "Subagent"}
           </Text>
-          <Text variant="caption" muted numberOfLines={1}>
+          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
             {`${hostName} · subagent`}
           </Text>
         </View>

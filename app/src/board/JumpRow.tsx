@@ -1,12 +1,13 @@
 /**
  * One task of "Jump to a terminal": the group tile, the group and branch, the task and its place,
  * the status, and its helpers under it with a tree line. A tap on the task or a helper opens it.
+ * Pressed: the row fill steps up to `raised`, as every row in a list does.
  */
 import { SquareTerminal } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { statusMeta as agentStatusMeta } from "@/ui/StatusIcon";
-import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, space } from "@/theme/tokens";
 import { GroupTile } from "@/ui/GroupTile";
 import { StatusDot } from "@/ui/StatusDot";
 import { Text } from "@/ui/Text";
@@ -25,13 +26,20 @@ export function JumpRow({ task, multiHost, onOpen }: { task: JumpTask; multiHost
   const detail = jumpDetail(task, multiHost);
   const head = [task.group, task.branch].filter(Boolean).join(" · ");
   return (
-    <View style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>
+    <View style={{ paddingVertical: space.sm }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={[head, task.title, detail].filter(Boolean).join(", ")}
         accessibilityHint="Opens the session"
         onPress={() => onOpen(task.paneId)}
-        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: space.md, minHeight: hitTarget, opacity: pressed ? state.pressedOpacity : 1 })}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.md,
+          minHeight: hitTarget,
+          paddingHorizontal: space.lg,
+          backgroundColor: pressed ? colors.raised : "transparent",
+        })}
       >
         {task.group ? (
           <GroupTile name={task.group} size={TILE} />
@@ -59,7 +67,13 @@ export function JumpRow({ task, multiHost, onOpen }: { task: JumpTask; multiHost
           accessibilityRole="button"
           accessibilityLabel={`Helper ${h.title}, ${agentStatusMeta(h.status).label}`}
           onPress={() => onOpen(h.paneId)}
-          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", minHeight: hitTarget, opacity: pressed ? state.pressedOpacity : 1 })}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            minHeight: hitTarget,
+            paddingHorizontal: space.lg,
+            backgroundColor: pressed ? colors.raised : "transparent",
+          })}
         >
           {/* The tree line: from the tile of the task down to each helper. */}
           <View style={{ width: TILE, alignSelf: "stretch", alignItems: "center" }}>

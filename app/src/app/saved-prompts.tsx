@@ -1,4 +1,4 @@
-import { Plus, RotateCcw } from "lucide-react-native";
+import { ArrowDown, ArrowUp, Pencil, Plus, RotateCcw, Trash2, type LucideIcon } from "lucide-react-native";
 import { Alert } from "react-native";
 
 import { colors, icon } from "@/theme/tokens";
@@ -17,7 +17,8 @@ import {
 } from "@/thread/savedPrompts";
 import { Group, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
-import { promptText, showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+import { promptText } from "@/ui/nativeSheet";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 
@@ -25,7 +26,7 @@ import { Screen } from "@/ui/Screen";
 function askText(index?: number, value = "") {
   promptText(
     index === undefined ? "New saved prompt" : "Edit saved prompt",
-    "The text goes in the prompt box when you tap its chip.",
+    "A tap on its shortcut above the prompt box sends this text.",
     [
       { text: "Cancel", style: "cancel" },
       {
@@ -49,25 +50,21 @@ function run(action: PromptAction, index: number, text: string) {
   else deletePrompt(index);
 }
 
+const ACTION_ICON: Record<PromptAction, LucideIcon> = { edit: Pencil, up: ArrowUp, down: ArrowDown, delete: Trash2 };
+
+/** The menu of one prompt, with the same look as the key bar screen: the moves, then Delete last. */
 function openMenu(index: number, count: number, text: string) {
+  const item = (a: PromptAction) => ({ label: PROMPT_ACTION_LABEL[a], Icon: ACTION_ICON[a], destructive: a === "delete", onPick: () => run(a, index, text) });
   const actions = promptActions(index, count);
-  showActionSheet(
-    {
-      title: promptChipLabel(text),
-      options: [...actions.map((a) => PROMPT_ACTION_LABEL[a]), "Cancel"],
-      cancelButtonIndex: actions.length,
-      destructiveButtonIndex: actions.indexOf("delete"),
-    },
-    (i) => {
-      const a = actions[i];
-      if (a) run(a, index, text);
-    },
-  );
+  showMenu({
+    title: promptChipLabel(text),
+    sections: [{ items: actions.filter((a) => a !== "delete").map(item) }, { items: actions.filter((a) => a === "delete").map(item) }],
+  });
 }
 
 /**
- * Settings, "Saved prompts": the quick replies that the composer shows as chips. A tap on a prompt
- * opens its menu (edit, move up, move down, delete). The list stays on this phone.
+ * More, "Prompts": the saved prompts that the composer shows as shortcuts. A tap on a prompt opens
+ * its menu sheet (edit, move up, move down, delete). The list stays on this phone.
  */
 export default function SavedPromptsScreen() {
   const prompts = useSavedPrompts((s) => s.prompts);
@@ -76,7 +73,7 @@ export default function SavedPromptsScreen() {
     <Screen flush>
       <Section
         title="Saved prompts"
-        footer="The prompts show as chips above the empty prompt box. A tap puts the text in the box. A long press sends it. They stay on this phone."
+        footer="The prompts show as shortcuts above the empty prompt box. A tap sends the text. A long press puts it in the box. They stay on this phone."
       >
         <Group>
           {prompts.length === 0 ? <Row title="No saved prompts" detail="Add one to see it above the prompt box." /> : null}
@@ -93,10 +90,8 @@ export default function SavedPromptsScreen() {
                   const a = actions.find((x) => x === e.nativeEvent.actionName);
                   if (a) run(a, i, text);
                 }}
-                onPress={() => {
-                  haptics.tap();
-                  openMenu(i, prompts.length, text);
-                }}
+                // The menu sheet gives the open haptic.
+                onPress={() => openMenu(i, prompts.length, text)}
               />
             );
           })}

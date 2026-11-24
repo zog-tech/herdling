@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { answerChoice, destructiveKey, parseChoices, useChoices, type Choice } from "./choices";
+import { approveKey } from "./parseChoices";
 import { answerKeys, choiceView, isFreeform, labelMatches, menuQuestion, parseMenu, shortLabel, yesNo } from "./parseChoices";
 
 const mockCalls: { method: string; params: any }[] = [];
@@ -357,6 +358,19 @@ describe("parseMenu context", () => {
     expect(parseMenu("────────\nDo you want to proceed?\n❯ 1. Yes\n  2. No").context).toBeUndefined();
     // Agent output above the question is no prompt body.
     expect(parseMenu("⏺ Done.\nDo you want to proceed?\n❯ 1. Yes\n  2. No").context).toBeUndefined();
+  });
+});
+
+describe("approveKey", () => {
+  const c = (key: string, label: string): Choice => ({ key, label, selected: false });
+  it("is the first Yes of a menu with a No", () => {
+    expect(approveKey(parseChoices(fixture("claude_bash_permission")))).toBe("1");
+    expect(approveKey([c("1", "Yes"), c("2", "Yes, and don't ask again"), c("3", "No, and tell Claude what to do")])).toBe("1");
+  });
+  it("is undefined with no No, or when the first choice is not a Yes", () => {
+    expect(approveKey([c("1", "Yes"), c("2", "Maybe")])).toBeUndefined();
+    expect(approveKey([c("1", "Option A"), c("2", "No")])).toBeUndefined();
+    expect(approveKey([])).toBeUndefined();
   });
 });
 

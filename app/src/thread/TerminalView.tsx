@@ -74,7 +74,7 @@ import {
 } from "@/terminal/predict";
 import { SendQueue, Typist } from "@/terminal/sendQueue";
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, radius, space, state, type } from "@/theme/tokens";
+import { colors, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
@@ -752,7 +752,7 @@ function TerminalControls({
         </Text>
       ) : !online ? (
         <Text variant="small" muted style={{ paddingHorizontal: space.md }}>
-          Host offline — keys work when it reconnects.
+          Computer offline — keys work when it reconnects.
         </Text>
       ) : null}
       <View
@@ -779,7 +779,7 @@ function TerminalControls({
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          <KeyboardIcon size={20} color={direct ? colors.accent : colors.textMuted} />
+          <KeyboardIcon size={icon.md} color={direct ? colors.accent : colors.textMuted} />
         </Pressable>
         <TextInput
           ref={inputRef}
@@ -801,7 +801,7 @@ function TerminalControls({
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
-          placeholder={online ? (direct ? "Keys go to the terminal at once" : "Type into the terminal") : "Host offline"}
+          placeholder={online ? (direct ? "Keys go to the terminal at once" : "Type into the terminal") : "Computer offline"}
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Terminal input"
           style={{
@@ -834,7 +834,7 @@ function TerminalControls({
             opacity: pressed ? state.pressedFill : 1,
           })}
         >
-          <ArrowUp size={22} color={canSend ? colors.onAccent : colors.textMuted} />
+          <ArrowUp size={icon.header} color={canSend ? colors.onAccent : colors.textMuted} />
         </Pressable>
       </View>
     </View>

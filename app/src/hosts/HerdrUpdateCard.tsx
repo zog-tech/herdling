@@ -1,13 +1,13 @@
 import { ArrowUpCircle } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
-import { DelayedSpinner } from "@/ui/Delayed";
+import { colors, icon } from "@/theme/tokens";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Text } from "@/ui/Text";
 
+import { Outcome, Working } from "./flowParts";
 import { useHostConn } from "./connection";
 import {
   canUpdateHerdr,
@@ -25,7 +25,7 @@ import {
 const OUTPUT_LINES = 12;
 
 /**
- * The herdr version of a host and the "Update herdr" action, on the host screen. Shows only when
+ * The "herdr" band of the host screen: the herdr version and the "Update herdr" action. Shows only when
  * the host lists `herdr.update`. The state machine is in `herdrUpdate.ts`.
  */
 export function HerdrUpdateCard({ hostId }: { hostId: string }) {
@@ -67,41 +67,37 @@ export function HerdrUpdateCard({ hostId }: { hostId: string }) {
   const running = state.phase === "running";
 
   return (
-    <Card>
-      <Text variant="title">herdr</Text>
-      {hello ? (
-        <Text variant="small" muted>
-          {hello.herdr_version ? `Version ${hello.herdr_version}` : "herdr is not running"}
-        </Text>
-      ) : null}
-      {hello && !running ? (
-        <Button label="Update herdr" variant="secondary" Icon={ArrowUpCircle} onPress={() => send({ type: "press" })} />
-      ) : null}
-      {running ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text muted style={{ flex: 1 }}>
-            Updating herdr. This can take a few minutes…
-          </Text>
-        </View>
-      ) : null}
-      {state.phase === "done" ? (
-        <View style={{ gap: space.xs }}>
-          <Text color={colors.status.done} accessibilityLiveRegion="polite">
-            {state.text}
-          </Text>
-          {state.output ? (
-            <Text variant="caption" mono muted selectable>
-              {state.output.split("\n").slice(-OUTPUT_LINES).join("\n")}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-      {state.phase === "failed" ? (
-        <Text color={colors.danger} accessibilityLiveRegion="polite" selectable>
-          {state.text}
-        </Text>
-      ) : null}
-    </Card>
+    <Section title="herdr">
+      <Group>
+        {hello ? <Row title="Version" trailing={<Text muted>{hello.herdr_version ?? "Not running"}</Text>} /> : null}
+        {hello && !running ? (
+          <Row
+            title="Update herdr"
+            leading={<ArrowUpCircle size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+            onPress={() => send({ type: "press" })}
+          />
+        ) : null}
+        {running ? (
+          <Pad>
+            <Working bare text="Updating herdr. This can take a few minutes…" />
+          </Pad>
+        ) : null}
+        {state.phase === "done" ? (
+          <Pad>
+            <Outcome bare ok text={state.text} />
+            {state.output ? (
+              <Text variant="caption" mono muted selectable>
+                {state.output.split("\n").slice(-OUTPUT_LINES).join("\n")}
+              </Text>
+            ) : null}
+          </Pad>
+        ) : null}
+        {state.phase === "failed" ? (
+          <Pad>
+            <Outcome bare ok={false} text={state.text} />
+          </Pad>
+        ) : null}
+      </Group>
+    </Section>
   );
 }

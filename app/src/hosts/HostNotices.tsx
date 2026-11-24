@@ -2,7 +2,8 @@ import { useRouter } from "expo-router";
 import { Power, TriangleAlert } from "lucide-react-native";
 
 import { colors } from "@/theme/tokens";
-import { Card } from "@/ui/Card";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
@@ -30,25 +31,27 @@ export function HostNotices({ hostId }: { hostId: string }) {
   const login = startsAtLogin(hello);
   if (!herdrDown && !login) return null;
   return (
-    <Card>
-      {herdrDown ? (
-        <>
-          <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message={runtimeDownText(host.name, hello)} />
-          {hello.core_setup ? null : (
-            <Text variant="small" muted>
-              In a terminal, run herdr. Then you can close the terminal window: herdr keeps running in the background.
-            </Text>
-          )}
-        </>
-      ) : null}
-      {login ? (
-        <StateNotice
-          Icon={Power}
-          message={LOGIN_HINT}
-          action="How to start at boot"
-          onAction={() => router.push({ pathname: "/hosts/boot-help", params: { id: host.id } })}
-        />
-      ) : null}
-    </Card>
+    <Section>
+      <Group>
+        {herdrDown ? (
+          <Pad>
+            <StateNotice inline Icon={TriangleAlert} color={colors.status.blocked} message={runtimeDownText(host.name, hello)} />
+            {hello.core_setup ? null : (
+              <Text variant="small" muted>
+                In a terminal, run herdr. Then you can close the terminal window: herdr keeps running in the background.
+              </Text>
+            )}
+          </Pad>
+        ) : null}
+        {login ? (
+          <Pad>
+            <StateNotice inline Icon={Power} message={LOGIN_HINT} />
+          </Pad>
+        ) : null}
+        {login ? (
+          <Row title="How to start at boot" chevron onPress={() => router.push({ pathname: "/hosts/boot-help", params: { id: host.id } })} />
+        ) : null}
+      </Group>
+    </Section>
   );
 }

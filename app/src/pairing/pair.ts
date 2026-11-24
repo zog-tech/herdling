@@ -37,29 +37,29 @@ export class PairFailed extends Error {
 export function pairMessage(code: PairFailCode, target?: { address: string; port: number }): string {
   switch (code) {
     case "bad_code":
-      return "Wrong code. Check the code on the host.";
+      return "Wrong code. Check the code on the computer.";
     case "no_window":
-      return "No pairing window. Run herdlingd pair on the host.";
+      return "No pairing window. Run herdlingd pair on the computer.";
     case "too_many_attempts":
       return "Too many wrong codes. Run herdlingd pair again.";
     case "unreachable":
       return target
         ? `Can't reach ${target.address}:${target.port}. Is herdlingd serve running?`
-        : "Can't reach the host. Is herdlingd serve running?";
+        : "Can't reach the computer. Is herdlingd serve running?";
     case "bad_request":
-      return "The host rejected the pairing request.";
+      return "The computer rejected the pairing request.";
     case "host_key_mismatch":
       return "The host key is not the one in the QR code. Someone on the network may be intercepting the pairing. Nothing was saved.";
     case "host_key_changed":
-      return "The host key is different from the saved one. Nothing was changed. To trust the new key, remove the host and pair again.";
+      return "The host key is different from the saved one. Nothing was changed. To trust the new key, remove the computer and pair again.";
     case "not_confirmed":
       return "Pairing stopped: the host key was not confirmed. Nothing was saved.";
     case "no_session":
       return "The pairing took too long. Try again.";
     case "host_not_verified":
-      return "The host did not prove that it knows the code. Someone on the network may be intercepting the pairing. Nothing was saved.";
+      return "The computer did not prove that it knows the code. Someone on the network may be intercepting the pairing. Nothing was saved.";
     case "v2_required":
-      return "The host at this address does not do safe pairing, but this host must do it. Someone on the network may be intercepting the pairing. Nothing was saved.";
+      return "The computer at this address does not do safe pairing, but this computer must do it. Someone on the network may be intercepting the pairing. Nothing was saved.";
     case "legacy_declined":
       return "Pairing stopped. Update herdlingd on the computer, then pair again.";
   }

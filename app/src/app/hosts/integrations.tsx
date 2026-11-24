@@ -1,13 +1,14 @@
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { CircleAlert, CloudOff, RefreshCw } from "lucide-react-native";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 
 import { actionLabel, groupIntegrations, installConfirm, stateLabel, type IntegrationInfo } from "@/herdr/integrations";
 import { useIntegrations, type InstallResult } from "@/herdr/useIntegrations";
+import { Lead, Working } from "@/hosts/flowParts";
+import { IconButton } from "@/ui/IconButton";
 import { useHosts } from "@/hosts/store";
-import { colors, space } from "@/theme/tokens";
+import { colors } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
-import { DelayedSpinner } from "@/ui/Delayed";
 import { Group, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
 import { Row } from "@/ui/Row";
@@ -36,14 +37,23 @@ export default function IntegrationsScreen() {
     ]);
   };
 
+  // Refresh is a header button, so no button floats at the end of the list.
+  const header = (
+    <Stack.Screen
+      options={{
+        headerRight: () => (
+          <IconButton label="Refresh" Icon={RefreshCw} disabled={!!busy || state.kind === "loading"} onPress={() => void reload()} size="header" />
+        ),
+      }}
+    />
+  );
+
   if (state.kind !== "ready")
     return (
       <Screen>
+        {header}
         {state.kind === "loading" ? (
-          <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <DelayedSpinner color={colors.textMuted} />
-            <Text muted>Reading the integrations…</Text>
-          </View>
+          <Working bare text="Reading the integrations…" />
         ) : state.kind === "offline" ? (
           <StateNotice Icon={CloudOff} message={`${hostName} is offline. Connect it to see its integrations.`} />
         ) : state.kind === "unsupported" ? (
@@ -91,12 +101,11 @@ export default function IntegrationsScreen() {
 
   return (
     <Screen flush>
-      <View style={{ paddingHorizontal: space.lg }}>
-        <Text variant="small" muted>
-          An integration lets an agent tell herdr its status. Without one, herdr reads the screen of the agent, and the
-          status can be wrong or unknown.
-        </Text>
-      </View>
+      {header}
+      <Lead>
+        An integration lets an agent tell herdr its status. Without one, herdr reads the screen of the agent, and the
+        status can be wrong or unknown.
+      </Lead>
       {groups.missing.length > 0 ? (
         <Section title="Not installed" footer="An install changes the configuration of the agent on the computer. Herdling asks before each install.">
           <Group>{groups.missing.map(row)}</Group>
@@ -112,9 +121,6 @@ export default function IntegrationsScreen() {
           <Group>{groups.absent.map(row)}</Group>
         </Section>
       ) : null}
-      <View style={{ paddingHorizontal: space.lg }}>
-        <Button label="Refresh" variant="secondary" Icon={RefreshCw} disabled={!!busy} onPress={() => void reload()} />
-      </View>
     </Screen>
   );
 }

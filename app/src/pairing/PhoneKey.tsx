@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { View } from "react-native";
 
 import { ensureKey } from "../../modules/ssh";
-import { space } from "@/theme/tokens";
-import { Text } from "@/ui/Text";
+import { KeyRow } from "@/hosts/flowParts";
 
 import { publicKeyFingerprint } from "./keyFingerprint";
 
@@ -26,19 +24,11 @@ export function usePhoneKeyFingerprint(): string | undefined {
 }
 
 /**
- * This phone's key fingerprint, so the user can compare it with the phone key that
- * `herdlingd pair` shows on the computer. Nothing shows until the key is known.
+ * This phone's key fingerprint as a row of a `Group`, so the user can compare it with the phone key
+ * that `herdlingd pair` shows on the computer. Nothing shows until the key is known: the caller
+ * leaves the row out of its `Group` until then, so the band has no empty row.
  */
 export function PhoneKey({ fingerprint }: { fingerprint?: string }) {
   if (!fingerprint) return null;
-  return (
-    <View style={{ gap: space.xs }}>
-      <Text variant="small" muted>
-        This phone's key
-      </Text>
-      <Text variant="caption" mono selectable accessibilityLabel={`This phone's key ${fingerprint}`}>
-        {fingerprint}
-      </Text>
-    </View>
-  );
+  return <KeyRow title="This phone's key" fingerprint={fingerprint} />;
 }

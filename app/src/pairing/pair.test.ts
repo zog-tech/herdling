@@ -120,8 +120,8 @@ describe("pairV1", () => {
   });
 
   it("pair_messages", () => {
-    expect(pairMessage("bad_code")).toBe("Wrong code. Check the code on the host.");
-    expect(pairMessage("no_window")).toBe("No pairing window. Run herdlingd pair on the host.");
+    expect(pairMessage("bad_code")).toBe("Wrong code. Check the code on the computer.");
+    expect(pairMessage("no_window")).toBe("No pairing window. Run herdlingd pair on the computer.");
     expect(pairMessage("too_many_attempts")).toBe("Too many wrong codes. Run herdlingd pair again.");
   });
 });

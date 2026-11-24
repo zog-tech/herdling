@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, Server } from "lucide-react-native";
+import { Plus, Server } from "lucide-react-native";
 import { memo, useCallback, useMemo } from "react";
 import { FlatList, Image, Pressable, StyleSheet, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
@@ -8,6 +8,7 @@ import { agentKind } from "@/herdr/names";
 import { colors, denseScale, dot, hitTarget, icon, motion, space, state } from "@/theme/tokens";
 import { AgentMark } from "@/ui/AgentMark";
 import { useElapsed } from "@/ui/StatusIcon";
+import { Tag } from "@/ui/Tag";
 import { Text } from "@/ui/Text";
 
 import { useCardPress } from "./AgentRow";
@@ -17,11 +18,11 @@ import { BUCKET_META } from "./bucketMeta";
 import type { BoardItem } from "./buckets";
 import { cardActions } from "./cardPress";
 import { hostBadges, spotlightLabel, tileWidth, type Spotlight } from "./spotlight";
-import { currentPreview, showsTime, statusLine, tileLabel, tileMain, tilePlace, tileTitle, type TileMain } from "./tileText";
+import { currentPreview, showsTime, statusLine, tileLabel, tileMain, tilePlace, tileStatus, tileTitle, type TileMain } from "./tileText";
 
 /**
- * The Dashboard top of the Board: the brand header, the carousel of large agent tiles, and the
- * "All agents" bar with the group and sort menus. The idea comes from the photo apps that open on
+ * The Dashboard top of the Board: the brand header and the carousel of large agent tiles. The bar
+ * above the agent list (`ListBar`) is the same in both top forms. The idea comes from the photo apps that open on
  * a row of large "memories": the agents that want the user are large, and the next tile shows at
  * the right edge, so the user sees that the row scrolls.
  */
@@ -188,6 +189,7 @@ export const SpotlightTile = memo(function SpotlightTile({
   const main = useMemo(() => tileMain(item.bucket, currentPreview(item, entry)), [item, entry]);
   const elapsed = useElapsed(showsTime(item) ? item.since : undefined, focused, CHIP_TICK_MS);
   const status = statusLine(item.bucket, elapsed);
+  const shown = tileStatus(item.bucket, elapsed);
   const title = tileTitle(item);
   const place = tilePlace(item, multiHost);
   const needsYou = item.bucket === "needs_you";
@@ -219,22 +221,24 @@ export const SpotlightTile = memo(function SpotlightTile({
         >
           {needsYou ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.blockedTint }]} /> : null}
           <View style={{ flex: 1, padding: space.lg, gap: space.sm }}>
-            <View style={{ gap: 2 }}>
+            <View style={{ gap: space.xxs }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
                 <AgentMark kind={agentKind(item.agent)} size={TILE_MARK} />
                 <Text variant="headline" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flex: 1 }}>
                   {title}
                 </Text>
-                {/* The status does not truncate: the title gives way to it. */}
-                <View style={{ flexShrink: 0 }}>
-                  <BucketStatus bucket={item.bucket} label={status} />
-                </View>
+                {/* The elapsed label: a quiet tag, never glass (glass is only for floating chrome). */}
+                {shown.clock ? <Tag label={shown.clock} accessibilityLabel={status} /> : null}
               </View>
-              {place ? (
-                <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ paddingLeft: TILE_MARK + space.sm }}>
-                  {place}
-                </Text>
-              ) : null}
+              {/* The status word with its dot, then the folder. It wraps at a large text size. */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.sm, paddingLeft: TILE_MARK + space.sm }}>
+                <BucketStatus bucket={item.bucket} label={shown.word} />
+                {place ? (
+                  <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
+                    {place}
+                  </Text>
+                ) : null}
+              </View>
             </View>
             {/* The tile clips the main text at large text sizes; three lines fit at the default size. */}
             <View style={{ flex: 1, overflow: "hidden" }}>
@@ -252,27 +256,30 @@ export const SpotlightTile = memo(function SpotlightTile({
   );
 });
 
-/** The last tile: a dashed edge and a gold "+". It does what the floating "+" button does. */
+/**
+ * The last tile: "New session", the same action as the floating "+" button. A quiet tile (`card`,
+ * `divider` edge, a muted "+"), so the gold "+" button stays the one primary way to start.
+ */
 function NewSessionTile({ width, onPress }: { width: number; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="New session"
+      accessibilityHint="Starts an agent on a computer"
       onPress={onPress}
       style={({ pressed }) => ({
         width,
         height: TILE_H,
         borderRadius: TILE_RADIUS,
-        borderWidth: EMBER_EDGE,
-        borderStyle: "dashed",
-        borderColor: colors.border,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.divider,
         alignItems: "center",
         justifyContent: "center",
         gap: space.sm,
-        backgroundColor: pressed ? colors.raised : undefined,
+        backgroundColor: pressed ? colors.raised : colors.card,
       })}
     >
-      <Plus size={icon.lg + space.sm} color={colors.accent} strokeWidth={icon.strokeWidth} />
+      <Plus size={icon.lg} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
       <Text variant="headline" maxFontSizeMultiplier={denseScale.row}>
         New session
       </Text>
@@ -340,74 +347,4 @@ export function SpotlightCarousel({
 
 function TileGap() {
   return <View style={{ width: TILE_GAP }} />;
-}
-
-/** A compact menu button in the "All agents" bar: "Group: Status ▾". */
-function MenuButton({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value}`}
-      accessibilityHint={`Changes the ${label.toLowerCase()} of the agent list`}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 2,
-        paddingHorizontal: space.xs,
-        opacity: pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <Text variant="small" muted maxFontSizeMultiplier={denseScale.row}>
-        {label}:{" "}
-      </Text>
-      <Text variant="small" bold maxFontSizeMultiplier={denseScale.row}>
-        {value}
-      </Text>
-      <ChevronDown size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
-    </Pressable>
-  );
-}
-
-/** The bar above the agent list: "All agents" and the count, then the group and sort menus. */
-export function AllAgentsBar({
-  count,
-  group,
-  sort,
-  onGroup,
-  onSort,
-}: {
-  count: number;
-  group: string;
-  sort: string;
-  onGroup: () => void;
-  onSort: () => void;
-}) {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        flexWrap: "wrap",
-        alignItems: "center",
-        columnGap: space.sm,
-        paddingLeft: space.lg,
-        paddingRight: space.sm,
-        paddingTop: space.sm,
-      }}
-    >
-      <View accessible accessibilityRole="header" style={{ flexDirection: "row", alignItems: "baseline", gap: space.sm, flexGrow: 1 }}>
-        <Text variant="title" maxFontSizeMultiplier={denseScale.row}>
-          All agents
-        </Text>
-        <Text variant="small" muted maxFontSizeMultiplier={denseScale.row} style={{ fontVariant: ["tabular-nums"] }}>
-          {count}
-        </Text>
-      </View>
-      <View style={{ flexDirection: "row", gap: space.sm }}>
-        <MenuButton label="Group" value={group} onPress={onGroup} />
-        <MenuButton label="Sort" value={sort} onPress={onSort} />
-      </View>
-    </View>
-  );
 }

@@ -262,9 +262,7 @@ export function FileViewer({
       );
     case "failed":
       return (
-        <Centered>
-          <StateNotice Icon={TriangleAlert} color={colors.danger} message={failText(view.code, view.message)} action="Retry" onAction={onRetry} />
-        </Centered>
+        <StateNotice Icon={TriangleAlert} color={colors.danger} message={failText(view.code, view.message)} action="Retry" onAction={onRetry} />
       );
     case "ready": {
       const f = view.file;

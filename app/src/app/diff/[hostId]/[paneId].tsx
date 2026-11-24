@@ -1,13 +1,14 @@
 import type { GitDiff } from "@herdling/protocol";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { TriangleAlert } from "lucide-react-native";
+import { CloudOff, FileCheck, TriangleAlert } from "lucide-react-native";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, PixelRatio, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { FlatList, PixelRatio, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { DIFF_PAGE_LINES, parseDiff, splitPath, widestLine, type DiffLine } from "@/changes/diff";
 import { useHostConn } from "@/hosts/connection";
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, radius, space, state, textRole, type } from "@/theme/tokens";
+import { colors, space, textRole, type } from "@/theme/tokens";
+import { Button } from "@/ui/Button";
 import { DelayedSpinner } from "@/ui/Delayed";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
@@ -110,8 +111,8 @@ export default function DiffScreen() {
     <View style={{ flex: 1, backgroundColor: colors.sunken }}>
       <Stack.Screen options={{ title }} />
       {error ? (
-        <View style={{ paddingHorizontal: space.lg, backgroundColor: colors.card }}>
-          <StateNotice Icon={TriangleAlert} color={colors.danger} message={`Can't read the diff: ${error}`} action="Retry" onAction={() => void load()} />
+        <View style={{ paddingHorizontal: space.lg, paddingVertical: space.sm, backgroundColor: colors.card }}>
+          <StateNotice inline Icon={TriangleAlert} color={colors.danger} message={`Can't read the diff: ${error}`} action="Retry" onAction={() => void load()} />
         </View>
       ) : null}
       {path ? (
@@ -120,7 +121,7 @@ export default function DiffScreen() {
         </Text>
       ) : null}
       {!rpc ? (
-        <Centered text="Host offline." />
+        <StateNotice Icon={CloudOff} message="Computer offline." />
       ) : !diff ? (
         error ? null : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -128,7 +129,7 @@ export default function DiffScreen() {
           </View>
         )
       ) : lines.length === 0 ? (
-        <Centered text="No changes in this file." />
+        <StateNotice Icon={FileCheck} message="No changes in this file." />
       ) : (
         <ScrollView horizontal bounces={false} contentContainerStyle={{ width: contentW }} accessibilityLabel="Diff">
           <FlatList
@@ -142,21 +143,11 @@ export default function DiffScreen() {
             ListFooterComponent={
               <View style={{ width, padding: space.lg, gap: space.sm }}>
                 {more > 0 ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Show ${Math.min(more, DIFF_PAGE_LINES)} more lines`}
+                  <Button
+                    variant="secondary"
+                    label={`Show ${Math.min(more, DIFF_PAGE_LINES)} more lines (${more} left)`}
                     onPress={() => setShown((n) => n + DIFF_PAGE_LINES)}
-                    style={({ pressed }) => ({
-                      minHeight: hitTarget,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: radius.md,
-                      backgroundColor: colors.raised,
-                      opacity: pressed ? state.pressedFill : 1,
-                    })}
-                  >
-                    <Text bold>{`Show ${Math.min(more, DIFF_PAGE_LINES)} more lines (${more} left)`}</Text>
-                  </Pressable>
+                  />
                 ) : null}
                 {diff.truncated ? (
                   <Text variant="caption" muted>
@@ -172,12 +163,4 @@ export default function DiffScreen() {
   );
 }
 
-function Centered({ text }: { text: string }) {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: space.xl }}>
-      <Text muted style={{ textAlign: "center" }}>
-        {text}
-      </Text>
-    </View>
-  );
-}
+/** An empty or offline state in the middle of the screen: an icon and one sentence. */

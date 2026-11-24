@@ -47,21 +47,17 @@ export default function PreviewScreen() {
   let body: ReactNode;
   if (!validPort(port) || !supported || !WebView) {
     body = (
-      <Centered>
-        <StateNotice Icon={TriangleAlert} message="Browser preview needs a newer app build and herdlingd on this computer." />
-      </Centered>
+      <StateNotice Icon={TriangleAlert} message="Browser preview needs a newer app build and herdlingd on this computer." />
     );
   } else if (tunnel.phase === "error") {
     body = (
-      <Centered>
-        <StateNotice
-          Icon={TriangleAlert}
-          color={colors.status.blocked}
-          message={`Can't open port ${port}: ${tunnel.message}`}
-          action="Retry"
-          onAction={() => setRetry((n) => n + 1)}
-        />
-      </Centered>
+      <StateNotice
+        Icon={TriangleAlert}
+        color={colors.status.blocked}
+        message={`Can't open port ${port}: ${tunnel.message}`}
+        action="Retry"
+        onAction={() => setRetry((n) => n + 1)}
+      />
     );
   } else if (tunnel.phase === "paused") {
     body = (
@@ -103,6 +99,7 @@ export default function PreviewScreen() {
         {loadError ? (
           <View style={{ position: "absolute", left: 0, right: 0, top: 0, padding: space.lg, backgroundColor: colors.card, gap: space.xs }}>
             <StateNotice
+              inline
               Icon={TriangleAlert}
               color={colors.status.blocked}
               message={`The page did not load: ${loadError}`}

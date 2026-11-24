@@ -1,16 +1,18 @@
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
-import { Check, Copy, LifeBuoy, Plug, Power } from "lucide-react-native";
+import { Check, Copy, LifeBuoy, Plug, Power, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { View } from "react-native";
 
 import { ensureKey } from "../../modules/ssh";
 import { publicKeyFingerprint } from "@/pairing/keyFingerprint";
 import { PhoneKey } from "@/pairing/PhoneKey";
-import { colors, space } from "@/theme/tokens";
+import { useMirrorSupported } from "@/mirror/useMirror";
+import { colors, icon } from "@/theme/tokens";
+import { ActionBar } from "@/ui/ActionBar";
 import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
 import { Field } from "@/ui/Field";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
@@ -19,7 +21,9 @@ import { LOGIN_HINT, startsAtLogin } from "./boot";
 import { runtimeDownText } from "./coreInstall";
 import { HostNotices } from "./HostNotices";
 import { DevicesRow } from "./DevicesRow";
-import { IntegrationsRow } from "./IntegrationsRow";
+import { IntegrationsRow, useIntegrationsShown } from "./IntegrationsRow";
+import { KeyRow, Outcome, Working } from "./flowParts";
+import { confirmRemoveHost } from "./removeHost";
 import { reachFailure } from "./sshHelp";
 import { retryNow, useHostConn } from "./connection";
 import { CoreCard } from "./CoreCard";
@@ -28,54 +32,39 @@ import { UpdateCard } from "./UpdateCard";
 import { editPatch } from "./editPatch";
 import { DEFAULT_COMMAND, useHosts, type Host } from "./store";
 
-function CopyBlock({ title, text }: { title: string; text: string }) {
+/** A text to copy (a command, a key) as a row: the title, the text in mono, and a copy button. */
+function CopyRow({ title, text }: { title: string; text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <View style={{ gap: space.sm }}>
-      <Text variant="small" muted>
-        {title}
-      </Text>
+    <Row
+      title={title}
+      trailing={
+        <Button
+          label={copied ? "Copied" : `Copy ${title.toLowerCase()}`}
+          variant="secondary"
+          iconOnly
+          Icon={copied ? Check : Copy}
+          onPress={async () => {
+            await Clipboard.setStringAsync(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        />
+      }
+    >
       <Text variant="caption" mono selectable>
         {text}
       </Text>
-      <Button
-        label={copied ? "Copied" : `Copy ${title.toLowerCase()}`}
-        variant="secondary"
-        Icon={copied ? Check : Copy}
-        onPress={async () => {
-          await Clipboard.setStringAsync(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      />
-    </View>
+    </Row>
   );
 }
 
-/** The pinned host key, so the user can compare it with `ssh-keygen -lf` on the host. */
-function HostKey({ fingerprint }: { fingerprint?: string }) {
-  return (
-    <View style={{ gap: space.xs }}>
-      <Text variant="small" muted>
-        Host key
-      </Text>
-      {fingerprint ? (
-        <Text variant="caption" mono selectable accessibilityLabel={`Host key ${fingerprint}`}>
-          {fingerprint}
-        </Text>
-      ) : (
-        <Text variant="caption" muted>
-          Not pinned yet. The first connection pins it.
-        </Text>
-      )}
-    </View>
-  );
-}
+const HOST_KEY_EMPTY = "Not pinned yet. The first connection pins it.";
 
 /** Message for a failed connection. */
 function errorMessage(error: string): string {
   return error.startsWith("Host key changed")
-    ? "Host key changed. Remove and re-add this host."
+    ? "Host key changed. Remove and re-add this computer."
     : error;
 }
 
@@ -94,6 +83,8 @@ export function HostForm({ host }: { host?: Host }) {
   const [testAttempt, setTestAttempt] = useState<number>();
   const conn = useHostConn(savedId ?? "");
   const fingerprint = useHosts((s) => s.hosts.find((h) => h.id === savedId)?.fingerprint);
+  const integrations = useIntegrationsShown(host?.id ?? "");
+  const devices = useMirrorSupported(host?.id ?? "");
 
   useEffect(() => {
     ensureKey().then(
@@ -133,117 +124,134 @@ export function HostForm({ host }: { host?: Host }) {
   const error = fresh && conn.status === "offline" && conn.error ? errorMessage(conn.error) : undefined;
   const reach = error ? reachFailure(conn.errorCode, conn.error ?? "") : null;
 
+  const testButton = {
+    label: "Test connection",
+    Icon: Plug,
+    loading: waiting,
+    disabled: !valid,
+    onPress: () => {
+      const id = save();
+      setTestAttempt(retryNow(id) ?? 0);
+    },
+  };
+  const saveButton = {
+    label: host ? "Save" : "Save computer",
+    disabled: !valid,
+    onPress: () => {
+      save();
+      router.back();
+    },
+  };
+  const phoneFingerprint = publicKey ? (publicKeyFingerprint(publicKey) ?? undefined) : undefined;
+  const bootHint = !!hello && !host && startsAtLogin(hello) && !!savedId;
+
   return (
-    <Screen>
+    <Screen flush footer={<ActionBar primary={testButton} secondary={saveButton} />}>
       {host ? <UpdateCard hostId={host.id} /> : null}
       {host ? <HerdrUpdateCard hostId={host.id} /> : null}
       {host ? <CoreCard hostId={host.id} /> : null}
       {host ? <HostNotices hostId={host.id} /> : null}
-      {host ? <IntegrationsRow hostId={host.id} card /> : null}
-      {host ? <DevicesRow hostId={host.id} /> : null}
-      <Card>
-        <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
-        <Field
-          label="Address"
-          value={address}
-          onChangeText={setAddress}
-          placeholder="host.example.com"
-          keyboardType="url"
-        />
-        <Field label="Port" value={port} onChangeText={setPort} keyboardType="number-pad" />
-        <Field label="User" value={user} onChangeText={setUser} placeholder="sam" />
-        <Field label="Command" value={command} onChangeText={setCommand} mono />
-        {host ? <HostKey fingerprint={fingerprint} /> : null}
-      </Card>
-
-      <Card>
-        <Text variant="title">Authorize this phone</Text>
-        <Text variant="small" muted>
-          Run this command on the host. It adds the phone key, restricted to the Herdling companion.
-        </Text>
-        {publicKey ? (
-          <>
-            <CopyBlock title="Command" text={authorizedKeysCommand(publicKey, command)} />
-            <CopyBlock title="Public key" text={publicKey} />
-            <PhoneKey fingerprint={publicKeyFingerprint(publicKey) ?? undefined} />
-          </>
-        ) : keyError ? (
-          <Text color={colors.danger}>{keyError}</Text>
-        ) : (
-          <Text muted>Making key…</Text>
-        )}
-      </Card>
-
-      {tested ? (
-        <Card>
-          {waiting ? <Text muted>Connecting…</Text> : null}
-          {hello ? (
-            <View style={{ gap: space.xs }} accessibilityLiveRegion="polite">
-              <Text bold color={colors.status.done}>
-                Connected
-              </Text>
-              <Text>
-                {hello.host} ({hello.os === "macos" ? "macOS" : "Linux"})
-              </Text>
-              <Text>
-                {hello.herdr_ok
-                  ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}`
-                  : runtimeDownText(hello.host, hello)}
-              </Text>
-              {/* A new host has no host notices above: show the boot hint here. */}
-              {!host && startsAtLogin(hello) && savedId ? (
-                <StateNotice
-                  Icon={Power}
-                  message={LOGIN_HINT}
-                  action="How to start at boot"
-                  onAction={() => router.push({ pathname: "/hosts/boot-help", params: { id: savedId } })}
-                />
-              ) : null}
-              <HostKey fingerprint={fingerprint} />
-            </View>
-          ) : null}
-          {error ? (
-            <Text color={colors.danger} accessibilityLiveRegion="polite">
-              {error}
-            </Text>
-          ) : null}
-          {error && reach ? (
-            <Button
-              label="Turn on SSH on the computer"
-              variant="secondary"
-              Icon={LifeBuoy}
-              onPress={() =>
-                router.push({
-                  pathname: "/hosts/ssh-help",
-                  params: { address: address.trim(), port: String(portNum), user: user.trim(), kind: reach },
-                })
-              }
-            />
-          ) : null}
-        </Card>
+      {host && (integrations || devices) ? (
+        <Section title="Tools">
+          <Group>
+            {integrations ? <IntegrationsRow hostId={host.id} /> : null}
+            {devices ? <DevicesRow hostId={host.id} /> : null}
+          </Group>
+        </Section>
       ) : null}
 
-      <View style={{ gap: space.md }}>
-        <Button
-          label="Test connection"
-          Icon={Plug}
-          loading={waiting}
-          disabled={!valid}
-          onPress={() => {
-            const id = save();
-            setTestAttempt(retryNow(id) ?? 0);
-          }}
-        />
-        <Button
-          label={host ? "Save" : "Save host"}
-          variant="secondary"
-          disabled={!valid}
-          onPress={() => {
-            save();
-            router.back();
-          }}
-        />
-      </View>
+      <Section title="Connection">
+        <Group>
+          <Pad>
+            <Field label="Name" value={name} onChangeText={setName} placeholder="Workstation" autoCapitalize="words" />
+            <Field label="Address" value={address} onChangeText={setAddress} placeholder="host.example.com" keyboardType="url" />
+            <Field label="Port" value={port} onChangeText={setPort} keyboardType="number-pad" />
+            <Field label="User" value={user} onChangeText={setUser} placeholder="sam" />
+            <Field label="Command" value={command} onChangeText={setCommand} mono />
+          </Pad>
+          {host ? <KeyRow title="Host key" fingerprint={fingerprint} empty={HOST_KEY_EMPTY} /> : null}
+        </Group>
+      </Section>
+
+      {tested ? (
+        <Section title="Test">
+          <Group>
+            {waiting ? (
+              <Pad>
+                <Working bare text="Connecting…" />
+              </Pad>
+            ) : null}
+            {hello ? (
+              <Pad>
+                <Outcome bare ok text="Connected" />
+                <Text>
+                  {hello.host} ({hello.os === "macos" ? "macOS" : "Linux"})
+                </Text>
+                <Text variant="small" muted>
+                  {hello.herdr_ok ? `herdr ok${hello.herdr_version ? ` (${hello.herdr_version})` : ""}` : runtimeDownText(hello.host, hello)}
+                </Text>
+                {/* A new host has no host notices above: show the boot hint here. */}
+                {bootHint ? <StateNotice inline Icon={Power} message={LOGIN_HINT} /> : null}
+              </Pad>
+            ) : null}
+            {bootHint && savedId ? (
+              <Row title="How to start at boot" chevron onPress={() => router.push({ pathname: "/hosts/boot-help", params: { id: savedId } })} />
+            ) : null}
+            {hello ? <KeyRow title="Host key" fingerprint={fingerprint} empty={HOST_KEY_EMPTY} /> : null}
+            {error ? (
+              <Pad>
+                <Outcome bare ok={false} text={error} />
+              </Pad>
+            ) : null}
+            {error && reach ? (
+              <Row
+                title="Turn on SSH on the computer"
+                leading={<LifeBuoy size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+                chevron
+                onPress={() =>
+                  router.push({
+                    pathname: "/hosts/ssh-help",
+                    params: { address: address.trim(), port: String(portNum), user: user.trim(), kind: reach },
+                  })
+                }
+              />
+            ) : null}
+          </Group>
+        </Section>
+      ) : null}
+
+      <Section title="Authorize this phone" footer="Run this command on the computer. It adds the phone key, restricted to the Herdling companion.">
+        <Group>
+          {publicKey ? <CopyRow title="Command" text={authorizedKeysCommand(publicKey, command)} /> : null}
+          {publicKey ? <CopyRow title="Public key" text={publicKey} /> : null}
+          {phoneFingerprint ? <PhoneKey fingerprint={phoneFingerprint} /> : null}
+          {!publicKey && keyError ? (
+            <Pad>
+              <Outcome bare ok={false} text={keyError} />
+            </Pad>
+          ) : null}
+          {!publicKey && !keyError ? (
+            <Pad>
+              <Working bare text="Making key…" />
+            </Pad>
+          ) : null}
+        </Group>
+      </Section>
+
+      {host ? (
+        <Section>
+          <Group>
+            <Row
+              title={`Remove ${host.name}`}
+              destructive
+              leading={<Trash2 size={icon.md} color={colors.danger} strokeWidth={icon.strokeWidth} />}
+              accessibilityLabel={`Remove ${host.name}`}
+              accessibilityHint="Asks first, then deletes the computer and its pinned key from this phone"
+              onPress={() => void confirmRemoveHost(host, () => router.back())}
+            />
+          </Group>
+        </Section>
+      ) : null}
     </Screen>
   );
 }

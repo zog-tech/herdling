@@ -4,18 +4,18 @@ import type { RpcClient } from "@/rpc/RpcClient";
 
 import { baseName, displayPath } from "./paths";
 
-/** Chips in the recent folder row. */
+/** Recent folders at the top of the folder browser. */
 export const RECENT_FOLDER_CAP = 8;
 /** Folders asked for recent sessions, and sessions per folder. */
 export const SESSION_FOLDERS = 4;
 export const SESSIONS_PER_FOLDER = 2;
-/** Cards in the recent session row. */
+/** Rows in the recent session list. */
 export const RECENT_SESSION_CAP = 6;
 
 export type RecentFolder = { path: string; label: string; display: string };
 
 /**
- * The recent folder chips: herdlingd sends `recent_cwds` newest first. Keep that order, drop
+ * The recent folders: herdlingd sends `recent_cwds` newest first. Keep that order, drop
  * empty and repeated paths (a trailing slash does not make a new path), cap the count.
  */
 export function recentFolders(cwds: readonly string[], home: string, cap = RECENT_FOLDER_CAP): RecentFolder[] {

@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react-native";
 import { AccessibilityInfo, Pressable, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 
-import { colors, motion, radius, space, threadGap } from "@/theme/tokens";
+import { colors, denseScale, icon, motion, radius, space, threadGap } from "@/theme/tokens";
 import { subagentCount, type SubagentList } from "@/thread/subagentState";
 import { SubagentSheet } from "@/thread/SubagentSheet";
 import { StatusGlyph } from "./StatusGlyph";
@@ -122,15 +122,15 @@ export const StatusRow = memo(function StatusRow({
   const body = (
     <>
       <StatusGlyph status={view.status} glow={view.status === "working"} size={ROW_ICON} />
-      <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Text variant="small" bold color={color} numberOfLines={1} maxFontSizeMultiplier={denseScale.pill}>
         {view.label}
       </Text>
       {view.detail ? (
-        <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
+        <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.pill}>
           {`· ${view.detail}`}
         </Text>
       ) : null}
-      {view.tappable ? <ChevronRight size={16} color={colors.textMuted} /> : null}
+      {view.tappable ? <ChevronRight size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} /> : null}
     </>
   );
   const pill = {
@@ -141,9 +141,9 @@ export const StatusRow = memo(function StatusRow({
     alignItems: "center",
     gap: space.xs,
     paddingHorizontal: space.lg,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
+    // A status, not a control: a quiet `raised` fill with no edge (no outlined pill, MASTER.md "Status colors").
+    borderRadius: radius.md,
+    backgroundColor: colors.raised,
   } as const;
 
   return (

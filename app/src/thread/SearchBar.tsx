@@ -1,32 +1,13 @@
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react-native";
-import { Pressable, TextInput, View } from "react-native";
+import { ChevronDown, ChevronUp, X } from "lucide-react-native";
+import { Pressable, View } from "react-native";
 
-import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, radius, space, state } from "@/theme/tokens";
 import { DelayedSpinner } from "@/ui/Delayed";
+import { IconButton } from "@/ui/IconButton";
+import { SearchField } from "@/ui/SearchField";
 import { Text } from "@/ui/Text";
 
 import type { Excerpt } from "./search";
-
-function IconButton({ label, onPress, disabled, children }: { label: string; onPress: () => void; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width: hitTarget,
-        height: hitTarget,
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      {children}
-    </Pressable>
-  );
-}
 
 /**
  * The search bar of the session screen: the query box, "3 of 12", older and newer match buttons,
@@ -65,51 +46,31 @@ export function SearchBar({
   return (
     <View style={{ gap: space.xs, paddingHorizontal: space.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
-        <View
-          style={{
-            flex: 1,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: space.sm,
-            minHeight: hitTarget,
-            paddingHorizontal: space.md,
-            borderRadius: radius.md,
-            backgroundColor: colors.raised,
-          }}
-        >
-          <Search size={icon.sm} color={colors.textMuted} />
-          <TextInput
-            accessibilityLabel="Search"
-            value={query}
-            onChangeText={onQuery}
-            placeholder={placeholder}
-            placeholderTextColor={colors.textMuted}
-            selectionColor={colors.accent}
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            returnKeyType="search"
-            onSubmitEditing={onOlder}
-            submitBehavior="submit"
-            style={{ flex: 1, color: colors.text, fontSize: type.size.body, paddingVertical: space.sm }}
-          />
-          {busy ? <DelayedSpinner color={colors.textMuted} /> : null}
-          {label ? (
-            <Text variant="caption" muted maxFontSizeMultiplier={denseScale.row} accessibilityLiveRegion="polite">
-              {label}
-            </Text>
-          ) : null}
-        </View>
-        <IconButton label="Older match" onPress={onOlder} disabled={count === 0 && !action}>
-          <ChevronUp size={icon.md} color={colors.text} />
-        </IconButton>
-        <IconButton label="Newer match" onPress={onNewer} disabled={count === 0}>
-          <ChevronDown size={icon.md} color={colors.text} />
-        </IconButton>
-        <IconButton label="Close search" onPress={onClose}>
-          <X size={icon.md} color={colors.text} />
-        </IconButton>
+        <SearchField
+          value={query}
+          onChangeText={onQuery}
+          placeholder={placeholder}
+          accessibilityLabel="Search"
+          autoFocus
+          onSubmitEditing={onOlder}
+          submitBehavior="submit"
+          style={{ flex: 1 }}
+          trailing={
+            busy || label ? (
+              <>
+                {busy ? <DelayedSpinner color={colors.textMuted} /> : null}
+                {label ? (
+                  <Text variant="caption" muted maxFontSizeMultiplier={denseScale.row} accessibilityLiveRegion="polite">
+                    {label}
+                  </Text>
+                ) : null}
+              </>
+            ) : undefined
+          }
+        />
+        <IconButton label="Older match" Icon={ChevronUp} onPress={onOlder} disabled={count === 0 && !action} />
+        <IconButton label="Newer match" Icon={ChevronDown} onPress={onNewer} disabled={count === 0} />
+        <IconButton label="Close search" Icon={X} onPress={onClose} />
       </View>
       {excerpt ? (
         <Text variant="caption" muted numberOfLines={1} accessibilityLabel={`Match: ${excerpt.before}${excerpt.match}${excerpt.after}`}>
@@ -132,7 +93,7 @@ export function SearchBar({
           disabled={busy}
           style={({ pressed }) => ({ minHeight: hitTarget, justifyContent: "center", alignSelf: "flex-start", opacity: pressed ? state.pressedOpacity : 1 })}
         >
-          <View style={{ paddingHorizontal: space.md, paddingVertical: space.xs + 2, borderRadius: radius.pill, backgroundColor: colors.raised }}>
+          <View style={{ paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md, backgroundColor: colors.raised }}>
             <Text variant="small" bold>
               {action.label}
             </Text>

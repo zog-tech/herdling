@@ -12,9 +12,11 @@
  * its linked worktree workspaces. herdr has no "close only the primary" option, so the app asks
  * the user, and never sends `close_group` without that answer.
  */
+import { X } from "lucide-react-native";
+
 import type { RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
 
 type Rpc = Pick<RpcClient, "call">;
 
@@ -68,20 +70,20 @@ export const GROUP_CLOSE_MESSAGE =
   "This is the last pane of a workspace with open worktree workspaces. herdr closes them together or not at all. " +
   "The worktree folders and branches stay on the computer.";
 
-/** Asks the user for the group close. Resolves true for the group close, false for Cancel. */
+/**
+ * Asks the user for the group close: one destructive row in the menu sheet. Resolves true for the
+ * group close, false when the sheet closes with no pick.
+ */
 export function chooseGroupClose(count: number | undefined): Promise<boolean> {
   haptics.warn();
   return new Promise((resolve) =>
-    showActionSheet(
-      {
-        title: GROUP_CLOSE_TITLE,
-        message: GROUP_CLOSE_MESSAGE,
-        options: [groupCloseLabel(count), "Cancel"],
-        destructiveButtonIndex: 0,
-        cancelButtonIndex: 1,
-      },
-      (i) => resolve(i === 0),
-    ),
+    showMenu({
+      title: GROUP_CLOSE_TITLE,
+      detail: GROUP_CLOSE_MESSAGE,
+      haptic: false,
+      sections: [{ items: [{ label: groupCloseLabel(count), Icon: X, destructive: true, onPick: () => resolve(true) }] }],
+      onClose: () => resolve(false),
+    }),
   );
 }
 

@@ -34,9 +34,7 @@ export function DeviceList({ list, macos, onOpen }: { list: DevicesList; macos: 
   return (
     <>
       {devices.length === 0 ? (
-        <View style={{ paddingHorizontal: space.lg }}>
-          <StateNotice Icon={Smartphone} message={emptyMessage(hidden)} />
-        </View>
+        <StateNotice Icon={Smartphone} message={emptyMessage(hidden)} />
       ) : null}
       {ios.length > 0 ? (
         <Section title="iOS simulators">

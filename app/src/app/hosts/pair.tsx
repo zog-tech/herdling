@@ -1,19 +1,17 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Check, Link2, QrCode } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { View } from "react-native";
 
+import { KeyRow, Lead, Outcome } from "@/hosts/flowParts";
 import { confirmHostKey } from "@/pairing/confirmHostKey";
 import { confirmLegacyPairing } from "@/pairing/confirmLegacy";
 import { type HostKeyCheck, PairFailed, pairWithHost } from "@/pairing/pair";
 import { DEFAULT_PAIR_PORT, FINGERPRINT_RE } from "@/pairing/pairUrl";
 import { PhoneKey, usePhoneKeyFingerprint } from "@/pairing/PhoneKey";
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { ActionBar } from "@/ui/ActionBar";
 import { Field } from "@/ui/Field";
+import { Group, Pad, Section } from "@/ui/Group";
 import { Screen } from "@/ui/Screen";
-import { Text } from "@/ui/Text";
 
 /** `v`: "2" when the QR code or the Bonjour advert says that the host has pairing v2. */
 type Params = { address?: string; port?: string; code?: string; name?: string; fingerprint?: string; v?: string };
@@ -85,73 +83,58 @@ export default function PairScreen() {
   // key. The host shows the key that it got, so the user compares it with this phone's key.
   if (paired) {
     return (
-      <Screen>
-        <Card>
-          <Text variant="title">Paired with {paired}</Text>
-          <PhoneKey fingerprint={phoneKey} />
-          <Text variant="small" muted>
-            Check that herdlingd pair on the host shows the same phone key. If the key is different, do not keep it on the host.
-          </Text>
-        </Card>
-        <Button label="Done" Icon={Check} onPress={() => router.dismissTo("/")} />
+      <Screen flush footer={<ActionBar primary={{ label: "Done", Icon: Check, onPress: () => router.dismissTo("/") }} />}>
+        <Section title={`Paired with ${paired}`} footer="If the key is different, do not keep it on the computer.">
+          <Group>
+            <PhoneKey fingerprint={phoneKey} />
+          </Group>
+        </Section>
+        <Lead>Check that herdlingd pair on the computer shows the same phone key.</Lead>
       </Screen>
     );
   }
 
   return (
-    <Screen>
-      <Card>
-        <Text variant="small" muted>
-          On the host, run herdlingd pair. Enter the code it shows, or scan its QR code. Use the host's IP address or its .local name.
-        </Text>
-        <Field
-          label="Address"
-          value={address}
-          onChangeText={setAddress}
-          placeholder="10.0.0.5"
-          keyboardType="url"
-          editable={!busy}
+    <Screen
+      flush
+      footer={
+        <ActionBar
+          keyboard
+          primary={{ label: "Pair", Icon: Link2, loading: busy, disabled: !valid, onPress: () => void pair() }}
+          secondary={{ label: "Scan QR", Icon: QrCode, disabled: busy, onPress: () => router.push("/hosts/scan") }}
         />
-        {port !== DEFAULT_PAIR_PORT ? (
-          <Text variant="caption" muted>
-            Pairing port {port}
-          </Text>
-        ) : null}
-        <Field
-          label="Code"
-          value={code}
-          onChangeText={(t) => setCode(t.replace(/\D/g, "").slice(0, 6))}
-          placeholder="123456"
-          keyboardType="number-pad"
-          textContentType="oneTimeCode"
-          autoComplete="one-time-code"
-          maxLength={6}
-          mono
-          editable={!busy}
-          onSubmitEditing={() => valid && !busy && void pair()}
-        />
-        {qrFingerprint ? (
-          <Text variant="caption" muted mono selectable accessibilityLabel={`Host key from the QR code ${qrFingerprint}`}>
-            Host key {qrFingerprint}
-          </Text>
-        ) : null}
-        <PhoneKey fingerprint={phoneKey} />
-        {error ? (
-          <Text color={colors.danger} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-        ) : null}
-      </Card>
-      <View style={{ gap: space.md }}>
-        <Button label="Pair" Icon={Link2} loading={busy} disabled={!valid} onPress={() => void pair()} />
-        <Button
-          label="Scan QR"
-          variant="secondary"
-          Icon={QrCode}
-          disabled={busy}
-          onPress={() => router.push("/hosts/scan")}
-        />
-      </View>
+      }
+    >
+      <Lead>On the computer, run herdlingd pair. Enter the code it shows, or scan its QR code. Use the computer's IP address or its .local name.</Lead>
+      <Section title="Computer" footer={port !== DEFAULT_PAIR_PORT ? `Pairing port ${port}` : undefined}>
+        <Group>
+          <Pad>
+            <Field label="Address" value={address} onChangeText={setAddress} placeholder="10.0.0.5" keyboardType="url" editable={!busy} />
+            <Field
+              label="Code"
+              value={code}
+              onChangeText={(t) => setCode(t.replace(/\D/g, "").slice(0, 6))}
+              placeholder="123456"
+              keyboardType="number-pad"
+              textContentType="oneTimeCode"
+              autoComplete="one-time-code"
+              maxLength={6}
+              mono
+              editable={!busy}
+              onSubmitEditing={() => valid && !busy && void pair()}
+            />
+          </Pad>
+        </Group>
+      </Section>
+      {qrFingerprint || phoneKey ? (
+        <Section title="Keys">
+          <Group>
+            {qrFingerprint ? <KeyRow title="Host key from the QR code" fingerprint={qrFingerprint} /> : null}
+            {phoneKey ? <PhoneKey fingerprint={phoneKey} /> : null}
+          </Group>
+        </Section>
+      ) : null}
+      {error ? <Outcome ok={false} text={error} /> : null}
     </Screen>
   );
 }

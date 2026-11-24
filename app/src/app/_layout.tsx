@@ -26,6 +26,7 @@ import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
 import { solidHeader } from "@/ui/headerOptions";
 import { LayoutSync } from "@/ui/LayoutSync";
+import { MenuSheetHost } from "@/ui/MenuSheet";
 import { NativeSheetHost } from "@/ui/nativeSheet";
 import { NoticeHost } from "@/ui/notice";
 import { useThemeRemount } from "@/ui/useThemeRemount";
@@ -125,7 +126,7 @@ function ThemedRoot() {
       <StatusBar style="light" />
       <ThemeProvider value={navTheme()}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-        <Stack.Screen name="hosts/discover" options={{ ...hostHeader, title: "Add host" }} />
+        <Stack.Screen name="hosts/discover" options={{ ...hostHeader, title: "Add a computer" }} />
         <Stack.Screen name="hosts/pair" options={{ ...hostHeader, title: "Pair" }} />
         <Stack.Screen name="hosts/scan" options={{ ...hostHeader, title: "Scan QR" }} />
         <Stack.Screen name="hosts/add" options={{ ...hostHeader, title: "Add manually" }} />
@@ -161,6 +162,9 @@ function ThemedRoot() {
                 }
           }
         />
+        {/* Were tabs before the three-tab bar (design rule 5): the rows of More open them. Same paths. */}
+        <Stack.Screen name="usage" options={{ ...hostHeader, title: "Usage" }} />
+        <Stack.Screen name="automations" options={{ ...hostHeader, title: "Automations" }} />
         <Stack.Screen name="speech-log" options={{ ...hostHeader, title: "Speech log" }} />
         <Stack.Screen name="display-log" options={{ ...hostHeader, title: "Display log" }} />
         <Stack.Screen name="crash-log" options={{ ...hostHeader, title: "Crash log" }} />
@@ -169,9 +173,9 @@ function ThemedRoot() {
         <Stack.Screen name="key-bar" options={{ ...hostHeader, title: "Key bar" }} />
         <Stack.Screen name="select-text" options={{ ...modalHeader, title: "Select text" }} />
         <Stack.Screen name="run-command" options={{ ...modalHeader, title: "Run command" }} />
-        {/* The session screen sets its own title view and bar buttons. */}
-        <Stack.Screen name="session/[hostId]/[paneId]" options={{ ...hostHeader, title: "" }} />
-        <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit host" }} />
+        {/* The session draws its own header row (`SessionHeader`), so the native bar never shows, not even for one frame. The subagent screen does the same with the default (no header). */}
+        <Stack.Screen name="session/[hostId]/[paneId]" options={{ headerShown: false }} />
+        <Stack.Screen name="hosts/[id]" options={{ ...hostHeader, title: "Edit computer" }} />
         <Stack.Screen name="changes/[hostId]/[paneId]" options={{ ...hostHeader, title: "Changes" }} />
         <Stack.Screen name="diff/[hostId]/[paneId]" options={{ ...hostHeader, title: "Diff" }} />
         <Stack.Screen name="file/[hostId]" options={{ ...hostHeader, title: "" }} />
@@ -201,6 +205,8 @@ function ThemedRoot() {
       </Stack>
       </ThemeProvider>
       <NativeSheetHost />
+      {/* The one menu sheet (`showMenu`, `showActionSheet`, `showPicker`): over every screen, also over modals. */}
+      <MenuSheetHost />
       <NoticeHost />
       <BannerHost />
     </GestureHandlerRootView>

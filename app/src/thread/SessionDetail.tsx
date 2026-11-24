@@ -1,12 +1,34 @@
 /**
  * One session: the chat (Thread) or the terminal, the composer, search and the session actions.
  * A pane with no agent (a terminal, such as a plain shell) shows only the terminal.
- * The session route shows it full screen, with `SessionHeader` in the native header. The detail
- * column of Overview (regular width) shows it with `SessionHeader` as a plain row on top.
+ * The session route shows it full screen with its own header row (`SessionHeader`, placement
+ * "native": the back button, the title, the mode switch and "⋯"). The detail column of Overview
+ * (regular width) shows the same row with no back button on top.
  */
 import type { PortInfo } from "@herdling/protocol";
 import { Stack, useIsFocused, useRouter } from "expo-router";
-import { Ellipsis, Search, Square, TriangleAlert, Volume2, VolumeX } from "lucide-react-native";
+import {
+  Bell,
+  BellOff,
+  ChevronLeft,
+  CircleHelp,
+  Cpu,
+  Ellipsis,
+  GitCompareArrows,
+  Globe,
+  History,
+  MessageSquareText,
+  MonitorSmartphone,
+  Pencil,
+  RotateCcw,
+  Search,
+  Square,
+  SquareTerminal,
+  TriangleAlert,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Alert, Keyboard, Pressable, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
@@ -18,6 +40,7 @@ import { useSessionBackground } from "@/board/useSessionBackground";
 import { getHostConn, useHostConn } from "@/hosts/connection";
 import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
+import { agentLabel } from "@/herdr/agentKinds";
 import { agentKind, agentTitle } from "@/herdr/names";
 import { neighborAgents } from "@/herdr/neighbors";
 import { tabPanes } from "@/herdr/tabPanes";
@@ -41,15 +64,17 @@ import { portLabel } from "@/preview/preview";
 import { usePorts, usePreviewSupported } from "@/preview/usePreview";
 import { sendKey } from "@/terminal/keys";
 import { NOTIFY_LABEL, STOP_NOTIFY_LABEL, useShellWatch } from "@/terminal/shellWatch";
-import { colors, denseScale, dot, hitTarget, icon, space } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, space } from "@/theme/tokens";
 import { AgentInfoPopover, type Anchor } from "@/thread/AgentInfoPopover";
 import { Composer } from "@/thread/Composer";
+import { IconButton } from "@/ui/IconButton";
 import { PanePager } from "@/thread/PanePager";
 import { SwipePanContext } from "@/thread/HScrollView";
 import { TerminalView } from "@/thread/TerminalView";
 import { PendingBubbles } from "@/thread/items/PendingBubble";
+import { modelLabel } from "@/thread/modelLabel";
 import { sendWithPending, usePendingList } from "@/thread/pending";
-import { canSwitchModel, hasModelItem, MODEL_BUSY_MESSAGE, MODELS, modelPrompt } from "@/thread/models";
+import { canSwitchModel, currentModelChoice, hasModelItem, MODEL_BUSY_MESSAGE, MODELS, modelPrompt } from "@/thread/models";
 import { ThreadList } from "@/thread/ThreadList";
 import { ThreadSkeleton } from "@/thread/ThreadSkeleton";
 import { ThreadLogContext } from "@/thread/ThreadLogContext";
@@ -62,8 +87,8 @@ import { useDebounced, useThreadSearch } from "@/thread/useThreadSearch";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
 import { useKeyCommand } from "@/ui/keyCommands";
-import { showActionSheet } from "@/ui/nativeSheet";
-import { Segmented } from "@/ui/Segmented";
+import { showMenu, type MenuItem, type MenuSection } from "@/ui/MenuSheet";
+import { Segmented, type SegmentOption } from "@/ui/Segmented";
 import { type BadgeStatus } from "@/ui/StatusIcon";
 import { isStatusShown, StatusRow } from "@/ui/StatusRow";
 import { AgentMark } from "@/ui/AgentMark";
@@ -77,63 +102,87 @@ import { DelayedSpinner } from "@/ui/Delayed";
 type Mode = "thread" | "terminal";
 
 const MODES = [
-  { id: "thread", label: "Thread" },
-  { id: "terminal", label: "Terminal" },
-] as const satisfies readonly { id: Mode; label: string }[];
+  { id: "thread", label: "Thread", Icon: MessageSquareText },
+  { id: "terminal", label: "Terminal", Icon: SquareTerminal },
+] as const satisfies readonly SegmentOption<Mode>[];
 
 /** How long the agent card waits for the measure of the title before it opens without it. */
 const MEASURE_WAIT_MS = 150;
 
-/** A bar button in the header: 44 pt, the icon centered. */
-const HEADER_BUTTON = { width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" } as const;
+/** The agent or terminal mark in the header row. */
+const MARK_SIZE = icon.lg + space.xs;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** The listening ports of the computer as a sheet. A pick opens the browser preview. */
+/** The listening ports of the computer as a menu. A pick opens the browser preview. */
 function showPortSheet(hostId: string, paneId: string, ports: PortInfo[], open: (port: number) => void) {
   if (ports.length === 0) {
     Alert.alert("No dev server found", "No process of your user listens on a loopback port of this computer. Start a dev server, then try again.");
     return;
   }
-  showActionSheet(
-    { title: "Preview", message: "Open a port of this computer", options: [...ports.map((p) => portLabel(p, paneId)), "Cancel"], cancelButtonIndex: ports.length },
-    (i) => {
-      const p = ports[i];
-      if (p) open(p.port);
-    },
-  );
+  showMenu({
+    title: "Preview",
+    detail: "Open a port of this computer",
+    sections: [{ items: ports.map((p) => ({ label: portLabel(p, paneId), Icon: Globe, onPick: () => open(p.port) })) }],
+  });
 }
 
 /**
- * The Claude Code models as a sheet. A pick sends `/model <id>` as a prompt, with a pending bubble.
- * The agent status is read at the pick: during a turn, `/model` does not wait in the queue.
+ * The Claude Code models as a picker, with a check on the model of the agent now. A pick sends
+ * `/model <id>` as a prompt, with a pending bubble. The agent status is read at the pick: during a
+ * turn, `/model` does not wait in the queue.
  */
-function showModelSheet(rpc: Parameters<typeof sendWithPending>[0], hostId: string, paneId: string) {
-  showActionSheet(
-    { title: "Model", message: "Claude Code also keeps the pick as the default for new sessions.", options: [...MODELS.map((m) => m.label), "Cancel"], cancelButtonIndex: MODELS.length },
-    (i) => {
-      const m = MODELS[i];
-      if (!m) return;
-      const status = useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status;
-      if (!canSwitchModel(status)) {
-        Alert.alert("Can't change the model now", MODEL_BUSY_MESSAGE);
-        return;
-      }
-      sendWithPending(rpc, hostId, paneId, modelPrompt(m)).then(haptics.commit, (e) => {
-        haptics.fail();
-        Alert.alert("Can't change the model", message(e));
-      });
-    },
-  );
+function showModelSheet(rpc: Parameters<typeof sendWithPending>[0], hostId: string, paneId: string, current?: string) {
+  const now = currentModelChoice(current);
+  showMenu({
+    title: "Model",
+    detail: "Claude Code also keeps the pick as the default for new sessions.",
+    sections: [
+      {
+        items: MODELS.map((m) => ({
+          label: m.label,
+          checked: m.id === now,
+          onPick: () => {
+            const status = useSnapshots.getState().byHost[hostId]?.agents.find((a) => a.pane_id === paneId)?.agent_status;
+            if (!canSwitchModel(status)) {
+              Alert.alert("Can't change the model now", MODEL_BUSY_MESSAGE);
+              return;
+            }
+            sendWithPending(rpc, hostId, paneId, modelPrompt(m)).then(haptics.commit, (e) => {
+              haptics.fail();
+              Alert.alert("Can't change the model", message(e));
+            });
+          },
+        })),
+      },
+    ],
+  });
 }
 
+/** What the session screen gives the menu: the parts of the menu that are not RPC actions. */
+type MenuExtras = {
+  /** The model of the agent now (`Thread.model`), the value of the Model row. */
+  model?: string;
+  /** Opens the search of the thread or the terminal. */
+  onFind: () => void;
+  /** The session title and its detail line, for the menu header. */
+  title: string;
+  detail: string;
+};
+
 /**
- * Restart, Resume (agents with a resume flag), Model (Claude Code), Changes, Preview, Simulators, "Why this status?" (a herdr with
- * `agent.explain`), the three renames and Close for the session's agent. A terminal (`terminal` true, no agent) gets "Notify me when it finishes"
- * (a host that lists `shell.watch`), Changes, Preview and Close.
+ * The "⋯" menu of the session, in sections (design spec, "Session"):
+ * - This session: Model (Claude Code; the current model as the value), the renames, Speak replies
+ *   (not for a terminal; its state as the value), "Notify me when it finishes" (a terminal on a
+ *   host that lists `shell.watch`), Find.
+ * - Work: Changes (`git.status`), Preview (the port count as the value), Simulators.
+ * - Help: "Why this status?" (a herdr with `agent.explain`).
+ * - History: Resume older session (agents with a resume flag).
+ * - Last: Restart (agents) and Close, both destructive, both ask first.
  * `openPane` shows another pane in place of this one (after a restart). `closed` runs after Close.
  * `ports` is undefined when the preview does not show for this host.
  * A Herdr 2 pane gets only the items that work there (`allows` in `herdr/backend.ts`).
+ * Find and Speak replies work with no connection; the other items need the host.
  */
 function useSessionMenu(
   hostId: string,
@@ -142,12 +191,16 @@ function useSessionMenu(
   terminal: boolean,
   openPane: (paneId: string) => void,
   closed: () => void,
+  extras: MenuExtras,
   ports?: PortInfo[],
 ) {
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const [busy, setBusy] = useState<string>();
   const shellWatch = useShellWatch(rpc, hello, paneId, terminal && !agent && allows(paneId, "shellWatch", hostId));
+  const speakOn = useSpeakEnabled(hostId, paneId);
+  const setSpeak = useSessionSpeak((s) => s.setSpeak);
+  const { model, onFind, title, detail } = extras;
 
   const run = useCallback(
     async (label: string, failTitle: string, action: () => Promise<void>) => {
@@ -164,19 +217,65 @@ function useSessionMenu(
   );
 
   const open = useCallback(() => {
-    if (!rpc || !(agent || terminal) || busy) return;
-    const items: { label: string; destructive?: boolean; onPick: () => void }[] = [];
-    if (shellWatch.supported) {
-      items.push({
+    if (busy) return;
+    const session: MenuItem[] = [];
+    const work: MenuItem[] = [];
+    const help: MenuItem[] = [];
+    const history: MenuItem[] = [];
+    const last: MenuItem[] = [];
+    const modelValue = modelLabel(model);
+
+    if (rpc && agent && hasModelItem(agent.agent)) {
+      session.push({ label: "Model", Icon: Cpu, value: modelValue, onPick: () => showModelSheet(rpc, hostId, paneId, model) });
+    }
+    if (rpc && agent && allows(agent, "rename", hostId)) {
+      session.push(...renameItems(rpc, hostId, agent).map((it) => ({ ...it, Icon: Pencil })));
+    }
+    if (!terminal) {
+      session.push({
+        label: "Speak replies",
+        Icon: speakOn ? Volume2 : VolumeX,
+        value: speakOn ? "On" : "Off",
+        onPick: () => setSpeak(sessionKey(hostId, paneId), !speakOn),
+      });
+    }
+    if (rpc && shellWatch.supported) {
+      session.push({
         label: shellWatch.watched ? STOP_NOTIFY_LABEL : NOTIFY_LABEL,
+        Icon: shellWatch.watched ? BellOff : Bell,
         onPick: () => run("Saving…", "Can't change the notification", shellWatch.toggle),
       });
       // herdlingd removes the watch after the push: ask again for the next time the menu opens.
       shellWatch.refresh();
     }
-    if (agent && allows(agent, "restart", hostId)) {
-      items.push({
+    session.push({ label: "Find", Icon: Search, onPick: onFind });
+
+    if (rpc && listsMethod(hello, "git.status")) {
+      work.push({ label: "Changes", Icon: GitCompareArrows, onPick: () => router.push(`/changes/${hostId}/${paneId}` as never) });
+    }
+    if (rpc && ports) {
+      work.push({
+        label: "Preview",
+        Icon: Globe,
+        value: ports.length > 0 ? String(ports.length) : undefined,
+        onPick: () => showPortSheet(hostId, paneId, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)),
+      });
+    }
+    // The device mirror: the simulators and emulators of the computer.
+    if (rpc && mirrorSupportedNow(hostId)) {
+      work.push({ label: "Simulators", Icon: MonitorSmartphone, onPick: () => router.push(`/devices/${encodeURIComponent(hostId)}` as never) });
+    }
+    // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
+    if (rpc && agent && allows(agent, "explain", hostId) && herdrSupports(hostId, EXPLAIN_METHOD)) {
+      help.push({ label: EXPLAIN_LABEL, Icon: CircleHelp, onPick: () => router.push(`/explain/${hostId}/${paneId}` as never) });
+    }
+    if (rpc && agent?.agent && allows(agent, "resume", hostId) && canResume(hello, agent.agent)) {
+      history.push({ label: "Resume older session", Icon: History, onPick: () => router.push(`/resume/${hostId}/${paneId}` as never) });
+    }
+    if (rpc && agent && allows(agent, "restart", hostId)) {
+      last.push({
         label: "Restart",
+        Icon: RotateCcw,
         destructive: true,
         onPick: async () => {
           const session = await sessionToKeep(rpc, hello, agent);
@@ -192,73 +291,43 @@ function useSessionMenu(
         },
       });
     }
-    if (agent?.agent && allows(agent, "resume", hostId) && canResume(hello, agent.agent)) {
-      items.push({
-        label: "Resume older session",
-        onPick: () => router.push(`/resume/${hostId}/${paneId}` as never),
+    if (rpc && (agent || terminal)) {
+      const [what, why] = agent
+        ? ["Close this agent?", "The agent stops and its pane closes."]
+        : ["Close this terminal?", "The shell and the programs in it stop, and the pane closes."];
+      last.push({
+        label: "Close",
+        Icon: X,
+        destructive: true,
+        onPick: async () => {
+          const ok = await confirmDestructive(what, why, "Close");
+          if (!ok) return;
+          // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
+          // A Herdr 2 pane has no worktree group: it never closes a whole workspace.
+          const workspaceId = !allows(paneId, "closeGroup", hostId)
+            ? undefined
+            : agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
+          run("Closing…", "Can't close", async () => {
+            if (await closeWithGroupIntent(rpc, workspaceId, () => closeAgent(rpc, paneId))) closed();
+          });
+        },
       });
     }
-    if (agent && hasModelItem(agent.agent)) {
-      items.push({
-        label: "Model",
-        // After the menu closes, so the two sheets do not overlap.
-        onPick: () => setTimeout(() => showModelSheet(rpc, hostId, paneId), 0),
-      });
-    }
-    if (listsMethod(hello, "git.status")) {
-      items.push({ label: "Changes", onPick: () => router.push(`/changes/${hostId}/${paneId}` as never) });
-    }
-    if (ports) {
-      items.push({
-        label: ports.length > 0 ? `Preview (${ports.length})` : "Preview",
-        // After the menu closes, so the two sheets do not overlap.
-        onPick: () =>
-          setTimeout(() => showPortSheet(hostId, paneId, ports, (port) => router.push(`/preview/${hostId}/${port}` as never)), 0),
-      });
-    }
-    // The device mirror: the simulators and emulators of the computer.
-    if (mirrorSupportedNow(hostId)) {
-      items.push({ label: "Simulators", onPick: () => router.push(`/devices/${encodeURIComponent(hostId)}` as never) });
-    }
-    // herdr 0.9 explains its status detection. Hidden after the host refused the method once.
-    if (agent && allows(agent, "explain", hostId) && herdrSupports(hostId, EXPLAIN_METHOD)) {
-      items.push({ label: EXPLAIN_LABEL, onPick: () => router.push(`/explain/${hostId}/${paneId}` as never) });
-    }
-    if (agent && allows(agent, "rename", hostId)) items.push(...renameItems(rpc, hostId, agent));
-    const [what, detail] = agent
-      ? ["Close this agent?", "The agent stops and its pane closes."]
-      : ["Close this terminal?", "The shell and the programs in it stop, and the pane closes."];
-    items.push({
-      label: "Close",
-      destructive: true,
-      onPick: async () => {
-        const ok = await confirmDestructive(what, detail, "Close");
-        if (!ok) return;
-        // The last pane of a workspace with worktrees: herdr asks for group intent (`closeWithGroupIntent`).
-        // A Herdr 2 pane has no worktree group: it never closes a whole workspace.
-        const workspaceId = !allows(paneId, "closeGroup", hostId)
-          ? undefined
-          : agent?.workspace_id ?? useSnapshots.getState().byHost[hostId]?.panes.find((p) => p.pane_id === paneId)?.workspace_id;
-        run("Closing…", "Can't close", async () => {
-          if (await closeWithGroupIntent(rpc, workspaceId, () => closeAgent(rpc, paneId))) closed();
-        });
-      },
-    });
-    const options = [...items.map((i) => i.label), "Cancel"];
-    showActionSheet(
-      {
-        options,
-        cancelButtonIndex: items.length,
-        destructiveButtonIndex: items.flatMap((it, i) => (it.destructive ? [i] : [])),
-      },
-      (i) => items[i]?.onPick(),
-    );
-  }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports, shellWatch]);
+
+    const sections: MenuSection[] = [
+      { title: "This session", items: session },
+      { title: "Work", items: work },
+      { title: "Help", items: help },
+      { title: "History", items: history },
+      { items: last },
+    ];
+    showMenu({ title, detail, sections });
+  }, [rpc, hello, agent, terminal, busy, run, router, hostId, paneId, openPane, closed, ports, shellWatch, speakOn, setSpeak, model, onFind, title, detail]);
 
   // The "Change model" row of the agent card: the same sheet as the "Model" item.
-  const changeModel = rpc && agent && hasModelItem(agent.agent) ? () => showModelSheet(rpc, hostId, paneId) : undefined;
+  const changeModel = rpc && agent && hasModelItem(agent.agent) ? () => showModelSheet(rpc, hostId, paneId, model) : undefined;
 
-  return { open, busy, enabled: !!rpc && (!!agent || terminal) && !busy, ports, changeModel };
+  return { open, busy, enabled: !busy, ports, changeModel };
 }
 
 const SWIPE_DISTANCE = 80;
@@ -367,7 +436,7 @@ function ThreadBody({
         : status === "waiting"
           ? "No messages yet. Send the first prompt."
           : status === "offline"
-            ? "Host offline."
+            ? "Computer offline."
             : status === "error"
               ? `Can't load the thread: ${thread.error ?? "unknown error"}. Retrying…`
               : "No messages yet.";
@@ -416,24 +485,26 @@ function ThreadBody({
 type Menu = ReturnType<typeof useSessionMenu>;
 
 /**
- * The agent (or terminal) mark, then the title and "host · agent" or the busy text of the menu.
- * A tap on an agent's title drops down the agent card (the agent and its model). A long press opens the menu.
+ * The agent (or terminal) mark, then the title (two lines before it ends with "…") and one detail
+ * line: "host · agent · model", or the busy text of the menu. A terminal can add its folder as a
+ * last line, in mono. A tap on an agent's title drops down the agent card (the agent and its
+ * model). A long press opens the menu.
  */
 function SessionTitle({
   kind,
   terminal,
   title,
   subtitle,
+  folder,
   menu,
-  inline,
   model,
 }: {
   kind: string | undefined;
   terminal: boolean;
   title: string;
   subtitle: string;
+  folder?: string;
   menu: Menu;
-  inline: boolean;
   model: string | undefined;
 }) {
   const ref = useRef<ComponentRef<typeof View> | null>(null);
@@ -460,22 +531,21 @@ function SessionTitle({
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityHint={agentKind ? "Shows the agent and its model. Long press for session actions" : "Long press for session actions"}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.sm,
-        minHeight: hitTarget,
-        ...(inline ? { flex: 1 } : { maxWidth: 240 }),
-      }}
+      style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: hitTarget, paddingVertical: space.xs }}
     >
-      {terminal ? <TerminalMark size={28} /> : kind ? <AgentMark kind={kind} size={28} /> : null}
-      <View style={{ flexShrink: 1, justifyContent: "center", alignItems: inline ? "flex-start" : "center" }}>
-        <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+      {terminal ? <TerminalMark size={MARK_SIZE} /> : kind ? <AgentMark kind={kind} size={MARK_SIZE} /> : null}
+      <View style={{ flex: 1, minWidth: 0, justifyContent: "center" }}>
+        <Text variant="headline" numberOfLines={folder ? 1 : 2} maxFontSizeMultiplier={denseScale.row}>
           {title}
         </Text>
         <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
           {menu.busy ?? subtitle}
         </Text>
+        {folder ? (
+          <Text variant="caption" muted mono numberOfLines={1} ellipsizeMode="head" maxFontSizeMultiplier={denseScale.row}>
+            {folder}
+          </Text>
+        ) : null}
       </View>
       {agentKind ? (
         <AgentInfoPopover
@@ -499,105 +569,96 @@ function SessionTitle({
   );
 }
 
-/** The speaker switch (or "Stop reading" while speech plays) and the session actions button. A terminal has no replies to speak. */
-function SessionActions({ hostId, paneId, menu, terminal }: { hostId: string; paneId: string; menu: Menu; terminal: boolean }) {
-  const speakOn = useSpeakEnabled(hostId, paneId);
-  const setSpeak = useSessionSpeak((s) => s.setSpeak);
-  const speaking = useSpeaking((s) => s.speaking);
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
-      {/* While speech plays, the speaker button stops it. The speaker setting stays as it is. */}
-      {terminal ? null : speaking ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Stop reading"
-          onPress={() => {
-            haptics.tap();
-            stopSpeaking();
-          }}
-          style={HEADER_BUTTON}
-        >
-          <Square size={icon.sm + 2} color={colors.accent} fill={colors.accent} />
-        </Pressable>
-      ) : (
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityLabel="Speak replies"
-          accessibilityState={{ checked: speakOn }}
-          onPress={() => {
-            haptics.tap();
-            setSpeak(sessionKey(hostId, paneId), !speakOn);
-          }}
-          style={HEADER_BUTTON}
-        >
-          {speakOn ? <Volume2 size={icon.md} color={colors.accent} /> : <VolumeX size={icon.md} color={colors.textMuted} />}
-        </Pressable>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={menu.ports?.length ? "Session actions, dev server found" : "Session actions"}
-        accessibilityState={{ disabled: !menu.enabled, busy: !!menu.busy }}
-        disabled={!menu.enabled}
-        onPress={menu.open}
-        style={HEADER_BUTTON}
-      >
-        {menu.busy ? <DelayedSpinner color={colors.textMuted} /> : <Ellipsis size={icon.md} color={menu.enabled ? colors.text : colors.textMuted} />}
-        {/* The badge: the computer has a listening dev port that "Preview" can open. */}
-        {menu.ports && menu.ports.length > 0 && !menu.busy ? (
-          <View
-            importantForAccessibility="no"
-            style={{ position: "absolute", top: space.sm, right: space.sm, width: dot.size, height: dot.size, borderRadius: dot.size / 2, backgroundColor: colors.text }}
-          />
-        ) : null}
-      </Pressable>
-    </View>
-  );
-}
-
 /**
- * The session header. `native`: the title view and the bar buttons of the route's native header
- * (iOS 26 draws them on Liquid Glass). `inline`: the same parts as a plain row, for the detail column.
+ * The session header: one row. Back (placement "native" only), the mark, the title and its detail
+ * line, then at the right "Stop reading" (only while speech plays), the Thread / Terminal switch
+ * (only when the session has a Thread) and "⋯". The "⋯" dot: the computer has a listening dev port
+ * that "Preview" can open.
+ *
+ * "native": the session route. The row replaces the native bar (the native bar cannot hold two
+ * title lines, the detail line and the switch); the back button and "⋯" are on glass, as the
+ * native bar buttons of the other screens. "inline": the detail column of the two-column layout.
  */
 export function SessionHeader({
   placement,
-  hostId,
-  paneId,
   kind,
   terminal = false,
   title,
   subtitle,
+  folder,
   menu,
   model,
+  mode,
+  onMode,
+  onBack,
 }: {
   placement: "native" | "inline";
-  hostId: string;
-  paneId: string;
   /** The agent kind, for the mark before the title. Unknown: no mark. */
   kind: string | undefined;
-  /** A pane with no agent: the terminal mark, and no speaker switch. */
+  /** A pane with no agent: the terminal mark. */
   terminal?: boolean;
   title: string;
   subtitle: string;
+  /** The folder line of a session with no Thread (a terminal). */
+  folder?: string;
   menu: Menu;
   /** The model the agent uses now (`Thread.model`), for the agent card. Undefined when unknown. */
   model?: string;
+  /** The view and its switch. No `onMode`: the session has no Thread, so no switch. */
+  mode: Mode;
+  onMode?: (m: Mode) => void;
+  onBack?: () => void;
 }) {
-  if (placement === "native") {
-    return (
-      <Stack.Screen
-        options={{
-          headerTitle: () => (
-            <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline={false} model={model} />
-          ),
-          headerRight: () => <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />,
-        }}
-      />
-    );
-  }
+  const insets = useSafeAreaInsets();
+  const speaking = useSpeaking((s) => s.speaking);
+  const native = placement === "native";
+  const dot = !!menu.ports && menu.ports.length > 0 && !menu.busy;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, paddingLeft: space.lg, paddingRight: space.xs }}>
-      <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} menu={menu} inline model={model} />
-      <SessionActions hostId={hostId} paneId={paneId} menu={menu} terminal={terminal} />
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.sm,
+        paddingTop: native ? insets.top : 0,
+        paddingLeft: native ? space.sm + insets.left : space.lg,
+        paddingRight: space.sm + (native ? insets.right : 0),
+        paddingBottom: space.xs,
+      }}
+    >
+      {native ? (
+        <>
+          {/* The native bar is off: the row draws the back button. The swipe back still works. */}
+          <Stack.Screen options={{ headerShown: false }} />
+          <IconButton label="Back" Icon={ChevronLeft} size="header" glass onPress={() => onBack?.()} />
+        </>
+      ) : null}
+      <SessionTitle kind={kind} terminal={terminal} title={title} subtitle={subtitle} folder={folder} menu={menu} model={model} />
+      {/* While speech plays, this button stops it. The speaker setting stays as it is. */}
+      {!terminal && speaking ? (
+        <IconButton
+          label="Stop reading"
+          color={colors.accent}
+          onPress={() => {
+            haptics.tap();
+            stopSpeaking();
+          }}
+        >
+          <Square size={icon.sm} color={colors.accent} fill={colors.accent} strokeWidth={icon.strokeWidth} />
+        </IconButton>
+      ) : null}
+      {onMode ? <Segmented options={MODES} value={mode} onChange={onMode} label="View" /> : null}
+      <IconButton
+        label={dot ? "Session actions, dev server found" : "Session actions"}
+        Icon={Ellipsis}
+        size="header"
+        glass={native}
+        dot={dot}
+        disabled={!menu.enabled}
+        busy={!!menu.busy}
+        onPress={menu.open}
+      >
+        {menu.busy ? <DelayedSpinner color={colors.textMuted} /> : undefined}
+      </IconButton>
     </View>
   );
 }
@@ -626,6 +687,8 @@ export type SessionDetailProps = {
   onOpenPane: (paneId: string) => void;
   /** Runs after Close stopped the agent or closed the terminal. */
   onClosed: () => void;
+  /** The back button of the "native" header. */
+  onBack?: () => void;
   /** ⌘[ and ⌘] go to the previous or next agent of the workspace. The detail column moves on the board instead. */
   neighborShortcuts?: boolean;
 };
@@ -641,6 +704,7 @@ export function SessionDetail({
   header,
   onOpenPane,
   onClosed,
+  onBack,
   neighborShortcuts = false,
 }: SessionDetailProps) {
   // Only the focused session speaks and polls choices: another session or a modal may sit on top.
@@ -694,10 +758,26 @@ export function SessionDetail({
   const previewOn = usePreviewSupported(hostId);
   const livePorts = usePorts(hostId, paneId, previewOn && focused);
   const ports = previewOn ? (livePorts ?? []) : undefined;
-  const menu = useSessionMenu(hostId, paneId, agent, terminal, onOpenPane, onClosed, ports);
-
   // Search: in the thread items (Thread) or in the visible terminal text (Terminal).
   const [searchOpen, setSearchOpen] = useState(false);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const model = modelLabel(thread.model);
+  const subtitle = terminal
+    ? `${hostName} · ${termStatus ? statusLabel(termStatus) : "Terminal"}`
+    : [hostName, kind ? agentLabel(kind) : undefined, model].filter(Boolean).join(" · ");
+  // A session with no Thread shows its folder in the header, where the old switch row showed it.
+  const folderLine = terminal ? folder : !threadOk ? (agent?.cwd ?? undefined) : undefined;
+  const menu = useSessionMenu(
+    hostId,
+    paneId,
+    agent,
+    terminal,
+    onOpenPane,
+    onClosed,
+    { model: thread.model, onFind: openSearch, title, detail: folderLine ?? subtitle },
+    ports,
+  );
+
   const [query, setQuery] = useState("");
   const threadSearch = useThreadSearch(thread, searchOpen && view === "thread", query);
   const termQuery = useDebounced(searchOpen && view === "terminal" ? query : "", SEARCH_DEBOUNCE_MS);
@@ -724,7 +804,7 @@ export function SessionDetail({
   useKeyCommand("escape", () => pressKey("esc"), { enabled: focused && view === "terminal" });
   useKeyCommand("toggleMode", () => setMode((m) => (m === "thread" ? "terminal" : "thread")), { enabled: focused && !terminal && threadOk });
   // ⌘F opens the search of the thread or the terminal.
-  useKeyCommand("find", () => setSearchOpen(true), { enabled: focused });
+  useKeyCommand("find", openSearch, { enabled: focused });
   const neighbors = useMemo(() => (snapshot ? neighborAgents(snapshot, paneId) : {}), [snapshot, paneId]);
   // The other panes of this tab: page dots, a swipe and the tab map. Null for a tab with one pane.
   const tab = useMemo(() => tabPanes(snapshot, paneId), [snapshot, paneId]);
@@ -736,39 +816,18 @@ export function SessionDetail({
     <KeyboardAvoider style={{ backgroundColor: colors.bg }}>
       <SessionHeader
         placement={header}
-        hostId={hostId}
-        paneId={paneId}
         kind={kind}
         terminal={terminal}
         title={title}
-        subtitle={terminal ? `${hostName} · ${termStatus ? statusLabel(termStatus) : "Terminal"}` : kind ? `${hostName} · ${kind}` : hostName}
+        subtitle={subtitle}
+        folder={folderLine}
         menu={menu}
         model={thread.model}
+        mode={view}
+        onMode={terminal || !threadOk ? undefined : setMode}
+        onBack={onBack}
       />
-      <View style={{ gap: space.sm, paddingTop: space.xs, paddingBottom: space.sm }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs, paddingLeft: space.lg, paddingRight: space.xs }}>
-          {terminal || !threadOk ? (
-            // A terminal (or a Herdr 2 agent) has no Thread: its folder takes the place of the switch.
-            <Text variant="caption" muted mono numberOfLines={1} ellipsizeMode="head" style={{ flex: 1 }}>
-              {(terminal ? folder : agent?.cwd) ?? ""}
-            </Text>
-          ) : (
-            <Segmented options={MODES} value={mode} onChange={setMode} label="View" style={{ flex: 1 }} />
-          )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={view === "thread" ? "Search the thread" : "Search the terminal"}
-            accessibilityState={{ expanded: searchOpen }}
-            onPress={() => {
-              haptics.tap();
-              if (searchOpen) closeSearch();
-              else setSearchOpen(true);
-            }}
-            style={HEADER_BUTTON}
-          >
-            <Search size={icon.md} color={searchOpen ? colors.accent : colors.text} />
-          </Pressable>
-        </View>
+      <View style={{ gap: space.sm, paddingBottom: tab || searchOpen || voiceNotice ? space.sm : 0 }}>
         {tab ? <PanePager tab={tab} onOpen={onOpenPane} /> : null}
         {searchOpen ? (
           view === "thread" ? (

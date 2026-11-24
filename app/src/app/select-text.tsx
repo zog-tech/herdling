@@ -1,13 +1,14 @@
 import * as Clipboard from "expo-clipboard";
 import { Stack } from "expo-router";
-import { Copy } from "lucide-react-native";
+import { Check, Copy } from "lucide-react-native";
 import { useState } from "react";
-import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Platform, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, hitTarget, icon, space, state, type } from "@/theme/tokens";
+import { colors, space, type } from "@/theme/tokens";
 import { useSelectText } from "@/thread/selectText";
 import * as haptics from "@/ui/haptics";
+import { IconButton } from "@/ui/IconButton";
 import { Text } from "@/ui/Text";
 
 const LINE = Math.round(type.size.body * type.lineHeight.body);
@@ -16,9 +17,11 @@ const LINE = Math.round(type.size.body * type.lineHeight.body);
 function CopyAll({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={copied ? "Copied" : "Copy all"}
+    <IconButton
+      label={copied ? "Copied" : "Copy all"}
+      Icon={copied ? Check : Copy}
+      size="header"
+      color={copied ? colors.status.done : colors.text}
       onPress={() => {
         Clipboard.setStringAsync(text).then(
           () => {
@@ -29,10 +32,7 @@ function CopyAll({ text }: { text: string }) {
           () => haptics.fail(),
         );
       }}
-      style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? state.pressedOpacity : 1 })}
-    >
-      <Copy size={icon.md} color={copied ? colors.status.done : colors.text} />
-    </Pressable>
+    />
   );
 }
 

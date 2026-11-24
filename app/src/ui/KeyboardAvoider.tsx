@@ -171,6 +171,16 @@ export function KeyboardAvoider({
   );
 }
 
+/** The keyboard height now: 0 while it is hidden or when the system does not tell. */
+function currentKeyboardHeight(): number {
+  try {
+    if (!Keyboard.isVisible()) return 0;
+    return Math.max(0, Keyboard.metrics()?.height ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 /** True while the software keyboard is up (iOS: from the moment it starts to come up). */
 export function useKeyboardShown(): boolean {
   const [shown, setShown] = useState(false);
@@ -188,9 +198,10 @@ export function useKeyboardShown(): boolean {
 /**
  * The height of the software keyboard in points, 0 while it is hidden. A show event with no frame
  * gives the fallback height, so a view never takes the space of a keyboard it cannot measure.
+ * A view that mounts while the keyboard is up (a menu sheet) starts with the current height.
  */
 export function useKeyboardHeight(): number {
-  const [height, setHeight] = useState(0);
+  const [height, setHeight] = useState(currentKeyboardHeight);
   useEffect(() => {
     const onShow = (e: KeyboardEvent) => {
       const h = e.endCoordinates?.height ?? 0;

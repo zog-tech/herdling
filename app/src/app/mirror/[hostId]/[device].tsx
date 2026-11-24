@@ -68,15 +68,11 @@ export default function MirrorScreen() {
   let body: ReactNode;
   if (!device || !supported || !WebView) {
     body = (
-      <Centered>
-        <StateNotice Icon={TriangleAlert} message="The device mirror needs a newer app build and herdlingd on this computer." />
-      </Centered>
+      <StateNotice Icon={TriangleAlert} message="The device mirror needs a newer app build and herdlingd on this computer." />
     );
   } else if (tunnel.phase === "error") {
     body = (
-      <Centered>
-        <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message={`Can't open the device: ${tunnel.message}`} action="Retry" onAction={retry} />
-      </Centered>
+      <StateNotice Icon={TriangleAlert} color={colors.status.blocked} message={`Can't open the device: ${tunnel.message}`} action="Retry" onAction={retry} />
     );
   } else if (tunnel.phase === "paused" || tunnel.phase === "closed") {
     body = (

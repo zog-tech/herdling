@@ -2,7 +2,7 @@ import type { FileGet, FileGetParams } from "@herdling/protocol";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Share as ShareIcon } from "lucide-react-native";
 import { useCallback } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import { fileHref } from "@/files/open";
 import { FileViewer, useFileViewer } from "@/files/FileViewer";
@@ -11,7 +11,8 @@ import { shareShown } from "@/files/share";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
 import { RpcError } from "@/rpc/RpcClient";
-import { colors, hitTarget, icon, state } from "@/theme/tokens";
+import { colors } from "@/theme/tokens";
+import { IconButton } from "@/ui/IconButton";
 
 /**
  * Screen: a path on a computer, opened from the thread. A folder lists its entries (a tap opens an
@@ -55,14 +56,7 @@ export default function FileScreen() {
           title,
           headerRight: shown
             ? () => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Share"
-                  onPress={() => void shareShown(shown).catch(() => {})}
-                  style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? state.pressedOpacity : 1 })}
-                >
-                  <ShareIcon size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
-                </Pressable>
+                <IconButton label="Share" Icon={ShareIcon} size="header" onPress={() => void shareShown(shown).catch(() => {})} />
               )
             : undefined,
         }}

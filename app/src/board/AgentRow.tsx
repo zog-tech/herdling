@@ -34,6 +34,7 @@ import { BucketStatus } from "./BucketStatus";
 import { cardActionsFor, cardLabel, runCardAction } from "./a11y";
 import { claimEnterDelay } from "./boardEnter";
 import { cardActions, makeCardPress } from "./cardPress";
+import { IconButton } from "@/ui/IconButton";
 import { cardSubtitle, footerMeta, placeholderLine, statusWithAge, titleParts } from "./rowText";
 
 const ACTION_W = 84;
@@ -113,7 +114,7 @@ function SwipeAction({
         opacity: pressed ? state.pressedFill : 1,
       })}
     >
-      <Icon size={20} color={colors.onAccent} />
+      <Icon size={icon.md} color={colors.onAccent} />
       <Text variant="caption" bold color={colors.onAccent}>
         {label}
       </Text>
@@ -205,8 +206,9 @@ const cardBox = () =>
   }) as const;
 
 /**
- * The footer of a card, under a hairline from edge to edge: the time at the left (when known), a
- * gold "Open" and a chevron at the right. With large text the "Open" moves under the time.
+ * The footer of a card, under a hairline from edge to edge: the time at the left (when known),
+ * "Open" and a chevron at the right. Not gold: gold is for the one primary action (the "+" button).
+ * With large text the "Open" moves under the time.
  */
 function CardFooter({ meta }: { meta: string | undefined }) {
   return (
@@ -230,11 +232,11 @@ function CardFooter({ meta }: { meta: string | undefined }) {
           {meta}
         </Text>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 2, marginLeft: "auto" }}>
-        <Text variant="small" bold color={colors.accent} maxFontSizeMultiplier={denseScale.row}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.xxs, marginLeft: "auto" }}>
+        <Text variant="small" bold maxFontSizeMultiplier={denseScale.row}>
           Open
         </Text>
-        <ChevronRight size={icon.sm} color={colors.accent} strokeWidth={icon.strokeWidth} />
+        <ChevronRight size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
       </View>
     </View>
   );
@@ -246,7 +248,7 @@ function CardFooter({ meta }: { meta: string | undefined }) {
  * `rowStyle` (Settings, "Agent list style"):
  * - `flat`: a row with no box and a "⋯" button.
  * - `divided`: a row with a chevron at the right edge. The Board puts a divider between rows.
- * - `cards`: a card with a footer: the time at the left, a gold "Open" at the right.
+ * - `cards`: a card (the Tile surface) with a footer: the time at the left, "Open" at the right.
  * `divided` and `cards` have no "⋯" button: its actions stay in the peek, the swipes and VoiceOver.
  * Tap opens the session, long-press peeks. Swipe right marks it read; swipe left reveals Reply and
  * Restart. VoiceOver gets the same actions as custom actions.
@@ -353,7 +355,7 @@ export const AgentRow = memo(function AgentRow({
               onPointerEnter={() => setHovered(true)}
               onPointerLeave={() => setHovered(false)}
               style={{
-                gap: 3,
+                gap: space.xxs,
                 paddingTop: space.md + 2,
                 paddingBottom: cards ? space.md : space.md + 2,
                 paddingLeft: space.lg,
@@ -424,12 +426,12 @@ export const AgentRow = memo(function AgentRow({
                   maxFontSizeMultiplier={TITLE_SCALE}
                   color={needsYou ? colors.text : colors.textMuted}
                   mono={bucket === "working" && !!item.line}
-                  style={{ marginTop: 3 }}
+                  style={{ marginTop: space.xxs }}
                 >
                   {line}
                 </Text>
               ) : placeholder ? (
-                <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={TITLE_SCALE} style={{ marginTop: 3 }}>
+                <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={TITLE_SCALE} style={{ marginTop: space.xxs }}>
                   {placeholder}
                 </Text>
               ) : null}
@@ -449,24 +451,14 @@ export const AgentRow = memo(function AgentRow({
           </GestureDetector>
           {/* A sibling, not a child, of the row: its touches never reach the row's tap and long press. */}
           {rowStyle === "flat" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`More actions for ${item.title}`}
+            <IconButton
+              label={`More actions for ${item.title}`}
+              hint="Opens the menu of this agent"
+              Icon={Ellipsis}
+              color={colors.textMuted}
               onPress={() => actions.onMenu(item)}
-              hitSlop={4}
-              style={({ pressed }) => ({
-                position: "absolute",
-                right: space.xs,
-                top: space.xs,
-                width: hitTarget,
-                height: hitTarget,
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: pressed ? state.pressedOpacity : 1,
-              })}
-            >
-              <Ellipsis size={icon.md} color={colors.textMuted} />
-            </Pressable>
+              style={{ position: "absolute", right: space.xs, top: space.xs }}
+            />
           ) : null}
         </Animated.View>
       </ReanimatedSwipeable>

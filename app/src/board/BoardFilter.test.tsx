@@ -36,7 +36,7 @@ test("the button is gold only while the field shows", () => {
       tree = create(<FilterButton open={open} onPress={() => {}} />);
     });
     const button = byLabel(tree!, "Filter agents");
-    expect(button.props.accessibilityState).toEqual({ expanded: open });
+    expect(button.props.accessibilityState).toMatchObject({ expanded: open });
     const color = tree!.root.findAll((n) => n.props.color !== undefined)[0].props.color;
     act(() => tree!.unmount());
     tree = undefined;

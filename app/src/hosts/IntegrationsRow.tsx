@@ -1,9 +1,10 @@
 import { useRouter } from "expo-router";
+import { Puzzle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 
 import { groupIntegrations, LIST_METHOD, listIntegrations } from "@/herdr/integrations";
 import { useHerdrSupports } from "@/herdr/support";
-import { Card } from "@/ui/Card";
+import { colors, icon } from "@/theme/tokens";
 import { Row } from "@/ui/Row";
 
 import { useHostConn } from "./connection";
@@ -18,9 +19,9 @@ export function integrationsDetail(missing: number | undefined): string {
 /**
  * The "Agent integrations" row of the host screen. It reads `integration.list` once while the
  * host is online, for the count in the detail line. It hides when the herdr of the host does
- * not know the method. `card`: in a `Card`, for a screen of cards.
+ * not know the method. Put it in a `Group`; `useIntegrationsShown` tells the parent if it shows.
  */
-export function IntegrationsRow({ hostId, card }: { hostId: string; card?: boolean }) {
+export function IntegrationsRow({ hostId }: { hostId: string }) {
   const router = useRouter();
   const { rpc, hello } = useHostConn(hostId);
   const supported = useHerdrSupports(hostId, LIST_METHOD);
@@ -40,14 +41,19 @@ export function IntegrationsRow({ hostId, card }: { hostId: string; card?: boole
   }, [rpc, hello, supported, hostId]);
 
   if (!supported) return null;
-  const row = (
+  return (
     <Row
       title="Agent integrations"
+      leading={<Puzzle size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
       detail={integrationsDetail(missing)}
       chevron
       accessibilityHint="Shows the herdr integrations of this computer"
       onPress={() => router.push({ pathname: "/hosts/integrations", params: { id: hostId } })}
     />
   );
-  return card ? <Card>{row}</Card> : row;
+}
+
+/** True when `IntegrationsRow` shows for the host: its herdr knows `integration.list`. */
+export function useIntegrationsShown(hostId: string): boolean {
+  return useHerdrSupports(hostId, LIST_METHOD);
 }

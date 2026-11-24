@@ -115,7 +115,10 @@ export const PendingBubble = memo(function PendingBubble({
   );
 });
 
-/** The pill of "Send now" and of its flow states, so the place keeps its shape. A function: the colors follow the theme. */
+/**
+ * The shape of "Send now" and of its flow states, so the place keeps its shape: a secondary button
+ * (radius `md`, no border). A function: the colors follow the theme.
+ */
 const pill = () =>
   ({
     minHeight: hitTarget,
@@ -125,16 +128,14 @@ const pill = () =>
     alignItems: "center",
     gap: space.xs,
     paddingHorizontal: space.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radius.md,
   }) as const;
 
 /**
  * "Send now" beside a queued prompt: one Esc stops the turn, and Claude Code sends its queued
  * prompts at once (`sendNowMachine.ts`). The flow is per pane; its "Sending now…" and error states
- * show in the same place. An outline button, not gold: it interrupts the agent, and the gold send
- * button of the composer stays the one primary action.
+ * show in the same place. A secondary button (`raised`, no border), not gold: it interrupts the
+ * agent, and the gold send button of the composer stays the one primary action.
  */
 function SendNowButton({ hostId, paneId }: { hostId: string; paneId: string }) {
   const { rpc } = useHostConn(hostId);
@@ -142,7 +143,7 @@ function SendNowButton({ hostId, paneId }: { hostId: string; paneId: string }) {
   const busy = sendNowLabel(flow);
   if (flow.phase === "sending" || flow.phase === "sent") {
     return (
-      <View style={[pill(), { borderColor: colors.edge }]}>
+      <View style={pill()}>
         <Text variant="small" muted accessibilityLiveRegion="polite" maxFontSizeMultiplier={denseScale.row}>
           {busy}
         </Text>
@@ -167,7 +168,7 @@ function SendNowButton({ hostId, paneId }: { hostId: string; paneId: string }) {
       disabled={!rpc}
       style={({ pressed }) => ({
         ...pill(),
-        backgroundColor: pressed ? colors.raised : colors.card,
+        backgroundColor: pressed ? colors.raisedHigh : colors.raised,
         opacity: rpc ? 1 : state.disabledOpacity,
       })}
     >

@@ -401,6 +401,18 @@ export function isFreeform(choice: Choice): boolean {
   return /^Type something\.?$/i.test(label) || /^Chat about this$/i.test(label);
 }
 
+/**
+ * Key of the approve choice of a permission prompt: the first choice, when its label starts with
+ * the word "Yes" and a later choice starts with "No". It gets the primary (accent) style. A question
+ * with free answers has no approve choice.
+ */
+export function approveKey(choices: Choice[]): string | undefined {
+  const first = choices[0];
+  if (!first || !/^Yes\b/.test(first.label)) return undefined;
+  const no = destructiveKey(choices);
+  return no !== undefined && no !== first.key ? first.key : undefined;
+}
+
 /** Key of the last choice whose label starts with the word "No"; it gets the destructive style. */
 export function destructiveKey(choices: Choice[]): string | undefined {
   for (let i = choices.length - 1; i >= 0; i--) {

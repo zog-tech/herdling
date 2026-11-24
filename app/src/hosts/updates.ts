@@ -113,7 +113,7 @@ export function updateErrorMessage(e: unknown): string {
     case "timeout":
       return "The update took too long. herdlingd may still finish it: check the version again in a minute.";
     case "disconnected":
-      return "The connection closed during the update. Check the version when the host is online again.";
+      return "The connection closed during the update. Check the version when the computer is online again.";
     default:
       return `The update failed${message ? `: ${message.slice(0, 200)}` : "."}`;
   }
@@ -139,7 +139,7 @@ export type ApplyOutcome = { status: UpdateApply["status"]; version: string; not
  */
 export async function applyUpdate(hostId: string, waitMs = RECONNECT_WAIT_MS): Promise<ApplyOutcome> {
   const conn = getHostConn(hostId);
-  if (conn.status !== "online" || !conn.rpc) throw new Error("The host is offline. Connect it first.");
+  if (conn.status !== "online" || !conn.rpc) throw new Error("The computer is offline. Connect it first.");
   let r: UpdateApply;
   try {
     r = await conn.rpc.call<UpdateApply>("update.apply", {}, APPLY_TIMEOUT_MS);
@@ -156,7 +156,7 @@ export async function applyUpdate(hostId: string, waitMs = RECONNECT_WAIT_MS): P
   }
   const attempt = retryNow(hostId);
   const hello = await waitForHello(hostId, attempt, waitMs);
-  if (!hello) throw new Error(`herdlingd ${r.to} is installed, but the host did not connect again yet. Herdling keeps trying.`);
+  if (!hello) throw new Error(`herdlingd ${r.to} is installed, but the computer did not connect again yet. Herdling keeps trying.`);
   saveRunning(hello.herdlingd, r.to);
   return { status: r.status, version: hello.herdlingd, ...(r.notice ? { notice: r.notice } : {}) };
 }
@@ -173,7 +173,7 @@ export async function updateWithPassword(
   deps: InstallerDeps = defaultInstallerDeps,
 ): Promise<InstallResult> {
   if (!host.fingerprint) {
-    return { ok: false, code: "host_key_mismatch", message: "The host key is not pinned yet. Connect the host once first.", lines: [] };
+    return { ok: false, code: "host_key_mismatch", message: "The host key is not pinned yet. Connect the computer once first.", lines: [] };
   }
   const result = await runInstaller(deps, {
     host: host.address,

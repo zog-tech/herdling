@@ -31,3 +31,51 @@ test("segmented_marks_the_selected_tab_and_reports_a_change", () => {
   expect(haptics.tap).toHaveBeenCalledTimes(1);
   act(() => t.unmount());
 });
+
+test("segmented_attention_mark_is_part_of_the_name", () => {
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(
+      <Segmented
+        options={[
+          { id: "a", label: "api", attention: "needs you" },
+          { id: "b", label: "web" },
+        ]}
+        value="a"
+        onChange={() => {}}
+        label="Tabs"
+      />,
+    );
+  });
+  // The dot is hidden from VoiceOver; its meaning is in the tab name.
+  expect(tab(t, "api, needs you")).toBeTruthy();
+  expect(tab(t, "web")).toBeTruthy();
+  expect(t.root.findAll((n) => n.props.importantForAccessibility === "no")).not.toHaveLength(0);
+  // The label text shows without a symbol suffix.
+  const texts = t.root.findAll((n) => (n.type as unknown) === "Text").map((n) => n.props.children);
+  expect(texts).toEqual(expect.arrayContaining(["api", "web"]));
+  act(() => t.unmount());
+});
+
+test("segmented_icon_form_shows_icons_and_keeps_the_names", () => {
+  const { MessageSquare, SquareTerminal } = jest.requireActual("lucide-react-native");
+  let t!: ReactTestRenderer;
+  act(() => {
+    t = create(
+      <Segmented
+        options={[
+          { id: "thread", label: "Thread", Icon: MessageSquare },
+          { id: "terminal", label: "Terminal", Icon: SquareTerminal },
+        ]}
+        value="terminal"
+        onChange={() => {}}
+        label="View"
+      />,
+    );
+  });
+  expect(tab(t, "Terminal").props.accessibilityState).toEqual({ selected: true });
+  // No label text in the icon form.
+  expect(t.root.findAll((n) => (n.type as unknown) === "Text")).toHaveLength(0);
+  expect(t.root.findAllByType(MessageSquare)).toHaveLength(1);
+  act(() => t.unmount());
+});

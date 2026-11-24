@@ -1,30 +1,39 @@
-import { ClipboardList } from "lucide-react-native";
-import { Modal, Pressable, ScrollView, View } from "react-native";
+import { ClipboardList, Eye, TextCursorInput } from "lucide-react-native";
+import { Modal, ScrollView, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, radius, space, state } from "@/theme/tokens";
+import { colors, space } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+import { Shortcut } from "@/ui/Shortcut";
 import { Text } from "@/ui/Text";
 
-import { pasteLabel, pasteSize, type PastedText } from "./pastedText";
-import { FILE_TILE, RemoveButton, THUMB } from "./PlusMenu";
+import { pasteLabel, type PastedText } from "./pastedText";
+import { RemoveButton, THUMB } from "./PlusMenu";
 
 /** The rows of the chip menu, in order. */
-export const PASTE_ACTIONS = ["View", "Insert as text", "Cancel"] as const;
+export const PASTE_ACTIONS = ["View", "Insert as text"] as const;
 
 /** Opens the chip menu: "View" or "Insert as text". */
 export function openPasteMenu(p: PastedText, onView: () => void, onInsert: () => void): void {
-  showActionSheet({ title: pasteLabel(p), options: [...PASTE_ACTIONS], cancelButtonIndex: 2 }, (i) => {
-    if (i === 0) onView();
-    else if (i === 1) onInsert();
+  showMenu({
+    title: pasteLabel(p),
+    sections: [
+      {
+        items: [
+          { label: PASTE_ACTIONS[0], Icon: Eye, onPick: onView },
+          { label: PASTE_ACTIONS[1], Icon: TextCursorInput, onPick: onInsert },
+        ],
+      },
+    ],
   });
 }
 
 /**
- * A long paste that waits above the prompt box: "Pasted text #1" and its size, in a tile as high
- * as a photo. A tap opens the chip menu. The "x" removes the paste.
+ * A long paste that waits above the prompt box: "Pasted text #1 · 240 lines" as a shortcut token
+ * (`ui/Shortcut`), in the row of the attachments. A tap opens the chip menu. The "x" removes the
+ * paste.
  */
 export function PasteChip({
   paste,
@@ -38,35 +47,18 @@ export function PasteChip({
   onRemove: () => void;
 }) {
   return (
-    <View style={{ width: FILE_TILE, height: THUMB }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={pasteLabel(paste)}
-        accessibilityHint="View the text or put it back in the prompt"
-        disabled={disabled}
-        onPress={onPress}
-        style={({ pressed }) => ({
-          flex: 1,
-          borderRadius: radius.sm,
-          backgroundColor: colors.raised,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: space.xs,
-          paddingHorizontal: space.sm,
-          opacity: pressed ? state.pressedFill : 1,
-        })}
-      >
-        <ClipboardList size={20} color={colors.textMuted} />
-        <View style={{ flex: 1 }}>
-          <Text variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            Pasted text #{paste.n}
-          </Text>
-          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {pasteSize(paste.text)}
-          </Text>
-        </View>
-      </Pressable>
-      <RemoveButton label={`Remove pasted text ${paste.n}`} disabled={disabled} onPress={onRemove} />
+    // As high as a photo, so the row of attachments keeps one height; the token sits in the middle.
+    <View style={{ height: THUMB, justifyContent: "center" }}>
+      <View>
+        <Shortcut
+          label={pasteLabel(paste)}
+          Icon={ClipboardList}
+          accessibilityHint="View the text or put it back in the prompt"
+          disabled={disabled}
+          onPress={onPress}
+        />
+        <RemoveButton label={`Remove pasted text ${paste.n}`} disabled={disabled} onPress={onRemove} />
+      </View>
     </View>
   );
 }

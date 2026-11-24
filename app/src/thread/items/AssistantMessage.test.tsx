@@ -3,7 +3,9 @@ import { Check, Copy } from "lucide-react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+
+import { menuCalls } from "../__fixtures__/menuCalls";
 
 import { RunHostContext, ThreadPaneContext, type RunHost, type ThreadPane } from "../LiveToolContext";
 import { useRunRequest } from "../runCommand";
@@ -11,7 +13,7 @@ import { AssistantMessage } from "./AssistantMessage";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn(() => Promise.resolve(true)) }));
 jest.mock("@/voice/useSpeakReplies", () => ({ useManualSpeech: Object.assign(() => false, { getState: () => ({ key: undefined }) }) }));
 let mockStatus = "online";
@@ -35,7 +37,7 @@ jest.mock("@ronradtke/react-native-markdown-display", () => {
 });
 
 const PANE: ThreadPane = { hostId: "studio", paneId: "w1:p1" };
-const sheet = showActionSheet as jest.Mock;
+const sheet = menuCalls(showMenu as jest.Mock);
 
 let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
@@ -101,7 +103,7 @@ test("offline_the_button_is_disabled_and_the_menu_has_no_run", () => {
   const t = render("```bash\nls\n```\n");
   expect(runButtons(t)[0].props.disabled).toBe(true);
   act(() => codeMenus(t)[0].props.onLongPress());
-  const [opts] = sheet.mock.calls.at(-1) as [{ options: string[] }];
+  const [opts] = sheet.mock.calls.at(-1)!;
   expect(opts.options).not.toContain("Run in shell…");
 });
 

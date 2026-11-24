@@ -14,7 +14,8 @@ describe("SHORTCUTS", () => {
       tab1: "⌘1",
       tab2: "⌘2",
       tab3: "⌘3",
-      tab4: "⌘4",
+      usage: "⇧⌘U",
+      automations: "⇧⌘A",
       prevAgent: "⌘[",
       nextAgent: "⌘]",
       send: "⌘↩",
@@ -37,8 +38,12 @@ describe("SHORTCUTS", () => {
 });
 
 describe("TAB_ROUTES", () => {
-  it("maps ⌘1 to ⌘4 to the four tabs", () => {
-    expect(Object.values(TAB_ROUTES)).toEqual(["/", "/usage", "/automations", "/settings"]);
+  it("maps ⌘1 to ⌘3 to the three tabs, then Usage and Automations", () => {
+    expect(TAB_ROUTES).toEqual({ tab1: "/", tab2: "/spaces", tab3: "/settings", usage: "/usage", automations: "/automations" });
+  });
+
+  it("titles the tab shortcuts with the tab names, in tab order", () => {
+    expect(shortcutsFor(["tab1", "tab2", "tab3"]).map((s) => s.title)).toEqual(["Agents", "Spaces", "More"]);
   });
 });
 

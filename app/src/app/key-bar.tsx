@@ -1,4 +1,4 @@
-import { Keyboard as KeyboardIcon, RotateCcw, Type } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, CornerDownLeft, Keyboard as KeyboardIcon, Pencil, RotateCcw, Trash2, Type } from "lucide-react-native";
 import { Alert } from "react-native";
 
 import {
@@ -17,7 +17,9 @@ import {
 import { colors, icon } from "@/theme/tokens";
 import { Group, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
-import { promptText, showActionSheet } from "@/ui/nativeSheet";
+import { showMenu, type MenuItem } from "@/ui/MenuSheet";
+import { promptText } from "@/ui/nativeSheet";
+import { showPicker } from "@/ui/PickerSheet";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
 
@@ -33,17 +35,26 @@ function askMacro(index?: number, value = "") {
         onPress: (text) => {
           if (text === undefined) return;
           // After the prompt closes, so the two sheets do not overlap.
-          setTimeout(
-            () =>
-              showActionSheet({ title: "Press Enter after the text?", options: ["Type and press Enter", "Type only", "Cancel"], cancelButtonIndex: 2 }, (i) => {
-                if (i > 1) return;
-                const k: CustomKey = { kind: "text", text, enter: i === 0 };
-                if (index === undefined) saveNewKey(k);
-                else changeKey(index, k);
-                haptics.commit();
-              }),
-            0,
-          );
+          setTimeout(() => {
+            const save = (enter: boolean) => {
+              const k: CustomKey = { kind: "text", text, enter };
+              if (index === undefined) saveNewKey(k);
+              else changeKey(index, k);
+              haptics.commit();
+            };
+            showMenu({
+              title: "Press Enter after the text?",
+              detail: text,
+              sections: [
+                {
+                  items: [
+                    { label: "Type and press Enter", Icon: CornerDownLeft, onPick: () => save(true) },
+                    { label: "Type only", Icon: Type, onPick: () => save(false) },
+                  ],
+                },
+              ],
+            });
+          }, 0);
         },
       },
     ],
@@ -51,41 +62,37 @@ function askMacro(index?: number, value = "") {
   );
 }
 
-/** Picks a named key. `index`: a change of that item. */
-function askKey(index?: number) {
-  showActionSheet(
-    { title: "Key", options: [...KEY_CHOICES.map((c) => c.label), "Cancel"], cancelButtonIndex: KEY_CHOICES.length },
-    (i) => {
-      const c = KEY_CHOICES[i];
-      if (!c) return;
-      const k: CustomKey = { kind: "key", key: c.key };
+/** Picks a named key in the picker sheet. `index`: a change of that item; `current`: its key now. */
+function askKey(index?: number, current?: string) {
+  showPicker({
+    title: "Key",
+    options: KEY_CHOICES.map((c) => ({ value: c.key, label: c.label })),
+    value: current,
+    searchPlaceholder: "Search keys",
+    onPick: (key) => {
+      const k: CustomKey = { kind: "key", key };
       if (index === undefined) saveNewKey(k);
       else changeKey(index, k);
       haptics.commit();
     },
-  );
+  });
 }
 
+/** The actions of one key: edit and move in the first section, delete in the last. */
 function openMenu(index: number, count: number, k: CustomKey) {
-  const items: { label: string; destructive?: boolean; run: () => void }[] = [
-    { label: "Edit", run: () => (k.kind === "text" ? askMacro(index, k.text) : askKey(index)) },
-    ...(index > 0 ? [{ label: "Move left", run: () => reorderKey(index, index - 1) }] : []),
-    ...(index < count - 1 ? [{ label: "Move right", run: () => reorderKey(index, index + 1) }] : []),
-    { label: "Delete", destructive: true, run: () => deleteKey(index) },
+  const items: MenuItem[] = [
+    { label: "Edit", Icon: Pencil, onPick: () => (k.kind === "text" ? askMacro(index, k.text) : askKey(index, k.key)) },
+    ...(index > 0 ? [{ label: "Move left", Icon: ArrowLeft, onPick: () => reorderKey(index, index - 1) }] : []),
+    ...(index < count - 1 ? [{ label: "Move right", Icon: ArrowRight, onPick: () => reorderKey(index, index + 1) }] : []),
   ];
-  showActionSheet(
-    {
-      title: keyLabel(k),
-      options: [...items.map((i) => i.label), "Cancel"],
-      cancelButtonIndex: items.length,
-      destructiveButtonIndex: items.length - 1,
-    },
-    (i) => items[i]?.run(),
-  );
+  showMenu({
+    title: keyLabel(k),
+    sections: [{ items }, { items: [{ label: "Delete", Icon: Trash2, destructive: true, onPick: () => deleteKey(index) }] }],
+  });
 }
 
 /**
- * Settings, "Key bar": the custom keys at the end of the terminal key bar. A text key types its
+ * More, Terminal, "Key bar": the custom keys at the end of the terminal key bar. A text key types its
  * text (and Enter, when set); a named key presses that key. The list stays on this phone.
  */
 export default function KeyBarScreen() {
@@ -106,10 +113,8 @@ export default function KeyBarScreen() {
               detail={k.kind === "text" ? (k.enter ? "Types the text, then presses Enter." : "Types the text.") : "Presses the key."}
               accessibilityLabel={`Custom key ${i + 1} of ${keys.length}: ${keyA11y(k)}`}
               accessibilityHint="Opens the actions for this key"
-              onPress={() => {
-                haptics.tap();
-                openMenu(i, keys.length, k);
-              }}
+              // The menu sheet gives the open haptic.
+              onPress={() => openMenu(i, keys.length, k)}
             />
           ))}
         </Group>

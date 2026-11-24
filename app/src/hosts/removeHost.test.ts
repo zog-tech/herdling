@@ -83,7 +83,7 @@ describe("the remove text", () => {
     await buttons?.find((b) => b.text === "Remove")?.onPress?.();
     await new Promise((r) => setTimeout(r, 0));
     expect(useHosts.getState().hosts.find((h) => h.id === id)).toBeUndefined();
-    expect(alert.mock.calls[1][0]).toBe("Run this on the host");
+    expect(alert.mock.calls[1][0]).toBe("Run this on the computer");
     expect(alert.mock.calls[1][1]).toContain(`herdlingd unpair ${await getDeviceId()}`);
     alert.mockRestore();
   });

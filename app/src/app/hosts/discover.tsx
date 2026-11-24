@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { Settings, TriangleAlert } from "lucide-react-native";
+import { KeyRound, Link2, Monitor, Radar, Settings, SquareTerminal, TriangleAlert, type LucideIcon } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { Linking, View } from "react-native";
 
@@ -7,7 +7,7 @@ import { type Discovered, type DiscoveryState, knownHostFor, useDiscovery } from
 import { useHosts, type Host } from "@/hosts/store";
 import { suggestionDetail, type SuggestedHost, type SuggestState } from "@/hosts/suggest";
 import { useSuggestions } from "@/hosts/useSuggestions";
-import { colors, space } from "@/theme/tokens";
+import { colors, icon, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
@@ -16,6 +16,11 @@ import { Badge } from "@/ui/StatusBadge";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
+
+/** The icon at the left of a row, in the muted color. */
+function RowIcon({ Icon }: { Icon: LucideIcon }) {
+  return <Icon size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />;
+}
 
 function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
   const router = useRouter();
@@ -39,6 +44,7 @@ function FoundRow({ d, known }: { d: Discovered; known?: Host }) {
     <Row
       accessibilityLabel={known ? `${d.name}, paired. Edit host` : `Pair with ${d.name}`}
       onPress={onPress}
+      leading={<RowIcon Icon={Monitor} />}
       title={d.name}
       trailing={known ? <Badge label="Paired" color={colors.status.done} /> : null}
       chevron={!!onPress}
@@ -62,6 +68,7 @@ function SuggestedRow({ s }: { s: SuggestedHost }) {
           params: { name: s.name, address: s.address, ...(s.port ? { port: String(s.port) } : {}), ...(s.user ? { user: s.user } : {}) },
         })
       }
+      leading={<RowIcon Icon={Monitor} />}
       title={s.name}
       trailing={s.online === undefined ? null : <Badge label={s.online ? "Online" : "Offline"} color={s.online ? colors.status.done : colors.status.idle} />}
       chevron
@@ -111,13 +118,13 @@ function browseStatus(state: DiscoveryState, onRetry: () => void) {
     return (
       <View style={{ gap: space.sm }} accessibilityLiveRegion="polite">
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <TriangleAlert size={18} color={colors.status.blocked} />
+          <TriangleAlert size={icon.sm} color={colors.status.blocked} strokeWidth={icon.strokeWidth} />
           <Text bold color={colors.status.blocked}>
             Local network access is off
           </Text>
         </View>
         <Text variant="small" muted>
-          Herdling needs it to find hosts. Turn on Local Network for Herdling in Settings.
+          Herdling needs it to find computers. Turn on Local Network for Herdling in Settings.
         </Text>
         {state.error ? (
           <Text variant="caption" muted>
@@ -131,6 +138,7 @@ function browseStatus(state: DiscoveryState, onRetry: () => void) {
   if (state.status === "failed") {
     return (
       <StateNotice
+        inline
         Icon={TriangleAlert}
         color={colors.danger}
         message={`Search failed${state.error ? `: ${state.error}` : "."}`}
@@ -142,10 +150,11 @@ function browseStatus(state: DiscoveryState, onRetry: () => void) {
   if (state.list.length > 0) return null;
   if (state.status === "ready") {
     return (
-      <Text muted>
-        No hosts found yet. Run herdlingd serve on your computer and keep this phone on the same network. No
-        herdlingd yet? Use Set up with password below.
-      </Text>
+      <StateNotice
+        inline
+        Icon={Radar}
+        message="No computers found yet. Run herdlingd serve on your computer and keep this phone on the same network. No herdlingd yet? Use Set up with password below."
+      />
     );
   }
   return (
@@ -193,6 +202,7 @@ export default function DiscoverScreen() {
           <Row
             accessibilityLabel="Set up with password"
             onPress={() => router.push("/hosts/password")}
+            leading={<RowIcon Icon={KeyRound} />}
             title="Set up with password"
             detail="Log in once with the SSH password. Installs herdlingd when it is not there. Works over a VPN."
             chevron
@@ -200,6 +210,7 @@ export default function DiscoverScreen() {
           <Row
             accessibilityLabel="Add by address"
             onPress={() => router.push("/hosts/pair")}
+            leading={<RowIcon Icon={Link2} />}
             title="Add by address"
             detail="Enter the address and the code from herdlingd pair."
             chevron
@@ -207,6 +218,7 @@ export default function DiscoverScreen() {
           <Row
             accessibilityLabel="Add manually"
             onPress={() => router.push("/hosts/add")}
+            leading={<RowIcon Icon={SquareTerminal} />}
             title="Add manually"
             detail="Enter the SSH details and authorize the key yourself."
             chevron

@@ -257,47 +257,9 @@ export function commandPreview(kind: string, choice: StartChoice): string {
   return [kind, ...buildArgs(kind, choice)].map(shellWord).join(" ");
 }
 
-/**
- * The rows of an action sheet that picks one item: the item labels with a check mark on the
- * current one, then Cancel. `ids[i]` is the id of row `i` (undefined for Cancel). Items with
- * `danger` are the destructive rows.
- */
-export type ChoiceMenu = {
-  options: string[];
-  ids: (string | undefined)[];
-  destructiveButtonIndex: number[];
-  cancelButtonIndex: number;
-};
-
-export const CHECK_MARK = "✓ ";
-
-function choiceMenu(items: readonly { id: string; label: string; danger?: boolean }[], current: string): ChoiceMenu {
-  const options = items.map((i) => (i.id === current ? CHECK_MARK + i.label : i.label));
-  const destructiveButtonIndex = items.flatMap((i, n) => (i.danger ? [n] : []));
-  return {
-    options: [...options, "Cancel"],
-    ids: [...items.map((i) => i.id), undefined],
-    destructiveButtonIndex,
-    cancelButtonIndex: items.length,
-  };
-}
-
-/** The permission mode sheet of `kind`. Undefined when the kind has no modes. */
-export function modeMenu(kind: string, choice: StartChoice): ChoiceMenu | undefined {
-  const { modes } = optionsFor(kind);
-  const mode = modeOf(kind, choice);
-  return mode ? choiceMenu(modes, mode.id) : undefined;
-}
-
-/** The id of the "agent's default" thinking level in `thinkingMenu`. It sets no flag. */
+/** The id of the "agent's default" thinking level in the Thinking picker. It sets no flag. */
 export const DEFAULT_THINKING_ID = "default";
 
-/** The thinking level sheet of `kind` (Pi), with "Default" first. Undefined when the kind has no levels. */
-export function thinkingMenu(kind: string, choice: StartChoice): ChoiceMenu | undefined {
-  const t = optionsFor(kind).thinking;
-  if (!t) return undefined;
-  return choiceMenu([{ id: DEFAULT_THINKING_ID, label: "Default" }, ...t.levels], thinkingOf(kind, choice)?.id ?? DEFAULT_THINKING_ID);
-}
 
 /** `choice` with the mode `id`. Default is stored as no mode. */
 export function withMode(choice: StartChoice, id: string): StartChoice {

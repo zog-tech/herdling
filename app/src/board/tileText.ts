@@ -91,6 +91,16 @@ export function statusLine(bucket: BoardItem["bucket"], elapsedS: number | undef
   return elapsedS === undefined ? BUCKET_LABEL[bucket] : `${BUCKET_LABEL[bucket]} · ${compactElapsed(elapsedS)}`;
 }
 
+/**
+ * The status of a tile, split for the eye: the word with its dot, and the elapsed label at the top
+ * right (`ui/Tag` look). Only working and needs you get the label (MASTER.md, Dashboard); another
+ * status with a known time keeps the time in its words, as `statusLine` does.
+ */
+export function tileStatus(bucket: BoardItem["bucket"], elapsedS: number | undefined): { word: string; clock?: string } {
+  if (elapsedS !== undefined && (bucket === "working" || bucket === "needs_you")) return { word: BUCKET_LABEL[bucket], clock: compactElapsed(elapsedS) };
+  return { word: statusLine(bucket, elapsedS) };
+}
+
 /** What VoiceOver reads for a tile: title, status, folder line, main text, unread. */
 export function tileLabel(title: string, status: string, place: string | undefined, main: TileMain, bucket: BoardItem["bucket"]): string {
   const parts = [title, status];

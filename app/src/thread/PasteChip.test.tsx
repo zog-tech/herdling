@@ -1,11 +1,13 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+
+import { asSheet } from "./__fixtures__/menuCalls";
 
 import { openPasteMenu, PasteChip, PasteViewer } from "./PasteChip";
 import { makePaste } from "./pastedText";
 
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 
 const text = Array.from({ length: 240 }, (_, i) => `row ${i}`).join("\n");
@@ -19,7 +21,7 @@ test("the chip shows the number and the size, and its buttons call back", () => 
   act(() => {
     t = create(<PasteChip paste={makePaste(1, text)} onPress={onPress} onRemove={onRemove} />);
   });
-  expect(hasText(t, "240 lines")).toBe(true);
+  expect(hasText(t, "Pasted text #1 · 240 lines")).toBe(true);
   act(() => byLabel(t, "Pasted text #1 · 240 lines")[0].props.onPress());
   expect(onPress).toHaveBeenCalledTimes(1);
   act(() => byLabel(t, "Remove pasted text 1")[0].props.onPress());
@@ -30,7 +32,7 @@ test("the chip menu runs View and Insert as text", () => {
   const onView = jest.fn();
   const onInsert = jest.fn();
   openPasteMenu(makePaste(2, "x".repeat(1200)), onView, onInsert);
-  const [opts, pick] = (showActionSheet as jest.Mock).mock.calls[0];
+  const [opts, pick] = asSheet((showMenu as jest.Mock).mock.calls[0][0]);
   expect(opts).toEqual(
     expect.objectContaining({ title: "Pasted text #2 · 1,200 chars", options: ["View", "Insert as text", "Cancel"], cancelButtonIndex: 2 }),
   );

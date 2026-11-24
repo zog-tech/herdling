@@ -1,14 +1,14 @@
 import { useRouter } from "expo-router";
 import { ArrowUpCircle, KeyRound } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
-import { DelayedSpinner } from "@/ui/Delayed";
+import { colors, icon } from "@/theme/tokens";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Text } from "@/ui/Text";
 
+import { Outcome, Working } from "./flowParts";
 import { useHostConn } from "./connection";
 import { useHosts } from "./store";
 import { coreUpdateNote } from "./coreInstall";
@@ -22,7 +22,7 @@ function confirmUpdate(from: string, to: string, notes: string, coreNote?: strin
   return new Promise((resolve) => {
     Alert.alert(
       `Update herdlingd to ${to}?`,
-      `The host runs ${from}. herdlingd downloads ${to} from GitHub, checks it and restarts. The connection drops for a moment.${text}`,
+      `The computer runs ${from}. herdlingd downloads ${to} from GitHub, checks it and restarts. The connection drops for a moment.${text}`,
       [
         { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
         { text: "Update", onPress: () => resolve(true) },
@@ -32,7 +32,7 @@ function confirmUpdate(from: string, to: string, notes: string, coreNote?: strin
   });
 }
 
-/** The herdlingd version of a host and its update, on the host screen. Nothing while the host is offline. */
+/** The "herdlingd" band of the host screen: the version and its update. Nothing while the host is offline. */
 export function UpdateCard({ hostId }: { hostId: string }) {
   const router = useRouter();
   const host = useHosts((s) => s.hosts.find((h) => h.id === hostId));
@@ -60,61 +60,56 @@ export function UpdateCard({ hostId }: { hostId: string }) {
     }
   };
 
+  const upToDate = status.kind === "none" && !!hello && host.updateCheck?.current === hello.herdlingd && !host.updateCheck.updateAvailable;
+
   return (
-    <Card>
-      <Text variant="title">herdlingd</Text>
-      {hello ? (
-        <Text variant="small" muted>
-          Version {hello.herdlingd}
-          {status.kind === "none" && host.updateCheck?.current === hello.herdlingd && !host.updateCheck.updateAvailable
-            ? " · up to date"
-            : ""}
-        </Text>
-      ) : null}
-      {status.kind === "available" && !busy ? (
-        <View style={{ gap: space.sm }}>
-          <Text bold>
-            Update available: {status.from} → {status.to}
-          </Text>
-          {coreNote ? (
-            <Text variant="small" color={colors.status.blocked}>
-              {coreNote}
-            </Text>
-          ) : null}
-          {status.notes.trim() ? (
-            <Text variant="small" muted numberOfLines={6}>
-              {status.notes.trim()}
-            </Text>
-          ) : null}
-          <Button label="Update herdlingd" Icon={ArrowUpCircle} onPress={() => void update(status.from, status.to, status.notes)} />
-        </View>
-      ) : null}
-      {status.kind === "password" && !busy ? (
-        <View style={{ gap: space.sm }}>
-          <Text variant="small" muted>
-            This herdlingd is too old to update itself. Herdling can run the installer with one password login.
-          </Text>
-          <Button
-            label="Update herdlingd: sign in once with your password"
-            variant="secondary"
-            Icon={KeyRound}
+    <Section title="herdlingd">
+      <Group>
+        {hello ? <Row title="Version" detail={upToDate ? "Up to date" : undefined} trailing={<Text muted>{hello.herdlingd}</Text>} /> : null}
+        {status.kind === "available" && !busy ? (
+          <Row
+            title="Update herdlingd"
+            detail={`${status.from} → ${status.to}`}
+            leading={<ArrowUpCircle size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+            accessibilityLabel={`Update herdlingd from ${status.from} to ${status.to}`}
+            onPress={() => void update(status.from, status.to, status.notes)}
+          />
+        ) : null}
+        {status.kind === "available" && !busy && (coreNote || status.notes.trim()) ? (
+          <Pad>
+            {coreNote ? (
+              <Text variant="small" color={colors.status.blocked}>
+                {coreNote}
+              </Text>
+            ) : null}
+            {status.notes.trim() ? (
+              <Text variant="small" muted numberOfLines={6}>
+                {status.notes.trim()}
+              </Text>
+            ) : null}
+          </Pad>
+        ) : null}
+        {status.kind === "password" && !busy ? (
+          <Row
+            title="Update with your password"
+            detail="This herdlingd is too old to update itself. Herdling can run the installer with one password login."
+            leading={<KeyRound size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+            accessibilityLabel="Update herdlingd: sign in once with your password"
+            chevron
             onPress={() => router.push({ pathname: "/hosts/update", params: { id: hostId } })}
           />
-        </View>
-      ) : null}
-      {busy ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text muted style={{ flex: 1 }}>
-            Updating herdlingd. The host reconnects when it is done…
-          </Text>
-        </View>
-      ) : null}
-      {result ? (
-        <Text color={result.ok ? colors.status.done : colors.danger} accessibilityLiveRegion="polite">
-          {result.text}
-        </Text>
-      ) : null}
-    </Card>
+        ) : null}
+        {busy ? (
+          <Pad>
+            <Working bare text="Updating herdlingd. The computer reconnects when it is done…" />
+          </Pad>
+        ) : null}
+        {result ? (
+          <Pad>
+            <Outcome bare ok={result.ok} text={result.text} />
+          </Pad>
+        ) : null}
+      </Group>
+    </Section>
   );
 }

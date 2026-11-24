@@ -1,8 +1,9 @@
-import { Check, Download, Trash2, X, type LucideIcon } from "lucide-react-native";
+import { Check, Download, Trash2, X } from "lucide-react-native";
 import { useEffect } from "react";
-import { Alert, Platform, Pressable, View } from "react-native";
+import { Alert, Platform, View } from "react-native";
 
-import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
+import { colors, icon, radius, space } from "@/theme/tokens";
+import { Button } from "@/ui/Button";
 import { GoldSwitch } from "@/ui/GoldSwitch";
 import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
@@ -33,7 +34,7 @@ export const BLUETOOTH_MIC_NOTE =
 
 const DETAIL: Record<InputEngine, string> = {
   parakeet: "Parakeet on this iPhone. Private, works offline. Falls back to Host.",
-  host: "The host's stt_command. Falls back to Parakeet when it is downloaded.",
+  host: "The computer's stt_command. Falls back to Parakeet when it is downloaded.",
   apple: `${ENGINE_NAME.apple} speech recognition, live while you record.`,
 };
 
@@ -46,51 +47,10 @@ function Progress({ fraction }: { fraction: number }) {
       accessibilityRole="progressbar"
       accessibilityLabel="Model download"
       accessibilityValue={{ min: 0, max: 100, now: pct, text: `${pct}%` }}
-      style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.raised, overflow: "hidden" }}
+      style={{ height: space.xs + 2, borderRadius: radius.sm, backgroundColor: colors.raised, overflow: "hidden" }}
     >
       <View style={{ width: `${pct}%`, height: "100%", backgroundColor: colors.accent }} />
     </View>
-  );
-}
-
-/** A quiet round icon button (download, cancel, delete): a filled circle, no edge, 44 pt target. */
-function IconAction({
-  label,
-  Icon,
-  onPress,
-  color = colors.text,
-  disabled,
-}: {
-  label: string;
-  Icon: LucideIcon;
-  onPress: () => void;
-  color?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: disabled ? state.disabledOpacity : 1 }}
-    >
-      {({ pressed }) => (
-        <View
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: radius.pill,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? colors.divider : colors.raised,
-          }}
-        >
-          <Icon size={icon.sm} color={color} strokeWidth={icon.strokeWidth} />
-        </View>
-      )}
-    </Pressable>
   );
 }
 
@@ -118,12 +78,14 @@ function ModelRow({ model }: { model: ParakeetModel }) {
     );
 
   const trailing = mine ? (
-    <IconAction label="Cancel download" Icon={X} onPress={cancelParakeetDownload} />
+    <Button label="Cancel download" variant="secondary" iconOnly Icon={X} onPress={cancelParakeetDownload} />
   ) : status.installed ? (
-    <IconAction label={`Delete ${MODEL_LABEL[model]}`} Icon={Trash2} color={colors.danger} onPress={confirmDelete} />
+    <Button label={`Delete ${MODEL_LABEL[model]}`} variant="danger" iconOnly Icon={Trash2} onPress={confirmDelete} />
   ) : (
-    <IconAction
+    <Button
       label={`Download ${MODEL_LABEL[model]}`}
+      variant="secondary"
+      iconOnly
       Icon={Download}
       disabled={!!downloading}
       onPress={() => {

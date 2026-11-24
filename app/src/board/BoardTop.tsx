@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { View } from "react-native";
 
 import { colors, denseScale, space } from "@/theme/tokens";
@@ -6,7 +7,7 @@ import { Text } from "@/ui/Text";
 import type { HomeTop } from "./boardPrefs";
 import type { BoardItem } from "./buckets";
 import { BUCKET_META } from "./bucketMeta";
-import { AllAgentsBar, SpotlightCarousel } from "./Dashboard";
+import { SpotlightCarousel } from "./Dashboard";
 import type { Spotlight } from "./spotlight";
 import type { BoardSummary } from "./summary";
 
@@ -25,7 +26,7 @@ export function Summary({ summary }: { summary: BoardSummary }) {
       accessible
       accessibilityRole="summary"
       accessibilityLabel={summary.spoken}
-      style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.md, gap: 2 }}
+      style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.md, gap: space.xxs }}
     >
       <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", columnGap: space.sm }}>
         <Text variant="display">{summary.value}</Text>
@@ -62,10 +63,11 @@ export function SummaryLine({ summary }: { summary: BoardSummary }) {
 }
 
 /**
- * The part of the Board above the filter chips, for the top the user picked in Settings.
- * - `summary`: the large number (the native header shows "Overview").
- * - `dashboard`: the carousel (when there are agents), the summary line, and the "All agents" bar
- *   with the group and sort menus. The brand header is outside the list, so it stays in place.
+ * The part of the Board above the agent list, for the top the user picked in More, Appearance.
+ * - `summary`: the large number (the native header shows "Agents").
+ * - `dashboard`: the carousel (when there are agents) and the summary line. The brand header is
+ *   outside the list, so it stays in place.
+ * Both forms end with `bar`: the list bar (`ListBar`) with the list options.
  */
 export function BoardTop({
   mode,
@@ -75,10 +77,7 @@ export function BoardTop({
   room,
   focused,
   multiHost = false,
-  group,
-  sort,
-  onGroup,
-  onSort,
+  bar,
   onOpen,
   onPeek,
   onNew,
@@ -91,23 +90,28 @@ export function BoardTop({
   focused: boolean;
   /** True when more than one computer is connected: the tiles also name the computer. */
   multiHost?: boolean;
-  group: string;
-  sort: string;
-  onGroup: () => void;
-  onSort: () => void;
+  /** The bar above the agent list. */
+  bar?: ReactNode;
   onOpen: (i: BoardItem) => void;
   onPeek: (i: BoardItem) => void;
   onNew: () => void;
 }) {
   if (items.length === 0) return null;
-  if (mode === "summary") return <Summary summary={summary} />;
+  if (mode === "summary") {
+    return (
+      <View>
+        <Summary summary={summary} />
+        {bar}
+      </View>
+    );
+  }
   return (
     <View>
       {spot.items.length > 0 ? (
         <SpotlightCarousel spot={spot} room={room} focused={focused} multiHost={multiHost} onOpen={onOpen} onPeek={onPeek} onNew={onNew} />
       ) : null}
       <SummaryLine summary={summary} />
-      <AllAgentsBar count={items.length} group={group} sort={sort} onGroup={onGroup} onSort={onSort} />
+      {bar}
     </View>
   );
 }

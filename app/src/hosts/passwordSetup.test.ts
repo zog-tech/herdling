@@ -89,7 +89,7 @@ describe("setUpWithPassword", () => {
     const d = deps({ stdout: '{"ok":false,"code":"not_installed"}\n', exitCode: 3 });
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, d));
     expect(e.code).toBe("not_installed");
-    expect(e.message).toMatch(/^herdlingd is not installed on this host\. Install it from Herdling/);
+    expect(e.message).toMatch(/^herdlingd is not installed on this computer\. Install it from Herdling/);
     expect(useHosts.getState().hosts).toEqual([]);
   });
 
@@ -268,7 +268,7 @@ describe("setUpWithPassword", () => {
     });
     const e = await failure(setUpWithPassword({ ...base, confirm: yes }, refused));
     expect(e.code).toBe("unreachable");
-    expect(e.message).toBe("Can't reach 10.0.0.5:22. Check the host and port.");
+    expect(e.message).toBe("Can't reach 10.0.0.5:22. Check the address and port.");
     expect(e.reach).toBe("refused");
 
     const slow = deps();

@@ -3,11 +3,13 @@ import { useRouter } from "expo-router";
 import { Camera, Settings } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { Linking, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { parsePairUrl } from "@/pairing/pairUrl";
+import { Lead } from "@/hosts/flowParts";
 import { colors, radius, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { ActionBar } from "@/ui/ActionBar";
+import { Section } from "@/ui/Group";
 import { Screen } from "@/ui/Screen";
 import { Text } from "@/ui/Text";
 
@@ -15,6 +17,7 @@ import { Text } from "@/ui/Text";
 export default function ScanScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
+  const insets = useSafeAreaInsets();
   const [wrong, setWrong] = useState(false);
   const done = useRef(false);
 
@@ -41,24 +44,23 @@ export default function ScanScreen() {
   if (!permission) return <Screen>{null}</Screen>;
 
   if (!permission.granted) {
+    const footer = permission.canAskAgain ? (
+      <ActionBar primary={{ label: "Allow camera", Icon: Camera, onPress: () => void requestPermission() }} />
+    ) : (
+      <ActionBar primary={{ label: "Open Settings", Icon: Settings, onPress: () => Linking.openSettings() }} />
+    );
     return (
-      <Screen>
-        <Card>
-          <Text variant="title">Camera access</Text>
-          <Text muted>Herdling uses the camera only to scan the pairing QR code that herdlingd pair shows.</Text>
-          {permission.canAskAgain ? (
-            <Button label="Allow camera" Icon={Camera} onPress={() => void requestPermission()} />
-          ) : (
-            <Button label="Open Settings" variant="secondary" Icon={Settings} onPress={() => Linking.openSettings()} />
-          )}
-        </Card>
+      <Screen flush footer={footer}>
+        <Section title="Camera access">
+          <Lead>Herdling uses the camera only to scan the pairing QR code that herdlingd pair shows.</Lead>
+        </Section>
       </Screen>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, padding: space.lg, gap: space.lg }}>
-      <View style={{ flex: 1, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, padding: space.lg, paddingBottom: space.lg + insets.bottom, gap: space.lg }}>
+      <View style={{ flex: 1, borderRadius: radius.lg, overflow: "hidden", backgroundColor: colors.sunken }}>
         <CameraView
           style={{ flex: 1 }}
           facing="back"

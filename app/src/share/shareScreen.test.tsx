@@ -5,6 +5,7 @@ import ShareScreen from "@/app/share";
 import type { Snapshot } from "@/herdr/snapshot";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { usePending } from "@/thread/pending";
+import { useMenuSheet } from "@/ui/MenuSheet";
 
 import { clearShareContent, receiveShare, useShareStore } from "./shareStore";
 
@@ -66,6 +67,14 @@ const press = async (t: ReactTestRenderer, label: string) => {
     n.props.onPress();
   });
 };
+/** Picks the row with `label` in the open picker sheet. The pick runs as the sheet would run it. */
+const pickInSheet = async (label: string) => {
+  const st = useMenuSheet.getState().state;
+  if (st.kind !== "open") throw new Error("no open sheet");
+  const item = st.menu.sections.flatMap((s) => s.items).find((i) => i.label === label);
+  if (!item) throw new Error(`no row ${label}`);
+  await act(async () => item.onPick());
+};
 const texts = (t: ReactTestRenderer) =>
   t.root
     .findAll((n) => typeof n.props.children === "string")
@@ -78,7 +87,11 @@ test("sends a shared link with the note to the picked agent and opens its thread
   expect(texts(t)).toContain("Select an agent");
   const note = t.root.findAllByType(TextInput).find((n) => n.props.accessibilityLabel === "Note for the agent (optional)")!;
   await act(async () => note.props.onChangeText("Read this"));
-  await press(t, "api, Login form, Claude Code, Idle");
+  // The agent is a picker row: it opens the sheet, and a pick selects the agent.
+  await press(t, "Agent");
+  const st = useMenuSheet.getState().state;
+  expect(st.kind === "open" && st.menu.sections[0].items.map((i) => i.detail)).toEqual(["api · Codex · Working", "api · Claude Code · Idle"]);
+  await pickInSheet("Login form");
   await press(t, "Send to Login form");
   expect(mockCall).toHaveBeenCalledWith("herdr.call", {
     method: "agent.prompt",
@@ -126,4 +139,14 @@ test("says so when the share is gone", async () => {
   act(() => clearShareContent());
   const t = await render();
   expect(texts(t)).toContain("Opening the share…");
+});
+
+test("with no agent picked, the main button opens the agent picker", async () => {
+  act(() => receiveShare({ url: "https://example.com/post", files: [] }));
+  const t = await render();
+  await press(t, "Select an agent");
+  const st = useMenuSheet.getState().state;
+  expect(st.kind).toBe("open");
+  expect(st.kind === "open" && st.menu.title).toBe("Send to");
+  expect(mockCall).not.toHaveBeenCalled();
 });

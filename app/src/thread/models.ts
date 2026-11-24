@@ -29,3 +29,14 @@ export const canSwitchModel = (status: AgentStatus | undefined) => status === "i
 
 /** Why a pick cannot go now. */
 export const MODEL_BUSY_MESSAGE = "Wait until the agent is idle. Claude Code changes the model only between turns.";
+
+/**
+ * The family pick that matches the model of the agent now (a raw id or a label: "claude-opus-5-5",
+ * "Opus 5.5"), for the check in the model menu. Undefined when the model is unknown or of another
+ * family. "Default" never gets the check: the app cannot see which model it is.
+ */
+export function currentModelChoice(model: string | undefined): ModelChoice["id"] | undefined {
+  if (!model) return undefined;
+  const words = model.toLowerCase().split(/[^a-z]+/);
+  return MODELS.find((m) => m.id !== "default" && words.includes(m.id))?.id;
+}

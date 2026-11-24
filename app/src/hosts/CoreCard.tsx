@@ -1,15 +1,14 @@
 import type { CoreInstall, CoreStatus } from "@herdling/protocol";
 import { ArrowUpCircle, Download } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
 
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
-import { DelayedSpinner } from "@/ui/Delayed";
+import { colors, icon } from "@/theme/tokens";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Text } from "@/ui/Text";
 
 import { getHostConn, useHostConn } from "./connection";
+import { Outcome, Working } from "./flowParts";
 import {
   CORE_INSTALL_TIMEOUT_MS,
   coreActionLabel,
@@ -26,7 +25,7 @@ import {
 } from "./coreInstall";
 
 /**
- * Herdr 2 (herdr-core) on the host screen: `core.status` (installed, running and pinned versions,
+ * The "Herdr 2" (herdr-core) band of the host screen: `core.status` (installed, running and pinned versions,
  * herdr 1), and "Install Herdr 2" or "Update Herdr 2" (`core.install`). Shows only when the host
  * lists `core.status`. The install state machine is in `coreInstall.ts`.
  */
@@ -69,7 +68,7 @@ export function CoreCard({ hostId }: { hostId: string }) {
   const run = (effect: CoreInstallEffect) => {
     const rpc = getHostConn(hostId).rpc;
     if (!rpc) {
-      send({ type: "failed", gen: effect.gen, text: "The host is offline. Connect it first." });
+      send({ type: "failed", gen: effect.gen, text: "The computer is offline. Connect it first." });
       return;
     }
     rpc.call<CoreInstall>("core.install", {}, CORE_INSTALL_TIMEOUT_MS).then(
@@ -89,52 +88,45 @@ export function CoreCard({ hostId }: { hostId: string }) {
   const action = status && hasCoreInstall(hello) ? coreActionLabel(status) : null;
 
   return (
-    <Card>
-      <Text variant="title">Herdr 2</Text>
-      {status ? (
-        <View style={{ gap: space.xs }}>
-          {coreStatusLines(status).map((l) => (
-            <Text key={l} variant="small" muted>
-              {l}
-            </Text>
-          ))}
-        </View>
-      ) : statusError ? (
-        <Text variant="small" muted>{`Can't read the Herdr 2 status: ${statusError}`}</Text>
-      ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text variant="small" muted>
-            Checking Herdr 2…
-          </Text>
-        </View>
-      )}
-      {action && !running ? (
-        <Button
-          label={action}
-          variant="secondary"
-          Icon={status?.found ? ArrowUpCircle : Download}
-          onPress={() => send({ type: "press" })}
-        />
-      ) : null}
-      {running ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text muted style={{ flex: 1 }}>
-            Installing Herdr 2. This can take a few minutes…
-          </Text>
-        </View>
-      ) : null}
-      {state.phase === "done" ? (
-        <Text color={colors.status.done} accessibilityLiveRegion="polite">
-          {state.text}
-        </Text>
-      ) : null}
-      {state.phase === "failed" ? (
-        <Text color={colors.danger} accessibilityLiveRegion="polite" selectable>
-          {state.text}
-        </Text>
-      ) : null}
-    </Card>
+    <Section title="Herdr 2">
+      <Group>
+        <Pad>
+          {status ? (
+            coreStatusLines(status).map((l) => (
+              <Text key={l} variant="small" muted>
+                {l}
+              </Text>
+            ))
+          ) : statusError ? (
+            <Text variant="small" muted>{`Can't read the Herdr 2 status: ${statusError}`}</Text>
+          ) : (
+            <Working bare text="Checking Herdr 2…" />
+          )}
+        </Pad>
+        {action && !running ? (
+          <Row
+            title={action}
+            leading={
+              status?.found ? (
+                <ArrowUpCircle size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+              ) : (
+                <Download size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+              )
+            }
+            onPress={() => send({ type: "press" })}
+          />
+        ) : null}
+        {running ? (
+          <Pad>
+            <Working bare text="Installing Herdr 2. This can take a few minutes…" />
+          </Pad>
+        ) : null}
+        {state.phase === "done" || state.phase === "failed" ? (
+          <Pad>
+            <Outcome bare ok={state.phase === "done"} text={state.text} />
+          </Pad>
+        ) : null}
+      </Group>
+    </Section>
   );
 }

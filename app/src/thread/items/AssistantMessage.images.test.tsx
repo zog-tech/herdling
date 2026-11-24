@@ -6,7 +6,7 @@ import { AssistantMessage } from "./AssistantMessage";
 // This file uses the real markdown package, so the image rule runs as it does in the app.
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("@/hosts/connection", () => ({ useHostConn: () => ({ status: "online", rpc: null }) }));
 jest.mock("@/preview/webview", () => ({ hasWebView: () => true }));
 

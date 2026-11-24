@@ -74,6 +74,7 @@ const mockRpc = {
   },
 };
 let mockHello: any;
+import { menuCalls } from "./__fixtures__/menuCalls";
 jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", attempt: 1, rpc: mockRpc, hello: mockHello }),
 }));
@@ -149,6 +150,7 @@ jest.mock("../../modules/paste", () => ({
 }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn(), commit: jest.fn(), warn: jest.fn(), fail: jest.fn() }));
 jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -267,10 +269,14 @@ const idle = (agent = "claude") =>
     errors: {},
   });
 const prompt = (t: ReactTestRenderer) => t.root.find((n) => n.props.accessibilityLabel === "Prompt" && !!n.props.onChangeText);
+/** The command rows of the menu: the command of each (a menu row reads "command, description"). */
 const menuRows = (t: ReactTestRenderer) =>
   t.root
     .findAll((n) => typeof n.props.accessibilityLabel === "string" && /^[/$@]/.test(n.props.accessibilityLabel) && !!n.props.onPress)
-    .map((n) => n.props.accessibilityLabel);
+    .map((n) => (n.props.accessibilityLabel as string).split(", ")[0]);
+/** The menu row of one command (its label can go on with ", description"). */
+const commandRow = (t: ReactTestRenderer, cmd: string) =>
+  t.root.find((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.split(", ")[0] === cmd && !!n.props.onPress);
 
 test("typing_slash_shows_the_filtered_menu_and_a_tap_fills_the_name", async () => {
   idle();
@@ -285,7 +291,7 @@ test("typing_slash_shows_the_filtered_menu_and_a_tap_fills_the_name", async () =
     { method: "commands.list", params: { pane_id: "w1:p1", cwd: "/work/proj" } },
   ]);
 
-  const row = tree!.root.find((n) => n.props.accessibilityLabel === "/tools:compact-all" && !!n.props.onPress);
+  const row = commandRow(tree!, "/tools:compact-all");
   await act(async () => row.props.onPress());
   expect(prompt(tree!).props.value).toBe("/tools:compact-all ");
   expect(menuRows(tree!)).toEqual([]);
@@ -316,7 +322,7 @@ test("codex_dollar_opens_skills_and_slash_opens_commands", async () => {
 
   await act(async () => prompt(tree!).props.onChangeText("$dep"));
   expect(menuRows(tree!)).toEqual(["$deploy"]);
-  await act(async () => byLabel(tree!, "$deploy")[0].props.onPress());
+  await act(async () => commandRow(tree!, "$deploy").props.onPress());
   expect(prompt(tree!).props.value).toBe("$deploy ");
   expect(menuRows(tree!)).toEqual([]);
 
@@ -396,7 +402,7 @@ test("pi_opens_on_slash_only_and_sends_its_kind", async () => {
   expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toEqual([
     { method: "commands.list", params: { pane_id: "w1:p1", cwd: "/work/proj", kind: "pi" } },
   ]);
-  await act(async () => byLabel(tree!, "/skill:deploy")[0].props.onPress());
+  await act(async () => commandRow(tree!, "/skill:deploy").props.onPress());
   expect(prompt(tree!).props.value).toBe("/skill:deploy ");
 });
 
@@ -440,8 +446,9 @@ test("no_menu_for_other_agents", async () => {
   expect(mockRpcCalls.filter((c) => c.method === "commands.list")).toHaveLength(0);
 });
 
+/** The pressable with this label (the host part: a kit part such as `Shortcut` passes its label down). */
 const byLabel = (t: ReactTestRenderer, label: string) =>
-  t.root.findAll((n) => n.props.accessibilityLabel === label && !!n.props.onPress);
+  t.root.findAll((n) => n.props.accessibilityLabel === label && !!n.props.onPress && n.props.accessibilityRole !== undefined);
 const press = async (t: ReactTestRenderer, label: string) => {
   await act(async () => byLabel(t, label)[0].props.onPress());
   await flush();
@@ -829,7 +836,7 @@ test("edit_menu_paste_without_files_put_shows_an_error", async () => {
   await focusPrompt(tree!);
   await pasteFromMenu();
   expect(byLabel(tree!, "Remove photo 1")).toHaveLength(0);
-  expect(textOf(tree!)).toContain("This host cannot receive photos.");
+  expect(textOf(tree!)).toContain("This computer cannot receive photos.");
 });
 
 describe("a build without the native paste hook", () => {
@@ -1025,7 +1032,7 @@ describe("free-text mode after Type something", () => {
 
 describe("long pastes", () => {
   const block = Array.from({ length: 30 }, (_, i) => `log line ${i + 1}`).join("\n");
-  const sheet = () => jest.requireMock("@/ui/nativeSheet").showActionSheet as jest.Mock;
+  const sheet = () => menuCalls(jest.requireMock("@/ui/MenuSheet").showMenu as jest.Mock);
 
   test("a long paste becomes a chip and goes as a txt file", async () => {
     idle();
@@ -1103,7 +1110,7 @@ describe("long pastes", () => {
 
 describe("saved prompts", () => {
   const chip = (t: ReactTestRenderer, text: string) => byLabel(t, `Saved prompt: ${text}`);
-  const showSheet = () => jest.requireMock("@/ui/nativeSheet").showActionSheet as jest.Mock;
+  const showSheet = () => menuCalls(jest.requireMock("@/ui/MenuSheet").showMenu as jest.Mock);
   const mount = async () => {
     idle();
     await act(async () => {

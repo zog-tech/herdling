@@ -19,7 +19,7 @@ import { useKeyboardHeight } from "@/ui/KeyboardAvoider";
 import { Text } from "@/ui/Text";
 
 import { HScrollView } from "./HScrollView";
-import { choiceView, destructiveKey, isFreeform, type Choice } from "./parseChoices";
+import { approveKey, choiceView, destructiveKey, isFreeform, type Choice } from "./parseChoices";
 import type { QuestionTabs, TabMove } from "./questionTabs";
 import { openSelectText } from "./selectText";
 
@@ -69,9 +69,12 @@ const AGENT_NAMES: Record<string, string> = {
  * The numbered menu of an agent (a permission prompt or a question), above the composer.
  * The header shows the question from the screen and, for a permission prompt, its context (the
  * command and the warning) in a small box that scrolls inside. The box hides while the keyboard is
- * up, because the prompt box needs the space. Each option is a row: the digit in a keycap, the
- * title, a "Recommended" chip and the detail (2 lines, the chevron shows all). The built-in
- * free-text options ("Type something.", "Chat about this") are small pills under the rows.
+ * up, because the prompt box needs the space. Each option is a row in the button look of the kit
+ * (no border): the digit in a keycap, the title, a "Recommended" tag and the detail (2 lines, the
+ * chevron shows all). The approve option of a permission prompt (`approveKey`) is the primary
+ * button (accent fill); the "No" option is the danger button; the others are secondary buttons.
+ * The built-in free-text options ("Type something.", "Chat about this") are secondary buttons under
+ * the rows.
  * A tap answers through `onPick` (the digit, or the arrow keys and Enter for a menu with no numbers).
  * A menu with no numbers also shows a keycap: the number is the place of the option. The terminal cursor (`selected`) has no style: it means nothing on the phone.
  * An AskUserQuestion with more than one question shows its tabs above the header (`TabStrip`): a
@@ -111,6 +114,7 @@ export function ChoiceMenu({
   const keyboard = useKeyboardHeight();
   const [overflow, setOverflow] = useState({ box: 0, content: 0 });
   const danger = destructiveKey(choices);
+  const approve = approveKey(choices);
   const rows = choices.filter((c) => !isFreeform(c));
   const freeform = choices.filter(isFreeform);
   const who = (agent && AGENT_NAMES[agent]) || "The agent";
@@ -122,7 +126,7 @@ export function ChoiceMenu({
       {tabs && onTab ? <TabStrip tabs={tabs} disabled={disabled} onTab={onTab} /> : null}
       <View
         style={{
-          gap: space.xs / 2,
+          gap: space.xxs,
           // A rule under the header only when the options scroll under it.
           paddingBottom: scrolls ? space.sm : 0,
           borderBottomWidth: scrolls ? 1 : 0,
@@ -156,7 +160,7 @@ export function ChoiceMenu({
         onContentSizeChange={(_w, content) => setOverflow((o) => (o.content === content ? o : { ...o, content }))}
       >
         {rows.map((c) => (
-          <OptionRow key={c.key} choice={c} destructive={c.key === danger} disabled={disabled} onPick={onPick} />
+          <OptionRow key={c.key} choice={c} role={c.key === approve ? "approve" : c.key === danger ? "destructive" : "plain"} disabled={disabled} onPick={onPick} />
         ))}
         {next && onTab ? <NextButton disabled={disabled} onPress={() => onTab({ by: 1 })} /> : null}
         {freeform.length > 0 ? (
@@ -187,7 +191,7 @@ function PromptContext({ text, maxHeight }: { text: string; maxHeight: number })
   const [size, setSize] = useState({ box: 0, content: 0 });
   const cut = size.content > size.box + 1;
   return (
-    <View style={{ gap: space.xs / 2, marginTop: space.xs }}>
+    <View style={{ gap: space.xxs, marginTop: space.xs }}>
       <ScrollView
         nestedScrollEnabled
         style={{ flexGrow: 0, maxHeight, backgroundColor: colors.sunken, borderRadius: radius.sm }}
@@ -262,10 +266,9 @@ export function TabStrip({ tabs, disabled, onTab }: { tabs: QuestionTabs; disabl
                 alignItems: "center",
                 gap: space.xs,
                 paddingHorizontal: space.md,
-                borderRadius: radius.pill,
-                borderWidth: 1,
-                borderColor: current ? colors.accent : colors.divider,
-                backgroundColor: current ? colors.accentTint : pressed ? colors.raised : colors.card,
+                // A segment look, no border: the current tab steps up one fill and has the accent text.
+                borderRadius: radius.md,
+                backgroundColor: current || pressed ? colors.raisedHigh : colors.raised,
               })}
             >
               <Icon size={icon.sm} color={tint} strokeWidth={icon.strokeWidth} />
@@ -324,12 +327,12 @@ function NextButton({ disabled, onPress }: { disabled?: boolean; onPress: () => 
         flexDirection: "row",
         alignItems: "center",
         gap: space.xs,
-        paddingHorizontal: space.md,
-        borderRadius: radius.pill,
+        paddingHorizontal: space.lg,
+        borderRadius: radius.md,
         backgroundColor: pressed ? colors.accentPressed : colors.accent,
       })}
     >
-      <Text variant="small" bold color={colors.onAccent} maxFontSizeMultiplier={denseScale.row}>
+      <Text bold color={colors.onAccent} maxFontSizeMultiplier={denseScale.row}>
         Next
       </Text>
       <ChevronRight size={icon.sm} color={colors.onAccent} strokeWidth={icon.strokeWidth} />
@@ -346,18 +349,24 @@ export function optionLabel(choice: Choice): string {
     .join(". ");
 }
 
+/** The button look of an option: the approve option is primary, "No" is danger, the rest secondary. */
+type OptionRole = "approve" | "destructive" | "plain";
+
 function OptionRow({
   choice,
-  destructive,
+  role,
   disabled,
   onPick,
 }: {
   choice: Choice;
-  destructive: boolean;
+  role: OptionRole;
   disabled?: boolean;
   onPick: (c: Choice) => void;
 }) {
   const v = choiceView(choice);
+  const approve = role === "approve";
+  const fg = approve ? colors.onAccent : role === "destructive" ? colors.danger : colors.text;
+  const muted = approve ? colors.onAccent : colors.textMuted;
   const checkbox = choice.checked !== undefined;
   const Box = choice.checked ? SquareCheck : Square;
   const [pressed, setPressed] = useState(false);
@@ -370,10 +379,8 @@ function OptionRow({
       style={{
         flexDirection: "row",
         borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: v.recommended ? colors.accent : colors.divider,
-        // Press feedback: the row dims to the raised fill. No scale: the list must not move under the finger.
-        backgroundColor: pressed ? colors.raised : colors.card,
+        // Press feedback: the fill steps (accent to `accentPressed`, `raised` to `raisedHigh`). No scale: the list must not move under the finger.
+        backgroundColor: approve ? (pressed ? colors.accentPressed : colors.accent) : pressed ? colors.raisedHigh : colors.raised,
       }}
     >
       <Pressable
@@ -397,7 +404,7 @@ function OptionRow({
       >
         {checkbox ? (
           <View style={{ minWidth: KEYCAP, minHeight: KEYCAP, alignItems: "center", justifyContent: "center" }}>
-            <Box size={icon.md} color={choice.checked ? colors.accent : colors.textMuted} strokeWidth={icon.strokeWidth} />
+            <Box size={icon.md} color={choice.checked ? colors.accent : muted} strokeWidth={icon.strokeWidth} />
           </View>
         ) : (
           <View
@@ -405,26 +412,27 @@ function OptionRow({
               minWidth: KEYCAP,
               minHeight: KEYCAP,
               borderRadius: radius.sm,
-              backgroundColor: colors.raised,
+              // The keycap steps one fill up from the row, or sits on the accent as a darker tone.
+              backgroundColor: approve ? colors.accentPressed : colors.raisedHigh,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Text variant="caption" mono muted maxFontSizeMultiplier={denseScale.pill}>
+            <Text variant="caption" mono color={muted} maxFontSizeMultiplier={denseScale.pill}>
               {choice.key}
             </Text>
           </View>
         )}
-        <View style={{ flex: 1, gap: space.xs / 2 }}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.sm, rowGap: space.xs / 2 }}>
-            <Text bold color={destructive ? colors.danger : colors.text} numberOfLines={TITLE_LINES} style={{ flexShrink: 1 }}>
+        <View style={{ flex: 1, gap: space.xxs }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: space.sm, rowGap: space.xxs }}>
+            <Text bold color={fg} numberOfLines={TITLE_LINES} style={{ flexShrink: 1 }}>
               {v.title}
             </Text>
             {v.recommended ? <RecommendedChip /> : null}
           </View>
           {v.detail ? (
             <View>
-              <Text variant="small" muted numberOfLines={expanded ? undefined : DETAIL_LINES}>
+              <Text variant="small" color={muted} numberOfLines={expanded ? undefined : DETAIL_LINES}>
                 {v.detail}
               </Text>
               {/* Not visible: the full detail at the same width, to count its lines. */}
@@ -456,16 +464,17 @@ function OptionRow({
             opacity: p ? state.pressedOpacity : 1,
           })}
         >
-          {expanded ? <ChevronUp size={icon.sm} color={colors.textMuted} /> : <ChevronDown size={icon.sm} color={colors.textMuted} />}
+          {expanded ? <ChevronUp size={icon.sm} color={muted} /> : <ChevronDown size={icon.sm} color={muted} />}
         </Pressable>
       ) : null}
     </View>
   );
 }
 
+/** A quiet tag (the `ui/Tag` shape, radius `sm`) in the accent tint: the agent marks the option. */
 function RecommendedChip() {
   return (
-    <View style={{ borderRadius: radius.pill, backgroundColor: colors.accentTint, paddingHorizontal: space.sm }}>
+    <View style={{ borderRadius: radius.sm, backgroundColor: colors.accentTint, paddingHorizontal: space.sm }}>
       <Text variant="caption" bold color={colors.accent} maxFontSizeMultiplier={denseScale.pill}>
         Recommended
       </Text>
@@ -473,7 +482,7 @@ function RecommendedChip() {
   );
 }
 
-/** A built-in free-text option as a small secondary pill. */
+/** A built-in free-text option as a secondary button (`raised` fill, no border). */
 function FreeformPill({ choice, disabled, onPress }: { choice: Choice; disabled?: boolean; onPress: () => void }) {
   const typing = /^Type/i.test(choice.label);
   const label = typing ? "Type an answer" : "Chat about this";
@@ -491,10 +500,8 @@ function FreeformPill({ choice, disabled, onPress }: { choice: Choice; disabled?
         alignItems: "center",
         gap: space.xs,
         paddingHorizontal: space.md,
-        borderRadius: radius.pill,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: pressed ? colors.raised : colors.card,
+        borderRadius: radius.md,
+        backgroundColor: pressed ? colors.raisedHigh : colors.raised,
       })}
     >
       <Icon size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />

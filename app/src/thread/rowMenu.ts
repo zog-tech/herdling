@@ -1,8 +1,9 @@
 import * as Clipboard from "expo-clipboard";
-import { Share } from "react-native";
+import { Code, Copy, FileCode, Play, Quote, Share, Square, TextSelect, Volume2, type LucideIcon } from "lucide-react-native";
+import { Share as ShareSheet } from "react-native";
 
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
 import { showNotice } from "@/ui/notice";
 
 import type { RunHost, ThreadPane } from "./LiveToolContext";
@@ -15,7 +16,7 @@ import { fullInputText, type ToolResult } from "./toolView";
 /**
  * The long-press menu of a thread row, like the chat apps: Copy, Select text, Share and more.
  * `rowActions` is the pure rule (which items a row gets); `runRowAction` does the I/O.
- * iOS shows the system action sheet; Android shows the sheet of `NativeSheetHost`.
+ * The menu opens in the app's menu sheet (`ui/MenuSheet`), the same on iOS and Android.
  */
 
 /** Loaded on first use: the speech module loads the native voice module, which rows do not need. */
@@ -86,6 +87,28 @@ export function actionLabel(a: RowAction, t: MenuTarget): string {
   }
 }
 
+/** The icon of a menu item. "Read aloud" shows a stop square while that reply speaks. */
+export function actionIcon(a: RowAction, t: MenuTarget): LucideIcon {
+  switch (a) {
+    case "copyCode":
+      return Code;
+    case "run":
+      return Play;
+    case "copy":
+      return Copy;
+    case "copyMarkdown":
+      return FileCode;
+    case "select":
+      return TextSelect;
+    case "share":
+      return Share;
+    case "read":
+      return actionLabel(a, t) === "Stop reading" ? Square : Volume2;
+    case "quote":
+      return Quote;
+  }
+}
+
 const SELECT_TITLE: Record<RowKind, string> = {
   user: "Your message",
   assistant: "Reply",
@@ -148,7 +171,7 @@ export function runRowAction(a: RowAction, t: MenuTarget, pane: ThreadPane | nul
       openSelectText({ title: SELECT_TITLE[t.kind], text: readableText(t) });
       return;
     case "share":
-      Share.share({ message: readableText(t) }).catch(() => {});
+      ShareSheet.share({ message: readableText(t) }).catch(() => {});
       return;
     case "read":
       // A second call for the reply that speaks now stops it, the same as the play button.
@@ -160,12 +183,15 @@ export function runRowAction(a: RowAction, t: MenuTarget, pane: ThreadPane | nul
   }
 }
 
-/** Opens the menu of a row. A dismiss does nothing. */
+/**
+ * Opens the menu of a row. A dismiss does nothing. The caller gives the open haptic (the long
+ * press), so the sheet gives none.
+ */
 export function openRowMenu(t: MenuTarget, pane: ThreadPane | null): void {
   const actions = rowActions(t, pane);
-  const options = [...actions.map((a) => actionLabel(a, t)), "Cancel"];
-  showActionSheet({ options, cancelButtonIndex: actions.length }, (i) => {
-    const a = actions[i];
-    if (a) runRowAction(a, t, pane);
+  showMenu({
+    accessibilityLabel: "Message actions",
+    haptic: false,
+    sections: [{ items: actions.map((a) => ({ label: actionLabel(a, t), Icon: actionIcon(a, t), onPick: () => runRowAction(a, t, pane) })) }],
   });
 }

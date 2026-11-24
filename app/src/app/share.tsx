@@ -1,22 +1,21 @@
 /**
  * "Share to Herdling": what another app shared (a link with its preview, a text, photos, videos or
- * files), a note, and the agents on every online computer. Send uploads the files like the composer
+ * files), the agent to send it to (a picker row over the agents on every online computer), and a
+ * note in the action bar. Send uploads the files like the composer
  * does, sends the prompt to the selected agent (`sendWithPending`) and opens its thread, where the
  * prompt shows as a pending bubble. The send runs in the state machine of `share/shareMachine.ts`.
  */
 import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
-import { Link2, Search, Share2, TriangleAlert } from "lucide-react-native";
+import { Link2, Share2, SquareTerminal, TriangleAlert } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Image, Platform, Pressable, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Image, Pressable, TextInput, View } from "react-native";
 
-import type { JumpHost } from "@/board/jump";
+import { jumpDetail, type JumpHost, type JumpTask } from "@/board/jump";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { getHostConn, useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { hasMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
-import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
 import {
   droppedText,
   ownCopies,
@@ -27,7 +26,6 @@ import {
 } from "@/share/content";
 import { fetchLinkPreview, hostOf, type LinkPreview } from "@/share/openGraph";
 import { shareBody } from "@/share/prompt";
-import { ShareAgentRow } from "@/share/ShareAgentRow";
 import { initialShareState, shareReducer, type ShareEffect, type ShareEvent, type ShareState, type ShareTarget } from "@/share/shareMachine";
 import { clearShareContent, useShareStore } from "@/share/shareStore";
 import { initialTarget, shareTargets } from "@/share/targets";
@@ -45,33 +43,42 @@ import {
 import type { PastedText } from "@/thread/pastedText";
 import { sendWithPending } from "@/thread/pending";
 import { PhotoStrip } from "@/thread/PlusMenu";
-import { colors, denseScale, hitTarget, icon, radius, space, type } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
+import { colors, hitTarget, icon, radius, space, state as uiState, type } from "@/theme/tokens";
+import { ActionBar } from "@/ui/ActionBar";
 import { useDelayed } from "@/ui/Delayed";
-import { GlassSurface } from "@/ui/Glass";
-import { Divider } from "@/ui/Group";
+import { Group, Section } from "@/ui/Group";
+import { GroupTile } from "@/ui/GroupTile";
 import * as haptics from "@/ui/haptics";
-import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
+import { PickerRow } from "@/ui/PickerRow";
+import { showPicker, type PickerOption } from "@/ui/PickerSheet";
 import { Screen } from "@/ui/Screen";
 import { StateNotice } from "@/ui/StateNotice";
+import { statusMeta } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 
-/** More agents than this: the list gets a search field. */
+/** More agents than this: the picker gets a search field. */
 const SEARCH_FROM = 6;
 /** Width to height of a link image (the Open Graph size, 1200 x 630). */
 const LINK_IMAGE_RATIO = 1.91;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={{ gap: space.sm }}>
-      <Text variant="section" accessibilityRole="header" maxFontSizeMultiplier={denseScale.row}>
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
+/** The agent as a picker option: the task as the label; the group, branch, kind, place and status as the detail. */
+function targetOption(t: JumpTask, multiHost: boolean): PickerOption<string> {
+  const head = [t.group, t.branch].filter(Boolean).join(" · ");
+  const status = t.status === "terminal" ? undefined : statusMeta(t.status).label;
+  return {
+    value: t.key,
+    label: t.title,
+    detail: [head, jumpDetail(t, multiHost), status].filter(Boolean).join(" · "),
+    leading: t.group ? <GroupTile name={t.group} size={icon.lg} /> : <SquareTerminal size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />,
+    keywords: [t.hostName, t.repo, t.folder].filter(Boolean).join(" "),
+  };
+}
+
+/** The content side inset of a flush screen. */
+function Inset({ children }: { children: React.ReactNode }) {
+  return <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>{children}</View>;
 }
 
 /** The link card: the page image, the title and the site, or the plain link while there is no preview. */
@@ -79,7 +86,8 @@ function LinkCard({ url, preview }: { url: string; preview?: LinkPreview }) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = preview?.image && !imageFailed ? preview.image : undefined;
   return (
-    <View style={{ borderRadius: radius.md, overflow: "hidden", backgroundColor: colors.raised, borderWidth: 1, borderColor: colors.divider }}>
+    // A preview of live content: the tile surface (`card` and a `divider` edge).
+    <View style={{ borderRadius: radius.md, overflow: "hidden", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.divider }}>
       {image ? (
         <Image
           source={{ uri: image }}
@@ -133,8 +141,6 @@ type SendJob = { items: (Attachment | PastedText)[]; body: string };
 
 export default function ShareScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const keyboardShown = useKeyboardShown();
   const content = useShareStore((s) => s.content);
   const seq = useShareStore((s) => s.seq);
   const lastTarget = useShareStore((s) => s.lastTarget);
@@ -149,8 +155,6 @@ export default function ShareScreen() {
     return hosts.flatMap((h) => (online.has(h.id) && byHost[h.id] ? [{ hostId: h.id, hostName: h.name, snapshot: byHost[h.id] }] : []));
   }, [hosts, onlineKey, byHost]);
   const all = useMemo(() => shareTargets(list), [list]);
-  const [query, setQuery] = useState("");
-  const shown = useMemo(() => (query.trim() ? shareTargets(list, query) : all), [list, all, query]);
   const [picked, setPicked] = useState<ShareTarget>();
   const target = picked ? all.find((t) => t.hostId === picked.hostId && t.paneId === picked.paneId) : initialTarget(all, lastTarget);
   const multiHost = list.length > 1;
@@ -259,7 +263,7 @@ export default function ShareScreen() {
 
   if (!content) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, padding: space.lg }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StateNotice Icon={Share2} message={waited ? "Nothing to share. Share a link, a text or files to Herdling from another app." : "Opening the share…"} />
       </View>
     );
@@ -268,13 +272,90 @@ export default function ShareScreen() {
   const error = machine.phase === "editing" ? machine.error : undefined;
   const problem = filesBlocked ? "This computer cannot receive files. Update herdlingd on it." : undefined;
 
+  const options = all.map((t) => targetOption(t, multiHost));
+  const choose = () =>
+    showPicker({
+      title: "Send to",
+      options,
+      value: target?.key,
+      search: all.length > SEARCH_FROM,
+      searchPlaceholder: "Task, group, branch or computer",
+      onPick: (key) => {
+        const t = all.find((x) => x.key === key);
+        if (!t) return;
+        haptics.tap();
+        setPicked({ hostId: t.hostId, paneId: t.paneId });
+      },
+    });
+
+  const footer = (
+    <ActionBar
+      keyboard
+      primary={
+        target
+          ? { label: `Send to ${target.title}`, loading: busy, disabled: !canSend, onPress: send }
+          : { label: "Select an agent", disabled: busy || all.length === 0, onPress: choose }
+      }
+    >
+      {error || problem ? (
+        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
+          <TriangleAlert size={icon.sm} color={colors.danger} />
+          <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
+            {error ?? problem}
+          </Text>
+        </View>
+      ) : null}
+      <TextInput
+        accessibilityLabel="Note for the agent (optional)"
+        value={note}
+        onChangeText={setNote}
+        editable={!busy}
+        multiline
+        placeholder="Note for the agent (optional)"
+        placeholderTextColor={colors.textMuted}
+        selectionColor={colors.accent}
+        style={{
+          minHeight: hitTarget,
+          maxHeight: hitTarget * 3,
+          paddingHorizontal: space.md,
+          paddingTop: space.md,
+          paddingBottom: space.md,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.raised,
+          color: colors.text,
+          fontSize: type.size.body,
+          textAlignVertical: "top",
+        }}
+      />
+      {progress ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text variant="small" muted style={{ flex: 1 }} accessibilityLiveRegion="polite">
+            {uploadLabel(progress)}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel the upload"
+            onPress={() => dispatch({ type: "cancel" })}
+            style={({ pressed }) => ({ minHeight: hitTarget, minWidth: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? uiState.pressedOpacity : 1 })}
+          >
+            <Text variant="small" bold>
+              Cancel
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </ActionBar>
+  );
+
   return (
-    <KeyboardAvoider atScreenBottom={startBarAtScreenBottom(Platform.OS, Platform.OS === "ios" && Platform.isPad)} style={{ backgroundColor: colors.bg }}>
-      <Screen>
-        <Section title={shareSummary({ ...content, files })}>
+    <Screen flush footer={footer}>
+      <Section title={shareSummary({ ...content, files })}>
+        <Inset>
           {content.url ? <LinkCard key={content.url} url={content.url} preview={preview} /> : null}
           {content.text && content.text !== content.url ? (
-            <View style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.raised, gap: space.xs }}>
+            <View style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.card, gap: space.xs }}>
               <Text variant="small" numberOfLines={8} selectable>
                 {content.text}
               </Text>
@@ -285,131 +366,32 @@ export default function ShareScreen() {
               ) : null}
             </View>
           ) : null}
-          {files.length > 0 ? (
-            <PhotoStrip photos={uploads} disabled={busy} onRemove={(a) => setRemoved((r) => [...r, a.uri])} />
-          ) : null}
+          {files.length > 0 ? <PhotoStrip photos={uploads} disabled={busy} onRemove={(a) => setRemoved((r) => [...r, a.uri])} /> : null}
           {dropped ? (
             <Text variant="small" color={colors.danger}>
               {dropped}
             </Text>
           ) : null}
-        </Section>
+        </Inset>
+      </Section>
 
-        <Section title="Send to">
-          {all.length > SEARCH_FROM ? (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: space.sm,
-                minHeight: hitTarget,
-                paddingHorizontal: space.md,
-                borderRadius: radius.md,
-                backgroundColor: colors.raised,
-              }}
-            >
-              <Search size={icon.sm} color={colors.textMuted} />
-              <TextInput
-                accessibilityLabel="Find an agent"
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Task, group, branch or computer"
-                placeholderTextColor={colors.textMuted}
-                selectionColor={colors.accent}
-                autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                clearButtonMode="while-editing"
-                style={{ flex: 1, color: colors.text, fontSize: type.size.body, paddingVertical: space.sm }}
-              />
-            </View>
-          ) : null}
-          <View accessibilityRole="radiogroup" style={{ marginHorizontal: -space.lg }}>
-            {shown.map((t, i) => (
-              <View key={t.key}>
-                {i > 0 ? <Divider /> : null}
-                <ShareAgentRow
-                  task={t}
-                  multiHost={multiHost}
-                  selected={t.key === target?.key}
-                  disabled={busy}
-                  onSelect={() => {
-                    haptics.tap();
-                    setPicked({ hostId: t.hostId, paneId: t.paneId });
-                  }}
-                />
-              </View>
-            ))}
-          </View>
-          {shown.length === 0 ? (
-            <StateNotice
-              Icon={Share2}
-              message={list.length === 0 ? "No computer is online." : query.trim() ? `Nothing matches “${query.trim()}”.` : "No agents are running. Start a session first."}
+      <Section title="Send to">
+        {all.length > 0 ? (
+          <Group>
+            <PickerRow
+              title="Agent"
+              placeholder="Choose"
+              disabled={busy}
+              value={target?.title}
+              valueLeading={target ? options.find((o) => o.value === target.key)?.leading : undefined}
+              onPress={choose}
+              accessibilityHint="Opens the list of agents to choose from."
             />
-          ) : null}
-        </Section>
-      </Screen>
-
-      <GlassSurface
-        style={{
-          marginHorizontal: space.sm,
-          marginBottom: startBarBottomMargin(insets.bottom, keyboardShown, space.sm),
-          padding: space.md,
-          gap: space.sm,
-          borderRadius: radius.lg,
-        }}
-      >
-        {error || problem ? (
-          <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
-            <TriangleAlert size={icon.sm} color={colors.danger} />
-            <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
-              {error ?? problem}
-            </Text>
-          </View>
-        ) : null}
-        <TextInput
-          accessibilityLabel="Note for the agent (optional)"
-          value={note}
-          onChangeText={setNote}
-          editable={!busy}
-          multiline
-          placeholder="Note for the agent (optional)"
-          placeholderTextColor={colors.textMuted}
-          selectionColor={colors.accent}
-          style={{
-            minHeight: hitTarget,
-            maxHeight: hitTarget * 3,
-            paddingHorizontal: space.md,
-            paddingTop: space.md,
-            paddingBottom: space.md,
-            borderRadius: radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.raised,
-            color: colors.text,
-            fontSize: type.size.body,
-            textAlignVertical: "top",
-          }}
-        />
-        {progress ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text variant="small" muted style={{ flex: 1 }} accessibilityLiveRegion="polite">
-              {uploadLabel(progress)}
-            </Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Cancel the upload" onPress={() => dispatch({ type: "cancel" })} hitSlop={12}>
-              <Text variant="small" bold>
-                Cancel
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-        <Button
-          label={target ? `Send to ${target.title}` : "Select an agent"}
-          loading={busy}
-          disabled={!canSend}
-          onPress={send}
-        />
-      </GlassSurface>
-    </KeyboardAvoider>
+          </Group>
+        ) : (
+          <StateNotice Icon={Share2} message={list.length === 0 ? "No computer is online." : "No agents are running. Start a session first."} />
+        )}
+      </Section>
+    </Screen>
   );
 }

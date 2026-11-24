@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react-native";
 import { Pressable, type StyleProp, type ViewStyle } from "react-native";
 
-import { colors, hitTarget, icon, radius, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 
 import { GlassSurface, glassAvailable } from "./Glass";
 import { Text } from "./Text";
@@ -56,7 +56,7 @@ export function GlassButton({ label, onPress, Icon, title, primary, size = hitTa
             paddingHorizontal: title ? d / 2.6 : 0,
             borderRadius: radius.pill,
             flexDirection: "row",
-            gap: 6,
+            gap: space.xs,
             alignItems: "center",
             justifyContent: "center",
             opacity: pressed && !glass && !primary ? state.pressedOpacity : 1,
@@ -64,7 +64,7 @@ export function GlassButton({ label, onPress, Icon, title, primary, size = hitTa
         >
           {Icon ? <Icon size={d >= 52 ? icon.lg + 2 : icon.md} color={fg} strokeWidth={icon.strokeWidth} /> : null}
           {title ? (
-            <Text variant="small" bold color={fg} maxFontSizeMultiplier={1.4}>
+            <Text variant="small" bold color={fg} maxFontSizeMultiplier={denseScale.pill}>
               {title}
             </Text>
           ) : null}

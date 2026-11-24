@@ -1,6 +1,8 @@
 import type { AgentStatus } from "@herdling/protocol";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { Text } from "@/ui/Text";
+
 import { useBoard } from "./boardStore";
 import { BoardTop } from "./BoardTop";
 import type { BoardItem, Bucket } from "./buckets";
@@ -79,10 +81,7 @@ const render = (mode: "dashboard" | "summary", onOpen = jest.fn(), multiHost = f
         room={390}
         focused
         multiHost={multiHost}
-        group="Status"
-        sort="Status"
-        onGroup={jest.fn()}
-        onSort={jest.fn()}
+        bar={<Text>List bar</Text>}
         onOpen={onOpen}
         onPeek={jest.fn()}
         onNew={jest.fn()}
@@ -99,7 +98,7 @@ const tileLabels = (t: ReactTestRenderer) =>
     .findAll((n) => n.props.accessibilityHint === "Opens the session. Long press to peek." && typeof n.props.accessibilityLabel === "string")
     .map((n) => n.props.accessibilityLabel as string);
 
-test("dashboard_shows_the_highlight_tiles_the_summary_line_and_the_menus", () => {
+test("dashboard_shows_the_highlight_tiles_the_summary_line_and_the_list_bar", () => {
   const t = render("dashboard");
   const all = texts(t);
   expect(all).toContain("Highlights");
@@ -109,9 +108,7 @@ test("dashboard_shows_the_highlight_tiles_the_summary_line_and_the_menus", () =>
   expect(all).not.toContain("docs");
   expect(all).toContain("New session");
   expect(all).toContain("1 needs you");
-  expect(all).toContain("All agents");
-  expect(t.root.findAll((n) => n.props.accessibilityLabel === "Group: Status" && !!n.props.onPress)).toHaveLength(1);
-  expect(t.root.findAll((n) => n.props.accessibilityLabel === "Sort: Status" && !!n.props.onPress)).toHaveLength(1);
+  expect(all).toContain("List bar");
 });
 
 test("a_tile_shows_the_status_time_and_the_main_text_by_priority", () => {
@@ -120,8 +117,10 @@ test("a_tile_shows_the_status_time_and_the_main_text_by_priority", () => {
   expect(all).toContain("Needs you");
   expect(all).toContain("Allow git push?");
   expect(all).not.toContain("Done with the tests.");
-  // Working: the activity and the time.
-  expect(all).toContain("Working · 4m");
+  // Working: the activity, the status word and the time in its own label at the top right.
+  expect(all).toContain("Working");
+  expect(all).toContain("4m");
+  expect(all).not.toContain("Working · 4m");
   expect(all).toContain("Running pnpm test");
 });
 
@@ -158,11 +157,21 @@ test("a_tap_on_a_tile_opens_the_session", () => {
   expect(onOpen).toHaveBeenCalledWith(items[0]);
 });
 
-test("summary_mode_shows_the_large_number_and_no_carousel", () => {
+test("summary_mode_shows_the_large_number_the_list_bar_and_no_carousel", () => {
   const t = render("summary");
   const all = texts(t);
   expect(all).toContain("needs you");
   expect(all).not.toContain("Highlights");
-  expect(all).not.toContain("All agents");
+  expect(all).not.toContain("New session");
+  expect(all).toContain("List bar");
   expect(t.root.findAll((n) => n.props.variant === "display")).not.toHaveLength(0);
+});
+
+test("the_new_session_tile_is_quiet_so_the_gold_plus_button_stays_the_one_primary", () => {
+  const t = render("dashboard");
+  const tile = t.root.find((n) => n.props.accessibilityLabel === "New session" && !!n.props.onPress);
+  const style = tile.props.style({ pressed: false });
+  expect(style.borderStyle).toBeUndefined();
+  const plus = tile.findAll((n) => typeof n.props.color === "string")[0];
+  expect(plus.props.color).not.toBe(require("@/theme/tokens").colors.accent);
 });

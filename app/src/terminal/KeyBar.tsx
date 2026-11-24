@@ -3,6 +3,10 @@
  * Enter, the arrows and the custom keys of Settings, in a row that pages sideways (with page dots
  * when it overflows). A drag pad at the right gives arrow keys. The rules are in `keyRules.ts`;
  * the owner encodes and sends each input. Taps keep the keyboard open.
+ *
+ * A key is a small secondary button (design rule 2): a `raised` fill, no edge, `raisedHigh` when
+ * pressed. ^C has the `danger` label. An armed Ctrl or Alt has the accent label (the selected
+ * state); a locked one also has the `accentTint` fill.
  */
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CornerDownLeft, Move, type LucideIcon } from "lucide-react-native";
 import { useCallback, useRef, useState } from "react";
@@ -12,7 +16,7 @@ import { useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { fontFamily } from "@/theme/fonts";
-import { colors, dot, hitTarget, radius, space, type } from "@/theme/tokens";
+import { colors, denseScale, dot, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
 import { Text } from "@/ui/Text";
 
@@ -44,7 +48,6 @@ function KeyButton({
   hint,
   Icon,
   tint,
-  edge,
   fill,
   selected,
   disabled,
@@ -56,7 +59,6 @@ function KeyButton({
   hint?: string;
   Icon?: LucideIcon;
   tint: string;
-  edge: string;
   fill: string;
   selected?: boolean;
   disabled?: boolean;
@@ -79,15 +81,13 @@ function KeyButton({
         alignItems: "center",
         justifyContent: "center",
         borderRadius: radius.sm,
-        borderWidth: 1,
-        borderColor: edge,
-        backgroundColor: pressed ? colors.raised : fill,
+        backgroundColor: pressed ? colors.raisedHigh : fill,
       })}
     >
       {Icon ? (
-        <Icon size={18} color={tint} />
+        <Icon size={icon.md} color={tint} strokeWidth={icon.strokeWidth} />
       ) : (
-        <Text maxFontSizeMultiplier={1.3} style={{ fontFamily: fontFamily.mono, fontSize: type.size.small, color: tint }}>
+        <Text maxFontSizeMultiplier={denseScale.pill} style={{ fontFamily: fontFamily.mono, fontSize: type.size.small, color: tint }}>
           {label}
         </Text>
       )}
@@ -136,15 +136,13 @@ function DragPad({ disabled, onKey }: { disabled?: boolean; onKey: (key: string)
           width: hitTarget + space.lg,
           height: hitTarget,
           borderRadius: radius.sm,
-          borderWidth: 1,
-          borderColor: colors.edge,
-          backgroundColor: colors.card,
+          backgroundColor: colors.raised,
           alignItems: "center",
           justifyContent: "center",
-          opacity: disabled ? 0.4 : 1,
+          opacity: disabled ? state.disabledOpacity : 1,
         }}
       >
-        <Move size={18} color={colors.textMuted} />
+        <Move size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
       </View>
     </GestureDetector>
   );
@@ -199,8 +197,7 @@ export function KeyBar({
                   a11y={k.a11y}
                   hint="The next key goes with this modifier. Long press to keep it on."
                   tint={disabled ? colors.textMuted : on ? colors.accent : colors.text}
-                  edge={on ? colors.accent : colors.edge}
-                  fill={locked ? colors.accentTint : colors.card}
+                  fill={locked ? colors.accentTint : colors.raised}
                   selected={on}
                   disabled={disabled}
                   onPress={() => {
@@ -221,8 +218,7 @@ export function KeyBar({
                 a11y={k.a11y}
                 Icon={k.Icon}
                 tint={disabled ? colors.textMuted : k.danger ? colors.danger : colors.text}
-                edge={k.danger && !disabled ? colors.danger : colors.edge}
-                fill={colors.card}
+                fill={colors.raised}
                 disabled={disabled}
                 onPress={() => tap({ kind: "key", key: k.key })}
               />
@@ -234,7 +230,6 @@ export function KeyBar({
               label={keyLabel(c)}
               a11y={keyA11y(c)}
               tint={muted}
-              edge={colors.edge}
               fill={colors.raised}
               disabled={disabled}
               onPress={() => tap(c.kind === "key" ? { kind: "key", key: c.key } : { kind: "text", text: c.text, enter: c.enter })}

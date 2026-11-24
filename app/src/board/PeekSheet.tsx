@@ -1,21 +1,22 @@
-import { CircleHelp, X } from "lucide-react-native";
+import { Ellipsis, SquareArrowOutUpRight } from "lucide-react-native";
 import { useEffect, useMemo, useRef } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { allows } from "@/herdr/backend";
-import { EXPLAIN_LABEL, EXPLAIN_METHOD } from "@/herdr/explain";
+import { EXPLAIN_METHOD } from "@/herdr/explain";
 import { markSeen, useSeen } from "@/herdr/seen";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHerdrSupports } from "@/herdr/support";
 import { useHosts } from "@/hosts/store";
-import { colors, hitTarget, icon, space, state } from "@/theme/tokens";
+import { colors, space } from "@/theme/tokens";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
 import { RunHostContext } from "@/thread/LiveToolContext";
 import type { RunRequest } from "@/thread/runCommand";
 import { useThread } from "@/thread/useThread";
-import { GlassButton } from "@/ui/GlassButton";
+import { Button } from "@/ui/Button";
+import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
@@ -25,15 +26,18 @@ import { DelayedSpinner } from "@/ui/Delayed";
 
 import { BucketStatus } from "./BucketStatus";
 import { useBoard } from "./boardStore";
-import { mergeBoard } from "./buckets";
+import { mergeBoard, type BoardItem } from "./buckets";
+import { IconButton } from "@/ui/IconButton";
 import { PEEK_DETENT_ANDROID } from "./peekDetent";
 
 /**
  * Peek at one agent without opening it: header, the last reply as markdown, permission buttons
  * when blocked, and the composer with hold-to-talk. Closing marks the pane seen.
+ * The header: the title, a "⋯" button (`onMenu`: the agent menu, `board/agentMenu`) and the close
+ * button; under the title the status and "Open session", the one primary button of the sheet.
  * A shell code block in the reply has a Run button; `onRun` opens the run sheet (the route closes
- * the sheet first). `onExplain` opens "Why this status?" (herdr `agent.explain`); the action hides
- * when the host's herdr does not know the method.
+ * the sheet first). `onMenu` gets `canExplain`: false when the host's herdr does not know
+ * `agent.explain`, so the menu hides "Why this status?".
  */
 export function PeekSheet({
   hostId,
@@ -43,7 +47,7 @@ export function PeekSheet({
   onClose,
   onDraftChange,
   onRun,
-  onExplain,
+  onMenu,
 }: {
   hostId: string;
   paneId: string;
@@ -54,8 +58,8 @@ export function PeekSheet({
   onDraftChange?: (hasDraft: boolean) => void;
   /** Opens the run sheet for a code block of the reply. Without it, the run sheet opens at once. */
   onRun?: (req: RunRequest) => void;
-  /** Opens "Why this status?" for this agent. */
-  onExplain?: () => void;
+  /** Opens the agent menu. `canExplain`: the host can answer "Why this status?". */
+  onMenu?: (item: BoardItem, opts: { canExplain: boolean }) => void;
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useSheetKeyboardPad(PEEK_DETENT_ANDROID);
@@ -67,7 +71,7 @@ export function PeekSheet({
   const seen = useSeen((s) => s.seen);
   const agent = snapshot?.agents.find((a) => a.pane_id === paneId);
   const thread = useThread(hostId, paneId, agent?.agent_status);
-  const canExplain = useHerdrSupports(hostId, EXPLAIN_METHOD) && !!agent && allows(agent, "explain", hostId) && !!onExplain;
+  const canExplain = useHerdrSupports(hostId, EXPLAIN_METHOD) && !!agent && allows(agent, "explain", hostId);
 
   const item = useMemo(() => {
     if (!agent || !snapshot) return undefined;
@@ -104,42 +108,39 @@ export function PeekSheet({
   // above the keyboard. `minHeight: 0` lets the reply shrink to fit the 0.6 detent.
   const body = (
     <>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: space.md,
-          paddingLeft: space.lg,
-          paddingRight: space.md,
-          paddingTop: space.xl,
-          paddingBottom: space.md,
-        }}
-      >
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text variant="title" numberOfLines={2} accessibilityRole="header">
-            {title}
-          </Text>
-          <Text variant="caption" muted numberOfLines={1}>
-            {item ? item.subtitle : hostName}
-          </Text>
-          {/* Own row: the status never squeezes "<host> · <kind>". */}
-          {item ? (
-            <View style={{ flexDirection: "row", alignItems: "center", marginTop: space.xs, gap: space.sm }}>
-              <BucketStatus bucket={item.bucket} />
-              {canExplain ? <ExplainLink onPress={() => onExplain?.()} /> : null}
-            </View>
+      <View style={{ paddingLeft: space.lg, paddingRight: space.md, paddingTop: space.xl, paddingBottom: space.md, gap: space.xs }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.xs }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="title" numberOfLines={2} accessibilityRole="header">
+              {title}
+            </Text>
+            <Text variant="caption" muted numberOfLines={1}>
+              {item ? item.subtitle : hostName}
+            </Text>
+          </View>
+          {item && onMenu ? (
+            <IconButton
+              label={`More actions for ${title}`}
+              hint="Opens the menu of this agent"
+              Icon={Ellipsis}
+              onPress={() => onMenu(item, { canExplain })}
+            />
           ) : null}
+          {onClose ? <CloseButton onPress={onClose} /> : null}
         </View>
-        <GlassButton
-          label="Open session"
-          onGlass={glassAvailable()}
-          title="Open"
-          onPress={() => {
-            haptics.press();
-            onOpenSession();
-          }}
-        />
-        {onClose ? <GlassButton label="Close" Icon={X} onGlass={glassAvailable()} onPress={onClose} /> : null}
+        {/* Own row: the status never squeezes "<host> · <kind>". It wraps at a large text size. */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.sm }}>
+          {item ? <BucketStatus bucket={item.bucket} /> : <View />}
+          <Button
+            label="Open session"
+            Icon={SquareArrowOutUpRight}
+            accessibilityHint="Opens the full session"
+            onPress={() => {
+              haptics.press();
+              onOpenSession();
+            }}
+          />
+        </View>
       </View>
 
       {!agent ? (
@@ -207,30 +208,5 @@ export function PeekSheet({
     <KeyboardAvoider atScreenBottom style={{ backgroundColor: glassAvailable() ? "transparent" : colors.bg }}>
       {body}
     </KeyboardAvoider>
-  );
-}
-
-/** The small secondary action next to the status: a muted icon and "Why this status?". */
-function ExplainLink({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={EXPLAIN_LABEL}
-      accessibilityHint="Shows how herdr found the status of this agent"
-      onPress={onPress}
-      hitSlop={4}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs,
-        opacity: pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <CircleHelp size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
-      <Text variant="caption" muted numberOfLines={1}>
-        {EXPLAIN_LABEL}
-      </Text>
-    </Pressable>
   );
 }

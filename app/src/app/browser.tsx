@@ -54,15 +54,11 @@ export default function BrowserScreen() {
   let body: ReactNode;
   if (!start) {
     body = (
-      <Centered>
-        <StateNotice Icon={TriangleAlert} message="This link cannot open here." />
-      </Centered>
+      <StateNotice Icon={TriangleAlert} message="This link cannot open here." />
     );
   } else if (!WebView) {
     body = (
-      <Centered>
-        <StateNotice Icon={TriangleAlert} message="This app build cannot show web pages." action={systemLabel} onAction={openSystem} />
-      </Centered>
+      <StateNotice Icon={TriangleAlert} message="This app build cannot show web pages." action={systemLabel} onAction={openSystem} />
     );
   } else {
     body = (
@@ -96,6 +92,7 @@ export default function BrowserScreen() {
         {loadError ? (
           <View style={{ position: "absolute", left: 0, right: 0, top: 0, padding: space.lg, backgroundColor: colors.card }}>
             <StateNotice
+              inline
               Icon={TriangleAlert}
               color={colors.status.blocked}
               message={`The page did not load: ${loadError}`}
@@ -161,8 +158,4 @@ export default function BrowserScreen() {
       </View>
     </View>
   );
-}
-
-function Centered({ children }: { children: ReactNode }) {
-  return <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: space.xl }}>{children}</View>;
 }

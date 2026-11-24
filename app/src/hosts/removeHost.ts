@@ -50,10 +50,10 @@ export function unpairCommand(deviceId: string): string {
  * key line and push token, so the text gives the command that removes them on the host.
  */
 export function removeMessage(online: boolean, deviceId: string | undefined): string {
-  const base = "The host and its pinned key are deleted from this phone.";
-  if (online) return `${base} The host also forgets this phone's key.`;
-  const kept = `${base} The host is offline, so it keeps this phone's key and push token.`;
-  return deviceId ? `${kept} To remove them, run this on the host:\n\n${unpairCommand(deviceId)}` : kept;
+  const base = "The computer and its pinned key are deleted from this phone.";
+  if (online) return `${base} The computer also forgets this phone's key.`;
+  const kept = `${base} The computer is offline, so it keeps this phone's key and push token.`;
+  return deviceId ? `${kept} To remove them, run this on the computer:\n\n${unpairCommand(deviceId)}` : kept;
 }
 
 /** After a remove with no revoke: the command to run on the host, with a Copy button. */
@@ -61,7 +61,7 @@ function showUnpairCommand(deviceId: string): void {
   const command = unpairCommand(deviceId);
   const buttons: AlertButton[] = [{ text: "OK", style: "cancel" }];
   if (hasClipboard()) buttons.unshift({ text: "Copy command", onPress: () => void copyIfAvailable(command) });
-  Alert.alert("Run this on the host", `${command}\n\nThe host keeps this phone's key and push token until you run this command.`, buttons);
+  Alert.alert("Run this on the computer", `${command}\n\nThe computer keeps this phone's key and push token until you run this command.`, buttons);
 }
 
 /** Asks before removing; `onRemoved` runs after the host is gone. */
