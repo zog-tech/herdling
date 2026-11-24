@@ -3,7 +3,9 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { previewSupportedNow } from "@/preview/usePreview";
 import { hasWebView } from "@/preview/webview";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+
+import { menuCalls } from "./__fixtures__/menuCalls";
 import { useNotice } from "@/ui/notice";
 
 import { LinkedText } from "./LinkText";
@@ -11,13 +13,13 @@ import { ThreadPaneContext, type ThreadPane } from "./LiveToolContext";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("@/preview/webview", () => ({ hasWebView: jest.fn(() => true) }));
 jest.mock("@/preview/usePreview", () => ({ previewSupportedNow: jest.fn(() => true) }));
 
 const PANE: ThreadPane = { hostId: "studio", paneId: "w1:p1" };
 const TEXT = "Dev server: http://localhost:5173/app?x=1. Docs: https://example.com/docs, mail mailto:sam@example.com";
-const sheet = showActionSheet as jest.Mock;
+const sheet = menuCalls(showMenu as jest.Mock);
 
 let tree: ReactTestRenderer | undefined;
 let openURL: jest.SpyInstance;
@@ -91,7 +93,7 @@ test("tap_on_mailto_opens_the_mail_app", () => {
 test("long_press_opens_the_link_menu", () => {
   const [local, page] = render(TEXT);
   act(() => page.props.onLongPress());
-  expect(sheet).toHaveBeenCalledTimes(1);
+  expect(showMenu).toHaveBeenCalledTimes(1);
   const [o, pick] = sheet.mock.calls[0];
   expect(o.title).toBe("https://example.com/docs");
   expect(o.options[0]).toBe("Open in Herdling");

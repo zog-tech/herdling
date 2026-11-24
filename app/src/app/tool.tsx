@@ -1,15 +1,15 @@
 import * as Clipboard from "expo-clipboard";
 import { useIsFocused, useRouter } from "expo-router";
-import { Copy, RotateCcw, X } from "lucide-react-native";
+import { Check, Copy, RotateCcw } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { GestureDetector, usePinchGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { fontFamily } from "@/theme/fonts";
-import { colors, hitTarget, space, state } from "@/theme/tokens";
+import { colors, icon, space } from "@/theme/tokens";
 import { fullInputText, lastLines, toolTime, useToolView } from "@/thread/toolView";
 import { LinkedText } from "@/thread/LinkText";
 import { ThreadPaneContext } from "@/thread/LiveToolContext";
@@ -17,7 +17,9 @@ import { useTerminalText } from "@/thread/useTerminalText";
 import { ToolBody } from "@/thread/items/ToolBody";
 import { LIVE_REFRESH_MS } from "@/thread/items/ToolCard";
 import { classifyTool } from "@/thread/toolKinds";
+import { CloseButton } from "@/ui/CloseButton";
 import * as haptics from "@/ui/haptics";
+import { IconButton } from "@/ui/IconButton";
 import { StatusIcon } from "@/ui/StatusIcon";
 import { Text } from "@/ui/Text";
 import { TickingDuration } from "@/ui/TickingDuration";
@@ -30,19 +32,6 @@ const FONT_DEFAULT = 13;
 const LIVE_LINES = 200;
 
 export const clampFont = (n: number) => Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(n)));
-
-function IconButton({ label, onPress, children }: { label: string; onPress: () => void; children: React.ReactNode }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? state.pressedOpacity : 1 })}
-    >
-      {children}
-    </Pressable>
-  );
-}
 
 /**
  * Full tool view (a modal; swipe down or Close). Tool name, full input and output (or live output
@@ -82,9 +71,7 @@ export default function ToolScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center", gap: space.md }}>
         <Text muted>Nothing to show.</Text>
-        <IconButton label="Close" onPress={close}>
-          <X size={22} color={colors.text} />
-        </IconButton>
+        <CloseButton onPress={close} />
       </View>
     );
   }
@@ -127,7 +114,7 @@ export default function ToolScreen() {
           borderBottomColor: colors.divider,
         }}
       >
-        {running ? <StatusIcon status="working" size={18} /> : null}
+        {running ? <StatusIcon status="working" size={icon.sm} /> : null}
         <View style={{ flex: 1 }}>
           <Text bold numberOfLines={1} accessibilityRole="header" style={{ fontFamily: fontFamily.monoBold }}>
             {view.name}
@@ -148,15 +135,9 @@ export default function ToolScreen() {
             </Text>
           )}
         </View>
-        <IconButton label="Reset text size" onPress={() => setFont(FONT_DEFAULT)}>
-          <RotateCcw size={20} color={font === FONT_DEFAULT ? colors.textMuted : colors.text} />
-        </IconButton>
-        <IconButton label={copied ? "Copied" : "Copy"} onPress={() => void copy()}>
-          <Copy size={20} color={copied ? colors.status.done : colors.text} />
-        </IconButton>
-        <IconButton label="Close" onPress={close}>
-          <X size={22} color={colors.text} />
-        </IconButton>
+        <IconButton label="Reset text size" Icon={RotateCcw} color={font === FONT_DEFAULT ? colors.textMuted : colors.text} onPress={() => setFont(FONT_DEFAULT)} />
+        <IconButton label={copied ? "Copied" : "Copy"} Icon={copied ? Check : Copy} color={copied ? colors.status.done : colors.text} onPress={() => void copy()} />
+        <CloseButton onPress={close} />
       </View>
       <GestureDetector gesture={pinch}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg }} accessibilityHint="Pinch to change the text size">

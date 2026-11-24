@@ -14,13 +14,15 @@ import { startBarAtScreenBottom } from "@/newSession/startBar";
 import { rememberCommand } from "@/terminal/recentCommands";
 import { canWatchShell, NOTIFY_LABEL, watchShell } from "@/terminal/shellWatch";
 import { fontFamily } from "@/theme/fonts";
-import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, radius, sheet, space, state, type } from "@/theme/tokens";
 import { busyProcess, paneFolder, runCommand, useRunRequest, type ProcessInfo, type RunTarget } from "@/thread/runCommand";
 import { Button } from "@/ui/Button";
 import { useDraftGuard } from "@/ui/draftGuard";
 import { GoldSwitch } from "@/ui/GoldSwitch";
+import { Group, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
+import { Row } from "@/ui/Row";
 import { TerminalMark } from "@/ui/TerminalMark";
 import { Text } from "@/ui/Text";
 
@@ -32,7 +34,10 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** The folder as the board shows it: "~" for the home folder. */
 const shownFolder = (folder: string) => terminalDetail({ hostName: "", folder }, false) ?? folder;
 
-/** One target row: a radio choice with the terminal mark, a title, the folder and a warning line. */
+/**
+ * One target row in the grouped list: a radio choice with the terminal mark, a title, the folder
+ * and a warning line. The current choice has the accent check (the selected state), no box.
+ */
 function TargetRow({
   title,
   detail,
@@ -59,15 +64,13 @@ function TargetRow({
         onPress();
       }}
       style={({ pressed }) => ({
-        minHeight: hitTarget,
+        minHeight: sheet.rowHeight,
         flexDirection: "row",
         alignItems: "center",
         gap: space.md,
-        padding: space.md,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: selected ? colors.accent : colors.edge,
-        backgroundColor: selected ? state.selectedFill : pressed ? colors.raised : colors.card,
+        paddingHorizontal: space.lg,
+        paddingVertical: space.sm,
+        backgroundColor: pressed ? colors.raised : "transparent",
         opacity: disabled ? state.disabledOpacity : 1,
       })}
     >
@@ -182,8 +185,8 @@ export default function RunCommandScreen() {
 
   return (
     <KeyboardAvoider atScreenBottom={startBarAtScreenBottom(Platform.OS, Platform.OS === "ios" && Platform.isPad)} style={{ backgroundColor: colors.bg }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
-        <View style={{ gap: space.sm }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingVertical: space.lg, gap: space.xl }}>
+        <View style={{ gap: space.sm, paddingHorizontal: space.lg }}>
           <Text variant="section" accessibilityRole="header" maxFontSizeMultiplier={denseScale.row}>
             Command
           </Text>
@@ -213,43 +216,40 @@ export default function RunCommandScreen() {
           />
         </View>
 
-        <View style={{ gap: space.sm }}>
-          <Text variant="section" accessibilityRole="header" maxFontSizeMultiplier={denseScale.row}>
-            Run in
-          </Text>
-          <TargetRow
-            title={folder ? `New shell in ${basename(folder)}` : "New shell"}
-            detail={folder ? shownFolder(folder) : "The folder of the agent is not known."}
-            selected={chosen === NEW}
-            disabled={!folder || running}
-            onPress={() => setTarget(NEW)}
-          />
-          {terminals.map((p) => {
-            const f = terminalFolder(p);
-            return (
-              <TargetRow
-                key={p.pane_id}
-                title={terminalTitle(p)}
-                detail={f ? shownFolder(f) : undefined}
-                warning={busy[p.pane_id] ? `Busy: ${busy[p.pane_id]}` : undefined}
-                selected={chosen === p.pane_id}
-                disabled={running}
-                onPress={() => setTarget(p.pane_id)}
-              />
-            );
-          })}
-        </View>
+        <Section title="Run in">
+          <Group>
+            <TargetRow
+              title={folder ? `New shell in ${basename(folder)}` : "New shell"}
+              detail={folder ? shownFolder(folder) : "The folder of the agent is not known."}
+              selected={chosen === NEW}
+              disabled={!folder || running}
+              onPress={() => setTarget(NEW)}
+            />
+            {terminals.map((p) => {
+              const f = terminalFolder(p);
+              return (
+                <TargetRow
+                  key={p.pane_id}
+                  title={terminalTitle(p)}
+                  detail={f ? shownFolder(f) : undefined}
+                  warning={busy[p.pane_id] ? `Busy: ${busy[p.pane_id]}` : undefined}
+                  selected={chosen === p.pane_id}
+                  disabled={running}
+                  onPress={() => setTarget(p.pane_id)}
+                />
+              );
+            })}
+          </Group>
+        </Section>
 
         {canNotify ? (
-          <View style={{ minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.md }}>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text maxFontSizeMultiplier={denseScale.row}>{NOTIFY_LABEL}</Text>
-              <Text variant="caption" muted maxFontSizeMultiplier={denseScale.row}>
-                A push comes when the shell is free again.
-              </Text>
-            </View>
-            <GoldSwitch label={NOTIFY_LABEL} value={notify} onValueChange={setNotify} />
-          </View>
+          <Group>
+            <Row
+              title={NOTIFY_LABEL}
+              detail="A push comes when the shell is free again."
+              trailing={<GoldSwitch label={NOTIFY_LABEL} value={notify} onValueChange={setNotify} />}
+            />
+          </Group>
         ) : null}
       </ScrollView>
 
@@ -258,7 +258,7 @@ export default function RunCommandScreen() {
           <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
             <TriangleAlert size={icon.sm} color={error ? colors.danger : colors.textMuted} />
             <Text variant="small" color={error ? colors.danger : colors.textMuted} style={{ flex: 1 }}>
-              {error ?? "Host offline. You can run the command when it reconnects."}
+              {error ?? "Computer offline. You can run the command when it reconnects."}
             </Text>
           </View>
         ) : null}

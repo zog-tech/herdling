@@ -8,7 +8,7 @@ import { folderPath } from "@/board/buckets";
 import { coreActions } from "@/herdr/backend";
 import type { Snapshot } from "@/herdr/snapshot";
 
-/** One chip of the picker. `id` null is "New space". */
+/** One choice of the Space picker. `id` null is "New space". */
 export type SpaceChoice = { id: string | null; label: string };
 
 export const NEW_SPACE: SpaceChoice = { id: null, label: "New space" };
@@ -81,4 +81,11 @@ export function groupsReducer(state: GroupsLoad, event: GroupsEvent): { state: G
     case "reset":
       return { state: { kind: "idle", gen: state.gen + 1 }, effects: [] };
   }
+}
+
+/** The detail line of the Space row while the spaces load or after the load failed. */
+export function spaceDetail(load: GroupsLoad): string | undefined {
+  if (load.kind === "loading") return "Loading the spaces…";
+  if (load.kind === "failed") return "Can't list the spaces. The session starts in a new space.";
+  return undefined;
 }

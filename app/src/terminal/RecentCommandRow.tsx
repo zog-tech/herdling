@@ -1,30 +1,33 @@
 /**
- * One row of recent shell command chips above the key row. A tap puts the command in the box; a
+ * One row of recent shell command shortcuts (`ui/Shortcut`, mono) above the key row. A tap puts the command in the box; a
  * long press opens a menu with "Run now" and "Remove". Taps keep the keyboard open.
  */
-import { Pressable, ScrollView, View, type AccessibilityActionEvent } from "react-native";
+import { Play, Trash2 } from "lucide-react-native";
+import { ScrollView, View, type AccessibilityActionEvent } from "react-native";
 
-import { fontFamily } from "@/theme/fonts";
-import { colors, denseScale, hitTarget, motion, radius, space, type } from "@/theme/tokens";
+import { denseScale, space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+import { Shortcut } from "@/ui/Shortcut";
 import { Text } from "@/ui/Text";
 
 /** The command on one line, for a chip: the line ends show as a return mark. */
 export const chipLabel = (cmd: string) => cmd.replace(/\r?\n/g, " ↵ ");
 
-/** The long press menu of a chip. Run now is only there while the host is online. */
+/**
+ * The long press menu of a shortcut. Run now is only there while the host is online. Remove is
+ * destructive, in the last section. The caller gives the open haptic (the long press).
+ */
 export function openChipMenu(cmd: string, canRun: boolean, onRun: (cmd: string) => void, onRemove: (cmd: string) => void): void {
-  const options = [...(canRun ? ["Run now"] : []), "Remove", "Cancel"];
-  const remove = options.indexOf("Remove");
-  showActionSheet({ title: chipLabel(cmd), options, cancelButtonIndex: options.length - 1, destructiveButtonIndex: remove }, (i) => {
-    if (options[i] === "Run now") onRun(cmd);
-    else if (i === remove) onRemove(cmd);
+  showMenu({
+    title: chipLabel(cmd),
+    haptic: false,
+    sections: [
+      { items: canRun ? [{ label: "Run now", Icon: Play, onPick: () => onRun(cmd) }] : [] },
+      { items: [{ label: "Remove", Icon: Trash2, destructive: true, onPick: () => onRemove(cmd) }] },
+    ],
   });
 }
-
-/** The chip is short to keep the row compact; the slop makes the touch area about a full hit target. */
-const SLOP = space.sm;
 
 export function RecentCommandRow({
   commands,
@@ -55,7 +58,7 @@ export function RecentCommandRow({
       keyboardShouldPersistTaps="always"
       showsHorizontalScrollIndicator={false}
       accessibilityLabel="Recent commands"
-      contentContainerStyle={{ gap: space.xs, paddingHorizontal: space.md }}
+      contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.md }}
       style={{ flexGrow: 0 }}
     >
       {commands.map((cmd) => {
@@ -69,9 +72,10 @@ export function RecentCommandRow({
           else if (name === "remove") onRemove(cmd);
         };
         return (
-          <Pressable
+          <Shortcut
             key={cmd}
-            accessibilityRole="button"
+            label={chipLabel(cmd)}
+            mono
             accessibilityLabel={`Recent command: ${chipLabel(cmd)}`}
             accessibilityHint="Puts the command in the box. Long press for more options."
             accessibilityActions={[...(canRun ? [{ name: "run", label: "Run now" }] : []), { name: "remove", label: "Remove" }]}
@@ -81,26 +85,7 @@ export function RecentCommandRow({
               onPick(cmd);
             }}
             onLongPress={menu}
-            delayLongPress={motion.press.longPressMs}
-            hitSlop={{ top: SLOP, bottom: SLOP }}
-            style={({ pressed }) => ({
-              maxWidth: hitTarget * 6,
-              paddingHorizontal: space.sm,
-              paddingVertical: space.xs,
-              borderRadius: radius.sm,
-              borderWidth: 1,
-              borderColor: colors.edge,
-              backgroundColor: pressed ? colors.raised : colors.card,
-            })}
-          >
-            <Text
-              numberOfLines={1}
-              maxFontSizeMultiplier={denseScale.row}
-              style={{ fontFamily: fontFamily.mono, fontSize: type.size.small, color: colors.text }}
-            >
-              {chipLabel(cmd)}
-            </Text>
-          </Pressable>
+          />
         );
       })}
     </ScrollView>

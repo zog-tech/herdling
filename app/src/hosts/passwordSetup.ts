@@ -41,25 +41,25 @@ export class SetupFailed extends Error {
 export function setupMessage(code: SetupFailCode, target?: { address: string; port: number }): string {
   switch (code) {
     case "unreachable":
-      return target ? `Can't reach ${target.address}:${target.port}. Check the host and port.` : "Can't reach the host.";
+      return target ? `Can't reach ${target.address}:${target.port}. Check the address and port.` : "Can't reach the computer.";
     case "timeout":
-      return "The host did not answer in time. Nothing was saved.";
+      return "The computer did not answer in time. Nothing was saved.";
     case "host_key_changed":
-      return "The host key is different from the saved one. Nothing was sent. To trust the new key, remove the host and set it up again.";
+      return "The host key is different from the saved one. Nothing was sent. To trust the new key, remove the computer and set it up again.";
     case "not_confirmed":
       return "Setup stopped: the host key was not confirmed. The password was not sent.";
     case "host_key_mismatch":
       return "The host key changed during setup. Someone on the network may be intercepting the connection. Nothing was saved.";
     case "auth_failed":
-      return "The host did not accept the user name and password, or it does not allow password login.";
+      return "The computer did not accept the user name and password, or it does not allow password login.";
     case "not_installed":
-      return "herdlingd is not installed on this host. Install it from Herdling, or on the computer with the installer from herdling.zog-tech.com.";
+      return "herdlingd is not installed on this computer. Install it from Herdling, or on the computer with the installer from herdling.zog-tech.com.";
     case "install_failed":
       return "herdlingd could not be installed. Nothing was saved.";
     case "enroll_failed":
-      return "The host could not add this phone's key. Nothing was saved.";
+      return "The computer could not add this phone's key. Nothing was saved.";
     case "bad_answer":
-      return "The host gave an answer Herdling does not understand. Is herdlingd up to date? Nothing was saved.";
+      return "The computer gave an answer Herdling does not understand. Is herdlingd up to date? Nothing was saved.";
   }
 }
 
@@ -195,7 +195,7 @@ export async function setUpWithPassword(o: SetupOptions, deps: SetupDeps = defau
   if (!answer) throw new SetupFailed("bad_answer");
   if (!answer.ok) {
     const why = answer.message ? `: ${answer.message.slice(0, 200)}` : ".";
-    throw new SetupFailed("enroll_failed", `The host could not add this phone's key${why} Nothing was saved.`);
+    throw new SetupFailed("enroll_failed", `The computer could not add this phone's key${why} Nothing was saved.`);
   }
   // The companion reads the host key from disk: it must be the key the login was pinned to.
   if (answer.host_fingerprint !== fingerprint) throw new SetupFailed("host_key_mismatch");

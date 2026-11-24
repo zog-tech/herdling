@@ -1,9 +1,9 @@
 import type { AgentsInstalled, FsDirs, GitStatus, GitWorktree, GroupsList, RecentSession } from "@herdling/protocol";
 import { File } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Eye, EyeOff, TriangleAlert } from "lucide-react-native";
+import { Folder, FolderSearch, GitBranch, History, LayoutGrid, Monitor, Plus, TriangleAlert, WifiOff } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
-import { Alert, Platform, Pressable, RefreshControl, TextInput, View } from "react-native";
+import { Alert, Platform, RefreshControl, StyleSheet, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { branchError, defaultBranch, worktreePane, worktreeSlug } from "@/changes/worktree";
@@ -17,7 +17,6 @@ import { useHostConn, useOnlineHostKey } from "@/hosts/connection";
 import { hasMethod, listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
 import { AgentPicker } from "@/newSession/AgentPicker";
-import { Chip } from "@/newSession/Chip";
 import { agentFor, rememberAgent, useAgentMemory } from "@/newSession/agentMemory";
 import { Autocomplete, type Suggestion } from "@/newSession/autocomplete";
 import { DirCache } from "@/newSession/dirCache";
@@ -25,27 +24,30 @@ import { FolderBrowser } from "@/newSession/FolderBrowser";
 import { fetchInstalled, SHELL_CHOICE } from "@/newSession/installed";
 import { PathField } from "@/newSession/PathField";
 import { completeInput, displayPath, resolveInput } from "@/newSession/paths";
-import { RecentFolderChips, RecentSessionCards } from "@/newSession/RecentRows";
+import { RecentSessionRows } from "@/newSession/RecentRows";
 import { loadRecentSessions, recentFolders } from "@/newSession/recents";
 import { startBarAtScreenBottom, startBarBottomMargin } from "@/newSession/startBar";
-import { DangerWarning, StartOptionsBar } from "@/newSession/StartOptionsBar";
+import { OptionsRow, PermissionRow, startOptionRows, ThinkingRow } from "@/newSession/StartOptionsBar";
 import { buildArgs } from "@/newSession/startOptions";
-import { firstChoice, groupsReducer, initialGroups, spaceChoices, startsOnCore, type GroupsEvent, type GroupsLoad } from "@/newSession/spacePick";
+import { firstChoice, groupsReducer, initialGroups, spaceChoices, spaceDetail, startsOnCore, type GroupsEvent, type GroupsLoad } from "@/newSession/spacePick";
 import { choiceFor, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
 import { RpcError } from "@/rpc/RpcClient";
 import { rememberCommand } from "@/terminal/recentCommands";
 import { uploadErrorText, uploadPhotos, withPaths } from "@/thread/attachments";
 import { PhotoStrip } from "@/thread/PlusMenu";
 import { usePasteChips } from "@/thread/usePasteChips";
-import { colors, denseScale, hitTarget, icon, radius, space, state, type } from "@/theme/tokens";
+import { colors, hitTarget, icon, radius, space, type } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
 import { GlassSurface } from "@/ui/Glass";
 import { GoldSwitch } from "@/ui/GoldSwitch";
+import { Group, Pad, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider, useKeyboardShown } from "@/ui/KeyboardAvoider";
+import { PickerRow } from "@/ui/PickerRow";
+import { showPicker } from "@/ui/PickerSheet";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
+import { StateNotice } from "@/ui/StateNotice";
 import { confirmDiscard, useDraftGuard } from "@/ui/draftGuard";
 import { Text } from "@/ui/Text";
 import { MicButton } from "@/voice/MicButton";
@@ -59,48 +61,8 @@ const GIT_STATUS_DELAY_MS = 300;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-function Section({ title, trailing, children }: { title: string; trailing?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <View style={{ gap: space.sm }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: trailing ? hitTarget : undefined }}>
-        <Text variant="section" accessibilityRole="header" maxFontSizeMultiplier={denseScale.row}>
-          {title}
-        </Text>
-        {trailing}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-/** "Show hidden" in the FOLDER header: a quiet text toggle. Only on a herdlingd that can list hidden folders. */
-function HiddenToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  const Icon = value ? Eye : EyeOff;
-  return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityLabel="Show hidden folders"
-      accessibilityState={{ checked: value }}
-      onPress={() => {
-        haptics.tap();
-        onChange(!value);
-      }}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs,
-        paddingHorizontal: space.sm,
-        opacity: pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <Icon size={icon.sm} color={value ? colors.accent : colors.textMuted} strokeWidth={icon.strokeWidth} />
-      <Text variant="small" color={value ? colors.accent : colors.textMuted} maxFontSizeMultiplier={denseScale.row}>
-        Show hidden
-      </Text>
-    </Pressable>
-  );
-}
+/** The value of the "Browse…" row in the Folder picker. A path never starts with a NUL. */
+const BROWSE = "\0browse";
 
 export default function NewSessionScreen() {
   const router = useRouter();
@@ -197,6 +159,8 @@ export default function NewSessionScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  /** The folder browser is open under the Folder row. */
+  const [browsing, setBrowsing] = useState(false);
   const [pathText, setPathText] = useState("");
   const [pathError, setPathError] = useState<string>();
   const [suggestions, setSuggestions] = useState<{ input: string; items: Suggestion[] }>({ input: "", items: [] });
@@ -509,7 +473,7 @@ export default function NewSessionScreen() {
   if (online.length === 0)
     return (
       <Screen>
-        <Text muted>No host is online. Connect a host first.</Text>
+        <StateNotice Icon={WifiOff} message="No computer is online. Connect a computer first." />
       </Screen>
     );
 
@@ -517,147 +481,198 @@ export default function NewSessionScreen() {
   const label = shell ? "Shell" : agentLabel(kind);
   const inWorktree = worktree && repo?.is_repo;
   const where = !cwd || !home ? undefined : inWorktree ? `In a new worktree of ${displayPath(cwd, home)}` : `In ${displayPath(cwd, home)}`;
+  const optionRows = startOptionRows(kind);
+  const showSpace = onCore && !inWorktree;
+  const showWhere = !onCore && !!cwd && !!existing && !inWorktree;
+  // The Folder row: a recent folder is one tap away in its picker; "Browse…" (the last row) opens
+  // the folder browser with the path field under the row. With no recent folders the row opens the
+  // browser at once. While the browser shows, the row hides it.
+  const onFolderRow = () => {
+    if (browsing || folders.length === 0) {
+      haptics.tap();
+      setBrowsing((b) => !b);
+      return;
+    }
+    showPicker<string>({
+      title: "Folder",
+      sections: [
+        { title: "Recent", options: folders.map((f) => ({ value: f.path, label: f.display, Icon: History, keywords: f.path })) },
+        { options: [{ value: BROWSE, label: "Browse…", Icon: FolderSearch, detail: "Type a path or go through the folders" }] },
+      ],
+      value: cwd,
+      search: false,
+      onPick: (p) => {
+        if (p === BROWSE) setBrowsing(true);
+        else {
+          setBrowsing(false);
+          void open(p);
+        }
+      },
+    });
+  };
 
   return (
     // Not KeyboardAvoidingView: in the modal sheet, below the native header, it pads too little and
     // the keyboard covers the start bar.
     <KeyboardAvoider atScreenBottom={startBarAtScreenBottom(Platform.OS, Platform.OS === "ios" && Platform.isPad)} style={{ backgroundColor: colors.bg }}>
-      <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={colors.textMuted} />}>
-        {online.length > 1 ? (
-          <Section title="Host">
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-              {online.map((h) => (
-                <Chip key={h.id} label={h.name} selected={h.id === hostId} onPress={() => !busy && setHostId(h.id)} />
-              ))}
-            </View>
-          </Section>
-        ) : null}
-
-        <Section title="Agent">
-          <AgentPicker key={hostId} value={shell ? SHELL_CHOICE : kind} onChange={pickAgent} installed={installed} disabled={busy} />
-        </Section>
+      <Screen flush refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={colors.textMuted} />}>
+        {/* The setup rows. Each row keeps its place; a row that does not apply is left out. */}
+        <Group>
+          {online.length > 1 ? (
+            <PickerRow
+              title="Computer"
+              Icon={Monitor}
+              disabled={busy}
+              picker={{ options: online.map((h) => ({ value: h.id, label: h.name })), value: hostId, onPick: setHostId }}
+            />
+          ) : null}
+          <AgentPicker value={shell ? SHELL_CHOICE : kind} onChange={pickAgent} installed={installed} disabled={busy} />
+          <PickerRow
+            title="Folder"
+            Icon={Folder}
+            value={cwd && home ? displayPath(cwd, home) : undefined}
+            placeholder={listError ? undefined : "Loading…"}
+            mono
+            detail={!browsing ? listError : undefined}
+            detailTone="danger"
+            DetailIcon={!browsing && listError ? TriangleAlert : undefined}
+            disabled={busy}
+            expanded={browsing}
+            accessibilityHint={browsing ? "Hides the folder browser." : folders.length > 0 ? "Opens the recent folders and Browse." : "Shows the folder browser."}
+            onPress={onFolderRow}
+          />
+          {browsing ? (
+            <Pad>
+              <PathField
+                value={pathText}
+                onChangeText={onPathChange}
+                onSubmit={goToTyped}
+                suggestions={liveSuggestions}
+                onPick={(s) => void open(s.path, "field")}
+                onComplete={onComplete}
+                error={pathError}
+                editable={!busy && !!home}
+              />
+            </Pad>
+          ) : null}
+          {browsing && listing?.hidden !== undefined ? (
+            <Row title="Show hidden folders" trailing={<GoldSwitch label="Show hidden folders" value={showHidden} onValueChange={setShowHidden} />} />
+          ) : null}
+          {browsing ? (
+            <FolderBrowser
+              listing={listing}
+              home={home}
+              loading={loading}
+              error={listError}
+              onOpen={(p) => void open(p)}
+              onRetry={() => (listing && cwd ? void open(cwd) : void loadHome())}
+              disabled={busy}
+            />
+          ) : null}
+          {showSpace ? (
+            <PickerRow
+              title="Space"
+              Icon={LayoutGrid}
+              disabled={busy}
+              detail={spaceDetail(groupsLoad)}
+              picker={{
+                options: spaceList.map((c) => ({ value: c.id, label: c.label, Icon: c.id === null ? Plus : undefined })),
+                value: spaceId,
+                onPick: setPickedSpace,
+              }}
+            />
+          ) : null}
+          {showWhere && existing ? (
+            <PickerRow
+              title="Where"
+              Icon={LayoutGrid}
+              disabled={busy}
+              picker={{
+                options: [
+                  { value: true, label: "New workspace", Icon: Plus },
+                  { value: false, label: `New tab in ${existing.label}` },
+                ],
+                value: newWorkspace,
+                onPick: setNewWorkspace,
+              }}
+            />
+          ) : null}
+          {cwd && repo?.is_repo ? (
+            <Row
+              leading={<GitBranch size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+              title="New git worktree"
+              detail={repo.branch ? `A new branch from ${repo.branch}, in its own folder` : "A new branch, in its own folder"}
+              trailing={<GoldSwitch label="In a new git worktree" value={worktree} onValueChange={(v) => !busy && setWorktree(v)} />}
+            />
+          ) : null}
+          {cwd && repo?.is_repo && worktree ? (
+            <Pad>
+              <Text variant="small" muted>
+                Branch name
+              </Text>
+              <TextInput
+                accessibilityLabel="Branch name"
+                value={branch}
+                onChangeText={setBranch}
+                editable={!busy}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                selectionColor={colors.accent}
+                style={{
+                  minHeight: hitTarget,
+                  paddingHorizontal: space.md,
+                  borderRadius: radius.md,
+                  borderWidth: 1,
+                  borderColor: branchProblem ? colors.danger : colors.border,
+                  backgroundColor: colors.raised,
+                  color: colors.text,
+                  fontSize: type.size.body,
+                }}
+              />
+              {branchProblem ? (
+                <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite">
+                  {branchProblem}
+                </Text>
+              ) : (
+                <Text variant="caption" muted>
+                  {`The folder is .worktrees/${worktreeSlug(branch)} in the repo.${repo.files.length > 0 ? " Uncommitted changes stay in the main folder." : ""}`}
+                </Text>
+              )}
+            </Pad>
+          ) : null}
+          {!shell && optionRows.permissions ? <PermissionRow kind={kind} choice={choice} disabled={busy} /> : null}
+          {!shell && optionRows.thinking ? <ThinkingRow kind={kind} choice={choice} disabled={busy} /> : null}
+          {!shell ? <OptionsRow kind={kind} choice={choice} disabled={busy} /> : null}
+        </Group>
 
         {sessions.length > 0 ? (
           <Section title={`Recent ${label} sessions`}>
-            <RecentSessionCards sessions={sessions} kind={kind} home={home} resuming={resuming} onResume={(s) => void resume(s)} disabled={busy} />
-          </Section>
-        ) : null}
-
-        <Section title="Folder" trailing={listing?.hidden !== undefined ? <HiddenToggle value={showHidden} onChange={setShowHidden} /> : null}>
-          <PathField
-            value={pathText}
-            onChangeText={onPathChange}
-            onSubmit={goToTyped}
-            suggestions={liveSuggestions}
-            onPick={(s) => void open(s.path, "field")}
-            onComplete={onComplete}
-            error={pathError}
-            editable={!busy && !!home}
-          />
-          <RecentFolderChips folders={folders} current={cwd} onOpen={(p) => void open(p)} disabled={busy} />
-          <FolderBrowser
-            listing={listing}
-            home={home}
-            loading={loading}
-            error={listError}
-            onOpen={(p) => void open(p)}
-            onRetry={() => (listing && cwd ? void open(cwd) : void loadHome())}
-            disabled={busy}
-          />
-        </Section>
-
-        {cwd && repo?.is_repo ? (
-          <Section title="Git">
-            <Card style={{ gap: space.sm }}>
-              <Row
-                title="In a new git worktree"
-                detail={repo.branch ? `A new branch from ${repo.branch}, in its own folder` : "A new branch, in its own folder"}
-                trailing={<GoldSwitch label="In a new git worktree" value={worktree} onValueChange={(v) => !busy && setWorktree(v)} />}
-              />
-              {worktree ? (
-                <View style={{ gap: space.xs }}>
-                  <Text variant="small" muted>
-                    Branch name
-                  </Text>
-                  <TextInput
-                    accessibilityLabel="Branch name"
-                    value={branch}
-                    onChangeText={setBranch}
-                    editable={!busy}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    spellCheck={false}
-                    selectionColor={colors.accent}
-                    style={{
-                      minHeight: hitTarget,
-                      paddingHorizontal: space.md,
-                      borderRadius: radius.md,
-                      borderWidth: 1,
-                      borderColor: branchProblem ? colors.danger : colors.border,
-                      backgroundColor: colors.raised,
-                      color: colors.text,
-                      fontSize: type.size.body,
-                    }}
-                  />
-                  {branchProblem ? (
-                    <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite">
-                      {branchProblem}
-                    </Text>
-                  ) : (
-                    <Text variant="caption" muted>
-                      {`The folder is .worktrees/${worktreeSlug(branch)} in the repo.${
-                        repo.files.length > 0 ? " Uncommitted changes stay in the main folder." : ""
-                      }`}
-                    </Text>
-                  )}
-                </View>
-              ) : null}
-            </Card>
-          </Section>
-        ) : null}
-
-        {onCore && !inWorktree ? (
-          <Section title="Space">
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-              {spaceList.map((c) => (
-                <Chip key={c.id ?? "new"} label={c.label} selected={c.id === spaceId} onPress={() => !busy && setPickedSpace(c.id)} />
-              ))}
-            </View>
-            {groupsLoad.kind === "loading" ? (
-              <Text variant="caption" muted>
-                Loading the spaces…
-              </Text>
-            ) : groupsLoad.kind === "failed" ? (
-              <Text variant="caption" muted>
-                {"Can't list the spaces. The session starts in a new space."}
-              </Text>
-            ) : null}
-          </Section>
-        ) : null}
-
-        {!onCore && cwd && existing && !inWorktree ? (
-          <Section title="Where">
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-              <Chip label="New workspace" selected={newWorkspace} onPress={() => setNewWorkspace(true)} />
-              <Chip label={`New tab in ${existing.label}`} selected={!newWorkspace} onPress={() => setNewWorkspace(false)} />
-            </View>
+            <RecentSessionRows sessions={sessions} home={home} resuming={resuming} onResume={(s) => void resume(s)} disabled={busy} />
           </Section>
         ) : null}
       </Screen>
 
-      {/* The start bar stays at the bottom: first prompt, dictation, the start options and the start button. */}
+      {/*
+        The start bar, pinned at the bottom: the first prompt, dictation, the start button and the
+        folder. It has the look of `ui/ActionBar` (glass, a top hairline, full width), but it stays
+        in the layout of `KeyboardAvoider`, which keeps it above the keyboard in the modal sheet
+        on iPhone, iPad and Android.
+      */}
       <GlassSurface
         style={{
-          marginHorizontal: space.sm,
-          marginBottom: startBarBottomMargin(insets.bottom, keyboardShown, space.sm),
-          padding: space.md,
+          paddingTop: space.md,
+          paddingBottom: startBarBottomMargin(insets.bottom, keyboardShown, space.md),
+          paddingLeft: space.lg + insets.left,
+          paddingRight: space.lg + insets.right,
           gap: space.sm,
-          borderRadius: radius.lg,
+          borderWidth: 0,
+          borderTopWidth: StyleSheet.hairlineWidth,
         }}
       >
         {error ? (
           <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
-            <TriangleAlert size={icon.sm} color={colors.danger} />
+            <TriangleAlert size={icon.sm} color={colors.danger} strokeWidth={icon.strokeWidth} />
             <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
               {error}
             </Text>
@@ -708,12 +723,6 @@ export default function NewSessionScreen() {
             {heard}
           </Text>
         ) : null}
-        {shell ? null : (
-          <>
-            <StartOptionsBar kind={kind} choice={choice} disabled={busy} />
-            <DangerWarning kind={kind} choice={choice} />
-          </>
-        )}
         <Button
           label={progress ?? (resuming ? "Resuming…" : shell ? "Open shell here" : `Start ${label} here`)}
           loading={busy}

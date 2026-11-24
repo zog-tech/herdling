@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, View, type ActivityIndicatorProps } from "react-native";
 
+import { icon } from "@/theme/tokens";
+
 /** Waits under this long show no spinner: a flash of one reads as a glitch. */
 export const SPINNER_DELAY_MS = 300;
 
@@ -25,5 +27,5 @@ export function useDelayed(on: boolean, ms = SPINNER_DELAY_MS): boolean {
 export function DelayedSpinner({ fallback, ...props }: ActivityIndicatorProps & { fallback?: React.ReactNode }) {
   const show = useDelayed(true);
   if (show) return <ActivityIndicator {...props} />;
-  return fallback !== undefined ? <>{fallback}</> : <View style={{ width: 20, height: 20 }} />;
+  return fallback !== undefined ? <>{fallback}</> : <View style={{ width: icon.md, height: icon.md }} />;
 }

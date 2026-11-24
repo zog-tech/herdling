@@ -1,16 +1,20 @@
 import type { RecentSession } from "@herdling/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronRight, TriangleAlert } from "lucide-react-native";
+import { ChevronRight, History } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { timeAgo } from "@/hosts/ConnBadge";
 import { useHostConn } from "@/hosts/connection";
+import { Outcome, Working } from "@/hosts/flowParts";
 import { openResumedSession, resumeSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
-import { colors, hitTarget, space, state } from "@/theme/tokens";
-import { Text } from "@/ui/Text";
+import { colors, hitTarget, icon, space, state } from "@/theme/tokens";
 import { DelayedSpinner } from "@/ui/Delayed";
+import { Group, Section } from "@/ui/Group";
+import { Screen } from "@/ui/Screen";
+import { StateNotice } from "@/ui/StateNotice";
+import { Text } from "@/ui/Text";
 
 const RECENT_LIMIT = 30;
 
@@ -55,7 +59,7 @@ export default function ResumeScreen() {
   );
 
   const note = !rpc
-    ? "Host offline."
+    ? "Computer offline."
     : !agent
       ? "This agent is gone."
       : !cwd
@@ -65,68 +69,50 @@ export default function ResumeScreen() {
           : undefined;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {error ? (
-        <View
-          accessibilityLiveRegion="polite"
-          style={{ flexDirection: "row", alignItems: "center", gap: space.xs, padding: space.lg, backgroundColor: colors.card }}
-        >
-          <TriangleAlert size={16} color={colors.danger} />
-          <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
-            {error}
-          </Text>
-        </View>
-      ) : null}
+    <Screen flush>
+      {error ? <Outcome ok={false} text={error} /> : null}
       {note ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: space.xl }}>
-          <Text muted style={{ textAlign: "center" }}>
-            {note}
-          </Text>
-        </View>
+        <StateNotice Icon={History} message={note} />
       ) : !sessions ? (
-        error ? null : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <DelayedSpinner color={colors.textMuted} />
-          </View>
-        )
+        error ? null : <Working text="Reading the earlier sessions…" />
       ) : (
-        <FlatList
-          data={sessions}
-          keyExtractor={(s) => s.session}
-          contentContainerStyle={{ paddingVertical: space.sm }}
-          renderItem={({ item }) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Resume: ${item.first_prompt || "untitled session"}, ${timeAgo(item.last_activity)}`}
-              accessibilityState={{ disabled: !!starting, busy: starting === item.session }}
-              disabled={!!starting}
-              onPress={() => pick(item)}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: space.md,
-                minHeight: hitTarget + space.lg,
-                paddingHorizontal: space.lg,
-                paddingVertical: space.sm,
-                backgroundColor: pressed ? colors.card : "transparent",
-                opacity: starting && starting !== item.session ? state.disabledOpacity : 1,
-              })}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text numberOfLines={2}>{item.first_prompt || "Untitled session"}</Text>
-                <Text variant="caption" muted>
-                  {timeAgo(item.last_activity)}
-                </Text>
-              </View>
-              {starting === item.session ? (
-                <DelayedSpinner color={colors.textMuted} />
-              ) : (
-                <ChevronRight size={18} color={colors.textMuted} />
-              )}
-            </Pressable>
-          )}
-        />
+        <Section title="Earlier sessions" footer="A pick resumes the session in a new tab.">
+          <Group>
+            {sessions.map((item) => (
+              <Pressable
+                key={item.session}
+                accessibilityRole="button"
+                accessibilityLabel={`Resume: ${item.first_prompt || "untitled session"}, ${timeAgo(item.last_activity)}`}
+                accessibilityState={{ disabled: !!starting, busy: starting === item.session }}
+                disabled={!!starting}
+                onPress={() => pick(item)}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: space.md,
+                  minHeight: hitTarget,
+                  paddingHorizontal: space.lg,
+                  paddingVertical: space.md,
+                  backgroundColor: pressed ? colors.raised : "transparent",
+                  opacity: starting && starting !== item.session ? state.disabledOpacity : 1,
+                })}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text numberOfLines={2}>{item.first_prompt || "Untitled session"}</Text>
+                  <Text variant="small" muted>
+                    {timeAgo(item.last_activity)}
+                  </Text>
+                </View>
+                {starting === item.session ? (
+                  <DelayedSpinner color={colors.textMuted} />
+                ) : (
+                  <ChevronRight size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+                )}
+              </Pressable>
+            ))}
+          </Group>
+        </Section>
       )}
-    </View>
+    </Screen>
   );
 }

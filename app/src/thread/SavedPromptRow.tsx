@@ -1,28 +1,30 @@
 /**
- * One row of saved prompt chips above the prompt box. The composer shows it while the box is empty
+ * One row of saved prompt shortcuts (`ui/Shortcut`) above the prompt box. The composer shows it while the box is empty
  * and has the focus, so a tap puts no draft at risk. A tap sends the text at once. While a send
  * cannot go, a tap puts the text in the box, so nothing is lost. A long press opens a menu with
  * "Put in the box". Taps keep the keyboard open.
  */
-import { Pressable, ScrollView, type AccessibilityActionEvent } from "react-native";
+import { TextCursorInput } from "lucide-react-native";
+import { ScrollView, type AccessibilityActionEvent } from "react-native";
 
-import { colors, denseScale, hitTarget, motion, radius, space } from "@/theme/tokens";
+import { space } from "@/theme/tokens";
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
-import { Text } from "@/ui/Text";
+import { showMenu } from "@/ui/MenuSheet";
+import { Shortcut } from "@/ui/Shortcut";
 
 import { promptChipLabel } from "./savedPrompts";
 
-/** The long press menu of a chip. A tap sends, so the menu only puts the text in the box. */
+/**
+ * The long press menu of a shortcut. A tap sends, so the menu only puts the text in the box. The
+ * caller gives the open haptic (the long press).
+ */
 export function openSavedPromptMenu(text: string, onPick: (t: string) => void): void {
-  const options = ["Put in the box", "Cancel"];
-  showActionSheet({ title: promptChipLabel(text), options, cancelButtonIndex: options.length - 1 }, (i) => {
-    if (options[i] === "Put in the box") onPick(text);
+  showMenu({
+    title: promptChipLabel(text),
+    haptic: false,
+    sections: [{ items: [{ label: "Put in the box", Icon: TextCursorInput, onPick: () => onPick(text) }] }],
   });
 }
-
-/** The chip is short to keep the row compact; the slop makes the touch area about a full hit target. */
-const SLOP = space.sm;
 
 export function SavedPromptRow({
   prompts,
@@ -44,7 +46,7 @@ export function SavedPromptRow({
       keyboardShouldPersistTaps="always"
       showsHorizontalScrollIndicator={false}
       accessibilityLabel="Saved prompts"
-      contentContainerStyle={{ gap: space.xs, paddingHorizontal: space.xs }}
+      contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.xs }}
       style={{ flexGrow: 0 }}
     >
       {prompts.map((text) => {
@@ -53,9 +55,9 @@ export function SavedPromptRow({
           if (e.nativeEvent.actionName === "fill") onPick(text);
         };
         return (
-          <Pressable
+          <Shortcut
             key={text}
-            accessibilityRole="button"
+            label={label}
             accessibilityLabel={`Saved prompt: ${label}`}
             accessibilityHint={canSend ? "Sends the text. Long press to put it in the box." : "Puts the text in the box."}
             accessibilityActions={[{ name: "fill", label: "Put in the box" }]}
@@ -72,22 +74,7 @@ export function SavedPromptRow({
               haptics.press();
               openSavedPromptMenu(text, onPick);
             }}
-            delayLongPress={motion.press.longPressMs}
-            hitSlop={{ top: SLOP, bottom: SLOP }}
-            style={({ pressed }) => ({
-              maxWidth: hitTarget * 6,
-              paddingHorizontal: space.md,
-              paddingVertical: space.xs,
-              borderRadius: radius.pill,
-              borderWidth: 1,
-              borderColor: colors.edge,
-              backgroundColor: pressed ? colors.raised : colors.card,
-            })}
-          >
-            <Text variant="small" numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-              {label}
-            </Text>
-          </Pressable>
+          />
         );
       })}
     </ScrollView>

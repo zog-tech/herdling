@@ -4,12 +4,10 @@ import {
   commandPreview,
   extraFlagCount,
   isDanger,
-  modeMenu,
   modeOf,
   optionsFor,
   splitFlags,
   summary,
-  thinkingMenu,
   withMode,
   withThinking,
 } from "./startOptions";
@@ -143,24 +141,7 @@ describe("commandPreview", () => {
   });
 });
 
-describe("pill menus", () => {
-  it("lists the modes with a check on the current one, the danger mode red and Cancel last", () => {
-    const m = modeMenu("claude", { mode: "plan" })!;
-    expect(m.options).toEqual(["Default", "✓ Plan", "Accept edits", "Auto", "Skip permissions", "Cancel"]);
-    expect(m.destructiveButtonIndex).toEqual([4]);
-    expect(m.cancelButtonIndex).toBe(5);
-    expect(m.ids[4]).toBe("skip");
-    expect(m.ids[5]).toBeUndefined();
-    expect(modeMenu("claude", {})!.options[0]).toBe("✓ Default");
-    expect(modeMenu("pi", {})).toBeUndefined();
-  });
-
-  it("lists the thinking levels with Default first", () => {
-    expect(thinkingMenu("pi", {})!.options).toEqual(["✓ Default", "Off", "Low", "Medium", "High", "Cancel"]);
-    expect(thinkingMenu("pi", { thinking: "high" })!.options[4]).toBe("✓ High");
-    expect(thinkingMenu("claude", {})).toBeUndefined();
-  });
-
+describe("mode and thinking choices", () => {
   it("stores Default as no value", () => {
     expect(withMode({ mode: "plan", model: "m" }, "default")).toEqual({ mode: undefined, model: "m" });
     expect(withMode({}, "skip")).toEqual({ mode: "skip" });

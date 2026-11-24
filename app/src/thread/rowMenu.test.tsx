@@ -3,7 +3,9 @@ import { Share } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+
+import { menuCalls } from "./__fixtures__/menuCalls";
 import { NoticeHost, useNotice } from "@/ui/notice";
 import { speakReplyNow } from "@/voice/useSpeakReplies";
 
@@ -22,7 +24,7 @@ import { ThreadLogContext } from "./ThreadLogContext";
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn(() => Promise.resolve(true)) }));
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }), router: { push: (...a: unknown[]) => mockPush(...a) } }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("@/voice/useSpeakReplies", () => ({
   speakReplyNow: jest.fn(() => Promise.resolve()),
@@ -45,7 +47,7 @@ jest.mock("@ronradtke/react-native-markdown-display", () => {
 const PANE: ThreadPane = { hostId: "studio", paneId: "w1:p1" };
 const REPLY = "Run **this**:\n\n```sh\npnpm test\n```\n\nThen see [docs](https://example.com).";
 const REPLY_PLAIN = "Run this:\n\npnpm test\n\nThen see docs.";
-const sheet = showActionSheet as jest.Mock;
+const sheet = menuCalls(showMenu as jest.Mock);
 
 let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
@@ -215,7 +217,7 @@ describe("assistant reply", () => {
     await act(async () => outer.props.onAccessibilityAction({ nativeEvent: { actionName: "copy" } }));
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(REPLY_PLAIN);
     act(() => outer.props.onAccessibilityAction({ nativeEvent: { actionName: "menu" } }));
-    expect(sheet).toHaveBeenCalledTimes(1);
+    expect(showMenu).toHaveBeenCalledTimes(1);
   });
 });
 

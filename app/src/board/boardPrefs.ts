@@ -24,7 +24,7 @@ export const ROW_STYLES: readonly { id: RowStyle; label: string; detail: string 
 /**
  * The top of the Board.
  * - `dashboard`: the brand header, a carousel of large agent tiles, and a short summary line.
- * - `summary`: the "Overview" title and one large number with the other counts under it.
+ * - `summary`: the "Agents" title and one large number with the other counts under it.
  */
 export type HomeTop = "dashboard" | "summary";
 

@@ -1,19 +1,20 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Download, ExternalLink, KeyRound, LifeBuoy, Power } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Alert, Linking, View } from "react-native";
+import { Alert, Linking } from "react-native";
 
 import { LOGIN_HINT } from "@/hosts/boot";
 import { HERDR_URL, type InstallBoot } from "@/hosts/installer";
 import { SetupFailed, setUpWithPassword, type SetupStep } from "@/hosts/passwordSetup";
 import type { ReachFailure } from "@/hosts/sshHelp";
-import { StateNotice } from "@/ui/StateNotice";
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
-import { DelayedSpinner } from "@/ui/Delayed";
+import { Lead, Outcome, Working } from "@/hosts/flowParts";
+import { colors, icon } from "@/theme/tokens";
+import { ActionBar } from "@/ui/ActionBar";
 import { Field } from "@/ui/Field";
+import { Group, Pad, Section } from "@/ui/Group";
+import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
+import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
 /** Shows the probed host key. The password is sent only after "It matches". */
@@ -21,7 +22,7 @@ function confirmProbedKey(fingerprint: string): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       "Check the host key",
-      `${fingerprint}\n\nCheck this matches the host:\nssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub\n\nIf it does not, someone on the network may be intercepting the connection.`,
+      `${fingerprint}\n\nCheck this matches the computer:\nssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub\n\nIf it does not, someone on the network may be intercepting the connection.`,
       [
         { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
         { text: "It matches", onPress: () => resolve(true) },
@@ -43,73 +44,71 @@ const STEP_TEXT: Record<SetupStep, string> = {
   pairing: "Adding this phone's key…",
 };
 
-/** The question when the installer finds no Herdr: what Herdr 2 is, who makes it, and two answers. */
-function HerdrQuestion({ address, onAnswer }: { address: string; onAnswer: (yes: boolean) => void }) {
+/** The bullet lines of a question, one per line. */
+function Bullets({ lines }: { lines: string[] }) {
+  return <Text variant="small" muted>{lines.map((l) => `• ${l}`).join("\n")}</Text>;
+}
+
+/** The question when the installer finds no Herdr: what Herdr 2 is and who makes it. The answers are in the action bar. */
+function HerdrQuestion({ address }: { address: string }) {
   return (
-    <Card>
-      <Text variant="headline" accessibilityRole="header">
-        Herdr 2 is not on {address}
-      </Text>
-      <Text variant="small" muted>
-        Herdr 2 is the terminal workspace that Herdling works with. Your agents run in Herdr 2 on the computer. Herdr 2
-        is made by its own project, not by Zog Tech.
-      </Text>
-      <Text variant="small" muted>
-        Herdling can install it with the same password:{"\n"}• It downloads Herdr 2 and checks its checksum.{"\n"}• It
-        installs Herdr 2 for your user only.{"\n"}• It needs no admin rights and does not use sudo.{"\n"}Then Herdling
-        installs herdlingd and pairs.
-      </Text>
-      <Button label="About Herdr" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
-      <View style={{ gap: space.sm }}>
-        <Button label="Install Herdr 2 and herdlingd" Icon={Download} onPress={() => onAnswer(true)} />
-        <Button label="Cancel" variant="secondary" onPress={() => onAnswer(false)} />
-      </View>
-    </Card>
+    <Section title="Install Herdr 2?">
+      <Group>
+        <Pad>
+          <Text variant="headline" accessibilityRole="header">
+            Herdr 2 is not on {address}
+          </Text>
+          <Text variant="small" muted>
+            Herdr 2 is the terminal workspace that Herdling works with. Your agents run in Herdr 2 on the computer. Herdr 2
+            is made by its own project, not by Zog Tech.
+          </Text>
+          <Text variant="small" muted>
+            Herdling can install it with the same password:
+          </Text>
+          <Bullets
+            lines={["It downloads Herdr 2 and checks its checksum.", "It installs Herdr 2 for your user only.", "It needs no admin rights and does not use sudo."]}
+          />
+          <Text variant="small" muted>
+            Then Herdling installs herdlingd and pairs.
+          </Text>
+        </Pad>
+        <Row
+          title="About Herdr"
+          leading={<ExternalLink size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+          accessibilityHint="Opens herdr.dev in the browser"
+          onPress={() => void Linking.openURL(HERDR_URL)}
+        />
+      </Group>
+    </Section>
   );
 }
 
-/** After the setup: herdlingd starts only after a login on the computer. Shown once. */
-function InstalledLoginHint({ name, onHow, onDone }: { name: string; onHow: () => void; onDone: () => void }) {
+/** The question before the install: what happens on the computer. The answers are in the action bar. */
+function InstallQuestion({ address }: { address: string }) {
   return (
-    <Card>
-      <Text variant="headline" accessibilityRole="header">
-        {name} is added
-      </Text>
-      <StateNotice Icon={Power} message={LOGIN_HINT} />
-      <Text variant="small" muted>
-        After a restart, herdlingd starts only when you log in on {name}. You can make it start at boot.
-      </Text>
-      <View style={{ gap: space.sm }}>
-        <Button label="How to start at boot" variant="secondary" onPress={onHow} />
-        <Button label="Done" onPress={onDone} />
-      </View>
-    </Card>
-  );
-}
-
-/** The question before the install: what happens on the computer, and two answers. */
-function InstallQuestion({ address, onAnswer }: { address: string; onAnswer: (yes: boolean) => void }) {
-  return (
-    <Card>
-      <Text variant="headline" accessibilityRole="header">
-        herdlingd is not on {address}. Install it now?
-      </Text>
-      <Text variant="small" muted>
-        Herdling logs in with the same password and runs the herdlingd installer:
-      </Text>
-      <Text variant="small" muted>
-        • It downloads herdlingd from the Herdling releases on GitHub and checks the checksum.{"\n"}• It installs
-        herdlingd to ~/.local/bin.{"\n"}• It adds a user service (launchd on macOS, systemd on Linux).{"\n"}• It needs
-        no admin rights and does not use sudo.
-      </Text>
-      <Text variant="small" muted>
-        herdlingd needs Herdr 2. If Herdr 2 is not on the computer, the installer installs it first. It does not need herdr 1.
-      </Text>
-      <View style={{ gap: space.sm }}>
-        <Button label="Install and pair" Icon={Download} onPress={() => onAnswer(true)} />
-        <Button label="Cancel" variant="secondary" onPress={() => onAnswer(false)} />
-      </View>
-    </Card>
+    <Section title="Install herdlingd?">
+      <Group>
+        <Pad>
+          <Text variant="headline" accessibilityRole="header">
+            herdlingd is not on {address}. Install it now?
+          </Text>
+          <Text variant="small" muted>
+            Herdling logs in with the same password and runs the herdlingd installer:
+          </Text>
+          <Bullets
+            lines={[
+              "It downloads herdlingd from the Herdling releases on GitHub and checks the checksum.",
+              "It installs herdlingd to ~/.local/bin.",
+              "It adds a user service (launchd on macOS, systemd on Linux).",
+              "It needs no admin rights and does not use sudo.",
+            ]}
+          />
+          <Text variant="small" muted>
+            herdlingd needs Herdr 2. If Herdr 2 is not on the computer, the installer installs it first. It does not need herdr 1.
+          </Text>
+        </Pad>
+      </Group>
+    </Section>
   );
 }
 
@@ -200,96 +199,121 @@ export default function PasswordSetupScreen() {
     }
   };
 
+  // After the setup: herdlingd starts only after a login on the computer. Shown once.
   if (added) {
     return (
-      <Screen>
-        <InstalledLoginHint
-          name={added.name}
-          onHow={() => router.push({ pathname: "/hosts/boot-help", params: { id: added.id } })}
-          onDone={() => router.dismissTo("/")}
-        />
+      <Screen flush footer={<ActionBar primary={{ label: "Done", onPress: () => router.dismissTo("/") }} />}>
+        <Section title={`${added.name} is added`}>
+          <Group>
+            <Pad>
+              <StateNotice inline Icon={Power} message={LOGIN_HINT} />
+              <Text variant="small" muted>
+                After a restart, herdlingd starts only when you log in on {added.name}. You can make it start at boot.
+              </Text>
+            </Pad>
+            <Row
+              title="How to start at boot"
+              chevron
+              onPress={() => router.push({ pathname: "/hosts/boot-help", params: { id: added.id } })}
+            />
+          </Group>
+        </Section>
       </Screen>
     );
   }
 
+  // While a question is open, the action bar holds its two answers.
+  const footer = askHerdr ? (
+    <ActionBar
+      primary={{ label: "Install Herdr 2 and herdlingd", Icon: Download, onPress: () => onHerdrAnswer(true) }}
+      secondary={{ label: "Cancel", onPress: () => onHerdrAnswer(false) }}
+    />
+  ) : ask ? (
+    <ActionBar
+      primary={{ label: "Install and pair", Icon: Download, onPress: () => onAnswer(true) }}
+      secondary={{ label: "Cancel", onPress: () => onAnswer(false) }}
+    />
+  ) : (
+    <ActionBar keyboard primary={{ label: "Connect", Icon: KeyRound, loading: busy, disabled: !valid, onPress: () => void connect() }} />
+  );
+
   return (
-    <Screen>
-      <Card>
-        <Text variant="small" muted>
-          For a computer that allows SSH password login. Herdling logs in once, installs herdlingd if it is not there,
-          adds its own key, and does not keep the password.
-        </Text>
-        <Field label="Name (optional)" value={name} onChangeText={setName} placeholder="Studio" editable={!busy} />
-        <Field
-          label="Host"
-          value={address}
-          onChangeText={setAddress}
-          placeholder="10.0.0.5"
-          keyboardType="url"
-          editable={!busy}
-        />
-        <Field
-          label="Port"
-          value={portText}
-          onChangeText={(t) => setPortText(t.replace(/\D/g, "").slice(0, 5))}
-          keyboardType="number-pad"
-          mono
-          editable={!busy}
-        />
-        <Field label="User" value={user} onChangeText={setUser} placeholder="sam" editable={!busy} />
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          textContentType="password"
-          autoComplete="off"
-          importantForAutofill="no"
-          editable={!busy}
-          onSubmitEditing={() => void connect()}
-        />
-        {portText !== "" && port === undefined ? (
-          <Text color={colors.danger} accessibilityLiveRegion="polite">
-            Port must be 1 to 65535.
-          </Text>
-        ) : null}
-        {error ? (
-          <Text color={colors.danger} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-        ) : null}
-        {error?.includes(HERDR_URL) ? (
-          <Button label="Open herdr.dev" variant="secondary" Icon={ExternalLink} onPress={() => void Linking.openURL(HERDR_URL)} />
-        ) : null}
-        {error && reach ? (
-          <Button
-            label="Turn on SSH on the computer"
-            variant="secondary"
-            Icon={LifeBuoy}
-            onPress={() =>
-              router.push({
-                pathname: "/hosts/ssh-help",
-                params: { address: address.trim(), port: String(port ?? 22), user: user.trim(), kind: reach },
-              })
-            }
-          />
-        ) : null}
-      </Card>
-      {ask ? <InstallQuestion address={ask} onAnswer={onAnswer} /> : null}
-      {askHerdr ? <HerdrQuestion address={askHerdr} onAnswer={onHerdrAnswer} /> : null}
-      {busy && step && !ask && !askHerdr ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text muted style={{ flex: 1 }}>
-            {STEP_TEXT[step]}
-          </Text>
-        </View>
-      ) : null}
+    <Screen flush footer={footer}>
+      {askHerdr ? <HerdrQuestion address={askHerdr} /> : null}
+      {ask ? <InstallQuestion address={ask} /> : null}
       {ask || askHerdr ? null : (
-        <View style={{ gap: space.md }}>
-          <Button label="Connect" Icon={KeyRound} loading={busy} disabled={!valid} onPress={() => void connect()} />
-        </View>
+        <Lead>
+          For a computer that allows SSH password login. Herdling logs in once, installs herdlingd if it is not there, adds
+          its own key, and does not keep the password.
+        </Lead>
       )}
+      <Section title="Computer">
+        <Group>
+          <Pad>
+            <Field label="Name (optional)" value={name} onChangeText={setName} placeholder="Studio" editable={!busy} />
+            <Field label="Host" value={address} onChangeText={setAddress} placeholder="10.0.0.5" keyboardType="url" editable={!busy} />
+            <Field
+              label="Port"
+              value={portText}
+              onChangeText={(t) => setPortText(t.replace(/\D/g, "").slice(0, 5))}
+              keyboardType="number-pad"
+              mono
+              editable={!busy}
+            />
+            {portText !== "" && port === undefined ? (
+              <Text variant="small" color={colors.danger} accessibilityLiveRegion="polite">
+                Port must be 1 to 65535.
+              </Text>
+            ) : null}
+          </Pad>
+        </Group>
+      </Section>
+      <Section title="Login" footer="The password is used for this setup only.">
+        <Group>
+          <Pad>
+            <Field label="User" value={user} onChangeText={setUser} placeholder="sam" editable={!busy} />
+            <Field
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              textContentType="password"
+              autoComplete="off"
+              importantForAutofill="no"
+              editable={!busy}
+              onSubmitEditing={() => void connect()}
+            />
+          </Pad>
+        </Group>
+      </Section>
+      {busy && step && !ask && !askHerdr ? <Working text={STEP_TEXT[step]} /> : null}
+      {error ? <Outcome ok={false} text={error} /> : null}
+      {error && (error.includes(HERDR_URL) || reach) ? (
+        <Section title="Help">
+          <Group>
+            {error.includes(HERDR_URL) ? (
+              <Row
+                title="Open herdr.dev"
+                leading={<ExternalLink size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+                onPress={() => void Linking.openURL(HERDR_URL)}
+              />
+            ) : null}
+            {reach ? (
+              <Row
+                title="Turn on SSH on the computer"
+                leading={<LifeBuoy size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
+                chevron
+                onPress={() =>
+                  router.push({
+                    pathname: "/hosts/ssh-help",
+                    params: { address: address.trim(), port: String(port ?? 22), user: user.trim(), kind: reach },
+                  })
+                }
+              />
+            ) : null}
+          </Group>
+        </Section>
+      ) : null}
     </Screen>
   );
 }

@@ -1,7 +1,8 @@
 /**
  * The subagent sheet. The status pill at the bottom of the thread opens it. It lists the running
  * subagents and the subagents that finished in the current turn. A pick opens the subagent
- * thread, as a tap on its card does.
+ * thread, as a tap on its card does. The list is grouped bands (`ui/Group`), as every list of
+ * things in the app.
  */
 import { useRouter } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
@@ -10,8 +11,9 @@ import { Modal, Platform, Pressable, ScrollView, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, radius, space } from "@/theme/tokens";
+import { colors, icon, space } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
+import { Group, Section } from "@/ui/Group";
 import { formatDuration, spokenDuration } from "@/ui/format";
 import { StatusGlyph } from "@/ui/StatusGlyph";
 import { Text } from "@/ui/Text";
@@ -63,31 +65,33 @@ export function SubagentSheet({ visible, list, onClose }: { visible: boolean; li
           </Text>
           <CloseButton onPress={onClose} />
         </View>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.lg, gap: space.sm }}>
-          {list.running.length > 0 ? <Section title="Running" /> : null}
-          {list.running.map((s) => (
-            <SubagentSheetRow key={s.id} s={s} canOpen={!!subagentHref(log, { agentId: s.agent_id, description: s.description })} onPick={pick} />
-          ))}
-          {list.finished.length > 0 ? <Section title="Finished in this turn" /> : null}
-          {list.finished.map((s) => (
-            <SubagentSheetRow key={s.id} s={s} canOpen={!!subagentHref(log, { agentId: s.agent_id, description: s.description })} onPick={pick} />
-          ))}
+        <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingTop: space.sm, paddingBottom: space.lg, gap: space.xl }}>
+          {list.running.length > 0 ? (
+            <Section title="Running">
+              <Group>
+                {list.running.map((s) => (
+                  <SubagentSheetRow key={s.id} s={s} canOpen={!!subagentHref(log, { agentId: s.agent_id, description: s.description })} onPick={pick} />
+                ))}
+              </Group>
+            </Section>
+          ) : null}
+          {list.finished.length > 0 ? (
+            <Section title="Finished in this turn">
+              <Group>
+                {list.finished.map((s) => (
+                  <SubagentSheetRow key={s.id} s={s} canOpen={!!subagentHref(log, { agentId: s.agent_id, description: s.description })} onPick={pick} />
+                ))}
+              </Group>
+            </Section>
+          ) : null}
           {list.running.length === 0 && list.finished.length === 0 ? (
-            <Text variant="small" muted style={{ paddingVertical: space.lg }}>
+            <Text variant="small" muted style={{ paddingVertical: space.lg, paddingHorizontal: space.lg }}>
               No subagents in this turn.
             </Text>
           ) : null}
         </ScrollView>
       </View>
     </Modal>
-  );
-}
-
-function Section({ title }: { title: string }) {
-  return (
-    <Text variant="caption" muted bold accessibilityRole="header" style={{ paddingTop: space.sm }}>
-      {title}
-    </Text>
   );
 }
 
@@ -123,15 +127,13 @@ export function SubagentSheetRow({ s, canOpen, onPick }: { s: SubagentItem; canO
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "flex-start",
-        gap: space.sm,
-        padding: space.md,
-        borderWidth: 1,
-        borderColor: colors.edge,
-        borderRadius: radius.md,
-        backgroundColor: pressed && canOpen ? colors.raised : colors.card,
+        gap: space.md,
+        paddingHorizontal: space.lg,
+        paddingVertical: space.md,
+        backgroundColor: pressed && canOpen ? colors.raised : "transparent",
       })}
     >
-      <View style={{ paddingTop: 2 }}>
+      <View style={{ paddingTop: space.xxs }}>
         {running ? <StatusGlyph status="working" size={SHEET_ICON} /> : <Icon size={SHEET_ICON} color={color} />}
       </View>
       <View style={{ flex: 1, gap: space.xs }}>
@@ -167,7 +169,7 @@ export function SubagentSheetRow({ s, canOpen, onPick }: { s: SubagentItem; canO
       </View>
       {canOpen ? (
         <View style={{ alignSelf: "center" }}>
-          <ChevronRight size={18} color={colors.textMuted} />
+          <ChevronRight size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
         </View>
       ) : null}
     </Pressable>

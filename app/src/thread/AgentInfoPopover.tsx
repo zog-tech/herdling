@@ -1,16 +1,21 @@
 /**
  * The small card that drops down from the session title: the agent (mark and product name) and the
- * model it uses now. Claude Code also gets "Change model", which opens the model sheet.
+ * model it uses now. Claude Code also gets "Change model", which opens the model sheet. The rows
+ * have the menu row look (`MenuRow` of `ui/MenuSheet`) on the card surface with the top highlight.
  * With no known model (an older herdlingd, or no reply yet) the model row is left out.
  * A plain fade-in `Modal`, so it shows over the native header on iOS and Android. A tap outside closes it.
  */
+import { Cpu, Replace } from "lucide-react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { Modal, Pressable, useWindowDimensions, View } from "react-native";
 
 import { agentLabel } from "@/herdr/agentKinds";
-import { colors, denseScale, elevation, hitTarget, radius, space } from "@/theme/tokens";
+import { colors, denseScale, elevation, icon, radius, sheet, space } from "@/theme/tokens";
 import { AgentMark } from "@/ui/AgentMark";
+import { Divider } from "@/ui/Group";
+import { MenuRow } from "@/ui/MenuSheet";
 import { Text } from "@/ui/Text";
+import { TopHighlight } from "@/ui/TopHighlight";
 
 import { modelLabel } from "./modelLabel";
 
@@ -60,52 +65,46 @@ export function AgentInfoPopover({
             left,
             width: Math.min(CARD_WIDTH, width - space.md * 2),
             ...elevation[1],
-            borderRadius: radius.md,
-            padding: space.md,
-            gap: space.sm,
+            borderRadius: radius.lg,
+            overflow: "hidden",
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <AgentMark kind={kind} size={24} />
-            <Text bold numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
+          <TopHighlight inset={radius.lg} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md }}>
+            <AgentMark kind={kind} size={icon.lg} />
+            <Text variant="headline" numberOfLines={1} maxFontSizeMultiplier={denseScale.row} style={{ flexShrink: 1 }}>
               {agentLabel(kind)}
             </Text>
           </View>
           {label ? (
-            <View accessible accessibilityLabel={`Model: ${label}`} style={{ gap: 2 }}>
-              <Text variant="caption" muted>
-                Model
-              </Text>
-              <Text numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-                {label}
-              </Text>
-              {model && model !== label ? (
-                <Text variant="caption" muted mono numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
-                  {model}
+            <>
+              <Divider />
+              {/* The menu row look, not a button: the model name as the value at the right. */}
+              <View
+                accessible
+                accessibilityLabel={`Model: ${label}`}
+                style={{ minHeight: sheet.rowHeight, flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.sm }}
+              >
+                <Cpu size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text>Model</Text>
+                  {model && model !== label ? (
+                    <Text variant="caption" muted mono numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+                      {model}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text variant="small" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.row}>
+                  {label}
                 </Text>
-              ) : null}
-            </View>
+              </View>
+            </>
           ) : null}
           {onChangeModel ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Change model"
-              onPress={onChangeModel}
-              style={({ pressed }) => ({
-                minHeight: hitTarget,
-                justifyContent: "center",
-                paddingHorizontal: space.md,
-                marginHorizontal: -space.md,
-                marginBottom: -space.md,
-                borderBottomLeftRadius: radius.md,
-                borderBottomRightRadius: radius.md,
-                borderTopWidth: 1,
-                borderTopColor: colors.divider,
-                backgroundColor: pressed ? colors.raised : "transparent",
-              })}
-            >
-              <Text>Change model</Text>
-            </Pressable>
+            <>
+              <Divider />
+              <MenuRow item={{ label: "Change model", Icon: Replace }} onPress={onChangeModel} />
+            </>
           ) : null}
         </View>
       </Pressable>

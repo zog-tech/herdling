@@ -14,7 +14,7 @@ import { paneCellColor } from "./statusColor";
 const MAX_TABS = 6;
 const CELL_H = space.md;
 const CELL_W = space.sm;
-const CELL_GAP = space.xs / 2;
+const CELL_GAP = space.xxs;
 
 export function TabMap({ tabs }: { tabs: SpaceTab[] }) {
   const shown = tabs.slice(0, MAX_TABS);

@@ -2,7 +2,6 @@ import type { Boot } from "@herdling/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MonitorUp, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
-import { View } from "react-native";
 
 import {
   bootCase,
@@ -19,12 +18,11 @@ import {
 import { useHostConn } from "@/hosts/connection";
 import { listsMethod } from "@/hosts/methods";
 import { useHosts } from "@/hosts/store";
+import { Lead, Outcome } from "@/hosts/flowParts";
 import { Walkthrough } from "@/hosts/Walkthrough";
-import { colors, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { ActionBar } from "@/ui/ActionBar";
+import { Group, Pad, Section } from "@/ui/Group";
 import { Screen } from "@/ui/Screen";
-import { Text } from "@/ui/Text";
 
 /**
  * "How to start at boot": a guided walkthrough for automatic login on a Mac (or the FileVault
@@ -89,61 +87,36 @@ export default function BootHelpScreen() {
         ? `herdlingd starts when you log in on ${name}.`
         : `herdlingd starts when you log in on ${name}. With automatic login, the Mac logs you in when it starts, so herdlingd starts too.`;
 
+  const openOnMac = pane && rpc && canOpenMacSettings(hello);
+  const secondary = openOnMac
+    ? { label: "Open this setting on my Mac", Icon: MonitorUp, loading: busy === "open", onPress: () => void open() }
+    : undefined;
+  const footer =
+    checked?.starts_at === "boot" ? (
+      <ActionBar primary={{ label: "Close", onPress: () => router.back() }} />
+    ) : canCheck ? (
+      <ActionBar primary={{ label: "Done, check again", Icon: RefreshCw, loading: busy === "check", onPress: () => void recheck() }} secondary={secondary} />
+    ) : (
+      <ActionBar primary={{ label: "Close", onPress: () => router.back() }} secondary={secondary} />
+    );
+
   return (
-    <Screen>
-      <Card>
-        <Text variant="headline" accessibilityRole="header">
-          {title}
-        </Text>
-        <Text variant="small" muted>
-          {lead}
-        </Text>
-      </Card>
-      <Card>
-        <Walkthrough steps={steps} />
-        {c === "mac_filevault" ? (
-          <Text variant="small" muted>
-            {FILEVAULT_OFF_NOTE}
-          </Text>
-        ) : null}
-      </Card>
-      <Card>
-        <Text variant="small" muted>
-          {HERDR_BOOT_NOTE}
-        </Text>
-      </Card>
-      {note ? (
-        <Card>
-          <Text color={note.ok ? colors.status.done : colors.danger} accessibilityLiveRegion="polite">
-            {note.text}
-          </Text>
-        </Card>
-      ) : null}
-      <View style={{ gap: space.md }}>
-        {pane && rpc && canOpenMacSettings(hello) ? (
-          <Button
-            label="Open this setting on my Mac"
-            variant="secondary"
-            Icon={MonitorUp}
-            loading={busy === "open"}
-            onPress={() => void open()}
-          />
-        ) : null}
-        {checked?.starts_at === "boot" ? (
-          <Button label="Close" onPress={() => router.back()} />
-        ) : canCheck ? (
-          <Button label="Done, check again" Icon={RefreshCw} loading={busy === "check"} onPress={() => void recheck()} />
-        ) : (
-          <>
-            <Text variant="small" muted>
-              {rpc
-                ? "Update herdlingd on this computer to check from the phone."
-                : `Herdling checks again when ${name} is connected.`}
-            </Text>
-            <Button label="Close" variant="secondary" onPress={() => router.back()} />
-          </>
-        )}
-      </View>
+    <Screen flush footer={footer}>
+      <Section title={title}>
+        <Lead>{lead}</Lead>
+      </Section>
+      <Section title="Steps" footer={c === "mac_filevault" ? FILEVAULT_OFF_NOTE : undefined}>
+        <Group>
+          <Pad>
+            <Walkthrough steps={steps} />
+          </Pad>
+        </Group>
+      </Section>
+      <Lead>{HERDR_BOOT_NOTE}</Lead>
+      {note ? <Outcome ok={note.ok} text={note.text} /> : null}
+      {checked?.starts_at === "boot" || canCheck ? null : (
+        <Lead>{rpc ? "Update herdlingd on this computer to check from the phone." : `Herdling checks again when ${name} is connected.`}</Lead>
+      )}
     </Screen>
   );
 }

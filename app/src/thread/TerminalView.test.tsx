@@ -4,7 +4,9 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useRecentCommands } from "@/terminal/recentCommands";
 import { colors } from "@/theme/tokens";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+
+import { menuCalls } from "./__fixtures__/menuCalls";
 
 import { TerminalView } from "./TerminalView";
 
@@ -29,8 +31,8 @@ jest.mock("@/hosts/connection", () => ({
 }));
 jest.mock("expo-router", () => ({ useIsFocused: () => true }));
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), press: jest.fn() }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
-const sheet = showActionSheet as jest.Mock;
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
+const sheet = menuCalls(showMenu as jest.Mock);
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => {});
@@ -230,7 +232,7 @@ test("Run now in the chip menu sends the command and Enter", async () => {
   useRecentCommands.setState({ byHost: { "host-1": ["git status", "make test"] } });
   await mount(true, true);
   await act(async () => chip("make test").props.onLongPress());
-  expect(sheet).toHaveBeenCalledTimes(1);
+  expect(showMenu).toHaveBeenCalledTimes(1);
   const [opts, onPick] = sheet.mock.calls[0];
   expect(opts.options).toEqual(["Run now", "Remove", "Cancel"]);
   await act(async () => onPick(0));

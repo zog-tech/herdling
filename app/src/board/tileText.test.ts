@@ -11,6 +11,7 @@ import {
   tileLabel,
   tileMain,
   tilePlace,
+  tileStatus,
   tileTitle,
 } from "./tileText";
 
@@ -118,4 +119,12 @@ test("the_time_shows_for_work_and_waits_and_for_other_statuses_only_when_the_hos
 test("the_label_reads_title_status_place_main_text_and_unread", () => {
   expect(tileLabel("api", "Ready · 2m", "proj", { kind: "reply", text: "Done." }, "ready")).toBe("api, Ready · 2m, proj, Done., unread");
   expect(tileLabel("api", "Idle", undefined, { kind: "empty", text: TILE_EMPTY }, "idle")).toBe(`api, Idle, ${TILE_EMPTY}`);
+});
+
+test("tile_status_puts_the_time_in_a_label_only_for_working_and_needs_you", () => {
+  expect(tileStatus("working", 240)).toEqual({ word: "Working", clock: "4m" });
+  expect(tileStatus("needs_you", 30)).toEqual({ word: "Needs you", clock: "<1m" });
+  expect(tileStatus("working", undefined)).toEqual({ word: "Working" });
+  // Another status keeps its time in the words.
+  expect(tileStatus("idle", 7200)).toEqual({ word: "Idle · 2h" });
 });

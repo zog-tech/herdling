@@ -1,20 +1,25 @@
 import { useRouter } from "expo-router";
-import { Check } from "lucide-react-native";
 
 import { accentDef, themeDef } from "@/theme/palettes";
 import { useThemePrefs } from "@/theme/themePrefs";
-import { colors, icon } from "@/theme/tokens";
 import { Group, Section } from "@/ui/Group";
+import { PickerRow } from "@/ui/PickerRow";
 import { Row } from "@/ui/Row";
-import * as haptics from "@/ui/haptics";
+import { Segmented } from "@/ui/Segmented";
 
-import { HOME_TOPS, ROW_STYLES, useBoardPrefs } from "./boardPrefs";
+import { HOME_TOPS, ROW_STYLES, useBoardPrefs, type HomeTop, type RowStyle } from "./boardPrefs";
 
 /**
- * Settings, "Appearance": a row that opens the Theme screen, the top of the Board, then the agent
- * list style. One row for each choice, a check on the selected one. A list, not a segmented control:
- * "Rows with arrows" does not fit a segment. The theme has its own short screen: a theme change
- * mounts the screens again, and on a short screen the user does not lose the scroll position.
+ * Short segment labels of the agent list styles: "Rows with arrows" does not fit a segment. The
+ * row detail says the full meaning of the selected style.
+ */
+const ROW_STYLE_SEGMENTS: Record<RowStyle, string> = { flat: "Rows", divided: "Arrows", cards: "Cards" };
+
+/**
+ * More, "Appearance": a row that opens the Theme screen, the top of the Agents tab, then the agent
+ * list style. The two fixed choices are `Segmented` controls (design rule 2) with the detail of the
+ * selected option under the title. The theme has its own short screen: a theme change mounts the
+ * screens again, and on a short screen the user does not lose the scroll position.
  */
 export function AppearanceSection() {
   const router = useRouter();
@@ -24,52 +29,42 @@ export function AppearanceSection() {
   const accent = useThemePrefs((s) => s.accent);
   const homeTop = useBoardPrefs((s) => s.homeTop);
   const setHomeTop = useBoardPrefs((s) => s.setHomeTop);
+  const top = HOME_TOPS.find((o) => o.id === homeTop) ?? HOME_TOPS[0];
+  const style = ROW_STYLES.find((o) => o.id === rowStyle) ?? ROW_STYLES[0];
   return (
-    <>
-      <Section title="Appearance">
-        <Group>
-          <Row
-            title="Theme"
-            detail={`${themeDef(theme).label}, ${accentDef(accent).label}`}
-            chevron
-            onPress={() => router.push("/theme" as never) /* typed routes regenerate on the next dev start */}
-          />
-        </Group>
-      </Section>
-      <Section title="Overview top" footer="What the Overview tab shows above the agent list.">
-        <Group>
-          {HOME_TOPS.map((o) => (
-            <Row
-              key={o.id}
-              accessibilityLabel={`Overview top ${o.label}${o.id === homeTop ? ", selected" : ""}`}
-              onPress={() => {
-                if (o.id !== homeTop) haptics.tap();
-                setHomeTop(o.id);
-              }}
-              title={o.label}
-              detail={o.detail}
-              trailing={o.id === homeTop ? <Check size={icon.md} color={colors.accent} /> : null}
+    <Section>
+      <Group>
+        <PickerRow
+          title="Theme"
+          value={`${themeDef(theme).label}, ${accentDef(accent).label}`}
+          accessibilityHint="Opens the theme, accent and terminal colors"
+          onPress={() => router.push("/theme" as never) /* typed routes regenerate on the next dev start */}
+        />
+        <Row
+          title="Top of the Agents tab"
+          detail={top.detail}
+          below={
+            <Segmented<HomeTop>
+              options={HOME_TOPS.map((o) => ({ id: o.id, label: o.label }))}
+              value={homeTop}
+              onChange={setHomeTop}
+              label="Top of the Agents tab"
             />
-          ))}
-        </Group>
-      </Section>
-      <Section title="Agent list style" footer="How the Board shows each agent.">
-        <Group>
-          {ROW_STYLES.map((o) => (
-            <Row
-              key={o.id}
-              accessibilityLabel={`Agent list style ${o.label}${o.id === rowStyle ? ", selected" : ""}`}
-              onPress={() => {
-                if (o.id !== rowStyle) haptics.tap();
-                setRowStyle(o.id);
-              }}
-              title={o.label}
-              detail={o.detail}
-              trailing={o.id === rowStyle ? <Check size={icon.md} color={colors.accent} /> : null}
+          }
+        />
+        <Row
+          title="Agent list style"
+          detail={`${style.label}: ${style.detail}`}
+          below={
+            <Segmented<RowStyle>
+              options={ROW_STYLES.map((o) => ({ id: o.id, label: ROW_STYLE_SEGMENTS[o.id] }))}
+              value={rowStyle}
+              onChange={setRowStyle}
+              label="Agent list style"
             />
-          ))}
-        </Group>
-      </Section>
-    </>
+          }
+        />
+      </Group>
+    </Section>
   );
 }

@@ -101,7 +101,8 @@ export function PathField({
       {suggestions.length > 0 ? (
         <View
           accessibilityLabel="Matching folders"
-          style={{ borderRadius: radius.md, backgroundColor: colors.card, overflow: "hidden" }}
+          // The field sits on the `card` band: the list steps up one level so it reads as its own part.
+          style={{ borderRadius: radius.md, backgroundColor: colors.raised, overflow: "hidden" }}
         >
           {suggestions.map((s, i) => {
             const Icon = s.git ? FolderGit2 : Folder;
@@ -119,7 +120,7 @@ export function PathField({
                   paddingHorizontal: space.md,
                   borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0,
                   borderColor: colors.divider,
-                  backgroundColor: pressed ? colors.raised : "transparent",
+                  backgroundColor: pressed ? colors.raisedHigh : "transparent",
                 })}
               >
                 <Icon size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />

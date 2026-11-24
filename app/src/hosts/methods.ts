@@ -78,4 +78,4 @@ export function needsHerdlingdUpdate(hello: Hello | undefined): boolean {
   return methods === undefined || APP_METHODS.some((m) => !methods.includes(m));
 }
 
-export const UPDATE_HERDLINGD_HINT = "Update herdlingd on this host for all features";
+export const UPDATE_HERDLINGD_HINT = "Update herdlingd on this computer for all features";

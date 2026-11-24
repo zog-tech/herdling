@@ -1,14 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Trash2 } from "lucide-react-native";
+import { CircleAlert } from "lucide-react-native";
 
 import { DemoHostDetail } from "@/demo/DemoHostDetail";
 import { isDemoHost } from "@/demo/demoHost";
 import { HostForm } from "@/hosts/HostForm";
-import { confirmRemoveHost } from "@/hosts/removeHost";
 import { useHosts } from "@/hosts/store";
-import { Button } from "@/ui/Button";
 import { Screen } from "@/ui/Screen";
-import { Text } from "@/ui/Text";
+import { StateNotice } from "@/ui/StateNotice";
 
 export default function EditHostScreen() {
   const router = useRouter();
@@ -17,7 +15,7 @@ export default function EditHostScreen() {
   if (!host)
     return (
       <Screen>
-        <Text muted>Host not found.</Text>
+        <StateNotice Icon={CircleAlert} message="Computer not found." />
       </Screen>
     );
   // The demo host has no address, user or key to edit: it shows what it is and "Remove demo".
@@ -28,21 +26,10 @@ export default function EditHostScreen() {
         <DemoHostDetail host={host} onRemoved={() => router.back()} />
       </>
     );
+  // The title is the name of the computer. "Remove" is the last row of the screen, as on the demo host.
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Button
-              label={`Remove ${host.name}`}
-              iconOnly
-              variant="danger"
-              Icon={Trash2}
-              onPress={() => void confirmRemoveHost(host, () => router.back())}
-            />
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: host.name }} />
       <HostForm key={host.id} host={host} />
     </>
   );

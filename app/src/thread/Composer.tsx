@@ -10,7 +10,7 @@ import { hasMethod } from "@/hosts/methods";
 import type { RpcClient } from "@/rpc/RpcClient";
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
-import { colors, denseScale, hitTarget, motion, radius, space, state, type } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, motion, radius, space, state, type } from "@/theme/tokens";
 import { GlassSurface } from "@/ui/Glass";
 import * as haptics from "@/ui/haptics";
 import { sendLine } from "@/terminal/keys";
@@ -299,7 +299,7 @@ export const Composer = memo(function Composer({
   /** Attaches an image pasted from the edit menu of the prompt box. */
   const onPastedImage = (img: PastedImage) => {
     if (!canAttach) {
-      setError("This host cannot receive photos.");
+      setError("This computer cannot receive photos.");
       return;
     }
     if (photoCount.current >= MAX_PHOTOS) {
@@ -319,7 +319,7 @@ export const Composer = memo(function Composer({
   /** Attaches a video pasted from the edit menu: the same video attachment as a picked one. */
   const onPastedVideo = (v: PastedVideo) => {
     if (!hasMethod(hello, "files.put")) {
-      setError("This host cannot receive videos.");
+      setError("This computer cannot receive videos.");
       return;
     }
     const r = fromPastedVideo(v, fileRoom(photosNow.current), canChunk(hello));
@@ -603,7 +603,7 @@ export const Composer = memo(function Composer({
         </Text>
       ) : !online ? (
         <Text variant="small" muted>
-          Host offline — you can send when it reconnects.
+          Computer offline — you can send when it reconnects.
         </Text>
       ) : null}
       {showMenu ? <CommandMenu commands={matches} onPick={insertCommand} /> : null}
@@ -691,7 +691,7 @@ export const Composer = memo(function Composer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           multiline
-          placeholder={online ? "Message the agent" : "Host offline"}
+          placeholder={online ? "Message the agent" : "Computer offline"}
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Prompt"
           maxFontSizeMultiplier={denseScale.row}
@@ -782,9 +782,9 @@ export const Composer = memo(function Composer({
                 }}
               >
                 {sending || voiceSending ? (
-                  <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={20} color={colors.onAccent} />} />
+                  <DelayedSpinner color={colors.onAccent} fallback={<ArrowUp size={icon.md} color={colors.onAccent} />} />
                 ) : (
-                  <ArrowUp size={20} color={gold ? colors.onAccent : colors.textMuted} />
+                  <ArrowUp size={icon.md} color={gold ? colors.onAccent : colors.textMuted} />
                 )}
               </Animated.View>
             )}

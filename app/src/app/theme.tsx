@@ -1,39 +1,22 @@
-import { Check } from "lucide-react-native";
 import { View } from "react-native";
 
-import { ACCENTS, TERMINAL_THEMES, THEMES, buildColors } from "@/theme/palettes";
+import { ACCENTS, TERMINAL_THEMES, THEMES, type TerminalThemeId, type ThemeId } from "@/theme/palettes";
 import { useThemePrefs } from "@/theme/themePrefs";
-import { NIGHT_WATCH, colors, icon, radius, space } from "@/theme/tokens";
+import { colors, icon, space } from "@/theme/tokens";
 import { Button } from "@/ui/Button";
 import { Group, Pad, Section } from "@/ui/Group";
+import { PickerRow } from "@/ui/PickerRow";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
+import { Segmented } from "@/ui/Segmented";
 import { StatusDot } from "@/ui/StatusDot";
 import { Text } from "@/ui/Text";
 import * as haptics from "@/ui/haptics";
 
-const SWATCH = icon.lg + space.xs;
+/** The size of a menu row icon, so the swatch lines up with the icons of other menus. */
+const SWATCH = icon.md;
 
-/** The page color of a theme with a dot of its text color. The edge keeps a black swatch visible. */
-function ThemeSwatch({ bg, text }: { bg: string; text: string }) {
-  return (
-    <View
-      style={{
-        width: SWATCH,
-        height: SWATCH,
-        borderRadius: radius.sm,
-        backgroundColor: bg,
-        borderWidth: 1,
-        borderColor: colors.border,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <View style={{ width: space.md, height: space.md, borderRadius: space.md / 2, backgroundColor: text }} />
-    </View>
-  );
-}
-
+/** The accent color as a round swatch, the leading part of an accent option. */
 function AccentSwatch({ color }: { color: string }) {
   return <View style={{ width: SWATCH, height: SWATCH, borderRadius: SWATCH / 2, backgroundColor: color }} />;
 }
@@ -64,9 +47,10 @@ function Preview() {
 }
 
 /**
- * Settings, "Theme": the palette and the accent color. A change applies at once: the screens
- * mount again in the new colors (see `ui/useThemeRemount`). Only dark themes; see MASTER.md, "Themes".
- * The terminal theme changes only the screen of the terminal view (a light "Paper" screen).
+ * More, Appearance, "Theme": the palette, the accent color and the terminal screen. A change applies
+ * at once: the screens mount again in the new colors (see `ui/useThemeRemount`). Only dark themes;
+ * see MASTER.md, "Themes". The three themes and the two terminal screens are fixed choices, so they
+ * are `Segmented` controls (design rule 2); the five accents are a `PickerRow` with a swatch.
  */
 export default function ThemeScreen() {
   const theme = useThemePrefs((s) => s.theme);
@@ -75,77 +59,58 @@ export default function ThemeScreen() {
   const setAccent = useThemePrefs((s) => s.setAccent);
   const terminal = useThemePrefs((s) => s.terminal ?? "app");
   const setTerminal = useThemePrefs((s) => s.setTerminal);
+  const themeNow = THEMES.find((t) => t.id === theme) ?? THEMES[0];
+  const accentNow = ACCENTS.find((a) => a.id === accent) ?? ACCENTS[0];
+  const terminalNow = TERMINAL_THEMES.find((t) => t.id === terminal) ?? TERMINAL_THEMES[0];
   return (
     <Screen flush>
       <Section title="Preview">
         <Preview />
       </Section>
-      <Section title="Theme">
+      <Section>
         <Group>
-          {THEMES.map((t) => {
-            const c = buildColors(NIGHT_WATCH, { theme: t.id, accent });
-            const on = t.id === theme;
-            return (
-              <Row
-                key={t.id}
-                accessibilityLabel={`Theme ${t.label}${on ? ", selected" : ""}`}
-                onPress={() => {
-                  if (on) return;
-                  haptics.tap();
-                  setTheme(t.id);
+          <Row
+            title="Theme"
+            detail={themeNow.detail}
+            below={
+              <Segmented<ThemeId>
+                options={THEMES.map((t) => ({ id: t.id, label: t.label }))}
+                value={theme}
+                onChange={(id) => {
+                  if (id !== theme) setTheme(id);
                 }}
-                leading={<ThemeSwatch bg={c.bg} text={c.text} />}
-                title={t.label}
-                detail={t.detail}
-                trailing={on ? <Check size={icon.md} color={colors.accent} /> : null}
+                label="Theme"
               />
-            );
-          })}
-        </Group>
-      </Section>
-      <Section title="Accent" footer="The accent marks the primary action, the selected item and the working lantern.">
-        <Group>
-          {ACCENTS.map((a) => {
-            const on = a.id === accent;
-            return (
-              <Row
-                key={a.id}
-                accessibilityLabel={`Accent ${a.label}${on ? ", selected" : ""}`}
-                onPress={() => {
-                  if (on) return;
-                  haptics.tap();
-                  setAccent(a.id);
+            }
+          />
+          <PickerRow
+            title="Accent"
+            detail={accentNow.blocked ? "Needs you turns rose, so it is not the same as working." : "The primary action, the selected item and the working lantern."}
+            picker={{
+              options: ACCENTS.map((a) => ({
+                value: a.id,
+                label: a.label,
+                leading: <AccentSwatch color={a.accent} />,
+                detail: a.blocked ? "Needs you turns rose." : undefined,
+              })),
+              value: accent,
+              onPick: setAccent,
+            }}
+          />
+          <Row
+            title="Terminal"
+            detail={`${terminalNow.detail} The rest of the app keeps the theme.`}
+            below={
+              <Segmented<TerminalThemeId>
+                options={TERMINAL_THEMES.map((t) => ({ id: t.id, label: t.label }))}
+                value={terminal}
+                onChange={(id) => {
+                  if (id !== terminal) setTerminal(id);
                 }}
-                leading={<AccentSwatch color={a.accent} />}
-                title={a.label}
-                detail={a.blocked ? "Needs you turns rose, so it is not the same as working." : undefined}
-                trailing={on ? <Check size={icon.md} color={colors.accent} /> : null}
+                label="Terminal screen"
               />
-            );
-          })}
-        </Group>
-      </Section>
-      <Section title="Terminal" footer="The screen of the terminal view. The rest of the app keeps the theme.">
-        <Group>
-          {TERMINAL_THEMES.map((t) => {
-            const c = buildColors(NIGHT_WATCH, { theme, accent, terminal: t.id });
-            const on = t.id === terminal;
-            return (
-              <Row
-                key={t.id}
-                accessibilityLabel={`Terminal ${t.label}${on ? ", selected" : ""}`}
-                onPress={() => {
-                  if (on) return;
-                  haptics.tap();
-                  setTerminal(t.id);
-                }}
-                leading={<ThemeSwatch bg={c.terminal.bg} text={c.terminal.fg} />}
-                title={t.label}
-                detail={t.detail}
-                trailing={on ? <Check size={icon.md} color={colors.accent} /> : null}
-              />
-            );
-          })}
+            }
+          />
         </Group>
       </Section>
     </Screen>

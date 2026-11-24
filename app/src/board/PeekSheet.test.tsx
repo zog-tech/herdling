@@ -6,6 +6,7 @@ import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHerdrSupport } from "@/herdr/support";
 import { Composer } from "@/thread/Composer";
 import { AssistantMessage } from "@/thread/items/AssistantMessage";
+import { Button } from "@/ui/Button";
 
 import { PeekSheet } from "./PeekSheet";
 
@@ -104,18 +105,30 @@ test("run_on_a_code_block_of_the_reply_goes_through_on_run", () => {
   act(() => tree!.unmount());
 });
 
-test("why_this_status_shows_with_on_explain_and_hides_when_herdr_lacks_the_method", () => {
-  const onExplain = jest.fn();
-  const find = () => tree!.root.findAll((n) => n.props.accessibilityLabel === "Why this status?" && typeof n.props.onPress === "function");
+test("the_menu_button_gives_the_item_and_whether_herdr_can_explain", () => {
+  const onMenu = jest.fn();
+  const menu = () => tree!.root.find((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("More actions for") && typeof n.props.onPress === "function");
   useHerdrSupport.setState({ missing: {} });
   act(() => {
-    tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} onExplain={onExplain} />);
+    tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} onMenu={onMenu} />);
   });
-  expect(find().length).toBeGreaterThan(0);
-  act(() => find()[0].props.onPress());
-  expect(onExplain).toHaveBeenCalledTimes(1);
+  act(() => menu().props.onPress());
+  expect(onMenu).toHaveBeenLastCalledWith(expect.objectContaining({ hostId: "host-1", key: "host-1:w1:p1" }), { canExplain: true });
   act(() => useHerdrSupport.setState({ missing: { "host-1": ["agent.explain"] } }));
-  expect(find()).toHaveLength(0);
+  act(() => menu().props.onPress());
+  expect(onMenu).toHaveBeenLastCalledWith(expect.anything(), { canExplain: false });
   act(() => tree!.unmount());
   useHerdrSupport.setState({ missing: {} });
+});
+
+test("without_on_menu_there_is_no_menu_button_and_open_session_is_the_one_primary", () => {
+  act(() => {
+    tree = create(<PeekSheet hostId="host-1" paneId="w1:p1" onOpenSession={() => {}} onClose={() => {}} />);
+  });
+  expect(tree!.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("More actions for"))).toHaveLength(0);
+  // One text button, and it is the primary one (the default variant).
+  const buttons = tree!.root.findAllByType(Button);
+  expect(buttons.map((b) => [b.props.label, b.props.variant ?? "primary"])).toEqual([["Open session", "primary"]]);
+  expect(tree!.root.findAll((n) => n.props.accessibilityLabel === "Close" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+  act(() => tree!.unmount());
 });

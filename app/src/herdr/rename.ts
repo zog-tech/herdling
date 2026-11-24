@@ -115,7 +115,7 @@ export async function rename(rpc: Rpc, hostId: string, kind: RenameKind, t: Rena
     patchStore(hostId, (s) => (currentName(s, kind, t) === value ? withName(s, kind, t, before || null) : s));
     if (isUnknownMethod(e)) {
       markMissing(hostId, RENAME_METHOD[kind]);
-      throw new RpcError("unknown_method", "This host's herdr can't rename that.");
+      throw new RpcError("unknown_method", "This computer's herdr can't rename that.");
     }
     throw e;
   }

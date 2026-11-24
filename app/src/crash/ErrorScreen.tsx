@@ -57,7 +57,7 @@ export function ErrorScreen({ error, retry, layout = false }: ErrorBoundaryProps
         {message(error)}
       </Text>
       <Text variant="caption" muted style={{ textAlign: "center" }}>
-        The app saved the error in Settings, Crash log.
+        The app saved the error in More, Diagnostics, Crash log.
       </Text>
       <View style={{ flexDirection: "row", gap: space.md }}>
         <Button label="Back" variant="secondary" onPress={back} />

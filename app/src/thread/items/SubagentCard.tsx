@@ -93,7 +93,7 @@ export const SubagentCard = memo(function SubagentCard({
     >
       <TopHighlight inset={radius.md} />
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.sm }}>
-        <View style={{ paddingTop: 2 }}>
+        <View style={{ paddingTop: space.xxs }}>
           <Bot size={ICON} color={running ? colors.status.working : colors.textMuted} />
         </View>
         <View style={{ flex: 1, gap: space.xs }}>

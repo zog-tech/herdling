@@ -47,6 +47,7 @@ export default function SessionScreen() {
       header="native"
       onOpenPane={openPane}
       onClosed={back}
+      onBack={back}
       neighborShortcuts
     />
   );

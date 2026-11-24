@@ -1,6 +1,7 @@
 import { TextInput } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { optionsFor } from "./startOptions";
 import { StartOptionsSheet } from "./StartOptionsSheet";
 import { useStartOptionsMemory } from "./startOptionsMemory";
 
@@ -35,6 +36,9 @@ const pressable = (t: ReactTestRenderer, label: string) =>
       ["button", "tab"].includes(n.props.accessibilityRole) &&
       typeof n.props.onPress === "function",
   );
+/** A choice row with a check (a mode or a model), by its VoiceOver label. */
+const radio = (t: ReactTestRenderer, label: string) =>
+  t.root.find((n) => n.props.accessibilityRole === "radio" && typeof n.props.onPress === "function" && n.props.accessibilityLabel === label);
 /** A mode row: its label starts with the mode label. */
 const modeRow = (t: ReactTestRenderer, label: string) =>
   t.root.find(
@@ -71,36 +75,36 @@ test("a mode row writes the store at once and moves the check mark", () => {
 test("every mode of every kind has a detail line", () => {
   for (const kind of ["claude", "codex", "gemini", "opencode"]) {
     const t = render(kind);
-    const rows = t.root.findAll((n) => n.props.accessibilityRole === "radio" && typeof n.props.onPress === "function");
-    expect(rows.length).toBeGreaterThan(1);
-    for (const r of rows) expect(r.props.accessibilityLabel).toMatch(/^[^.]+\. \S.+\.$/);
+    const modes = optionsFor(kind).modes;
+    expect(modes.length).toBeGreaterThan(1);
+    for (const m of modes) expect(modeRow(t, m.label).props.accessibilityLabel).toMatch(/^[^.]+\. \S.+\.$/);
     act(() => t.unmount());
     tree = undefined;
   }
 });
 
-test("Claude model chips write the alias, and the custom field takes any other name", () => {
+test("Claude model rows write the alias, and the custom field takes any other name", () => {
   const t = render("claude");
-  expect(pressable(t, "Default model").props.accessibilityState.selected).toBe(true);
-  act(() => pressable(t, "Opus").props.onPress());
+  expect(radio(t, "Default model").props.accessibilityState.selected).toBe(true);
+  act(() => radio(t, "Opus").props.onPress());
   expect(useStartOptionsMemory.getState().byKind.claude).toEqual({
     model: "opus",
   });
-  expect(pressable(t, "Opus").props.accessibilityState.selected).toBe(true);
+  expect(radio(t, "Opus").props.accessibilityState.selected).toBe(true);
   // An alias does not show in the custom field.
   expect(input(t, "Custom model").props.value).toBe("");
   expect(preview(t)).toBe("$ claude --model opus");
   act(() => input(t, "Custom model").props.onChangeText("claude-opus-4-1"));
-  expect(pressable(t, "Opus").props.accessibilityState.selected).toBe(false);
+  expect(radio(t, "Opus").props.accessibilityState.selected).toBe(false);
   act(() => input(t, "Custom model").props.onEndEditing());
   expect(useStartOptionsMemory.getState().byKind.claude).toEqual({
     model: "claude-opus-4-1",
   });
-  act(() => pressable(t, "Default model").props.onPress());
+  act(() => radio(t, "Default model").props.onPress());
   expect(useStartOptionsMemory.getState().byKind.claude).toEqual({});
 });
 
-test("other kinds have only the model name field, with no chips", () => {
+test("other kinds have only the model name field, with no model rows", () => {
   const t = render("codex");
   expect(t.root.findAll((n) => n.props.accessibilityLabel === "Opus")).toHaveLength(0);
   expect(input(t, "Model").props.placeholder).toBe("Model name");
@@ -163,6 +167,7 @@ test("Reset to default is off at the default and clears every option of the kind
 
 test("Pi has the thinking control and no modes, and an agent with no model flag has no model field", () => {
   const t = render("pi");
+  // No mode rows. Pi has no model aliases either, so no choice row at all.
   expect(t.root.findAll((n) => n.props.accessibilityRole === "radio" && typeof n.props.onPress === "function")).toHaveLength(0);
   act(() => pressable(t, "High").props.onPress());
   expect(useStartOptionsMemory.getState().byKind.pi).toEqual({

@@ -1,9 +1,10 @@
-import { Linking, Platform, Share } from "react-native";
+import { Compass, Copy, ExternalLink, Share, type LucideIcon } from "lucide-react-native";
+import { Linking, Platform, Share as ShareSheet } from "react-native";
 
 import { hasWebView } from "@/preview/webview";
 import { copyIfAvailable, hasClipboard } from "@/ui/clipboard";
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
 import { showNotice } from "@/ui/notice";
 
 import type { ThreadPane } from "./LiveToolContext";
@@ -75,19 +76,24 @@ function runLinkAction(a: LinkAction, t: LinkTarget, pane: ThreadPane | null): v
       }
       return;
     case "share":
-      Share.share({ message: linkText(t) }).catch(() => {});
+      ShareSheet.share({ message: linkText(t) }).catch(() => {});
       return;
   }
 }
 
-/** Opens the link menu: Open, Open in Safari, Copy link, Share. The URL is the title. */
+const LINK_ICON: Record<LinkAction, LucideIcon> = { open: ExternalLink, system: Compass, copy: Copy, share: Share };
+
+/**
+ * Opens the link menu: Open, Open in Safari, Copy link, Share. The URL is the title. The caller
+ * gives the open haptic (the long press), so the sheet gives none.
+ */
 export function openLinkMenu(url: string, pane: ThreadPane | null): void {
   const t = linkTarget(url);
   if (!t) return;
   const actions = linkActions(t, { webView: hasWebView(), canCopy: hasClipboard() });
-  const options = [...actions.map((a) => linkActionLabel(a, t, Platform.OS)), "Cancel"];
-  showActionSheet({ title: linkText(t), options, cancelButtonIndex: actions.length }, (i) => {
-    const a = actions[i];
-    if (a) runLinkAction(a, t, pane);
+  showMenu({
+    title: linkText(t),
+    haptic: false,
+    sections: [{ items: actions.map((a) => ({ label: linkActionLabel(a, t, Platform.OS), Icon: LINK_ICON[a], onPick: () => runLinkAction(a, t, pane) })) }],
   });
 }

@@ -215,9 +215,10 @@ const rules: RenderRules = {
 const mdStyles = themed(() =>
   StyleSheet.create({
   body: { color: colors.text, fontSize: BODY, lineHeight: LINE },
-  paragraph: { marginTop: 0, marginBottom: space.sm, flexWrap: "wrap", flexDirection: "row", alignItems: "flex-start" },
-  heading1: { fontSize: type.size.title + 2, lineHeight: 30, fontWeight: "700", marginTop: space.sm, marginBottom: space.sm },
-  heading2: { fontSize: type.size.title, lineHeight: 28, fontWeight: "700", marginTop: space.sm, marginBottom: space.sm },
+  // Paragraphs and lists get `space.md` of air (design spec, "Session"): the reply reads less cramped.
+  paragraph: { marginTop: 0, marginBottom: space.md, flexWrap: "wrap", flexDirection: "row", alignItems: "flex-start" },
+  heading1: { fontSize: type.size.title + 2, lineHeight: 30, fontWeight: "700", marginTop: space.md, marginBottom: space.sm },
+  heading2: { fontSize: type.size.title, lineHeight: 28, fontWeight: "700", marginTop: space.md, marginBottom: space.sm },
   heading3: { fontSize: BODY + 1, lineHeight: LINE, fontWeight: "700", marginTop: space.xs, marginBottom: space.xs },
   heading4: { fontSize: BODY, lineHeight: LINE, fontWeight: "700" },
   heading5: { fontSize: BODY, lineHeight: LINE, fontWeight: "600" },
@@ -233,9 +234,9 @@ const mdStyles = themed(() =>
     borderRadius: radius.sm,
     paddingHorizontal: 4,
   },
-  bullet_list: { marginBottom: space.sm },
-  ordered_list: { marginBottom: space.sm },
-  list_item: { marginBottom: space.xs },
+  bullet_list: { marginBottom: space.md },
+  ordered_list: { marginBottom: space.md },
+  list_item: { marginBottom: space.sm },
   // iOS draws a middle dot; make it read as a bullet.
   bullet_list_icon: { color: colors.textMuted, marginLeft: space.xs, marginRight: space.sm, fontSize: BODY + 10, fontWeight: "900", lineHeight: LINE },
   ordered_list_icon: { color: colors.textMuted, marginLeft: 0, marginRight: space.sm, lineHeight: LINE },

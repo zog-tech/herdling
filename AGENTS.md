@@ -71,13 +71,13 @@ The path alias `@/` points to `app/src/`.
 
 | Path | Responsibility |
 |---|---|
-| `app/` | Expo Router routes: tabs, session, subagent, new session, pairing, host screens, `demo` |
+| `app/` | Expo Router routes: the three tabs (`(tabs)/(overview)` Agents, `(tabs)/spaces` Spaces, `(tabs)/settings` More with one page per topic: `computers`, `appearance`, `voice`, `notifications`, `terminal`, `general`, `diagnostics`, `about`), the stack screens `usage` and `automations` (thin re-exports), session, subagent, new session, pairing, computer screens (`hosts/`), `demo` |
 | `rpc/` | `RpcClient`: request ids, responses, streamed events, cancel |
 | `hosts/` | Saved computers, the connection manager, discovery, password setup, `methods.ts` (`APP_METHODS`), suggested computers (`suggest.ts`), the Herdr 2 card (`coreInstall.ts`, `CoreCard.tsx`) |
 | `pairing/` | Pairing by code and QR code, the pairing URL |
 | `herdr/` | herdr snapshot, start, restart, resume, rename and close actions. `backend.ts`: which actions a Herdr 2 entry has (per host, from `hello.methods`), and the Herdr 2 only hosts (herdlingd 0.2.0, plain ids); `moveGroup.ts`: "Move to space"; `readState.ts`: the "read" rule, `seenSync.ts`: the marks kept on the computer (`agent.mark_seen`) |
 | `newSession/` | New session parts: agent picker, path field with autocomplete, folder browser, recents, the Herdr 2 space picker (`spacePick.ts`) |
-| `board/` | The board: buckets, rows, the peek sheet, elapsed clocks. `tasks.ts`: helpers under their task, the repo line, group tiles; `jump.ts`: "Jump to a terminal" (route `app/jump.tsx`) |
+| `board/` | The Agents tab: buckets, rows, the peek sheet, elapsed clocks, the Dashboard top and the list bar (`ListBar.tsx`, its menu in `listMenu.ts`: status filter, group, sort, "Jump to a terminal"). `agentMenu.ts`: the agent menu; `tasks.ts`: helpers under their task, the repo line, group tiles; `jump.ts`: "Jump to a terminal" (route `app/jump.tsx`) |
 | `spaces/` | The Spaces tab and the space screen (routes `app/(tabs)/spaces/`): the spaces model, the tab map and the thumbnail poll machine |
 | `share/` | "Share to Herdling" (route `app/share.tsx`): the native share module (`native.ts`, `expo-share-intent`, optional), the share bridge in the root layout, the parse of a share (`content.ts`), the link preview (`openGraph.ts`), the prompt text (`prompt.ts`), the send machine (`shareMachine.ts`). `app/+native-intent.tsx` sends the link of the iOS share extension to `/share` |
 | `thread/` | The chat view: thread items, follow, composer, permission choices, the pages of a tab (`PanePager.tsx`, rules in `herdr/tabPanes.ts`) |
@@ -86,8 +86,9 @@ The path alias `@/` points to `app/src/`.
 | `mirror/` | Device mirror: the device list rules (`devices.ts`), the tunnel state machine (`tunnel.ts`) and its runner (`useMirror.ts`), the page messages (`page.ts`); routes `app/devices/` and `app/mirror/` |
 | `push/` | Push token, registration with each computer, notification routing, the in-app banner (`banner.ts`, `BannerHost.tsx`) |
 | `voice/` | Recording, recognition, speech, summaries |
-| `usage/`, `automations/` | Plan usage meters and the automations tab |
-| `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts. `ui/layout.ts`: compact or regular width (two columns from 700 pt); `ui/shortcuts.ts` and `ui/keyCommands.ts`: keyboard shortcuts |
+| `usage/`, `automations/` | The Usage screen (`UsageScreen.tsx`, route `app/usage.tsx`) and the Automations screen (`AutomationsScreen.tsx`, route `app/automations.tsx`). Rows of More open them |
+| `settings/` | The More tab: the index (`MorePage.tsx`, its row values in `moreValues.ts` and `usageSummary.ts`) and one page per topic (`ComputersPage.tsx`, `AppearancePage.tsx`, `VoicePage.tsx`, …, `LogScreen.tsx` for the logs) |
+| `theme/`, `ui/` | Design tokens (`theme/tokens.ts`) and shared UI parts. The kit of `MASTER.md` "Structure": `ui/MenuSheet` (`showMenu`, the one menu; `showActionSheet` in `ui/nativeSheet.ts` draws through it; rules in `menuRules.ts`, life in `menuMachine.ts`), `ui/PickerRow` + `ui/PickerSheet` (`showPicker`), `ui/ActionBar`, `ui/Button`, `ui/IconButton` (the one icon button, also in headers; `CloseButton` uses it), `ui/Segmented` (also the icon form), `ui/SearchField`, `ui/StateNotice`, `ui/Shortcut`, `ui/StatusDot` (and `Dot`), `ui/Screen` (insets in `screenInsets.ts`). `ui/layout.ts`: compact or regular width (two columns from 700 pt); `ui/shortcuts.ts` and `ui/keyCommands.ts`: keyboard shortcuts |
 | `demo/` | The demo host and its scripted scenario |
 | `crash/` | The global error handler, the crash log (keychain, last 5 errors) and the error screen that routes export as `ErrorBoundary` |
 

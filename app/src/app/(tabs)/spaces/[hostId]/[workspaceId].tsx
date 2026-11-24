@@ -1,12 +1,13 @@
 /**
- * One space: the tabs as chips, the panes of the selected tab as live thumbnails, and the space
- * actions ("+ Terminal", "New agent" and "…"). Only the thumbnails of the selected tab read their
+ * One space: the tabs (none for one tab, a `Segmented` for 2 to 4, a `PickerRow` for more), the
+ * panes of the selected tab as live thumbnails, the "⋯" header menu (rename, close) and the
+ * bottom `ActionBar` ("New agent", "Terminal"). Only the thumbnails of the selected tab read their
  * screens, slowly, and only while the screen shows (`useThumbnails`).
  */
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { Bot, Ellipsis, LayoutGrid, Plus } from "lucide-react-native";
+import { Bot, Ellipsis, LayoutGrid, Pencil, SquareTerminal, X } from "lucide-react-native";
 import { useLayoutEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { Alert, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { allows, isCoreEntry, renameKindsFor } from "@/herdr/backend";
 import { expectPane } from "@/herdr/expectedPanes";
@@ -14,47 +15,23 @@ import { promptRename, renameSupported } from "@/herdr/rename";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { startShell } from "@/herdr/startSession";
 import { getHostConn, useHostConn } from "@/hosts/connection";
-import { closeSpaceParams, firstTab, hostSpaces, MAX_THUMBS, tabLabel } from "@/spaces/spaces";
+import { closeSpaceParams, firstTab, hostSpaces, MAX_THUMBS, spaceFolder, tabLabel } from "@/spaces/spaces";
 import { PaneThumb } from "@/spaces/PaneThumb";
 import { useThumbnails } from "@/spaces/useThumbnails";
-import { colors, denseScale, dot, hitTarget, icon, radius, space, state } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
+import { colors, space } from "@/theme/tokens";
+import { ActionBar, useActionBarSpace } from "@/ui/ActionBar";
+import { Group } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
-import { StateNotice } from "@/ui/StateNotice";
+import { IconButton } from "@/ui/IconButton";
 import { layoutClass } from "@/ui/layout";
+import { showMenu, type MenuItem } from "@/ui/MenuSheet";
+import { PickerRow } from "@/ui/PickerRow";
+import { Segmented } from "@/ui/Segmented";
+import { StateNotice } from "@/ui/StateNotice";
+import { StatusDot } from "@/ui/StatusDot";
 import { Text } from "@/ui/Text";
 
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
-
-/** A tab chip: gold when selected, with an ember dot when a pane of the tab needs you. */
-function TabChip({ label, selected, attention, onPress }: { label: string; selected: boolean; attention: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityLabel={attention ? `${label}, needs you` : label}
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs + 2,
-        minHeight: hitTarget - space.sm,
-        paddingHorizontal: space.md,
-        borderRadius: radius.pill,
-        borderWidth: 1,
-        borderColor: selected ? colors.accent : colors.divider,
-        backgroundColor: selected ? colors.accentTint : colors.card,
-        opacity: pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <Text variant="small" bold={selected} color={selected ? colors.accent : colors.text} maxFontSizeMultiplier={denseScale.pill}>
-        {label}
-      </Text>
-      {attention ? <View style={{ width: dot.size, height: dot.size, borderRadius: dot.size / 2, backgroundColor: colors.status.blocked }} /> : null}
-    </Pressable>
-  );
-}
 
 export default function SpaceScreen() {
   const { hostId, workspaceId, tab } = useLocalSearchParams<{ hostId: string; workspaceId: string; tab?: string }>();
@@ -72,19 +49,10 @@ export default function SpaceScreen() {
   const paneIds = useMemo(() => panes.map((p) => p.paneId), [panes]);
   const texts = useThumbnails(hostId, paneIds, focused && conn.status === "online");
   const [busy, setBusy] = useState(false);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({ title: spaceInfo?.label ?? "Space" });
-  }, [navigation, spaceInfo?.label]);
+  const bar = useActionBarSpace();
 
   // The folder of the space: the folder of its first pane that has one. A new terminal opens there.
-  const folder = useMemo(() => {
-    if (!snapshot) return undefined;
-    const inSpace = (p: { workspace_id: string }) => p.workspace_id === workspaceId;
-    const agent = snapshot.agents.find((a) => inSpace(a) && a.cwd);
-    const pane = snapshot.panes.find((p) => inSpace(p) && (p.cwd || p.foreground_cwd));
-    return agent?.cwd ?? pane?.cwd ?? pane?.foreground_cwd ?? undefined;
-  }, [snapshot, workspaceId]);
+  const folder = useMemo(() => (snapshot ? spaceFolder(snapshot, workspaceId) : undefined), [snapshot, workspaceId]);
   const canTab = !!folder && allows(workspaceId, "newTab", hostId);
 
   const open = (paneId: string) => router.push(`/session/${hostId}/${paneId}` as never);
@@ -109,13 +77,14 @@ export default function SpaceScreen() {
   const more = () => {
     const { rpc } = getHostConn(hostId);
     if (!rpc) return;
-    const items: { label: string; destructive?: boolean; onPick: () => void }[] = [];
+    const items: MenuItem[] = [];
     if (renameKindsFor(workspaceId, hostId).includes("workspace") && renameSupported(hostId, "workspace")) {
-      items.push({ label: "Rename space", onPick: () => promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" }) });
+      items.push({ label: "Rename space", Icon: Pencil, onPick: () => promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" }) });
     }
     if (allows(workspaceId, "closeGroup", hostId)) {
       items.push({
         label: "Close space",
+        Icon: X,
         destructive: true,
         onPick: () =>
           Alert.alert("Close this space?", "This closes every agent and terminal in it.", [
@@ -142,15 +111,23 @@ export default function SpaceScreen() {
       Alert.alert("No more actions", "Update herdlingd on this computer for more space actions.");
       return;
     }
-    showActionSheet(
-      { options: [...items.map((i) => i.label), "Cancel"], cancelButtonIndex: items.length, destructiveButtonIndex: items.flatMap((m, k) => (m.destructive ? [k] : [])) },
-      (k) => items[k]?.onPick(),
-    );
+    showMenu({ title: spaceInfo?.label ?? "Space", sections: [{ items }] });
   };
+
+  // The header: the space name and the "⋯" button. `more` reads fresh state, so the effect keeps a ref-free closure.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: spaceInfo?.label ?? "Space",
+      headerRight: () => (
+        <IconButton label="Space actions" hint="Opens the menu to rename or close the space" Icon={Ellipsis} size="header" onPress={more} />
+      ),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation, spaceInfo, hostId, workspaceId]);
 
   if (!spaceInfo) {
     return (
-      <View style={{ flex: 1, padding: space.lg, backgroundColor: colors.bg }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StateNotice Icon={LayoutGrid} message={snapshot ? "This space is gone." : "Loading…"} />
       </View>
     );
@@ -160,56 +137,65 @@ export default function SpaceScreen() {
   const columns = layoutClass(width) === "regular" ? 3 : 2;
   const cell = `${100 / columns}%` as const;
 
+  const tabs = spaceInfo.tabs;
+  const needYou = tabs.flatMap((t, i) => (t.attention > 0 ? [tabLabel(t, i)] : []));
+  const multi = tabs.length > 1;
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md }}>
-        {spaceInfo.tabs.map((t, i) => (
-          <TabChip key={t.tabId} label={tabLabel(t, i)} selected={t.tabId === tabId} attention={t.attention > 0} onPress={() => setPicked(t.tabId)} />
-        ))}
-      </ScrollView>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: space.md }}>
-        {panes.map((p) => (
-          <View key={p.paneId} style={{ width: cell, padding: space.xs }}>
-            <PaneThumb pane={p} text={texts[p.paneId]} onPress={() => open(p.paneId)} />
-          </View>
-        ))}
-        {panes.length === 0 ? (
-          <View style={{ paddingHorizontal: space.sm }}>
-            <StateNotice Icon={LayoutGrid} message="This tab has no panes." />
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingTop: space.md, paddingBottom: bar.contentPadding, gap: space.md }}
+      >
+        {tabs.length >= 2 && tabs.length <= 4 ? (
+          <View style={{ paddingHorizontal: space.lg }}>
+            <Segmented
+              label="Tabs"
+              value={tabId ?? tabs[0].tabId}
+              onChange={setPicked}
+              options={tabs.map((t, i) => ({ id: t.tabId, label: tabLabel(t, i), attention: t.attention > 0 ? "needs you" : undefined }))}
+            />
           </View>
         ) : null}
-      </View>
-      {(selected?.panes.length ?? 0) > MAX_THUMBS ? (
-        <Text variant="caption" muted style={{ paddingHorizontal: space.lg }}>
-          {`${(selected?.panes.length ?? 0) - MAX_THUMBS} more panes in this tab. Use the search to open them.`}
-        </Text>
-      ) : null}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.lg }}>
-        {canTab ? <Button label="Terminal" Icon={Plus} variant="secondary" loading={busy} onPress={() => void newTerminal()} /> : null}
-        <Button
-          label="New agent"
-          Icon={Bot}
-          variant="secondary"
-          onPress={() => router.push({ pathname: "/new", params: { host: hostId, workspace: workspaceId } } as never)}
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="More space actions"
-          onPress={more}
-          style={({ pressed }) => ({
-            width: hitTarget,
-            height: hitTarget,
-            borderRadius: radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? state.pressedOpacity : 1,
-          })}
-        >
-          <Ellipsis size={icon.md} color={colors.text} />
-        </Pressable>
-      </View>
-    </ScrollView>
+        {tabs.length > 4 ? (
+          <Group>
+            <PickerRow
+              title="Tab"
+              picker={{
+                options: tabs.map((t, i) => ({ value: t.tabId, label: tabLabel(t, i), detail: t.attention > 0 ? "Needs you" : undefined })),
+                value: tabId,
+                onPick: setPicked,
+              }}
+            />
+          </Group>
+        ) : null}
+        {multi && needYou.length > 0 ? (
+          <View style={{ paddingHorizontal: space.lg }}>
+            <StatusDot label={`${needYou.join(", ")} ${needYou.length === 1 ? "needs" : "need"} you`} color={colors.status.blocked} />
+          </View>
+        ) : null}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: space.md }}>
+          {panes.map((p) => (
+            <View key={p.paneId} style={{ width: cell, padding: space.xs }}>
+              <PaneThumb pane={p} text={texts[p.paneId]} onPress={() => open(p.paneId)} />
+            </View>
+          ))}
+        </View>
+        {panes.length === 0 ? (
+          <StateNotice Icon={LayoutGrid} message="This tab has no panes." />
+        ) : null}
+        {(selected?.panes.length ?? 0) > MAX_THUMBS ? (
+          <Text variant="caption" muted style={{ paddingHorizontal: space.lg }}>
+            {`${(selected?.panes.length ?? 0) - MAX_THUMBS} more panes in this tab. Use the search to open them.`}
+          </Text>
+        ) : null}
+      </ScrollView>
+      <ActionBar
+        onSpace={bar.onSpace}
+        primary={{ label: "New agent", Icon: Bot, onPress: () => router.push({ pathname: "/new", params: { host: hostId, workspace: workspaceId } } as never) }}
+        secondary={canTab ? { label: "Terminal", Icon: SquareTerminal, loading: busy, onPress: () => void newTerminal() } : undefined}
+      />
+    </View>
   );
 }

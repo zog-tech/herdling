@@ -59,9 +59,10 @@ export function Walkthrough({ steps, start = 1 }: { steps: Step[]; start?: numbe
         <View key={i} style={{ flexDirection: "row", gap: space.md }} accessible={!s.command}>
           <View
             style={{
-              width: 24,
-              height: 24,
-              borderRadius: radius.pill,
+              // A number tile as large as an icon: a rounded square like a tag, not a pill.
+              width: icon.lg,
+              height: icon.lg,
+              borderRadius: radius.sm,
               backgroundColor: colors.raised,
               alignItems: "center",
               justifyContent: "center",

@@ -79,7 +79,7 @@ export function coreInstallErrorMessage(e: unknown): string {
     case "timeout":
       return "The Herdr 2 install took too long. Check the status again in a moment.";
     case "disconnected":
-      return "The connection closed during the install. Check the status when the host is online again.";
+      return "The connection closed during the install. Check the status when the computer is online again.";
     default:
       return `The Herdr 2 install failed${message ? `: ${message.slice(0, 400)}` : "."}`;
   }

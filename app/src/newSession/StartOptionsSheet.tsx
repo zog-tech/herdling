@@ -1,13 +1,14 @@
 /**
  * The content of the start options sheet: the permission mode, the model, the thinking level (Pi),
  * the extra flags, a preview of the command line and "Reset to default". It reads and writes the
- * remembered options of the kind, so the screen under the sheet shows each change. A tap on a mode
- * or a model chip goes to the store at once. The text fields keep their own text while the user
+ * remembered options of the kind, so the screen under the sheet shows each change. The choices are
+ * rows of grouped bands with a check on the current one (design rule 2). A tap on a mode or a model
+ * row goes to the store at once. The text fields keep their own text while the user
  * types and go to the store when editing ends or the sheet closes.
  */
-import { Check } from "lucide-react-native";
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Check, type LucideIcon } from "lucide-react-native";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 
 import { agentLabel } from "@/herdr/agentKinds";
 import { fontFamily } from "@/theme/fonts";
@@ -15,13 +16,13 @@ import { colors, denseScale, hitTarget, icon, radius, space, type } from "@/them
 import { Button } from "@/ui/Button";
 import { CloseButton } from "@/ui/CloseButton";
 import { glassAvailable } from "@/ui/Glass";
+import { Group, Section } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
 import { KeyboardAvoider } from "@/ui/KeyboardAvoider";
 import { Segmented } from "@/ui/Segmented";
 import { useSheetKeyboardPad } from "@/ui/sheetKeyboard";
 import { Text } from "@/ui/Text";
 
-import { Chip } from "./Chip";
 import { modeIcon } from "./modeIcon";
 import {
   commandPreview,
@@ -53,46 +54,31 @@ function commit(kind: string, draft: Draft) {
   rememberChoice(kind, { ...stored, model: draft.model.trim(), extra: draft.extra });
 }
 
-/** A titled part of the sheet: a small uppercase header, the content, and an optional muted footer. */
-function Part({ title, footer, children }: { title: string; footer?: string; children: ReactNode }) {
-  return (
-    <View style={{ gap: space.sm }}>
-      <Text variant="section" accessibilityRole="header" maxFontSizeMultiplier={denseScale.row} style={{ paddingHorizontal: space.lg }}>
-        {title}
-      </Text>
-      {children}
-      {footer ? (
-        <Text variant="caption" muted maxFontSizeMultiplier={denseScale.row} style={{ paddingHorizontal: space.lg }}>
-          {footer}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-/** An inset rounded band, as in a native settings sheet. Children are split by inset hairlines. */
-function Band({ children }: { children: ReactNode[] }) {
-  const rows = children.filter(Boolean);
-  return (
-    <View style={{ backgroundColor: Platform.OS === "android" ? colors.raised : colors.card, borderRadius: radius.lg, overflow: "hidden" }}>
-      {rows.map((row, i) => (
-        <View key={i}>
-          {i > 0 ? <View style={{ height: StyleSheet.hairlineWidth, marginLeft: space.lg, backgroundColor: colors.divider }} /> : null}
-          {row}
-        </View>
-      ))}
-    </View>
-  );
-}
-
-/** One permission mode row: icon, label, one detail line, and a gold check mark on the selected mode. */
-function ModeRow({ mode, selected, onPress }: { mode: PermissionMode; selected: boolean; onPress: () => void }) {
-  const Icon = modeIcon(mode);
-  const tint = mode.danger ? colors.danger : colors.text;
+/**
+ * One choice row with a check on the selected one: an optional icon, the label, an optional detail
+ * line. A radio for VoiceOver. `accessibilityLabel` is the label, with the detail after it.
+ */
+function CheckRow({
+  label,
+  detail,
+  Icon,
+  danger,
+  selected,
+  accessibilityLabel,
+  onPress,
+}: {
+  label: string;
+  detail?: string;
+  Icon?: LucideIcon;
+  danger?: boolean;
+  selected: boolean;
+  accessibilityLabel?: string;
+  onPress: () => void;
+}) {
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityLabel={`${mode.label}. ${mode.detail}`}
+      accessibilityLabel={accessibilityLabel ?? (detail ? `${label}. ${detail}` : label)}
       accessibilityState={{ selected, checked: selected }}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -105,18 +91,25 @@ function ModeRow({ mode, selected, onPress }: { mode: PermissionMode; selected: 
         backgroundColor: pressed ? colors.raised : "transparent",
       })}
     >
-      <Icon size={icon.md} color={mode.danger ? colors.danger : colors.textMuted} strokeWidth={icon.strokeWidth} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text color={tint} maxFontSizeMultiplier={denseScale.row}>
-          {mode.label}
+      {Icon ? <Icon size={icon.md} color={danger ? colors.danger : colors.textMuted} strokeWidth={icon.strokeWidth} /> : null}
+      <View style={{ flex: 1, gap: space.xxs }}>
+        <Text color={danger ? colors.danger : colors.text} maxFontSizeMultiplier={denseScale.row}>
+          {label}
         </Text>
-        <Text variant="small" muted maxFontSizeMultiplier={denseScale.row}>
-          {mode.detail}
-        </Text>
+        {detail ? (
+          <Text variant="small" muted maxFontSizeMultiplier={denseScale.row}>
+            {detail}
+          </Text>
+        ) : null}
       </View>
-      <View style={{ width: icon.md }}>{selected ? <Check size={icon.md} color={colors.accent} strokeWidth={2.5} /> : null}</View>
+      <View style={{ width: icon.md }}>{selected ? <Check size={icon.md} color={colors.accent} strokeWidth={icon.strokeWidth} /> : null}</View>
     </Pressable>
   );
+}
+
+/** One permission mode row: the mode icon, the label and its detail line. */
+function ModeRow({ mode, selected, onPress }: { mode: PermissionMode; selected: boolean; onPress: () => void }) {
+  return <CheckRow label={mode.label} detail={mode.detail} Icon={modeIcon(mode)} danger={mode.danger} selected={selected} onPress={onPress} />;
 }
 
 /** A mono text field inside a band, with no frame of its own (the band is the frame). */
@@ -210,11 +203,12 @@ export function StartOptionsSheet({ kind, onClose }: { kind: string; onClose: ()
       automaticallyAdjustContentInsets={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
-      contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xxl, gap: space.xl }}
+      // Flush: the grouped bands run full width (design rule 4); free content has its own side inset.
+      contentContainerStyle={{ paddingTop: space.sm, paddingBottom: space.xxl, gap: space.xl }}
     >
       {mode ? (
-        <Part title="Permission mode">
-          <Band>
+        <Section title="Permission mode">
+          <Group>
             {opts.modes.map((m) => (
               <ModeRow
                 key={m.id}
@@ -227,60 +221,73 @@ export function StartOptionsSheet({ kind, onClose }: { kind: string; onClose: ()
                 }}
               />
             ))}
-          </Band>
-        </Part>
+          </Group>
+        </Section>
       ) : null}
       {opts.modelFlag ? (
-        <Part title="Model" footer={aliases.length > 0 ? undefined : "Empty: the default model of the agent."}>
-          {aliases.length > 0 ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-              <Chip label="Default" accessibilityLabel="Default model" selected={model === ""} onPress={() => pickModel("")} />
-              {aliases.map((a) => (
-                <Chip key={a.id} label={a.label} selected={alias?.id === a.id} onPress={() => pickModel(a.id)} />
-              ))}
-            </View>
-          ) : null}
-          <Band>
-            {[
-              <BandField
-                key="model"
-                label={aliases.length > 0 ? "Custom model" : "Model"}
-                value={alias ? "" : draft.model}
-                onChangeText={(t) => setDraft({ model: t })}
-                onEndEditing={() => commit(kind, latest.current)}
-                placeholder={aliases.length > 0 ? "Custom model name" : "Model name"}
-              />,
-            ]}
-          </Band>
-        </Part>
+        <Section title="Model" footer={aliases.length > 0 ? undefined : "Empty: the default model of the agent."}>
+          <Group>
+            {aliases.length > 0 ? (
+              <CheckRow
+                label="Default"
+                accessibilityLabel="Default model"
+                selected={model === ""}
+                onPress={() => {
+                  if (model === "") return;
+                  haptics.tap();
+                  pickModel("");
+                }}
+              />
+            ) : null}
+            {aliases.map((a) => (
+              <CheckRow
+                key={a.id}
+                label={a.label}
+                selected={alias?.id === a.id}
+                onPress={() => {
+                  if (alias?.id === a.id) return;
+                  haptics.tap();
+                  pickModel(a.id);
+                }}
+              />
+            ))}
+            <BandField
+              label={aliases.length > 0 ? "Custom model" : "Model"}
+              value={alias ? "" : draft.model}
+              onChangeText={(t) => setDraft({ model: t })}
+              onEndEditing={() => commit(kind, latest.current)}
+              placeholder={aliases.length > 0 ? "Custom model name" : "Model name"}
+            />
+          </Group>
+        </Section>
       ) : null}
       {opts.thinking ? (
-        <Part title="Thinking">
-          <Segmented
-            label="Thinking"
-            options={[{ id: DEFAULT_THINKING_ID, label: "Default" }, ...opts.thinking.levels]}
-            value={level?.id ?? DEFAULT_THINKING_ID}
-            onChange={(id) => store((c) => withThinking(c, id))}
-          />
-        </Part>
+        <Section title="Thinking">
+          <View style={{ paddingHorizontal: space.lg }}>
+            <Segmented
+              label="Thinking"
+              options={[{ id: DEFAULT_THINKING_ID, label: "Default" }, ...opts.thinking.levels]}
+              value={level?.id ?? DEFAULT_THINKING_ID}
+              onChange={(id) => store((c) => withThinking(c, id))}
+            />
+          </View>
+        </Section>
       ) : null}
-      <Part title="Extra flags" footer="Added after the other flags.">
-        <Band>
-          {[
-            <BandField
-              key="extra"
-              label="Extra flags"
-              value={draft.extra}
-              onChangeText={(t) => setDraft({ extra: t })}
-              onEndEditing={() => commit(kind, latest.current)}
-              placeholder="--flag value"
-            />,
-          ]}
-        </Band>
-      </Part>
-      <Part title="Command">
+      <Section title="Extra flags" footer="Added after the other flags.">
+        <Group>
+          <BandField
+            label="Extra flags"
+            value={draft.extra}
+            onChangeText={(t) => setDraft({ extra: t })}
+            onEndEditing={() => commit(kind, latest.current)}
+            placeholder="--flag value"
+          />
+        </Group>
+      </Section>
+      <Section title="Command">
         <View
           style={{
+            marginHorizontal: space.lg,
             backgroundColor: colors.sunken,
             borderRadius: radius.md,
             borderWidth: 1,
@@ -293,17 +300,19 @@ export function StartOptionsSheet({ kind, onClose }: { kind: string; onClose: ()
             {`$ ${command}`}
           </Text>
         </View>
-      </Part>
-      <Button
-        label="Reset to default"
-        variant="secondary"
-        disabled={isDefaultChoice(kind, live)}
-        onPress={() => {
-          haptics.tap();
-          setDraft({ model: "", extra: "" });
-          rememberChoice(kind, {});
-        }}
-      />
+      </Section>
+      <View style={{ paddingHorizontal: space.lg }}>
+        <Button
+          label="Reset to default"
+          variant="secondary"
+          disabled={isDefaultChoice(kind, live)}
+          onPress={() => {
+            haptics.tap();
+            setDraft({ model: "", extra: "" });
+            rememberChoice(kind, {});
+          }}
+        />
+      </View>
     </ScrollView>
   );
   // react-native-screens looks for a scroll view among the top views of a form sheet and sets its
@@ -316,10 +325,11 @@ export function StartOptionsSheet({ kind, onClose }: { kind: string; onClose: ()
     </View>
   );
 
-  // Android: the sheet is `card`, and the keyboard pad replaces the avoiding view (see `useSheetKeyboardPad`).
+  // Android: the sheet is `bg`, so the `card` bands read on it. The keyboard pad replaces the
+  // avoiding view (see `useSheetKeyboardPad`).
   if (Platform.OS === "android") {
     return (
-      <View ref={keyboard.ref} style={{ flex: 1, backgroundColor: colors.card, paddingBottom: keyboard.pad }}>
+      <View ref={keyboard.ref} style={{ flex: 1, backgroundColor: colors.bg, paddingBottom: keyboard.pad }}>
         {header}
         {content}
       </View>

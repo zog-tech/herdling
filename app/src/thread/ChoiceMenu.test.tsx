@@ -257,3 +257,29 @@ describe("ChoiceMenu with question tabs (AskUserQuestion with more than one ques
     expect(byLabel(t, /question$/)).toHaveLength(0);
   });
 });
+
+describe("ChoiceMenu button looks", () => {
+  /** The fill of the row of the option with this key: the View around its pressable. */
+  const fill = (t: ReactTestRenderer, key: string) => {
+    const row = byLabel(t, new RegExp(`^${key}\\. `))[0];
+    const box = row.parent?.parent as ReactTestInstance | null;
+    const style = [box?.props.style].flat().reduce((a, b) => ({ ...a, ...(b ?? {}) }), {} as Record<string, unknown>);
+    return style.backgroundColor;
+  };
+
+  it("draws the approve option as the primary button and the others with no border", () => {
+    const { colors } = jest.requireActual<typeof import("@/theme/tokens")>("@/theme/tokens");
+    const { t } = render(fixture("claude_bash_permission"));
+    expect(fill(t, "1")).toBe(colors.accent);
+    expect(fill(t, "2")).toBe(colors.raised);
+    expect(fill(t, "3")).toBe(colors.raised);
+    const bordered = t.root.findAll((n) => typeof n.type === "string" && [n.props.style].flat().some((s) => s && (s as { borderWidth?: number }).borderWidth));
+    expect(bordered).toHaveLength(0);
+  });
+
+  it("has no approve option in a question", () => {
+    const { colors } = jest.requireActual<typeof import("@/theme/tokens")>("@/theme/tokens");
+    const { t } = render(fixture("claude_ask_user_question"));
+    expect(fill(t, "1")).toBe(colors.raised);
+  });
+});

@@ -1,8 +1,10 @@
 import { Pointer, X } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
-import { colors, hitTarget, icon, radius, space, state } from "@/theme/tokens";
+import { colors, icon, radius, space } from "@/theme/tokens";
 import { Text } from "@/ui/Text";
+
+import { IconButton } from "@/ui/IconButton";
 
 export const HINT_TEXT = "Tap an agent to see its chat and talk to it.";
 /** A little rounder than a control, a little less round than a card. */
@@ -24,8 +26,7 @@ export function BoardHint({ onClose }: { onClose: () => void }) {
         marginBottom: space.sm,
         paddingLeft: space.md,
         borderRadius: HINT_RADIUS,
-        borderWidth: 1,
-        borderColor: colors.hintEdge,
+        // A quiet fill and no edge: a hint is not a button.
         backgroundColor: colors.hintFill,
       }}
     >
@@ -33,20 +34,7 @@ export function BoardHint({ onClose }: { onClose: () => void }) {
       <Text variant="small" style={{ flex: 1, paddingVertical: space.sm + 2 }}>
         {HINT_TEXT}
       </Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss hint"
-        onPress={onClose}
-        style={({ pressed }) => ({
-          width: hitTarget,
-          height: hitTarget,
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: pressed ? state.pressedOpacity : 1,
-        })}
-      >
-        <X size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
-      </Pressable>
+      <IconButton label="Dismiss hint" Icon={X} color={colors.textMuted} onPress={onClose} />
     </View>
   );
 }

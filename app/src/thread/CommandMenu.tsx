@@ -1,58 +1,28 @@
 import type { CommandInfo } from "@herdling/protocol";
-import { Pressable, ScrollView, View } from "react-native";
 
-import { colors, hitTarget, radius, space } from "@/theme/tokens";
-import { Text } from "@/ui/Text";
+import { sheet } from "@/theme/tokens";
+import { MenuRow } from "@/ui/MenuSheet";
+
+import { InlineMenu } from "./InlineMenu";
 
 /** Rows visible before the list scrolls. */
-export const MENU_ROWS = 6;
+export const MENU_ROWS = 4.5;
 
-/** One command: `/name` (`$name` for a Codex skill, `@name` for an OpenCode skill) and a one-line muted description. */
+/** The text of a command: `/name` (`$name` for a Codex skill, `@name` for an OpenCode skill). */
+export const commandText = (c: CommandInfo) => `${c.trigger ?? "/"}${c.name}`;
+
+/** One command in the menu row look: the command and its description as the detail line. */
 export function CommandRow({ c, onPick }: { c: CommandInfo; onPick: (c: CommandInfo) => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${c.trigger ?? "/"}${c.name}`}
-      accessibilityHint={c.description}
-      onPress={() => onPick(c)}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        justifyContent: "center",
-        paddingHorizontal: space.md,
-        backgroundColor: pressed ? colors.raised : "transparent",
-      })}
-    >
-      <Text variant="small" mono numberOfLines={1}>
-        {`${c.trigger ?? "/"}${c.name}`}
-      </Text>
-      {c.description ? (
-        <Text variant="caption" muted numberOfLines={1}>
-          {c.description}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
+  return <MenuRow item={{ label: commandText(c), detail: c.description || undefined }} onPress={() => onPick(c)} />;
 }
 
 /** The list above the composer while the user types `/name`. Taps do not close the keyboard. */
 export function CommandMenu({ commands, onPick }: { commands: CommandInfo[]; onPick: (c: CommandInfo) => void }) {
   return (
-    <View
-      accessibilityLabel="Commands"
-      style={{
-        maxHeight: hitTarget * MENU_ROWS,
-        backgroundColor: colors.card,
-        borderWidth: 1,
-        borderColor: colors.divider,
-        borderRadius: radius.md,
-        overflow: "hidden",
-      }}
-    >
-      <ScrollView keyboardShouldPersistTaps="always">
-        {commands.map((c) => (
-          <CommandRow key={c.name} c={c} onPick={onPick} />
-        ))}
-      </ScrollView>
-    </View>
+    <InlineMenu label="Commands" maxHeight={Math.round(sheet.rowHeight * MENU_ROWS)}>
+      {commands.map((c) => (
+        <CommandRow key={c.name} c={c} onPick={onPick} />
+      ))}
+    </InlineMenu>
   );
 }

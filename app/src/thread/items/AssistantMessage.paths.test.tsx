@@ -7,7 +7,7 @@ import { AssistantMessage } from "./AssistantMessage";
 // This file uses the real markdown package, so the text and code rules run as in the app.
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn() }));
+jest.mock("@/ui/MenuSheet", () => ({ ...jest.requireActual("@/ui/MenuSheet"), showMenu: jest.fn() }));
 let mockMethods: string[] | undefined = ["files.get"];
 jest.mock("@/hosts/connection", () => ({
   useHostConn: () => ({ status: "online", rpc: null, hello: mockMethods ? { methods: mockMethods } : {} }),

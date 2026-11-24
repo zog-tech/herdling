@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { CircleAlert, CloudOff, Puzzle, RefreshCw } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
@@ -8,10 +8,10 @@ import { LIST_METHOD, listIntegrations, needsIntegration, type IntegrationInfo }
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { herdrSupports, UNSUPPORTED } from "@/herdr/support";
 import { useHostConn } from "@/hosts/connection";
+import { Working } from "@/hosts/flowParts";
+import { IconButton } from "@/ui/IconButton";
 import { RpcError } from "@/rpc/RpcClient";
 import { colors, icon, radius, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { DelayedSpinner } from "@/ui/Delayed";
 import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
@@ -66,6 +66,15 @@ export default function ExplainScreen() {
     };
   }, [load]);
 
+  // "Check again" is a header button, so no button floats at the end of the page.
+  const header = rpc ? (
+    <Stack.Screen
+      options={{
+        headerRight: () => <IconButton label="Check again" Icon={RefreshCw} disabled={state.kind === "loading"} onPress={() => void load()} size="header" />,
+      }}
+    />
+  ) : null;
+
   if (!rpc)
     return (
       <Screen>
@@ -75,15 +84,14 @@ export default function ExplainScreen() {
   if (state.kind === "loading")
     return (
       <Screen>
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <DelayedSpinner color={colors.textMuted} />
-          <Text muted>Asking herdr…</Text>
-        </View>
+        {header}
+        <Working bare text="Asking herdr…" />
       </Screen>
     );
   if (state.kind === "unsupported")
     return (
       <Screen>
+        {header}
         <StateNotice
           Icon={CircleAlert}
           message="The herdr on this computer cannot explain a status. Update herdr on the computer to use this."
@@ -93,6 +101,7 @@ export default function ExplainScreen() {
   if (state.kind === "error")
     return (
       <Screen>
+        {header}
         <StateNotice
           Icon={CircleAlert}
           color={colors.danger}
@@ -106,6 +115,7 @@ export default function ExplainScreen() {
   const { view, integration } = state;
   return (
     <Screen flush>
+      {header}
       <View style={{ paddingHorizontal: space.lg, gap: space.sm }} accessibilityLiveRegion="polite">
         <Text variant="headline">{view.summary}</Text>
         {view.reasons.map((r) => (
@@ -165,10 +175,6 @@ export default function ExplainScreen() {
           </Group>
         </Section>
       ) : null}
-
-      <View style={{ paddingHorizontal: space.lg }}>
-        <Button label="Check again" variant="secondary" Icon={RefreshCw} onPress={() => void load()} />
-      </View>
     </Screen>
   );
 }

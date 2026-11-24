@@ -8,7 +8,8 @@ export type ShortcutId =
   | "tab1"
   | "tab2"
   | "tab3"
-  | "tab4"
+  | "usage"
+  | "automations"
   | "prevAgent"
   | "nextAgent"
   | "send"
@@ -22,30 +23,36 @@ export type ShortcutId =
 export type Shortcut = NativeKeyCommand & { id: ShortcutId };
 
 const cmd: KeyModifier[] = ["command"];
+const cmdShift: KeyModifier[] = ["command", "shift"];
 
 /** All shortcuts, in the order of the iPadOS shortcut list. */
 export const SHORTCUTS: readonly Shortcut[] = [
-  { id: "tab1", input: "1", modifiers: cmd, title: "Overview" },
-  { id: "tab2", input: "2", modifiers: cmd, title: "Usage" },
-  { id: "tab3", input: "3", modifiers: cmd, title: "Automations" },
-  { id: "tab4", input: "4", modifiers: cmd, title: "Settings" },
+  { id: "tab1", input: "1", modifiers: cmd, title: "Agents" },
+  { id: "tab2", input: "2", modifiers: cmd, title: "Spaces" },
+  { id: "tab3", input: "3", modifiers: cmd, title: "More" },
+  { id: "usage", input: "u", modifiers: cmdShift, title: "Usage" },
+  { id: "automations", input: "a", modifiers: cmdShift, title: "Automations" },
   { id: "prevAgent", input: "[", modifiers: cmd, title: "Previous Agent" },
   { id: "nextAgent", input: "]", modifiers: cmd, title: "Next Agent" },
   { id: "send", input: "enter", modifiers: cmd, title: "Send Prompt" },
   { id: "interrupt", input: ".", modifiers: cmd, title: "Send Ctrl-C" },
   { id: "toggleMode", input: "t", modifiers: cmd, title: "Thread or Terminal" },
   { id: "newSession", input: "n", modifiers: cmd, title: "New Session" },
-  { id: "refresh", input: "r", modifiers: cmd, title: "Reconnect Offline Hosts" },
+  { id: "refresh", input: "r", modifiers: cmd, title: "Reconnect Offline Computers" },
   { id: "find", input: "f", modifiers: cmd, title: "Find" },
   { id: "escape", input: "escape", modifiers: [], title: "Send Esc" },
 ];
 
-/** The route of each tab shortcut, ⌘1 to ⌘4. */
-export const TAB_ROUTES: Readonly<Record<"tab1" | "tab2" | "tab3" | "tab4", string>> = {
+/**
+ * The route of each app-wide shortcut: ⌘1 to ⌘3 for the three tabs (Agents, Spaces, More), and
+ * ⌘⇧U and ⌘⇧A for Usage and Automations, which were tabs before and are now stack screens.
+ */
+export const TAB_ROUTES: Readonly<Record<"tab1" | "tab2" | "tab3" | "usage" | "automations", string>> = {
   tab1: "/",
-  tab2: "/usage",
-  tab3: "/automations",
-  tab4: "/settings",
+  tab2: "/spaces",
+  tab3: "/settings",
+  usage: "/usage",
+  automations: "/automations",
 };
 
 /** The shortcuts with these ids, in table order. Unknown ids are left out. */

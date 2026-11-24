@@ -98,7 +98,7 @@ export function herdrUpdateErrorMessage(e: unknown): string {
     case "timeout":
       return "The herdr update took too long and stopped. Check the herdr version, then try again.";
     case "disconnected":
-      return "The connection closed during the update. Check the herdr version when the host is online again.";
+      return "The connection closed during the update. Check the herdr version when the computer is online again.";
     default:
       return `The herdr update failed${message ? `: ${message.slice(0, 600)}` : "."}`;
   }
@@ -110,7 +110,7 @@ export function herdrUpdateErrorMessage(e: unknown): string {
  */
 export async function runHerdrUpdate(hostId: string, waitMs = RECONNECT_WAIT_MS): Promise<{ text: string; output?: string }> {
   const conn = getHostConn(hostId);
-  if (conn.status !== "online" || !conn.rpc) throw new Error("The host is offline. Connect it first.");
+  if (conn.status !== "online" || !conn.rpc) throw new Error("The computer is offline. Connect it first.");
   let r: HerdrUpdate;
   try {
     r = await conn.rpc.call<HerdrUpdate>("herdr.update", {}, HERDR_UPDATE_TIMEOUT_MS);

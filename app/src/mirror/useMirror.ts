@@ -108,7 +108,7 @@ export class MirrorRunner {
       case "openTunnel": {
         const cmd = io.command();
         if (cmd === undefined) {
-          this.send({ type: "failed", gen: fx.gen, message: "the host has no command" });
+          this.send({ type: "failed", gen: fx.gen, message: "the computer has no command" });
           return;
         }
         io.startPreview(fx.port, proxyCommand(cmd, fx.port, fx.grant)).then(

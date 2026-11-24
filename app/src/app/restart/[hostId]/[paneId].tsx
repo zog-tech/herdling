@@ -1,7 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { TriangleAlert } from "lucide-react-native";
+import { CircleAlert, CloudOff, RotateCcw } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { View } from "react-native";
 
 import { agentLabel } from "@/herdr/agentKinds";
 import { restartConfirmed } from "@/herdr/confirmActions";
@@ -9,16 +8,16 @@ import { expectPane } from "@/herdr/expectedPanes";
 import { canResume, openResumedSession, paneSession } from "@/herdr/sessionActions";
 import { useSnapshots } from "@/herdr/snapshotStore";
 import { useHostConn } from "@/hosts/connection";
-import { DangerWarning, StartOptionsBar } from "@/newSession/StartOptionsBar";
+import { Lead, Outcome } from "@/hosts/flowParts";
+import { StartOptionsBar } from "@/newSession/StartOptionsBar";
 import { buildArgs } from "@/newSession/startOptions";
 import { choiceFor, useStartOptionsMemory } from "@/newSession/startOptionsMemory";
-import { colors, icon, space } from "@/theme/tokens";
-import { Button } from "@/ui/Button";
-import { Card } from "@/ui/Card";
+import { ActionBar } from "@/ui/ActionBar";
 import { GoldSwitch } from "@/ui/GoldSwitch";
+import { Group, Section } from "@/ui/Group";
 import { Row } from "@/ui/Row";
 import { Screen } from "@/ui/Screen";
-import { Text } from "@/ui/Text";
+import { StateNotice } from "@/ui/StateNotice";
 
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 
@@ -27,7 +26,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * Modal: restart an agent with other start options, for example in Plan mode or with no
  * permission prompts. "Keep the conversation" resumes the same session when the host can.
- * The options are the remembered ones of the agent kind: the same pills and sheet as in New session change them.
+ * The options are the remembered ones of the agent kind: the same controls as in New session change them.
  * `replace=1`: opened from the session screen, which the new session replaces.
  */
 export default function RestartScreen() {
@@ -85,38 +84,31 @@ export default function RestartScreen() {
   if (!rpc || !agent || !kind)
     return (
       <Screen>
-        <Text muted>{!rpc ? "Host offline." : "This agent is gone."}</Text>
+        <StateNotice Icon={!rpc ? CloudOff : CircleAlert} message={!rpc ? "Computer offline." : "This agent is gone."} />
       </Screen>
     );
 
   return (
-    <Screen>
-      <Text muted>{`${agentLabel(kind)} starts again in a new tab. This pane closes.`}</Text>
+    <Screen
+      flush
+      footer={<ActionBar primary={{ label: busy ? "Restarting…" : "Restart", Icon: RotateCcw, loading: busy, onPress: () => void restart() }} />}
+    >
+      <Lead>{`${agentLabel(kind)} starts again in a new tab. This pane closes.`}</Lead>
       {session ? (
-        <Card>
-          <Row
-            title="Keep the conversation"
-            detail={keep ? "The agent resumes this session." : "The agent starts a new conversation."}
-            trailing={<GoldSwitch label="Keep the conversation" value={keep} onValueChange={(v) => !busy && setKeep(v)} />}
-          />
-        </Card>
+        <Section title="Conversation">
+          <Group>
+            <Row
+              title="Keep the conversation"
+              detail={keep ? "The agent resumes this session." : "The agent starts a new conversation."}
+              trailing={<GoldSwitch label="Keep the conversation" value={keep} onValueChange={(v) => !busy && setKeep(v)} />}
+            />
+          </Group>
+        </Section>
       ) : null}
-      <View style={{ gap: space.sm }}>
-        <Text variant="section" accessibilityRole="header">
-          Start options
-        </Text>
+      <Section title="Start options">
         <StartOptionsBar kind={kind} choice={choice} disabled={busy} />
-        <DangerWarning kind={kind} choice={choice} />
-      </View>
-      {error ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
-          <TriangleAlert size={icon.sm} color={colors.danger} strokeWidth={icon.strokeWidth} />
-          <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
-            {error}
-          </Text>
-        </View>
-      ) : null}
-      <Button label={busy ? "Restarting…" : "Restart"} loading={busy} onPress={() => void restart()} />
+      </Section>
+      {error ? <Outcome ok={false} text={error} /> : null}
     </Screen>
   );
 }

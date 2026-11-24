@@ -107,13 +107,13 @@ export function installMessage(code: InstallFailCode, detail?: string): string {
     case "install_failed":
       return `The install did not finish${detail ? `: ${detail.slice(0, 200)}` : "."}`;
     case "auth_failed":
-      return "The host did not accept the user name and password, or it does not allow password login.";
+      return "The computer did not accept the user name and password, or it does not allow password login.";
     case "host_key_mismatch":
       return "The host key is not the pinned key. Nothing was sent.";
     case "timeout":
       return "The install took too long. Check the network of the computer, then try again.";
     case "unreachable":
-      return "Can't reach the host. Check the host and port.";
+      return "Can't reach the computer. Check the address and port.";
   }
 }
 

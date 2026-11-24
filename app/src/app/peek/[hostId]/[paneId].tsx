@@ -1,13 +1,20 @@
 import { router as appRouter, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { boardAgentMenu, restartAgent, spaceRoute } from "@/board/agentActions";
+import type { BoardItem } from "@/board/buckets";
 import { PeekSheet } from "@/board/PeekSheet";
 import { openRunSheet, type RunRequest } from "@/thread/runCommand";
 import { confirmDiscard, useDraftGuard } from "@/ui/draftGuard";
+import { showMenu } from "@/ui/MenuSheet";
 
 export { RouteErrorBoundary as ErrorBoundary } from "@/crash/ErrorScreen";
 
-/** The Board's peek sheet (a native form sheet). `reply=1` focuses the composer. A draft asks before the sheet closes. */
+/**
+ * The Board's peek sheet (a native form sheet). `reply=1` focuses the composer. A draft asks before
+ * the sheet closes. The "⋯" menu is the agent menu of the Board; an action that leaves the sheet
+ * (open the space, why this status, restart) runs after the sheet is gone.
+ */
 export default function PeekScreen() {
   const { hostId, paneId, reply } = useLocalSearchParams<{ hostId: string; paneId: string; reply?: string }>();
   const router = useRouter();
@@ -25,11 +32,15 @@ export default function PeekScreen() {
   const pendingRun = useRef<RunRequest | null>(null);
   // "Why this status?" opens the same way: after the sheet is gone, so it is not inside the sheet.
   const pendingExplain = useRef<string | null>(null);
+  // A menu action that leaves the sheet ("Open space", "Restart") waits the same way.
+  const pendingAction = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
       if (pendingRun.current) openRunSheet(pendingRun.current);
       const explain = pendingExplain.current;
       if (explain) setTimeout(() => appRouter.push(explain as never), 0);
+      const action = pendingAction.current;
+      if (action) setTimeout(action, 0);
     },
     [],
   );
@@ -50,6 +61,36 @@ export default function PeekScreen() {
     router.dismiss();
   }, [draft, allowLeave, router, hostId, paneId]);
   const onExplain = useCallback(() => void explain(), [explain]);
+  /** Closes the sheet (a draft asks first), then runs `action`. */
+  const leaveThen = useCallback(
+    async (action: () => void) => {
+      if (draft && !(await confirmDiscard())) return;
+      pendingAction.current = action;
+      allowLeave();
+      router.dismiss();
+    },
+    [draft, allowLeave, router],
+  );
+  const onMenu = useCallback(
+    (item: BoardItem, { canExplain }: { canExplain: boolean }) =>
+      showMenu(
+        boardAgentMenu(item, {
+          // Reply is the composer of this sheet, and closing the sheet marks the agent read.
+          openSpace: () => void leaveThen(() => appRouter.push(spaceRoute(item) as never)),
+          explain: canExplain ? onExplain : undefined,
+          restart: () =>
+            void leaveThen(
+              () =>
+                void restartAgent(
+                  item,
+                  (h, p) => appRouter.push(`/session/${h}/${p}` as never),
+                  (path) => appRouter.push(path as never),
+                ),
+            ),
+        }),
+      ),
+    [leaveThen, onExplain],
+  );
 
   return (
     <PeekSheet
@@ -60,7 +101,7 @@ export default function PeekScreen() {
       onClose={close}
       onDraftChange={setDraft}
       onRun={onRun}
-      onExplain={onExplain}
+      onMenu={onMenu}
     />
   );
 }

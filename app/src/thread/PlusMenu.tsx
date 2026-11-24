@@ -2,9 +2,12 @@ import { ClipboardPaste, FileText, Film, ImagePlus, Paperclip, Plus, SquareSlash
 import type { ReactNode } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
 
-import { colors, hitTarget, radius, space, state } from "@/theme/tokens";
+import { colors, denseScale, hitTarget, icon, radius, space, state } from "@/theme/tokens";
 import { GlassSurface, glassAvailable } from "@/ui/Glass";
+import { MenuRow } from "@/ui/MenuSheet";
 import { Text } from "@/ui/Text";
+
+import { InlineMenu } from "./InlineMenu";
 
 import { formatBytes, isFile, isPhoto, isVideo, videoCaption, type Attachment } from "./attachments";
 
@@ -29,7 +32,7 @@ export function PlusButton({
   bare?: boolean;
 }) {
   const slop = Math.max(0, (hitTarget - size) / 2);
-  const glyph = open ? <X size={22} color={colors.text} /> : <Plus size={22} color={colors.text} />;
+  const glyph = open ? <X size={icon.header} color={colors.text} strokeWidth={icon.strokeWidth} /> : <Plus size={icon.header} color={colors.text} strokeWidth={icon.strokeWidth} />;
   return (
     <Pressable
       accessibilityRole="button"
@@ -64,30 +67,9 @@ export function PlusButton({
   );
 }
 
-function MenuRow({ label, icon, onPress }: { label: string; icon: ReactNode; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: hitTarget,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.md,
-        paddingHorizontal: space.md,
-        backgroundColor: pressed ? colors.raised : "transparent",
-      })}
-    >
-      {icon}
-      <Text>{label}</Text>
-    </Pressable>
-  );
-}
-
 /**
- * The menu that the "+" button opens, above the prompt box. A missing handler hides its row.
- * "Paste image" is for builds without the native paste hook.
+ * The menu that the "+" button opens, above the prompt box, in the menu row look (`InlineMenu`).
+ * A missing handler hides its row. "Paste image" is for builds without the native paste hook.
  */
 export function PlusMenu({
   onPhotos,
@@ -101,23 +83,12 @@ export function PlusMenu({
   onCommands?: () => void;
 }) {
   return (
-    <View
-      accessibilityLabel="Add menu"
-      style={{
-        backgroundColor: colors.card,
-        borderWidth: 1,
-        borderColor: colors.divider,
-        borderRadius: radius.md,
-        overflow: "hidden",
-      }}
-    >
-      {onPhotos ? <MenuRow label="Photos and videos" icon={<ImagePlus size={20} color={colors.text} />} onPress={onPhotos} /> : null}
-      {onFiles ? <MenuRow label="Files" icon={<Paperclip size={20} color={colors.text} />} onPress={onFiles} /> : null}
-      {onPaste ? <MenuRow label="Paste image" icon={<ClipboardPaste size={20} color={colors.text} />} onPress={onPaste} /> : null}
-      {onCommands ? (
-        <MenuRow label="Commands & skills" icon={<SquareSlash size={20} color={colors.text} />} onPress={onCommands} />
-      ) : null}
-    </View>
+    <InlineMenu label="Add menu">
+      {onPhotos ? <MenuRow item={{ label: "Photos and videos", Icon: ImagePlus }} onPress={onPhotos} /> : null}
+      {onFiles ? <MenuRow item={{ label: "Files", Icon: Paperclip }} onPress={onFiles} /> : null}
+      {onPaste ? <MenuRow item={{ label: "Paste image", Icon: ClipboardPaste }} onPress={onPaste} /> : null}
+      {onCommands ? <MenuRow item={{ label: "Commands & skills", Icon: SquareSlash }} onPress={onCommands} /> : null}
+    </InlineMenu>
   );
 }
 
@@ -144,13 +115,13 @@ function FileTile({ name, caption, label, video }: { name: string; caption?: str
         paddingHorizontal: space.sm,
       }}
     >
-      {video ? <Film size={20} color={colors.textMuted} /> : <FileText size={20} color={colors.textMuted} />}
+      {video ? <Film size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} /> : <FileText size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />}
       <View style={{ flex: 1 }}>
-        <Text variant="caption" numberOfLines={2} ellipsizeMode="middle" maxFontSizeMultiplier={1.3}>
+        <Text variant="caption" numberOfLines={2} ellipsizeMode="middle" maxFontSizeMultiplier={denseScale.pill}>
           {name}
         </Text>
         {caption ? (
-          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={1.3}>
+          <Text variant="caption" muted numberOfLines={1} maxFontSizeMultiplier={denseScale.pill}>
             {caption}
           </Text>
         ) : null}
@@ -226,17 +197,15 @@ export function RemoveButton({ label, disabled, onPress }: { label: string; disa
         position: "absolute",
         top: -space.xs,
         right: -space.xs,
-        width: 22,
-        height: 22,
-        borderRadius: 11,
+        width: icon.header,
+        height: icon.header,
+        borderRadius: icon.header / 2,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: colors.bg,
-        borderWidth: 1,
-        borderColor: colors.border,
+        backgroundColor: colors.raisedHigh,
       }}
     >
-      <X size={14} color={colors.text} />
+      <X size={icon.sm - 2} color={colors.text} strokeWidth={icon.strokeWidth} />
     </Pressable>
   );
 }

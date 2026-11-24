@@ -1,11 +1,12 @@
 import type { ThreadItem } from "@herdling/protocol";
 import { ArrowDown } from "lucide-react-native";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { FlatList, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
 import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 
-import { colors, hitTarget, motion, radius, space, threadGap } from "@/theme/tokens";
+import { colors, motion, space, threadGap } from "@/theme/tokens";
+import { GlassButton } from "@/ui/GlassButton";
 import { STATUS_ANIM_MS } from "@/ui/StatusRow";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
@@ -209,32 +210,11 @@ export function ThreadList({ items, loadOlder, loadingOlder, hasOlder, tail, foo
               ) : undefined
             }
           />
+          {/* It floats over the thread, so it is glass chrome (design rule 1), not a bordered pill. */}
           {unseen ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Scroll to new messages"
-              onPress={toBottom}
-              style={({ pressed }) => ({
-                position: "absolute",
-                bottom: space.md,
-                alignSelf: "center",
-                minHeight: hitTarget - 8,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: space.xs,
-                paddingHorizontal: space.lg,
-                borderRadius: radius.pill,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: pressed ? colors.card : colors.raised,
-              })}
-              hitSlop={4}
-            >
-              <ArrowDown size={16} color={colors.text} />
-              <Text variant="small" bold>
-                New messages
-              </Text>
-            </Pressable>
+            <View pointerEvents="box-none" style={{ position: "absolute", bottom: space.md, left: 0, right: 0, alignItems: "center" }}>
+              <GlassButton label="Scroll to new messages" title="New messages" Icon={ArrowDown} onPress={toBottom} />
+            </View>
           ) : null}
         </View>
       </LiveToolContext.Provider>

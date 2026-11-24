@@ -1,204 +1,125 @@
 /**
- * The start options as small pills in the start bar of New session and on the restart screen, like
- * the model picker of a chat composer: one tap changes the permission mode or the thinking level
- * with an action sheet. The "Options" pill opens the start options sheet (`app/start-options.tsx`)
- * and shows the model when one is set. The pills read and write the remembered options of the kind directly.
+ * The start options as rows of a `Group` (design rule 2), on New session and on the restart
+ * screen: "Permissions" and "Thinking" (Pi) are `PickerRow`s that open the picker sheet, and
+ * "Options" opens the start options sheet (`app/start-options.tsx`) and shows the model when one
+ * is set. A mode with no approval shows its warning as the detail of the Permissions row, in
+ * `danger` with the warning icon. The rows read and write the remembered options of the kind.
+ *
+ * Each row is its own component, because a `Group` puts a divider between its children and
+ * a component that renders nothing still takes a row. Use `startOptionRows` to know which rows
+ * the kind has.
  */
 import { useRouter } from "expo-router";
-import { Brain, ChevronDown, SlidersHorizontal, TriangleAlert, type LucideIcon } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { Brain, SlidersHorizontal, TriangleAlert } from "lucide-react-native";
 
-import { colors, denseScale, dot, hitTarget, icon, radius, space, state } from "@/theme/tokens";
-import * as haptics from "@/ui/haptics";
-import { showActionSheet } from "@/ui/nativeSheet";
-import { Text } from "@/ui/Text";
+import { Group } from "@/ui/Group";
+import { PickerRow } from "@/ui/PickerRow";
 
+import { modeIcon } from "./modeIcon";
 import {
-  DEFAULT_MODE_ID,
+  DEFAULT_THINKING_ID,
   extraFlagCount,
   isDanger,
-  modeMenu,
   modelAliases,
   modelLabel,
   modeOf,
-  thinkingMenu,
-  thinkingOf,
   optionsFor,
+  thinkingOf,
   withMode,
   withThinking,
-  type ChoiceMenu,
   type StartChoice,
 } from "./startOptions";
-import { modeIcon } from "./modeIcon";
-import { rememberChoice } from "./startOptionsMemory";
+import { choiceFor, rememberChoice, useStartOptionsMemory } from "./startOptionsMemory";
 
 export const DANGER_WARNING = "The agent runs commands and edits files with no approval.";
 
-/** The visual height of a pill. `hitSlop` makes the touch target 44 pt. */
-const PILL_HEIGHT = 32;
-const SLOP = (hitTarget - PILL_HEIGHT) / 2;
+/** The remembered choice of `kind` now. A pick reads it fresh, so a change made in the meantime stays. */
+const storedChoice = (kind: string) => choiceFor(useStartOptionsMemory.getState().byKind, kind);
 
-/** Shows `menu` as an action sheet and gives the picked id to `onPick`. Cancel picks nothing. */
-function pickFrom(title: string, menu: ChoiceMenu, onPick: (id: string) => void) {
-  haptics.tap();
-  showActionSheet(
-    {
-      title,
-      options: menu.options,
-      cancelButtonIndex: menu.cancelButtonIndex,
-      destructiveButtonIndex: menu.destructiveButtonIndex.length > 0 ? menu.destructiveButtonIndex : undefined,
-    },
-    (i) => {
-      const id = menu.ids[i];
-      if (id !== undefined) onPick(id);
-    },
-  );
-}
-
-function Pill({
-  Icon,
-  label,
-  muted,
-  danger,
-  mono,
-  chevron,
-  marked,
-  accessibilityLabel,
-  accessibilityHint,
-  disabled,
-  onPress,
-}: {
-  Icon: LucideIcon;
-  label: string;
-  muted?: boolean;
-  danger?: boolean;
-  mono?: boolean;
-  chevron?: boolean;
-  /** A small dot after the label: more options are set than the label shows. */
-  marked?: boolean;
-  accessibilityLabel: string;
-  accessibilityHint: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const tint = danger ? colors.danger : muted ? colors.textMuted : colors.text;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      hitSlop={{ top: SLOP, bottom: SLOP }}
-      style={({ pressed }) => ({
-        minHeight: PILL_HEIGHT,
-        maxWidth: "100%",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.xs,
-        paddingHorizontal: space.md,
-        borderRadius: radius.pill,
-        // A control on glass has a solid fill (MASTER §0). The edge is always there, so a danger
-        // mode changes only its color, not the size.
-        borderWidth: 1,
-        borderColor: danger ? colors.danger : "transparent",
-        backgroundColor: colors.raised,
-        opacity: disabled ? state.disabledOpacity : pressed ? state.pressedOpacity : 1,
-      })}
-    >
-      <Icon size={icon.sm} color={tint} strokeWidth={icon.strokeWidth} />
-      <Text variant="small" mono={mono} color={tint} numberOfLines={1} maxFontSizeMultiplier={denseScale.pill} style={{ flexShrink: 1 }}>
-        {label}
-      </Text>
-      {marked ? <View style={{ width: dot.size, height: dot.size, borderRadius: radius.pill, backgroundColor: colors.text }} /> : null}
-      {chevron ? <ChevronDown size={icon.sm} color={colors.textMuted} strokeWidth={icon.strokeWidth} /> : null}
-    </Pressable>
-  );
-}
-
-/** The VoiceOver label of the "Options" pill: the model and the number of extra flags, when set. */
-function optionsLabel(model: string | undefined, extra: number): string {
-  const parts = ["Start options"];
-  if (model) parts.push(`model ${model}`);
-  if (extra > 0) parts.push(extra === 1 ? "1 extra flag" : `${extra} extra flags`);
-  return parts.join(", ");
-}
-
-/**
- * One row of option pills for `kind`: the permission mode, the thinking level (Pi) and "Options".
- * `choice` is the remembered choice of the kind (the caller reads it from the store).
- */
-export function StartOptionsBar({ kind, choice, disabled }: { kind: string; choice: StartChoice; disabled?: boolean }) {
-  const router = useRouter();
+/** The rows that `kind` has. "Options" is always there: every kind takes extra flags. */
+export function startOptionRows(kind: string): { permissions: boolean; thinking: boolean } {
   const opts = optionsFor(kind);
+  return { permissions: opts.modes.length > 0, thinking: !!opts.thinking };
+}
+
+/** The detail of the Options row: the number of extra flags, when set. */
+export function extraFlagsDetail(extra: number): string | undefined {
+  if (extra <= 0) return undefined;
+  return extra === 1 ? "1 extra flag" : `${extra} extra flags`;
+}
+
+type RowProps = { kind: string; choice: StartChoice; disabled?: boolean };
+
+/** The permission mode. Renders nothing for a kind with no modes (check `startOptionRows` first). */
+export function PermissionRow({ kind, choice, disabled }: RowProps) {
   const mode = modeOf(kind, choice);
-  const level = thinkingOf(kind, choice);
+  if (!mode) return null;
+  const danger = isDanger(kind, choice);
+  return (
+    <PickerRow
+      title="Permissions"
+      Icon={modeIcon(mode)}
+      disabled={disabled}
+      detail={danger ? DANGER_WARNING : undefined}
+      detailTone="danger"
+      DetailIcon={danger ? TriangleAlert : undefined}
+      picker={{
+        title: "Permission mode",
+        options: optionsFor(kind).modes.map((m) => ({ value: m.id, label: m.label, detail: m.detail, Icon: modeIcon(m), danger: m.danger })),
+        value: mode.id,
+        onPick: (id) => rememberChoice(kind, withMode(storedChoice(kind), id)),
+      }}
+    />
+  );
+}
+
+/** The thinking level (Pi). Renders nothing for a kind with no levels. */
+export function ThinkingRow({ kind, choice, disabled }: RowProps) {
+  const thinking = optionsFor(kind).thinking;
+  if (!thinking) return null;
+  return (
+    <PickerRow
+      title="Thinking"
+      Icon={Brain}
+      disabled={disabled}
+      picker={{
+        options: [{ id: DEFAULT_THINKING_ID, label: "Default" }, ...thinking.levels].map((l) => ({ value: l.id, label: l.label })),
+        value: thinkingOf(kind, choice)?.id ?? DEFAULT_THINKING_ID,
+        onPick: (id) => rememberChoice(kind, withThinking(storedChoice(kind), id)),
+      }}
+    />
+  );
+}
+
+/** "Options": the model as its value and the extra flags as its detail. A tap opens the start options sheet. */
+export function OptionsRow({ kind, choice, disabled }: RowProps) {
+  const router = useRouter();
   const model = modelLabel(kind, choice);
-  const extra = extraFlagCount(choice);
   // An alias label ("Opus") is a word; a typed model name is an identifier.
   const typedModel = !!model && !modelAliases(kind).some((a) => a.label === model);
-
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.sm }}>
-      {mode ? (
-        <Pill
-          Icon={modeIcon(mode)}
-          label={mode.label}
-          muted={mode.id === DEFAULT_MODE_ID}
-          danger={mode.danger}
-          chevron
-          accessibilityLabel={`Permission mode: ${mode.label}`}
-          accessibilityHint="Double tap to change the permission mode"
-          disabled={disabled}
-          onPress={() => {
-            const menu = modeMenu(kind, choice);
-            if (menu) pickFrom("Permission mode", menu, (id) => rememberChoice(kind, withMode(choice, id)));
-          }}
-        />
-      ) : null}
-      {opts.thinking ? (
-        <Pill
-          Icon={Brain}
-          label={`Thinking: ${level?.label ?? "Default"}`}
-          muted={!level}
-          chevron
-          accessibilityLabel={`Thinking: ${level?.label ?? "Default"}`}
-          accessibilityHint="Double tap to change the thinking level"
-          disabled={disabled}
-          onPress={() => {
-            const menu = thinkingMenu(kind, choice);
-            if (menu) pickFrom("Thinking", menu, (id) => rememberChoice(kind, withThinking(choice, id)));
-          }}
-        />
-      ) : null}
-      <Pill
-        Icon={SlidersHorizontal}
-        label={model ?? "Options"}
-        mono={typedModel}
-        muted={!model && extra === 0}
-        marked={extra > 0}
-        accessibilityLabel={optionsLabel(model, extra)}
-        accessibilityHint="Double tap to open the start options"
-        disabled={disabled}
-        onPress={() => {
-          haptics.tap();
-          router.push({ pathname: "/start-options", params: { kind } } as never);
-        }}
-      />
-    </View>
+    <PickerRow
+      title="Options"
+      Icon={SlidersHorizontal}
+      value={model}
+      placeholder="Default"
+      mono={typedModel}
+      detail={extraFlagsDetail(extraFlagCount(choice))}
+      disabled={disabled}
+      accessibilityHint="Opens the start options."
+      onPress={() => router.push({ pathname: "/start-options", params: { kind } } as never)}
+    />
   );
 }
 
-/** The warning line for a mode with no approval. Shows nothing for a safe mode. */
-export function DangerWarning({ kind, choice }: { kind: string; choice: StartChoice }) {
-  if (!isDanger(kind, choice)) return null;
+/** The start option rows of `kind` in their own `Group`, for a screen that has no other setup rows. */
+export function StartOptionsBar({ kind, choice, disabled }: RowProps) {
+  const rows = startOptionRows(kind);
   return (
-    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
-      <TriangleAlert size={icon.sm} color={colors.danger} strokeWidth={icon.strokeWidth} />
-      <Text variant="small" color={colors.danger} style={{ flex: 1 }}>
-        {DANGER_WARNING}
-      </Text>
-    </View>
+    <Group>
+      {rows.permissions ? <PermissionRow kind={kind} choice={choice} disabled={disabled} /> : null}
+      {rows.thinking ? <ThinkingRow kind={kind} choice={choice} disabled={disabled} /> : null}
+      <OptionsRow kind={kind} choice={choice} disabled={disabled} />
+    </Group>
   );
 }

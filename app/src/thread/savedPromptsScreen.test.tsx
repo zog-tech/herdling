@@ -1,7 +1,8 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import SavedPromptsScreen from "@/app/saved-prompts";
-import { promptText, showActionSheet } from "@/ui/nativeSheet";
+import type { MenuSpec } from "@/ui/MenuSheet";
+import { promptText } from "@/ui/nativeSheet";
 
 import { DEFAULT_PROMPTS, restoreDefaultPrompts, useSavedPrompts } from "./savedPrompts";
 
@@ -17,7 +18,12 @@ jest.mock("@/secureStorage", () => {
       })),
   };
 });
-jest.mock("@/ui/nativeSheet", () => ({ showActionSheet: jest.fn(), promptText: jest.fn() }));
+jest.mock("@/ui/nativeSheet", () => ({ promptText: jest.fn() }));
+const mockShowMenu = jest.fn();
+jest.mock("@/ui/MenuSheet", () => ({ showMenu: (m: unknown) => mockShowMenu(m) }));
+/** The rows of the menu that opened last, by label. */
+const lastMenu = () => (mockShowMenu.mock.calls.at(-1)![0] as MenuSpec).sections;
+const pickRow = (label: string) => lastMenu().flatMap((s) => s.items).find((i) => i.label === label)!.onPick();
 jest.mock("@/ui/haptics", () => ({ tap: jest.fn(), commit: jest.fn(), warn: jest.fn() }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 
@@ -43,10 +49,11 @@ const row = (t: ReactTestRenderer, label: string) =>
 test("lists the prompts and a tap opens the menu that moves one", () => {
   const t = render();
   act(() => row(t, "Saved prompt 1 of 5: Continue").props.onPress());
-  const [opts, pick] = (showActionSheet as jest.Mock).mock.calls[0];
-  expect(opts.options).toEqual(["Edit", "Move down", "Delete", "Cancel"]);
-  expect(opts.destructiveButtonIndex).toBe(2);
-  act(() => pick(1));
+  // Icons on every row; Delete alone in the last section, as a destructive row.
+  expect(lastMenu().map((s) => s.items.map((i) => i.label))).toEqual([["Edit", "Move down"], ["Delete"]]);
+  expect(lastMenu().flatMap((s) => s.items).every((i) => !!i.Icon)).toBe(true);
+  expect(lastMenu()[1].items[0].destructive).toBe(true);
+  act(() => pickRow("Move down"));
   expect(useSavedPrompts.getState().prompts.slice(0, 2)).toEqual(["Yes, go ahead", "Continue"]);
 });
 
@@ -70,7 +77,7 @@ test("add asks for the text and saves it at the end", () => {
 test("edit starts with the current text", () => {
   const t = render();
   act(() => row(t, "Saved prompt 3 of 5: Run the tests").props.onPress());
-  act(() => (showActionSheet as jest.Mock).mock.calls[0][1](0));
+  act(() => pickRow("Edit"));
   const [title, , buttons, value] = (promptText as jest.Mock).mock.calls[0];
   expect(title).toBe("Edit saved prompt");
   expect(value).toBe("Run the tests");

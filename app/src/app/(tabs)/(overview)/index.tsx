@@ -1,8 +1,8 @@
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { ChevronDown, CircleSlash, Ellipsis, ListFilter, Loader, PanelRight, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
+import { ChevronDown, CircleSlash, Ellipsis, Loader, PanelRight, Pencil, Play, Plus, Server, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, Keyboard, Platform, Pressable, SectionList, useWindowDimensions, View } from "react-native";
+import { Keyboard, Platform, Pressable, SectionList, useWindowDimensions, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,24 +12,23 @@ import { showHint, useBoardPrefs, useBoardPrefsHydrated } from "@/board/boardPre
 import { DemoTag } from "@/demo/DemoTag";
 import { isDemoHost, startDemo } from "@/demo/demoHost";
 import { useBucketAnnouncements } from "@/board/announce";
-import { BoardChips } from "@/board/BoardChips";
-import { FilterButton, FilterField, JumpButton, NoMatch } from "@/board/BoardFilter";
+import { boardAgentMenu, restartAgent, spaceRoute } from "@/board/agentActions";
+import { FilterButton, FilterField, NoMatch } from "@/board/BoardFilter";
 import { setFilter, setQuery, updateFirstSeen, useBoard } from "@/board/boardStore";
-import { BOARD_GROUPS, collapseSections, collapsible, groupItems, groupLabel, sortItems, sortLabel, SORTS } from "@/board/arrange";
+import { collapseSections, collapsible, groupItems, sortItems } from "@/board/arrange";
 import { BoardTop } from "@/board/BoardTop";
 import { countBuckets, filterBoard, mergeBoard, type BoardItem } from "@/board/buckets";
 import { BrandHeader, HostsButton } from "@/board/Dashboard";
+import { IconButton } from "@/ui/IconButton";
+import { ListBar } from "@/board/ListBar";
+import { arrangeLine, listMenu, listTitle } from "@/board/listMenu";
 import { spotlight } from "@/board/spotlight";
 import { TerminalRows } from "@/board/TerminalRows";
 import { boardSummary } from "@/board/summary";
 import { filterByText, queryWords } from "@/board/textFilter";
 import { usePreviewPolling } from "@/board/usePreviewPolling";
-import { allows, renameKindsFor } from "@/herdr/backend";
-import { chooseRestart, restartConfirmed, sessionToKeep } from "@/herdr/confirmActions";
-import { moveToGroup } from "@/herdr/moveFlow";
-import { canMove } from "@/herdr/moveGroup";
-import { rememberedArgs } from "@/newSession/startOptionsMemory";
-import { promptRename, renameItems, renameSupported, type MenuItem } from "@/herdr/rename";
+import { renameKindsFor } from "@/herdr/backend";
+import { promptRename, renameSupported } from "@/herdr/rename";
 import { markSeen, pruneSeen, useSeen, useSeenHydrated } from "@/herdr/seen";
 import { useSeenSync } from "@/herdr/seenSync";
 import { setHostSnapshot, useSnapshots } from "@/herdr/snapshotStore";
@@ -44,13 +43,14 @@ import { useHosts, type Host } from "@/hosts/store";
 import { setColumnPane } from "@/push/useNotificationRouting";
 import { colors, denseScale, hitTarget, icon, motion, space, state } from "@/theme/tokens";
 import { SessionDetail } from "@/thread/SessionDetail";
-import { Button } from "@/ui/Button";
+import { ActionBar } from "@/ui/ActionBar";
 import { GlassButton } from "@/ui/GlassButton";
 import { Divider } from "@/ui/Group";
 import * as haptics from "@/ui/haptics";
 import { useKeyCommand } from "@/ui/keyCommands";
 import { BOARD_COLUMN_WIDTH, selectionFromParams, stepKey, useLayoutClass, type PaneRef } from "@/ui/layout";
-import { showActionSheet } from "@/ui/nativeSheet";
+import { showMenu } from "@/ui/MenuSheet";
+import { useScreenBottomPadding } from "@/ui/Screen";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
@@ -156,7 +156,7 @@ function HostStripRow({ host }: { host: Host }) {
   const Icon = conn.status === "online" ? TriangleAlert : conn.status === "connecting" ? Loader : CircleSlash;
   const color = conn.status === "online" ? colors.status.blocked : colors.textMuted;
   if (conn.status !== "connecting") {
-    return <StateNotice Icon={Icon} color={color} message={text} action="Retry" onAction={() => retryNow(host.id)} />;
+    return <StateNotice inline Icon={Icon} color={color} message={text} action="Retry" onAction={() => retryNow(host.id)} />;
   }
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: hitTarget }}>
@@ -264,22 +264,13 @@ function SectionHeader({
         </View>
       )}
       {onMenu ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Workspace actions for ${title}`}
+        <IconButton
+          label={`Workspace actions for ${title}`}
+          Icon={Ellipsis}
+          color={colors.textMuted}
           onPress={onMenu}
-          style={({ pressed }) => ({
-            width: hitTarget,
-            height: hitTarget,
-            marginVertical: -space.md,
-            marginRight: -space.md,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? state.pressedOpacity : 1,
-          })}
-        >
-          <Ellipsis size={icon.sm + 2} color={colors.textMuted} />
-        </Pressable>
+          style={{ marginVertical: -space.md, marginRight: -space.md }}
+        />
       ) : null}
     </View>
   );
@@ -293,12 +284,12 @@ function Calm({ text }: { text: string }) {
   );
 }
 
-/** Overview search params: the pane in the detail column (regular width), and the session route params it carries. */
+/** Agents tab search params: the pane in the detail column (regular width), and the session route params it carries. */
 type OverviewParams = { host?: string; pane?: string; from?: string; prompt?: string; promptError?: string };
 
 /**
  * The right column in regular width: the selected session, or a short hint. The native header of
- * Overview is transparent on iOS, so the column starts below it.
+ * the Agents tab is transparent on iOS, so the column starts below it.
  */
 function DetailColumn({
   selection,
@@ -319,7 +310,7 @@ function DetailColumn({
   if (!selection) {
     return (
       <View style={{ flex: 1, paddingTop: top, alignItems: "center", justifyContent: "center", gap: space.md, padding: space.xl }}>
-        <PanelRight size={32} color={colors.textMuted} />
+        <PanelRight size={icon.lg} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
         <Text muted style={{ textAlign: "center" }}>
           Select an agent to see its session here.
         </Text>
@@ -446,21 +437,11 @@ export default function BoardScreen() {
   // Panes with no agent: a "Terminals" list after the agent groups, whatever the grouping.
   const terminals = useMemo(() => boardTerminals(boardHosts), [boardHosts]);
 
-  const pickGroup = useCallback(() => {
-    showActionSheet(
-      { title: "Group by", options: [...BOARD_GROUPS.map((g) => g.label), "Cancel"], cancelButtonIndex: BOARD_GROUPS.length },
-      (i) => {
-        const g = BOARD_GROUPS[i];
-        if (g) setGroupBy(g.id);
-      },
-    );
-  }, [setGroupBy]);
-  const pickSort = useCallback(() => {
-    showActionSheet({ title: "Sort by", options: [...SORTS.map((o) => o.label), "Cancel"], cancelButtonIndex: SORTS.length }, (i) => {
-      const o = SORTS[i];
-      if (o) setSortBy(o.id);
-    });
-  }, [setSortBy]);
+  // One button above the list: the status filter, the group and the sort, each with checks.
+  const openJump = useCallback(() => router.push("/jump" as never), [router]);
+  const openListOptions = useCallback(() => {
+    showMenu(listMenu({ counts, filter, groupBy, sortBy, onFilter: setFilter, onGroup: setGroupBy, onSort: setSortBy, onJump: openJump }));
+  }, [counts, filter, groupBy, sortBy, setGroupBy, setSortBy, openJump]);
 
   const openFilter = useCallback(() => {
     setFilterOpen(true);
@@ -481,7 +462,6 @@ export default function BoardScreen() {
     else openFilter();
   }, [showFilter, closeFilter, openFilter]);
 
-  const openJump = useCallback(() => router.push("/jump" as never), [router]);
 
   useLayoutEffect(() => {
     // The Dashboard top draws its own brand header with the group and sort menus under the carousel.
@@ -491,30 +471,11 @@ export default function BoardScreen() {
     }
     navigation.setOptions({
       headerShown: true,
-      // Plain icons: iOS 26 puts them on Liquid Glass in the header.
-      headerRight: () => (
-        <View style={{ flexDirection: "row" }}>
-          {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
-          <FilterButton open={showFilter} onPress={toggleFilter} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Group by ${groupLabel(groupBy)}`}
-            accessibilityHint="Changes how the agents are grouped"
-            onPress={pickGroup}
-            style={({ pressed }) => ({
-              width: hitTarget,
-              height: hitTarget,
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: pressed ? state.pressedOpacity : 1,
-            })}
-          >
-            <ListFilter size={icon.md} color={colors.text} strokeWidth={icon.strokeWidth} />
-          </Pressable>
-        </View>
-      ),
+      // One plain icon: iOS 26 puts it on Liquid Glass in the header. The list options button
+      // (with "Jump to a terminal") sits in the bar above the list, in both top forms.
+      headerRight: () => (hosts.length > 0 ? <FilterButton open={showFilter} onPress={toggleFilter} /> : null),
     });
-  }, [navigation, groupBy, pickGroup, dashboard, showFilter, toggleFilter, hosts.length, openJump]);
+  }, [navigation, dashboard, showFilter, toggleFilter, hosts.length]);
 
   // Regular width: the session opens in the detail column. Compact width: it is a pushed screen.
   const openPane = useCallback(
@@ -559,72 +520,50 @@ export default function BoardScreen() {
     markSeen(i.hostId, i.agent.pane_id, i.agent.state_change_seq ?? 0);
   }, []);
   const onRestart = useCallback(
-    async (i: BoardItem) => {
-      const { rpc, hello } = getHostConn(i.hostId);
-      // A Herdr 2 agent of an older herdlingd cannot restart.
-      if (!rpc || !allows(i.agent, "restart", i.hostId)) return;
-      const session = await sessionToKeep(rpc, hello, i.agent);
-      const choice = await chooseRestart(!!session);
-      if (!choice) return;
-      if (choice === "options") {
-        router.push(`/restart/${i.hostId}/${i.agent.pane_id}` as never);
-        return;
-      }
-      try {
-        await restartConfirmed(rpc, i.hostId, i.agent, (paneId) => openPane(i.hostId, paneId), {
-          session: choice === "keep" ? session : undefined,
-          args: rememberedArgs(i.agent.agent),
-          hostId: i.hostId,
-        });
-      } catch (e) {
-        Alert.alert("Can't restart", e instanceof Error ? e.message : String(e));
-      }
-    },
+    (i: BoardItem) => void restartAgent(i, openPane, (path) => router.push(path as never)),
     [openPane, router],
   );
 
+  // The "⋯" button and the long press menu of a row: the same agent menu as the peek sheet.
   const onMenu = useCallback(
-    (i: BoardItem) => {
-      const { rpc, hello } = getHostConn(i.hostId);
-      const menu: MenuItem[] = [
-        { label: "Reply", onPick: () => onReply(i) },
-        { label: "Peek", onPick: () => onPeek(i) },
-        {
-          label: "Open space",
-          onPick: () =>
-            router.push({
-              pathname: "/spaces/[hostId]/[workspaceId]",
-              params: { hostId: i.hostId, workspaceId: i.agent.workspace_id, tab: i.agent.tab_id },
-            } as never),
-        },
-      ];
-      if (i.bucket === "ready") menu.push({ label: "Mark read", onPick: () => onMarkRead(i) });
-      if (rpc && allows(i.agent, "rename", i.hostId)) menu.push(...renameItems(rpc, i.hostId, i.agent));
-      if (rpc && canMove(i.agent, hello)) menu.push({ label: "Move to space…", onPick: () => void moveToGroup(rpc, i.agent) });
-      if (allows(i.agent, "restart", i.hostId)) menu.push({ label: "Restart", destructive: true, onPick: () => void onRestart(i) });
-      showActionSheet(
-        {
-          title: i.title,
-          options: [...menu.map((m) => m.label), "Cancel"],
-          cancelButtonIndex: menu.length,
-          destructiveButtonIndex: menu.flatMap((m, k) => (m.destructive ? [k] : [])),
-        },
-        (k) => menu[k]?.onPick(),
-      );
-    },
+    (i: BoardItem) =>
+      showMenu(
+        boardAgentMenu(i, {
+          reply: () => onReply(i),
+          peek: () => onPeek(i),
+          openSpace: () => router.push(spaceRoute(i) as never),
+          markRead: () => onMarkRead(i),
+          restart: () => onRestart(i),
+        }),
+      ),
     [onReply, onPeek, onMarkRead, onRestart, router],
   );
 
-  const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string) => {
+  const onWorkspaceMenu = useCallback((hostId: string, workspaceId: string, name: string) => {
     const { rpc } = getHostConn(hostId);
     if (!rpc) return;
-    showActionSheet({ options: ["Rename workspace", "Cancel"], cancelButtonIndex: 1 }, (k) => {
-      if (k === 0) promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" });
+    showMenu({
+      title: name,
+      sections: [
+        {
+          items: [
+            {
+              label: "Rename workspace",
+              Icon: Pencil,
+              onPick: () => promptRename(rpc, hostId, "workspace", { workspace_id: workspaceId, tab_id: "", pane_id: "" }),
+            },
+          ],
+        },
+      ],
     });
   }, []);
 
   const hint = showHint({ hydrated: prefsHydrated, dismissed: hintDismissed, agents: items.length });
   const firstKey = sections[0]?.data[0]?.key;
+
+  const heading = listTitle(counts, filter);
+  // The list ends above the tab bar and the floating "+" (its size and its margin).
+  const listEnd = useScreenBottomPadding(insets.bottom + space.lg + FAB);
 
   const quiet = items.length > 0 && counts.needs_you + counts.ready + counts.working === 0;
   const newSession = useCallback(() => router.push("/new" as never), [router]);
@@ -635,25 +574,29 @@ export default function BoardScreen() {
         <BrandHeader
           right={
             <>
-              {hosts.length > 0 ? <JumpButton onPress={openJump} /> : null}
               {hosts.length > 0 ? <FilterButton open={showFilter} onPress={toggleFilter} /> : null}
-              <HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings" as never)} />
+              <HostsButton hosts={hosts} online={online} onPress={() => router.navigate("/settings/computers" as never)} />
             </>
           }
         />
       ) : null}
       {hosts.length === 0 ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.lg, padding: space.xl }}>
-          <Server size={32} color={colors.textMuted} />
-          <Text muted style={{ textAlign: "center" }}>
-            No hosts yet. Add one to see its agents here.
-          </Text>
-          <Button label="Add a host" Icon={Plus} onPress={() => router.push("/hosts/discover" as never)} />
-          <Text variant="small" muted style={{ textAlign: "center" }}>
-            No computer with herdlingd yet? The demo shows sample agents. It runs inside the app.
-          </Text>
-          <Button label="Try the demo" variant="secondary" Icon={Play} onPress={() => void startDemo()} />
-        </View>
+        // No computer yet: one sentence in the middle, the two ways to start in the bottom bar.
+        <>
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: space.md, padding: space.xl }}>
+            <Server size={icon.lg} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
+            <Text muted style={{ textAlign: "center" }}>
+              No computers yet. Add one to see its agents here.
+            </Text>
+            <Text variant="small" muted style={{ textAlign: "center" }}>
+              No computer with herdlingd yet? The demo shows sample agents. It runs inside the app.
+            </Text>
+          </View>
+          <ActionBar
+            primary={{ label: "Add a computer", Icon: Plus, onPress: () => router.push("/hosts/discover" as never) }}
+            secondary={{ label: "Try the demo", Icon: Play, onPress: () => void startDemo() }}
+          />
+        </>
       ) : (
         <SectionList
           ref={listRef}
@@ -676,7 +619,7 @@ export default function BoardScreen() {
                 count={folds ? section.count : undefined}
                 collapsed={section.collapsed}
                 onToggle={folds ? () => toggleCollapsed(groupBy, section.key) : undefined}
-                onMenu={ws && renameKindsFor(ws.workspaceId, ws.hostId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId) : undefined}
+                onMenu={ws && renameKindsFor(ws.workspaceId, ws.hostId).includes("workspace") && renameSupported(ws.hostId, "workspace") ? () => onWorkspaceMenu(ws.hostId, ws.workspaceId, section.title) : undefined}
               />
             );
           }}
@@ -710,28 +653,38 @@ export default function BoardScreen() {
                 room={regular ? BOARD_COLUMN_WIDTH : windowWidth}
                 focused={focused}
                 multiHost={online.size > 1}
-                group={groupLabel(groupBy)}
-                sort={sortLabel(sortBy)}
-                onGroup={pickGroup}
-                onSort={pickSort}
+                bar={
+                  <ListBar
+                    title={heading.title}
+                    count={heading.count}
+                    arrange={arrangeLine(groupBy, sortBy)}
+                    filtered={filter !== null}
+                    onOptions={openListOptions}
+                    onClear={() => setFilter(null)}
+                  />
+                }
                 onOpen={onOpen}
                 onPeek={onPeek}
                 onNew={newSession}
               />
               <HostStrip hosts={problemHosts} />
               {showFilter ? <FilterField query={query} onQuery={setQuery} onClose={closeFilter} autoFocus={filterFocus} /> : null}
-              {items.length > 0 ? <BoardChips counts={counts} filter={filter} onChange={setFilter} /> : null}
               {quiet && filter === null && !hasQuery ? <Calm text="All quiet. Nothing needs you." /> : null}
               {items.length === 0 && online.size > 0 ? <Calm text="No agents running." /> : null}
               {items.length > 0 && hasQuery && sections.length === 0 ? <NoMatch query={query} onClear={() => setQuery("")} /> : null}
               {items.length > 0 && filter !== null && !hasQuery && sections.length === 0 ? (
-                <Calm text={`Nothing ${filter === "needs_you" ? "needs you" : `is ${filter}`} right now.`} />
+                <StateNotice
+                  Icon={CircleSlash}
+                  message={`Nothing ${filter === "needs_you" ? "needs you" : `is ${filter}`} right now.`}
+                  action="Show all"
+                  onAction={() => setFilter(null)}
+                />
               ) : null}
             </View>
           }
           ListFooterComponent={
-            // Room so the floating button never covers the last host.
-            <View style={{ paddingBottom: FAB + space.xl }}>
+            // The last host ends above the tab bar and the floating button.
+            <View style={{ paddingBottom: listEnd }}>
               {/* A status or text filter shows agents only. */}
               {filter === null && !hasQuery ? (
                 <TerminalRows terminals={terminals} multiHost={online.size > 1} selectedKey={selectedKey} onOpen={onOpenTerminal} />
@@ -749,17 +702,22 @@ export default function BoardScreen() {
           }
         />
       )}
-      {/* The native safe area here includes the tab bar, so the button sits just above it. */}
-      <SafeAreaView edges={["bottom"]} pointerEvents="box-none" style={{ position: "absolute", right: 0, bottom: 0 }}>
-        <GlassButton
-          label="New session"
-          Icon={Plus}
-          primary
-          size={FAB}
-          onPress={newSession}
-          style={{ margin: space.lg }}
-        />
-      </SafeAreaView>
+      {/* The one primary way to start: the gold "+" floats over the list. The native safe area here
+          includes the tab bar, so the button sits just above it. With no host, the bottom bar
+          has the primary action instead. */}
+      {hosts.length > 0 ? (
+        <SafeAreaView edges={["bottom"]} pointerEvents="box-none" style={{ position: "absolute", right: 0, bottom: 0 }}>
+          <GlassButton
+            label="New session"
+            accessibilityHint="Starts an agent on a computer"
+            Icon={Plus}
+            primary
+            size={FAB}
+            onPress={newSession}
+            style={{ margin: space.lg }}
+          />
+        </SafeAreaView>
+      ) : null}
     </View>
   );
 

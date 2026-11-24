@@ -177,7 +177,8 @@ export const NIGHT_WATCH: Colors = nightWatch;
  */
 export const colors: Colors = buildColors(nightWatch, savedChoice());
 
-export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
+/** `xxs` (2 pt) is the tight gap between a title and its detail line, and the pad of a segmented track. */
+export const space = { xxs: 2, xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
 
 /** Vertical gap between two thread rows, and between the newest row and the status pill. One value keeps the rhythm even. */
 export const threadGap = space.md;
@@ -217,6 +218,38 @@ export const dot = { size: 8 } as const;
 
 /** Minimum touch target in points. */
 export const hitTarget = 44;
+
+/**
+ * The bottom sheet of `ui/MenuSheet` and `ui/PickerSheet`. Sizes in points, velocities in points per second.
+ */
+export const sheet = {
+  /** The minimum height of a menu row. Rows grow with the text size. */
+  rowHeight: 52,
+  /** The sheet is at most this share of the screen height. Then its rows scroll. */
+  maxHeightRatio: 0.8,
+  /** The space that stays free above the sheet, so the page behind it still shows. */
+  topGap: 48,
+  /** The grabber at the top: a short rounded bar in `edge`. */
+  grabber: { width: 36, height: 5 },
+  /** A swipe down closes the sheet past this share of its height, or faster than `flingVelocity`. */
+  closeRatio: 0.3,
+  flingVelocity: 800,
+  /** A swipe starts after this many points down. A sideways move of `sideSlop` cancels it. */
+  dragStart: 8,
+  sideSlop: 24,
+} as const;
+
+/**
+ * A shortcut token (`ui/Shortcut`): a saved prompt, a recent command, a pasted text. A rounded
+ * rectangle on `raised`, 36 pt high in a 44 pt touch target.
+ */
+export const shortcut = { height: 36, maxWidth: 240 } as const;
+
+/**
+ * The bottom bar of a screen (`ui/ActionBar`). From `stackFontScale` the buttons stack, so a large
+ * text size does not squeeze the labels. The same scale stacks a value under its title in `ui/PickerRow`.
+ */
+export const actionBar = { stackFontScale: 1.6 } as const;
 
 /**
  * Motion tokens. Durations in ms. Springs use Reanimated's physics form (damping, stiffness).

@@ -1,8 +1,10 @@
 import type { Hello } from "@herdling/protocol";
+import { History, RotateCcw, SlidersHorizontal, type LucideIcon } from "lucide-react-native";
 import { Alert } from "react-native";
 
 import { RpcError, type RpcClient } from "@/rpc/RpcClient";
 import * as haptics from "@/ui/haptics";
+import { showMenu } from "@/ui/MenuSheet";
 import { showActionSheet } from "@/ui/nativeSheet";
 
 import { expectPane } from "./expectedPanes";
@@ -22,7 +24,10 @@ type Rpc = Pick<RpcClient, "call">;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** A second sheet with one destructive button; resolves true when the user picks it. */
+/**
+ * A second sheet with one destructive button; resolves true when the user picks it. It draws
+ * through `showActionSheet`, so the menu sheet puts the action in its last section, in `danger`.
+ */
 export function confirmDestructive(title: string, detail: string, action: string): Promise<boolean> {
   haptics.warn();
   return new Promise((resolve) =>
@@ -48,12 +53,12 @@ export function offerCloseOld(rpc: Rpc, paneId: string, error: string) {
 /** The restart choices of the sheet. */
 export type RestartChoice = "keep" | "fresh" | "options";
 
-/** The labels of the restart sheet, in order. Without a session to keep, the first one is left out. */
-export function restartOptions(canKeep: boolean): { label: string; choice: RestartChoice }[] {
+/** The rows of the restart sheet, in order. Without a session to keep, the first one is left out. */
+export function restartOptions(canKeep: boolean): { label: string; choice: RestartChoice; Icon: LucideIcon }[] {
   return [
-    ...(canKeep ? [{ label: "Restart and keep the conversation", choice: "keep" as const }] : []),
-    { label: "Restart with a new conversation", choice: "fresh" },
-    { label: "Restart with options…", choice: "options" },
+    ...(canKeep ? [{ label: "Restart and keep the conversation", choice: "keep" as const, Icon: History }] : []),
+    { label: "Restart with a new conversation", choice: "fresh", Icon: RotateCcw },
+    { label: "Restart with options…", choice: "options", Icon: SlidersHorizontal },
   ];
 }
 
@@ -65,15 +70,14 @@ export function chooseRestart(canKeep: boolean): Promise<RestartChoice | undefin
   haptics.warn();
   const items = restartOptions(canKeep);
   return new Promise((resolve) =>
-    showActionSheet(
-      {
-        title: "Restart this agent?",
-        message: "The agent starts again in a new tab, with the start options of this agent. This pane closes.",
-        options: [...items.map((i) => i.label), "Cancel"],
-        cancelButtonIndex: items.length,
-      },
-      (i) => resolve(items[i]?.choice),
-    ),
+    showMenu({
+      title: "Restart this agent?",
+      detail: "The agent starts again in a new tab, with the start options of this agent. This pane closes.",
+      // The warning haptic above is the one haptic of this sheet.
+      haptic: false,
+      sections: [{ items: items.map((i) => ({ label: i.label, Icon: i.Icon, onPick: () => resolve(i.choice) })) }],
+      onClose: () => resolve(undefined),
+    }),
   );
 }
 

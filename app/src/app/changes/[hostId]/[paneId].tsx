@@ -1,13 +1,15 @@
 import type { GitChangedFile, GitStatus } from "@herdling/protocol";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronRight, GitBranch, RefreshCw, TriangleAlert } from "lucide-react-native";
+import { ChevronRight, CloudOff, GitBranch, RefreshCw, TriangleAlert } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 
 import { branchLine, fileLabel, splitPath } from "@/changes/diff";
 import { useHostConn } from "@/hosts/connection";
-import { colors, denseScale, hitTarget, icon, space, state } from "@/theme/tokens";
+import { IconButton } from "@/ui/IconButton";
+import { colors, denseScale, hitTarget, icon, space } from "@/theme/tokens";
 import { DelayedSpinner } from "@/ui/Delayed";
+import { useScreenBottomPadding } from "@/ui/Screen";
 import { StateNotice } from "@/ui/StateNotice";
 import { Text } from "@/ui/Text";
 
@@ -47,6 +49,7 @@ export default function ChangesScreen() {
   const [status, setStatus] = useState<GitStatus>();
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
+  const bottom = useScreenBottomPadding();
 
   const load = useCallback(async () => {
     if (!rpc) return;
@@ -98,25 +101,16 @@ export default function ChangesScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen
         options={{
-          headerRight: () => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Refresh"
-              onPress={() => void refresh()}
-              style={({ pressed }) => ({ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center", opacity: pressed ? state.pressedOpacity : 1 })}
-            >
-              <RefreshCw size={icon.md} color={colors.text} />
-            </Pressable>
-          ),
+          headerRight: () => <IconButton label="Refresh" Icon={RefreshCw} busy={refreshing} onPress={() => void refresh()} size="header" />,
         }}
       />
       {error ? (
-        <View style={{ paddingHorizontal: space.lg, backgroundColor: colors.card }}>
-          <StateNotice Icon={TriangleAlert} color={colors.danger} message={`Can't read the changes: ${error}`} action="Retry" onAction={() => void refresh()} />
+        <View style={{ paddingHorizontal: space.lg, paddingVertical: space.sm, backgroundColor: colors.card }}>
+          <StateNotice inline Icon={TriangleAlert} color={colors.danger} message={`Can't read the changes: ${error}`} action="Retry" onAction={() => void refresh()} />
         </View>
       ) : null}
       {!rpc ? (
-        <Centered text="Host offline." />
+        <StateNotice Icon={CloudOff} message="Computer offline." />
       ) : !status ? (
         error ? null : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -124,7 +118,7 @@ export default function ChangesScreen() {
           </View>
         )
       ) : !status.is_repo ? (
-        <Centered text="The agent's folder is not in a git repo." />
+        <StateNotice Icon={GitBranch} message="The agent's folder is not in a git repo." />
       ) : (
         <FlatList
           data={files}
@@ -132,7 +126,7 @@ export default function ChangesScreen() {
           ListHeaderComponent={header}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={colors.textMuted} />}
           ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, marginLeft: space.lg + 16 + space.md, backgroundColor: colors.divider }} />}
-          contentContainerStyle={{ paddingBottom: space.xxl }}
+          contentContainerStyle={{ paddingBottom: bottom }}
           renderItem={({ item }) => {
             const [name, dir] = splitPath(item.path);
             return (
@@ -163,7 +157,7 @@ export default function ChangesScreen() {
                   ) : null}
                 </View>
                 <Counts file={item} />
-                <ChevronRight size={icon.md} color={colors.textMuted} />
+                <ChevronRight size={icon.md} color={colors.textMuted} strokeWidth={icon.strokeWidth} />
               </Pressable>
             );
           }}
@@ -180,12 +174,4 @@ export default function ChangesScreen() {
   );
 }
 
-function Centered({ text }: { text: string }) {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: space.xl }}>
-      <Text muted style={{ textAlign: "center" }}>
-        {text}
-      </Text>
-    </View>
-  );
-}
+/** An empty or offline state in the middle of the screen: an icon and one sentence. */

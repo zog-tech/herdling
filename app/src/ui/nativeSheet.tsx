@@ -1,39 +1,51 @@
 import { useEffect, useState } from "react";
-import { ActionSheetIOS, Alert, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Alert, Modal, Platform, Pressable, TextInput, View } from "react-native";
 import { create } from "zustand";
 
 import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+
+import { showMenu } from "./MenuSheet";
+import { planActionSheet, type SheetOptions } from "./menuRules";
 import { Text } from "./Text";
 
-/** The options of `ActionSheetIOS.showActionSheetWithOptions` that the app uses. */
-export type SheetOptions = {
-  title?: string;
-  message?: string;
-  options: string[];
-  cancelButtonIndex?: number;
-  destructiveButtonIndex?: number | number[];
-};
+/**
+ * The old system-style entry points: `showActionSheet` (a list of actions) and `promptText` (a text
+ * prompt). `showActionSheet` now draws through `ui/MenuSheet` on both platforms. New code uses
+ * `showMenu` for icons and sections, and `showPicker` for a choice.
+ */
+
+export type { SheetOptions } from "./menuRules";
+export { destructiveSet } from "./menuRules";
 
 export type PromptButton = { text: string; style?: "cancel" | "destructive" | "default"; onPress?: (text?: string) => void };
 
-type SheetState =
-  | { kind: "sheet"; o: SheetOptions; onPick: (index: number) => void }
-  | { kind: "prompt"; title: string; message?: string; buttons: PromptButton[]; value: string };
+type PromptState = { kind: "prompt"; title: string; message?: string; buttons: PromptButton[]; value: string };
 
-/** The open sheet or prompt on Android. Only one at a time: a new one replaces the old one. */
-export const useNativeSheet = create<{ open: SheetState | null }>(() => ({ open: null }));
+/** The open text prompt on Android. Only one at a time: a new one replaces the old one. */
+export const useNativeSheet = create<{ open: PromptState | null }>(() => ({ open: null }));
 
 /**
- * A list of actions: the system action sheet on iOS, a bottom sheet from `NativeSheetHost` elsewhere.
- * `onPick` gets the chosen index; a dismiss picks `cancelButtonIndex` (or -1 without one).
+ * A list of actions in the menu sheet, on iOS and Android. `title` and `message` are the header.
+ * The cancel option is not a row: a close with no pick (tap outside, swipe, close button, back)
+ * calls `onPick(cancelButtonIndex)`, or `onPick(-1)` without one. Destructive options go to a last
+ * section. `onPick` runs after the sheet is gone. No haptic on open: the callers give their own.
  */
 export function showActionSheet(o: SheetOptions, onPick: (index: number) => void): void {
-  if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(o, onPick);
+  const plan = planActionSheet(o);
+  if (plan.sections.length === 0) {
+    // Only a cancel option: nothing to choose, as if the user closed the sheet.
+    setTimeout(() => onPick(plan.cancelIndex), 0);
     return;
   }
-  useNativeSheet.setState({ open: { kind: "sheet", o, onPick } });
+  showMenu({
+    title: plan.title,
+    detail: plan.detail,
+    haptic: false,
+    sections: plan.sections.map((s) => ({
+      items: s.items.map((r) => ({ label: r.label, destructive: r.destructive, onPick: () => onPick(r.index) })),
+    })),
+    onClose: () => onPick(plan.cancelIndex),
+  });
 }
 
 /** A text prompt: `Alert.prompt` on iOS, a dialog from `NativeSheetHost` elsewhere. */
@@ -45,71 +57,13 @@ export function promptText(title: string, message: string | undefined, buttons: 
   useNativeSheet.setState({ open: { kind: "prompt", title, message, buttons, value } });
 }
 
-/** The indexes a sheet shows in red. */
-export function destructiveSet(o: SheetOptions): Set<number> {
-  const d = o.destructiveButtonIndex;
-  return new Set(d === undefined ? [] : Array.isArray(d) ? d : [d]);
-}
-
-/** Closes the open sheet and runs `then` once it is gone. */
+/** Closes the open prompt and runs `then` once it is gone. */
 function close(then?: () => void) {
   useNativeSheet.setState({ open: null });
   if (then) setTimeout(then, 0);
 }
 
-function SheetBody({ o, onPick }: { o: SheetOptions; onPick: (index: number) => void }) {
-  const insets = useSafeAreaInsets();
-  const red = destructiveSet(o);
-  const cancel = o.cancelButtonIndex ?? -1;
-  return (
-    <View
-      style={{
-        backgroundColor: colors.card,
-        borderTopLeftRadius: radius.lg,
-        borderTopRightRadius: radius.lg,
-        paddingTop: space.sm,
-        paddingBottom: insets.bottom + space.sm,
-        maxHeight: "80%",
-      }}
-    >
-      {o.title || o.message ? (
-        <View style={{ paddingHorizontal: space.lg, paddingVertical: space.sm, gap: space.xs }}>
-          {o.title ? (
-            <Text variant="small" bold muted accessibilityRole="header">
-              {o.title}
-            </Text>
-          ) : null}
-          {o.message ? (
-            <Text variant="small" muted>
-              {o.message}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-      <ScrollView>
-        {o.options.map((label, i) => (
-          <Pressable
-            key={`${i}-${label}`}
-            accessibilityRole="button"
-            onPress={() => close(() => onPick(i))}
-            style={({ pressed }) => ({
-              minHeight: hitTarget + 4,
-              justifyContent: "center",
-              paddingHorizontal: space.lg,
-              backgroundColor: pressed ? colors.raised : "transparent",
-            })}
-          >
-            <Text bold={i === cancel} color={red.has(i) ? colors.danger : i === cancel ? colors.textMuted : colors.text}>
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-function PromptBody({ s }: { s: Extract<SheetState, { kind: "prompt" }> }) {
+function PromptBody({ s }: { s: PromptState }) {
   const [text, setText] = useState(s.value);
   useEffect(() => setText(s.value), [s]);
   return (
@@ -163,26 +117,21 @@ function PromptBody({ s }: { s: Extract<SheetState, { kind: "prompt" }> }) {
 }
 
 /**
- * Shows the sheets and prompts of `showActionSheet` and `promptText` on platforms without the
- * iOS ones. Mount it once, near the root. It renders nothing on iOS.
+ * Shows the text prompts of `promptText` on platforms without `Alert.prompt` (Android). Mount it
+ * once, near the root. It renders nothing on iOS. The menus of `showActionSheet` draw in `MenuSheetHost`.
  */
 export function NativeSheetHost() {
   const open = useNativeSheet((s) => s.open);
   if (Platform.OS === "ios" || !open) return null;
   const dismiss = () => {
-    if (open.kind === "sheet") {
-      const cancel = open.o.cancelButtonIndex ?? -1;
-      close(() => open.onPick(cancel));
-    } else {
-      const cancel = open.buttons.find((b) => b.style === "cancel");
-      close(() => cancel?.onPress?.());
-    }
+    const cancel = open.buttons.find((b) => b.style === "cancel");
+    close(() => cancel?.onPress?.());
   };
   return (
     <Modal transparent visible animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss}>
-      <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: open.kind === "sheet" ? "flex-end" : "center" }}>
+      <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: "center" }}>
         <Pressable accessibilityLabel="Close" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} onPress={dismiss} />
-        {open.kind === "sheet" ? <SheetBody o={open.o} onPick={open.onPick} /> : <PromptBody s={open} />}
+        <PromptBody s={open} />
       </View>
     </Modal>
   );

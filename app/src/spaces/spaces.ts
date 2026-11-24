@@ -24,10 +24,49 @@ export type Space = {
   /** True when an agent works and none needs the user. */
   working: boolean;
   agents: number;
+  /** The count of all panes (agents and terminals). */
+  paneCount: number;
+  /** The count of agents that work. */
+  workingCount: number;
+  /** The folder of the space: the cwd of its first agent or pane. */
+  folder?: string;
 };
 
 const attentionOf = (panes: SpacePane[]) => panes.filter((p) => p.status === "blocked").length;
 const workingOf = (panes: SpacePane[]) => panes.some((p) => p.status === "working");
+
+/** The folder of a space: the cwd of its first agent, else of its first pane that has one. */
+export function spaceFolder(s: Pick<Snapshot, "agents" | "panes">, workspaceId: string): string | undefined {
+  const inSpace = (p: { workspace_id: string }) => p.workspace_id === workspaceId;
+  const agent = s.agents.find((a) => inSpace(a) && a.cwd);
+  const pane = s.panes.find((p) => inSpace(p) && (p.cwd || p.foreground_cwd));
+  return agent?.cwd ?? pane?.cwd ?? pane?.foreground_cwd ?? undefined;
+}
+
+/** The longest folder text on a row, in characters. A longer path loses its middle. */
+export const FOLDER_MAX = 32;
+
+/**
+ * A folder for a row: the home folder of a user becomes "~", a trailing slash goes away, and a
+ * path over `max` characters keeps its start and its end with "…" between them.
+ */
+export function shortFolder(path: string, max = FOLDER_MAX): string {
+  const clean = path.trim().replace(/\/+$/, "") || (path.trim() ? "/" : "");
+  const shown = clean.replace(/^(?:\/Users|\/home)\/[^/]+(?=\/|$)/, "~");
+  if (shown.length <= max) return shown;
+  const keep = max - 1;
+  const tail = Math.ceil(keep / 2);
+  return `${shown.slice(0, keep - tail)}…${shown.slice(shown.length - tail)}`;
+}
+
+/** The detail line of a row: "~/dev/app · 3 panes · 1 working". The parts that do not apply go away. */
+export function spaceDetail(s: Pick<Space, "folder" | "paneCount" | "workingCount">): string {
+  const parts: string[] = [];
+  if (s.folder) parts.push(shortFolder(s.folder));
+  parts.push(`${s.paneCount} ${s.paneCount === 1 ? "pane" : "panes"}`);
+  if (s.workingCount > 0) parts.push(`${s.workingCount} working`);
+  return parts.join(" · ");
+}
 
 /** The spaces of one snapshot, in the order of their number; tabs in the order of their number. */
 export function hostSpaces(s: Pick<Snapshot, "agents" | "workspaces" | "tabs" | "panes">): Space[] {
@@ -56,6 +95,9 @@ export function hostSpaces(s: Pick<Snapshot, "agents" | "workspaces" | "tabs" | 
     const all = list.flatMap((t) => t.panes);
     const attention = attentionOf(all);
     return {
+      folder: spaceFolder(s, w.workspace_id),
+      paneCount: all.length,
+      workingCount: all.filter((p) => p.status === "working").length,
       workspaceId: w.workspace_id,
       label: w.label,
       core: isCore(w),

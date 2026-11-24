@@ -1,11 +1,13 @@
 import type { CommandInfo } from "@herdling/protocol";
 import { useMemo, useState } from "react";
-import { Modal, SectionList, TextInput, View } from "react-native";
+import { Modal, SectionList, StyleSheet, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, hitTarget, radius, space, type } from "@/theme/tokens";
+import { colors, denseScale, space } from "@/theme/tokens";
 import { CloseButton } from "@/ui/CloseButton";
+import { Divider } from "@/ui/Group";
+import { SearchField } from "@/ui/SearchField";
 import { Text } from "@/ui/Text";
 import { DelayedSpinner } from "@/ui/Delayed";
 
@@ -27,7 +29,10 @@ export function groupCommands(list: CommandInfo[]): { title: string; data: Comma
   );
 }
 
-/** Full list of commands and skills, with a search box, grouped by source. */
+/**
+ * Full list of commands and skills, with a search box, grouped by source. The rows are menu rows
+ * (`MenuRow`) in grouped bands, the same look as the menu sheet.
+ */
 export function CommandSheet({
   visible,
   commands,
@@ -65,26 +70,7 @@ export function CommandSheet({
             </Text>
             <CloseButton onPress={onClose} />
           </View>
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="Search"
-            placeholderTextColor={colors.textMuted}
-            accessibilityLabel="Search commands"
-            style={{
-              minHeight: hitTarget,
-              color: colors.text,
-              fontSize: type.size.body,
-              backgroundColor: colors.card,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: radius.md,
-              paddingHorizontal: space.md,
-            }}
-          />
+          <SearchField value={search} onChangeText={setSearch} placeholder="Search" accessibilityLabel="Search commands" autoFocus />
         </View>
         {commands === undefined ? (
           <View style={{ marginTop: space.xl, alignItems: "center" }}>
@@ -96,21 +82,38 @@ export function CommandSheet({
             keyExtractor={(c) => c.name}
             keyboardShouldPersistTaps="handled"
             stickySectionHeadersEnabled
+            contentInsetAdjustmentBehavior="never"
             renderSectionHeader={({ section }) => (
               <Text
-                variant="caption"
-                muted
-                bold
+                variant="section"
                 accessibilityRole="header"
-                style={{ backgroundColor: colors.bg, paddingHorizontal: space.md, paddingVertical: space.xs }}
+                maxFontSizeMultiplier={denseScale.row}
+                style={{ backgroundColor: colors.bg, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm }}
               >
                 {section.title}
               </Text>
             )}
-            renderItem={({ item }) => <CommandRow c={item} onPick={onPick} />}
+            // A band per section: `card` rows with inset hairlines, a hairline at the top and the bottom.
+            renderItem={({ item, index, section }) => (
+              <View
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.divider,
+                  borderTopWidth: index === 0 ? StyleSheet.hairlineWidth : 0,
+                  borderBottomWidth: index === section.data.length - 1 ? StyleSheet.hairlineWidth : 0,
+                }}
+              >
+                <CommandRow c={item} onPick={onPick} />
+              </View>
+            )}
+            ItemSeparatorComponent={() => (
+              <View style={{ backgroundColor: colors.card }}>
+                <Divider />
+              </View>
+            )}
             ListEmptyComponent={
               <Text variant="small" muted style={{ padding: space.lg }}>
-                {search.trim() ? "No match." : "No commands on this host."}
+                {search.trim() ? "No match." : "No commands on this computer."}
               </Text>
             }
           />

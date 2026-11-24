@@ -1,6 +1,6 @@
 import type { CoreGroup } from "@herdling/protocol";
 
-import { firstChoice, groupsReducer, initialGroups, NEW_SPACE, spaceChoices, startsOnCore } from "./spacePick";
+import { firstChoice, groupsReducer, initialGroups, NEW_SPACE, spaceChoices, spaceDetail, startsOnCore } from "./spacePick";
 
 const g = (workspace_id: string, label: string, source: CoreGroup["source"]): CoreGroup => ({
   workspace_id,
@@ -50,5 +50,14 @@ describe("groupsReducer", () => {
     const r = groupsReducer(a.state, { type: "reset" });
     expect(r.state).toEqual({ kind: "idle", gen: 2 });
     expect(groupsReducer(r.state, { type: "done", gen: 1, groups }).state).toBe(r.state);
+  });
+});
+
+describe("spaceDetail", () => {
+  test("says when the spaces load and when the load failed, and nothing else", () => {
+    expect(spaceDetail({ kind: "idle", gen: 0 })).toBeUndefined();
+    expect(spaceDetail({ kind: "loading", gen: 1 })).toBe("Loading the spaces…");
+    expect(spaceDetail({ kind: "failed", gen: 1, error: "x" })).toBe("Can't list the spaces. The session starts in a new space.");
+    expect(spaceDetail({ kind: "ready", gen: 1, groups: [] })).toBeUndefined();
   });
 });

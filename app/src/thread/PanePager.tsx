@@ -2,6 +2,8 @@
  * The pages of a tab in the session screen: a strip with one dot per pane of the tab (the current
  * one filled), a swipe on the strip to the previous or next pane, and a tab map button that opens
  * a sheet with every pane of the tab. Hidden when the tab has one pane (`tabPanes` gives null).
+ * The strip is part of the session header: no fill and no rule of its own, the same right inset as
+ * the header row, and the tab map button is a header button under "⋯".
  */
 import { LayoutGrid } from "lucide-react-native";
 import { useState } from "react";
@@ -16,6 +18,7 @@ import { colors, denseScale, dot, hitTarget, icon, radius, space } from "@/theme
 import { AgentMark } from "@/ui/AgentMark";
 import { CloseButton } from "@/ui/CloseButton";
 import * as haptics from "@/ui/haptics";
+import { IconButton } from "@/ui/IconButton";
 import { StatusDot } from "@/ui/StatusDot";
 import { statusMeta } from "@/ui/StatusIcon";
 import { TerminalMark } from "@/ui/TerminalMark";
@@ -41,11 +44,11 @@ function PaneTile({ p, current, onPress }: { p: TabPane; current: boolean; onPre
         gap: space.sm,
         borderRadius: radius.md,
         borderWidth: current ? 2 : 1,
-        borderColor: current ? colors.accent : p.status === "blocked" ? colors.status.blocked : colors.edge,
+        borderColor: current ? colors.accent : p.status === "blocked" ? colors.status.blocked : colors.divider,
         backgroundColor: p.status === "blocked" ? colors.blockedTint : pressed ? colors.raised : colors.card,
       })}
     >
-      {p.terminal ? <TerminalMark size={24} /> : <AgentMark kind={p.kind} size={24} />}
+      {p.terminal ? <TerminalMark size={icon.lg} /> : <AgentMark kind={p.kind} size={icon.lg} />}
       <Text bold numberOfLines={2} maxFontSizeMultiplier={denseScale.row}>
         {p.title}
       </Text>
@@ -107,7 +110,7 @@ export function PanePager({ tab, onOpen }: { tab: TabPanes; onOpen: (paneId: str
   });
   const current = tab.panes[tab.index];
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: space.lg, paddingRight: space.xs }}>
+    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: space.lg, paddingRight: space.sm }}>
       <GestureDetector gesture={gesture}>
         <View
           accessible
@@ -117,9 +120,9 @@ export function PanePager({ tab, onOpen }: { tab: TabPanes; onOpen: (paneId: str
           accessibilityHint="Swipe left or right for the other panes of this tab"
           accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
           onAccessibilityAction={(e) => go(e.nativeEvent.actionName === "increment" ? 1 : -1)}
-          style={{ flex: 1, minHeight: hitTarget, flexDirection: "row", alignItems: "center", gap: space.sm }}
+          style={{ flex: 1, minHeight: hitTarget - space.sm, flexDirection: "row", alignItems: "center", gap: space.sm }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.xxs }}>
             {tab.panes.map((p, i) => (
               <Pressable
                 key={p.pane_id}
@@ -144,18 +147,16 @@ export function PanePager({ tab, onOpen }: { tab: TabPanes; onOpen: (paneId: str
           </Text>
         </View>
       </GestureDetector>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Tab map"
-        accessibilityHint="Shows every pane of this tab"
+      <IconButton
+        label="Tab map"
+        hint="Shows every pane of this tab"
+        Icon={LayoutGrid}
+        color={colors.textMuted}
         onPress={() => {
           haptics.tap();
           setMapOpen(true);
         }}
-        style={{ width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" }}
-      >
-        <LayoutGrid size={icon.md} color={colors.text} />
-      </Pressable>
+      />
       <TabMap tab={tab} visible={mapOpen} onClose={() => setMapOpen(false)} onOpen={onOpen} />
     </View>
   );
